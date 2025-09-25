@@ -1,0 +1,40 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from routes import objects, drivers
+
+app = FastAPI(
+    title="CDM_U Backend API",
+    description="Backend API for Canonical Data Model (CDM) management interface",
+    version="1.0.0"
+)
+
+# Configure CORS to allow frontend connections
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"],  # Vite dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include routers
+app.include_router(objects.router, prefix="/api/v1")
+app.include_router(drivers.router, prefix="/api/v1")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok", "message": "CDM_U Backend is running"}
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "CDM_U Backend API", 
+        "version": "1.0.0",
+        "docs": "/docs"
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

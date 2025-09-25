@@ -1,0 +1,463 @@
+import React, { useState, useMemo } from 'react';
+import { ChevronUp, ChevronDown, Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
+import { ColumnFilterDropdown } from './ColumnFilterDropdown';
+
+interface Column {
+  key: string;
+  title: string;
+  sortable?: boolean;
+  filterable?: boolean;
+  width: string;
+}
+
+interface DataGridProps {
+  columns: Column[];
+  data: Record<string, any>[];
+  onRowSelect?: (selectedRows: Record<string, any>[]) => void;
+  onEdit?: (row: Record<string, any>) => void;
+  onDelete?: (row: Record<string, any>) => void;
+  selectedRows?: Record<string, any>[];
+  onReorder?: (newData: Record<string, any>[]) => void;
+}
+
+export const DataGrid: React.FC<DataGridProps> = ({
+  columns,
+  data,
+  onRowSelect,
+  onEdit,
+  onDelete,
+  selectedRows = [],
+  onReorder
+}) => {
+  const [sortConfig, setSortConfig] = useState<{
+    key: string; 
+    type: 'asc' | 'desc' | 'custom' | 'none';
+    customOrder?: string[];
+  } | null>(null);
+  const [filters, setFilters] = useState<Record<string, string>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [localSelectedRows, setLocalSelectedRows] = useState<Record<string, any>[]>(selectedRows);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const [draggedRow, setDraggedRow] = useState<Record<string, any> | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleColumnHeaderClick = (column: Column, event: React.MouseEvent) => {
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    setDropdownPosition({
+      top: rect.bottom + window.scrollY + 5,
+      left: rect.left + window.scrollX
+    });
+    setOpenDropdown(column.key);
+  };
+
+  const handleColumnFilter = (columnKey: string, filterValues: string[]) => {
+    setColumnFilters(prev => ({
+      ...prev,
+      [columnKey]: filterValues
+    }));
+  };
+
+  const handleColumnSort = (columnKey: string, type: 'asc' | 'desc' | 'custom' | 'none') => {
+    if (type === 'none') {
+      setSortConfig(null);
+    } else {
+      setSortConfig({
+        key: columnKey,
+        type,
+        customOrder: sortConfig?.key === columnKey ? sortConfig.customOrder : undefined
+      });
+    }
+  };
+
+  const handleCustomSort = (columnKey: string, customOrder: string[]) => {
+    setSortConfig({
+      key: columnKey,
+      type: 'custom',
+      customOrder
+    });
+  };
+
+  const handleFilter = (key: string, value: string) => {
+    setFilters(prev => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const filteredAndSortedData = useMemo(() => {
+    let processedData = [...data];
+
+    // Apply text filters
+    Object.entries(filters).forEach(([key, filterValue]) => {
+      if (filterValue) {
+        processedData = processedData.filter(item =>
+          String(item[key]).toLowerCase().includes(filterValue.toLowerCase())
+        );
+      }
+    });
+
+    // Apply column filters
+    Object.entries(columnFilters).forEach(([key, filterValues]) => {
+      if (filterValues.length > 0) {
+        processedData = processedData.filter(item =>
+          filterValues.includes(String(item[key] || ''))
+        );
+      }
+    });
+
+    // Apply sorting
+    if (sortConfig) {
+      if (sortConfig.type === 'custom' && sortConfig.customOrder) {
+        processedData.sort((a, b) => {
+          const aValue = String(a[sortConfig.key] || '');
+          const bValue = String(b[sortConfig.key] || '');
+          const aIndex = sortConfig.customOrder!.indexOf(aValue);
+          const bIndex = sortConfig.customOrder!.indexOf(bValue);
+          return aIndex - bIndex;
+        });
+      } else {
+        processedData.sort((a, b) => {
+          const aValue = a[sortConfig.key];
+          const bValue = b[sortConfig.key];
+          
+          // Handle numeric columns
+          if (['relationships', 'variants', 'variables'].includes(sortConfig.key)) {
+            const aNum = Number(aValue) || 0;
+            const bNum = Number(bValue) || 0;
+            return sortConfig.type === 'asc' ? aNum - bNum : bNum - aNum;
+          }
+          
+          // Handle text columns
+          if (aValue < bValue) {
+            return sortConfig.type === 'asc' ? -1 : 1;
+          }
+          if (aValue > bValue) {
+            return sortConfig.type === 'asc' ? 1 : -1;
+          }
+          return 0;
+        });
+      }
+    }
+
+    return processedData;
+  }, [data, filters, columnFilters, sortConfig]);
+
+  const handleRowDragStart = (row: Record<string, any>) => {
+    setDraggedRow(row);
+  };
+
+  const handleRowDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(index);
+  };
+
+  const handleRowDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedRow && onReorder) {
+      const currentData = [...filteredAndSortedData];
+      const dragIndex = currentData.findIndex(item => item.id === draggedRow.id);
+      
+      if (dragIndex !== -1 && dragIndex !== dropIndex) {
+        // Remove dragged item and insert at new position
+        const [removed] = currentData.splice(dragIndex, 1);
+        currentData.splice(dropIndex, 0, removed);
+        onReorder(currentData);
+      }
+    }
+    setDraggedRow(null);
+    setDragOverIndex(null);
+  };
+
+  const handleRowDragEnd = () => {
+    setDraggedRow(null);
+    setDragOverIndex(null);
+  };
+
+  const getColumnIcon = (column: Column) => {
+    const isNumeric = ['relationships', 'variants', 'variables'].includes(column.key);
+    const hasSort = sortConfig?.key === column.key;
+    const hasFilter = columnFilters[column.key]?.length > 0;
+    
+    if (isNumeric) {
+      return <ArrowUpDown className="w-4 h-4" />;
+    }
+    
+    if (hasSort && sortConfig?.type === 'asc') {
+      return <ChevronUp className="w-4 h-4 text-ag-dark-accent" />;
+    }
+    if (hasSort && sortConfig?.type === 'desc') {
+      return <ChevronDown className="w-4 h-4 text-ag-dark-accent" />;
+    }
+    if (hasSort && sortConfig?.type === 'custom') {
+      return <GripVertical className="w-4 h-4 text-ag-dark-accent" />;
+    }
+    if (hasFilter) {
+      return <Filter className="w-4 h-4 text-ag-dark-accent" />;
+    }
+    
+    return <Filter className="w-4 h-4" />;
+  };
+
+  const getCurrentSort = (columnKey: string) => {
+    if (!sortConfig || sortConfig.key !== columnKey) {
+      return { type: 'none' as const };
+    }
+    return {
+      type: sortConfig.type,
+      customOrder: sortConfig.customOrder
+    };
+  };
+
+  const getCurrentFilters = (columnKey: string) => {
+    return columnFilters[columnKey] || [];
+  };
+
+  function handleRowSelection(row: Record<string, any>, isSelected: boolean) {
+    let newSelection;
+    if (isSelected) {
+      newSelection = [...localSelectedRows, row];
+    } else {
+      newSelection = localSelectedRows.filter(selectedRow => selectedRow.id !== row.id);
+    }
+    
+    setLocalSelectedRows(newSelection);
+    onRowSelect?.(newSelection);
+  }
+
+  function handleSelectAll(isSelected: boolean) {
+    const newSelection = isSelected ? filteredAndSortedData : [];
+    setLocalSelectedRows(newSelection);
+    onRowSelect?.(newSelection);
+  }
+
+  function isRowSelected(row: Record<string, any>) {
+    return localSelectedRows.some(selectedRow => selectedRow.id === row.id);
+  }
+
+  return (
+    <>
+      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden">
+        {/* Grid Container with Horizontal Scroll */}
+        <div className="overflow-x-auto">
+          {/* Grid Header */}
+          <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
+            <div className="flex text-sm font-medium text-ag-dark-text">
+              <div className="w-12 flex items-center justify-center p-4">
+                <input
+                  type="checkbox"
+                  checked={localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                />
+              </div>
+              {columns.map((column) => (
+                <div
+                  key={column.key}
+                  className="flex items-center justify-between px-4 py-3 border-r border-ag-dark-border whitespace-nowrap"
+                  style={{ width: column.width }}
+                >
+                  <span className="text-ag-dark-text font-medium text-sm truncate pr-2">{column.title}</span>
+                  {(column.sortable || column.filterable) && (
+                    <button
+                      onClick={(e) => handleColumnHeaderClick(column, e)}
+                      className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0 ml-1"
+                    >
+                      {getColumnIcon(column)}
+                    </button>
+                  )}
+                </div>
+              ))}
+              <div className="w-24 text-center text-ag-dark-text px-4 py-3">
+                <span className="text-ag-dark-text font-medium text-sm">Actions</span>
+              </div>
+              {onReorder && (
+                <div className="w-12 text-center text-ag-dark-text px-4 py-3">
+                  <GripVertical className="w-4 h-4 mx-auto text-ag-dark-text-secondary" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Grid Body */}
+          <div className="min-w-max">
+            {filteredAndSortedData.map((row, index) => (
+              <div
+                key={row.id || index}
+                draggable={onReorder ? true : false}
+                onDragStart={() => onReorder && handleRowDragStart(row)}
+                onDragOver={(e) => onReorder && handleRowDragOver(e, index)}
+                onDrop={(e) => onReorder && handleRowDrop(e, index)}
+                onDragEnd={handleRowDragEnd}
+                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors ${
+                  isRowSelected(row) ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
+                } ${
+                  dragOverIndex === index ? 'border-t-2 border-t-ag-dark-accent' : ''
+                } ${
+                  draggedRow?.id === row.id ? 'opacity-50' : ''
+                }`}
+              >
+                <div className="w-12 flex items-center justify-center p-2">
+                  <input
+                    type="checkbox"
+                    checked={isRowSelected(row)}
+                    onChange={(e) => handleRowSelection(row, e.target.checked)}
+                    className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                  />
+                </div>
+                {columns.map((column) => (
+                  <div
+                    key={`${row.id || index}-${column.key}`}
+                    className={`flex items-center text-sm text-ag-dark-text px-4 py-2 border-r border-ag-dark-border ${
+                      ['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
+                        ? 'justify-end' 
+                        : 'justify-start'
+                    }`}
+                    style={{ width: column.width }}
+                  >
+                    <span className={`whitespace-nowrap overflow-hidden text-ellipsis ${
+                      (column.key === 'object' || column.key === 'variable' || column.key === 'list') 
+                        ? 'font-semibold' 
+                        : ''
+                    }`}>
+                      {row[column.key] || '-'}
+                    </span>
+                  </div>
+                ))}
+                <div className="w-16 flex items-center justify-center gap-1 px-2 py-2">
+                  <button
+                    onClick={() => onDelete?.(row)}
+                    className="text-ag-dark-error hover:text-red-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                {onReorder && (
+                  <div className="w-12 flex items-center justify-center px-4 py-2">
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {filteredAndSortedData.length === 0 && (
+          <div className="p-8 text-center text-ag-dark-text-secondary">
+            <div className="text-lg font-medium mb-2">No data found</div>
+            <div className="text-sm">Try adjusting your filters or add some data</div>
+          </div>
+        )}
+      </div>
+
+      {/* Column Filter Dropdown */}
+      {openDropdown && (
+        <ColumnFilterDropdown
+          column={columns.find(col => col.key === openDropdown)!}
+          data={data}
+          isOpen={true}
+          onClose={() => setOpenDropdown(null)}
+          onFilter={(filters) => handleColumnFilter(openDropdown, filters)}
+          onSort={(type) => handleColumnSort(openDropdown, type)}
+          onCustomSort={(order) => handleCustomSort(openDropdown, order)}
+          currentFilters={getCurrentFilters(openDropdown)}
+          currentSort={getCurrentSort(openDropdown)}
+          position={dropdownPosition}
+        />
+      )}
+    </>
+  );
+};
+
+// Filter Panel Component (keeping existing functionality)
+export const FilterPanel: React.FC<{
+  columns: Column[];
+  filters: Record<string, string>;
+  onFilterChange: (key: string, value: string) => void;
+  isOpen: boolean;
+  activeTab?: string;
+  data?: Record<string, any>[];
+}> = ({ columns, filters, onFilterChange, isOpen, activeTab, data }) => {
+  if (!isOpen) return null;
+
+  // Define which columns to show filters for based on active tab
+  const getFilterableColumns = () => {
+    if (activeTab === 'lists') {
+      return columns.filter(col => ['driver', 'objectType', 'clarifier', 'variable', 'set', 'grouping'].includes(col.key));
+    }
+    if (activeTab === 'variables') {
+      return columns.filter(col => ['driver', 'part', 'section', 'group'].includes(col.key));
+    }
+    // Default to all filterable columns for objects tab
+    return columns.filter(col => col.filterable);
+  };
+
+  // Get distinct values for dropdown filters
+  const getDistinctValues = (columnKey: string) => {
+    return [...new Set(data.map(item => String(item[columnKey] || '')))].filter(Boolean);
+  };
+
+  // Check if column should be a dropdown filter
+  const isDropdownFilter = (columnKey: string) => {
+    return activeTab === 'lists' && ['driver', 'objectType', 'clarifier', 'variable', 'set', 'grouping'].includes(columnKey);
+  };
+  const filterableColumns = getFilterableColumns();
+  return (
+    <div className="bg-ag-dark-surface border border-ag-dark-border rounded-lg p-4 mb-4">
+      <h3 className="text-sm font-medium text-ag-dark-text mb-3">Filters</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filterableColumns.map((column) => (
+          <div key={`filter-${column.key}`}>
+            <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
+              {column.title}
+            </label>
+            {isDropdownFilter(column.key) ? (
+              <select
+                value={filters[column.key] || ''}
+                onChange={(e) => onFilterChange(column.key, e.target.value)}
+                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">All {column.title}</option>
+                {getDistinctValues(column.key).map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-ag-dark-text-secondary" />
+                <input
+                  type="text"
+                  placeholder={`Filter ${column.title}`}
+                  value={filters[column.key] || ''}
+                  onChange={(e) => onFilterChange(column.key, e.target.value)}
+                  className="w-full pl-10 pr-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex justify-end">
+        <button
+          onClick={() => {
+            filterableColumns.forEach(col => {
+              if (col.filterable) onFilterChange(col.key, '');
+            });
+          }}
+          className="text-sm text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+        >
+          Clear All Filters
+        </button>
+      </div>
+    </div>
+  );
+};
