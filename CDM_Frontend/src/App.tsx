@@ -32,7 +32,7 @@ function App() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   
   // Use API hook for objects data
-  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants } = useObjects();
+  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, createRelationship, createVariant } = useObjects();
   
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
@@ -395,10 +395,17 @@ function App() {
         // Handle relationships and variants
         if (updatedData.relationshipsList || updatedData.variantsList) {
           try {
+            console.log('Saving relationships and variants:', { 
+              relationshipsList: updatedData.relationshipsList, 
+              variantsList: updatedData.variantsList,
+              objectId: selectedRowForMetadata.id 
+            });
+            
             // Save relationships and variants to backend
             if (updatedData.relationshipsList) {
               for (const relationship of updatedData.relationshipsList) {
                 if (relationship.role && relationship.toBeing && relationship.toAvatar && relationship.toObject) {
+                  console.log('Creating relationship:', relationship);
                   await createRelationship(selectedRowForMetadata.id, relationship);
                 }
               }
@@ -407,6 +414,7 @@ function App() {
             if (updatedData.variantsList) {
               for (const variant of updatedData.variantsList) {
                 if (variant.name) {
+                  console.log('Creating variant:', variant);
                   await createVariant(selectedRowForMetadata.id, variant.name);
                 }
               }

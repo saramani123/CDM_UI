@@ -305,6 +305,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       relationshipsList: relationships,
       variantsList: variants
     };
+    console.log('MetadataPanel saving data:', saveData);
+    console.log('Relationships:', relationships);
+    console.log('Variants:', variants);
     onSave?.(saveData);
   };
 
