@@ -180,48 +180,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }));
   };
 
-  // Relationship handlers
-  const addRelationship = () => {
-    const newRelationship: Relationship = {
-      id: Date.now().toString(),
-      type: 'Inter-Table',
-      role: '',
-      toBeing: '',
-      toAvatar: '',
-      toObject: ''
-    };
-    setRelationships(prev => [...prev, newRelationship]);
-  };
-
-  const deleteRelationship = (id: string) => {
-    setRelationships(prev => prev.filter(rel => rel.id !== id));
-  };
-
-  const handleRelationshipChange = (id: string, field: keyof Relationship, value: string) => {
-    setRelationships(prev => prev.map(rel => 
-      rel.id === id ? { ...rel, [field]: value } : rel
-    ));
-  };
-
-  // Variant handlers
-  const addVariant = () => {
-    const newVariant: Variant = {
-      id: Date.now().toString(),
-      name: ''
-    };
-    setVariants(prev => [...prev, newVariant]);
-  };
-
-  const deleteVariant = (id: string) => {
-    setVariants(prev => prev.filter(variant => variant.id !== id));
-  };
-
-  const handleVariantChange = (id: string, value: string) => {
-    setVariants(prev => prev.map(variant => 
-      variant.id === id ? { ...variant, name: value } : variant
-    ));
-  };
-
   const handleDriverSelectionChange = (type: 'sector' | 'domain' | 'country', values: string[]) => {
     setDriverSelections(prev => ({
       ...prev,
