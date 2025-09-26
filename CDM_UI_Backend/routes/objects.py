@@ -1,123 +1,38 @@
-from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
+from typing import List, Dict, Any, Optional
 import uuid
+import csv
+import io
 from db import get_driver
+from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRowData
 
 router = APIRouter()
-
-# Dummy data that matches the frontend ObjectData interface
-dummy_objects = [
-    {
-        "id": "1",
-        "driver": "ALL, ALL, ALL, Employment Type",
-        "being": "Master",
-        "avatar": "Company",
-        "object": "Company",
-        "relationships": 13,
-        "variants": 23,
-        "variables": 54,
-        "status": "Active",
-        "relationshipsList": [
-            {
-                "id": "1",
-                "type": "Inter-Table",
-                "role": "Employer",
-                "toBeing": "Master",
-                "toAvatar": "Employee",
-                "toObject": "Employee"
-            },
-            {
-                "id": "2",
-                "type": "Inter-Table",
-                "role": "Owner",
-                "toBeing": "Master",
-                "toAvatar": "Product",
-                "toObject": "Product"
-            }
-        ],
-        "variantsList": [
-            {
-                "id": "1",
-                "name": "Public Company"
-            },
-            {
-                "id": "2",
-                "name": "Private Company"
-            }
-        ]
-    },
-    {
-        "id": "2",
-        "driver": "ALL, ALL, ALL, Pay Type",
-        "being": "Master",
-        "avatar": "Company Affiliate",
-        "object": "Entity",
-        "relationships": 1,
-        "variants": 2,
-        "variables": 45,
-        "status": "Active",
-        "relationshipsList": [],
-        "variantsList": []
-    },
-    {
-        "id": "3",
-        "driver": "Technology, Human Resources, United States, Employment Type",
-        "being": "Master",
-        "avatar": "Company Affiliate",
-        "object": "Department",
-        "relationships": 13,
-        "variants": 23,
-        "variables": 54,
-        "status": "Active",
-        "relationshipsList": []
-    },
-    {
-        "id": "4",
-        "driver": "Healthcare, Finance & Accounting, Canada, Pay Type",
-        "being": "Master",
-        "avatar": "Company Affiliate",
-        "object": "Team",
-        "relationships": 30,
-        "variants": 19,
-        "variables": 54,
-        "status": "Active",
-        "relationshipsList": []
-    },
-    {
-        "id": "5",
-        "driver": "Financial Services, Sales & Marketing, United Kingdom, Hour Type",
-        "being": "Master",
-        "avatar": "Company Affiliate",
-        "object": "Region",
-        "relationships": 39,
-        "variants": 23,
-        "variables": 54,
-        "status": "Active",
-        "relationshipsList": []
-    }
-]
 
 @router.get("/objects", response_model=List[Dict[str, Any]])
 async def get_objects():
     """
     Get all objects from the CDM.
-    Uses Neo4j if available, otherwise returns dummy data.
     """
     driver = get_driver()
     if not driver:
-        print("No Neo4j connection, returning dummy data")
-        return dummy_objects
-    
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
     try:
         with driver.session() as session:
+            # Get all objects with their relationships and variants counts
             result = session.run("""
                 MATCH (o:Object)
-                RETURN o.id as id, o.driver as driver, o.being as being, 
-                       o.avatar as avatar, o.object as object, o.relationships as relationships,
-                       o.variants as variants, o.variables as variables, o.status as status
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[:RELATES_TO_VARIABLE]->(var:Variable)
+                RETURN o.id as id, o.driver as driver, o.being as being,
+                       o.avatar as avatar, o.object as object, o.status as status,
+                       count(DISTINCT r) as relationships,
+                       count(DISTINCT v) as variants,
+                       count(DISTINCT var) as variables
                 ORDER BY o.id
             """)
-            
+
             objects = []
             for record in result:
                 obj = {
@@ -126,73 +41,926 @@ async def get_objects():
                     "being": record["being"],
                     "avatar": record["avatar"],
                     "object": record["object"],
-                    "relationships": record["relationships"],
-                    "variants": record["variants"],
-                    "variables": record["variables"],
-                    "status": record["status"],
-                    "relationshipsList": [],  # TODO: Add relationship queries
-                    "variantsList": []        # TODO: Add variant queries
+                    "relationships": record["relationships"] or 0,
+                    "variants": record["variants"] or 0,
+                    "variables": record["variables"] or 0,
+                    "status": record["status"] or "Active",
+                    "relationshipsList": [],  # Will be populated separately
+                    "variantsList": []        # Will be populated separately
                 }
                 objects.append(obj)
-            
+
+            # Get relationships for each object
+            for obj in objects:
+                relationships_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                    RETURN r.type as type, r.role as role,
+                           other.being as toBeing, other.avatar as toAvatar, other.object as toObject
+                """, object_id=obj["id"])
+
+                relationships = []
+                for rel_record in relationships_result:
+                    relationships.append({
+                        "id": str(uuid.uuid4()),
+                        "type": rel_record["type"],
+                        "role": rel_record["role"],
+                        "toBeing": rel_record["toBeing"],
+                        "toAvatar": rel_record["toAvatar"],
+                        "toObject": rel_record["toObject"]
+                    })
+                obj["relationshipsList"] = relationships
+
+                # Get variants for each object
+                variants_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                    RETURN v.name as name
+                """, object_id=obj["id"])
+
+                variants = []
+                for var_record in variants_result:
+                    variants.append({
+                        "id": str(uuid.uuid4()),
+                        "name": var_record["name"]
+                    })
+                obj["variantsList"] = variants
+
             print(f"Retrieved {len(objects)} objects from Neo4j")
             return objects
-            
+
     except Exception as e:
         print(f"Error querying Neo4j: {e}")
-        print("Falling back to dummy data")
-        return dummy_objects
+        raise HTTPException(status_code=500, detail="Database error")
 
 @router.get("/objects/{object_id}", response_model=Dict[str, Any])
 async def get_object(object_id: str):
     """
     Get a specific object by ID.
     """
-    for obj in dummy_objects:
-        if obj["id"] == object_id:
-            return obj
-    
-    raise HTTPException(status_code=404, detail="Object not found")
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
-@router.post("/objects", response_model=Dict[str, Any])
-async def create_object(object_data: Dict[str, Any]):
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.driver as driver, o.being as being,
+                       o.avatar as avatar, o.object as object, o.status as status
+            """, object_id=object_id)
+
+            record = result.single()
+            if not record:
+                raise HTTPException(status_code=404, detail="Object not found")
+
+            obj = {
+                "id": record["id"],
+                "driver": record["driver"],
+                "being": record["being"],
+                "avatar": record["avatar"],
+                "object": record["object"],
+                "status": record["status"],
+                "relationships": 0,
+                "variants": 0,
+                "variables": 0,
+                "relationshipsList": [],
+                "variantsList": []
+            }
+
+            # Get relationships
+            relationships_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                RETURN r.type as type, r.role as role,
+                       other.being as toBeing, other.avatar as toAvatar, other.object as toObject
+            """, object_id=object_id)
+
+            relationships = []
+            for rel_record in relationships_result:
+                relationships.append({
+                    "id": str(uuid.uuid4()),
+                    "type": rel_record["type"],
+                    "role": rel_record["role"],
+                    "toBeing": rel_record["toBeing"],
+                    "toAvatar": rel_record["toAvatar"],
+                    "toObject": rel_record["toObject"]
+                })
+            obj["relationshipsList"] = relationships
+
+            # Get variants
+            variants_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                RETURN v.name as name
+            """, object_id=object_id)
+
+            variants = []
+            for var_record in variants_result:
+                variants.append({
+                    "id": str(uuid.uuid4()),
+                    "name": var_record["name"]
+                })
+            obj["variantsList"] = variants
+
+            return obj
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error querying Neo4j: {e}")
+        raise HTTPException(status_code=500, detail="Database error")
+
+@router.post("/objects", response_model=ObjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_object(object_data: ObjectCreateRequest):
     """
-    Create a new object.
-    This is a placeholder for future implementation with Neo4j.
+    Create a new object with proper Neo4j relationships.
     """
-    # Generate a new ID
-    new_id = str(uuid.uuid4())
-    object_data["id"] = new_id
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
     
-    # Add to dummy data (in real implementation, this would be saved to Neo4j)
-    dummy_objects.append(object_data)
-    
-    return object_data
+    try:
+        with driver.session() as session:
+            # Validate required fields
+            required_fields = ["sector", "domain", "country", "being", "avatar", "object"]
+            for field in required_fields:
+                value = getattr(object_data, field, None)
+                if not value:
+                    raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+            
+            # Handle optional fields
+            objectClarifier = getattr(object_data, 'objectClarifier', None)
+            if objectClarifier is not None and not objectClarifier:
+                objectClarifier = None
+            
+            # Generate unique ID
+            new_id = str(uuid.uuid4())
+            
+            # Concatenate driver string
+            sector_str = "ALL" if "ALL" in object_data.sector else ", ".join(object_data.sector)
+            domain_str = "ALL" if "ALL" in object_data.domain else ", ".join(object_data.domain)
+            country_str = "ALL" if "ALL" in object_data.country else ", ".join(object_data.country)
+            clarifier_str = objectClarifier or "None"
+            driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+            
+            # Check for duplicate objects (same being, avatar, object combination)
+            existing = session.run("""
+                MATCH (o:Object {being: $being, avatar: $avatar, object: $object})
+                RETURN o.id as id
+            """, being=object_data.being, avatar=object_data.avatar, object=object_data.object)
+            
+            if existing.single():
+                raise HTTPException(status_code=409, detail="Object with this Being/Avatar/Object combination already exists")
+            
+            # Create the Object node
+            session.run("""
+                CREATE (o:Object {
+                    id: $id,
+                    driver: $driver,
+                    being: $being,
+                    avatar: $avatar,
+                    object: $object,
+                    status: $status
+                })
+            """, 
+            id=new_id,
+            driver=driver_string,
+            being=object_data.being,
+            avatar=object_data.avatar,
+            object=object_data.object,
+            status=getattr(object_data, 'status', 'Active'))
+            
+            # Create Being, Avatar, Object taxonomy relationships if they don't exist
+            session.run("""
+                MERGE (b:Being {name: $being})
+                MERGE (a:Avatar {name: $avatar})
+                MERGE (o:Object {id: $object_id})
+                MERGE (b)-[:HAS_AVATAR]->(a)
+                MERGE (a)-[:HAS_OBJECT]->(o)
+            """, being=object_data.being, avatar=object_data.avatar, object_id=new_id)
+            
+            # Create driver relationships
+            # Sector relationships
+            if "ALL" not in object_data.sector:
+                for sector in object_data.sector:
+                    session.run("""
+                        MATCH (s:Sector {name: $sector})
+                        MATCH (o:Object {id: $object_id})
+                        WITH s, o
+                        CREATE (s)-[:RELEVANT_TO]->(o)
+                    """, sector=sector, object_id=new_id)
+            
+            # Domain relationships
+            if "ALL" not in object_data.domain:
+                for domain in object_data.domain:
+                    session.run("""
+                        MATCH (d:Domain {name: $domain})
+                        MATCH (o:Object {id: $object_id})
+                        WITH d, o
+                        CREATE (d)-[:RELEVANT_TO]->(o)
+                    """, domain=domain, object_id=new_id)
+            
+            # Country relationships
+            if "ALL" not in object_data.country:
+                for country in object_data.country:
+                    session.run("""
+                        MATCH (c:Country {name: $country})
+                        MATCH (o:Object {id: $object_id})
+                        WITH c, o
+                        CREATE (c)-[:RELEVANT_TO]->(o)
+                    """, country=country, object_id=new_id)
+            
+            # Object Clarifier relationship
+            if objectClarifier and objectClarifier != "None":
+                session.run("""
+                    MATCH (oc:ObjectClarifier {name: $clarifier})
+                    MATCH (o:Object {id: $object_id})
+                    WITH oc, o
+                    CREATE (oc)-[:RELEVANT_TO]->(o)
+                """, clarifier=objectClarifier, object_id=new_id)
+            
+            # Create variants if provided
+            variants = getattr(object_data, 'variants', [])
+            if variants:
+                for variant_name in variants:
+                    variant_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (v:Variant {id: $variant_id, name: $name})
+                        WITH v
+                        MATCH (o:Object {id: $object_id})
+                        CREATE (o)-[:HAS_VARIANT]->(v)
+                    """, variant_id=variant_id, name=variant_name, object_id=new_id)
+            
+            # Create relationships if provided
+            relationships = getattr(object_data, 'relationships', [])
+            if relationships:
+                for rel in relationships:
+                    session.run("""
+                        MATCH (o1:Object {id: $object_id})
+                        MATCH (o2:Object {being: $toBeing, avatar: $toAvatar, object: $toObject})
+                        CREATE (o1)-[:RELATES_TO {type: $type, role: $role}]->(o2)
+                    """, 
+                    object_id=new_id,
+                    toBeing=rel["toBeing"],
+                    toAvatar=rel["toAvatar"],
+                    toObject=rel["toObject"],
+                    type=rel["type"],
+                    role=rel["role"])
+            
+            return {
+                "id": new_id,
+                "driver": driver_string,
+                "being": object_data.being,
+                "avatar": object_data.avatar,
+                "object": object_data.object,
+                "status": getattr(object_data, 'status', 'Active'),
+                "relationships": 0,
+                "variants": len(variants),
+                "variables": 0,
+                "relationshipsList": relationships,
+                "variantsList": [{"id": str(uuid.uuid4()), "name": v} for v in variants]
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating object in Neo4j: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create object")
 
 @router.put("/objects/{object_id}", response_model=Dict[str, Any])
 async def update_object(object_id: str, object_data: Dict[str, Any]):
     """
     Update an existing object.
-    This is a placeholder for future implementation with Neo4j.
     """
-    for i, obj in enumerate(dummy_objects):
-        if obj["id"] == object_id:
-            # Update the object
-            object_data["id"] = object_id
-            dummy_objects[i] = object_data
-            return object_data
-    
-    raise HTTPException(status_code=404, detail="Object not found")
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if object exists
+            existing = session.run("MATCH (o:Object {id: $object_id}) RETURN o", object_id=object_id).single()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Object not found")
+
+            # Update object properties
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.being = $being,
+                    o.avatar = $avatar,
+                    o.object = $object,
+                    o.status = $status
+            """,
+            object_id=object_id,
+            being=object_data["being"],
+            avatar=object_data["avatar"],
+            object=object_data["object"],
+            status=object_data.get("status", "Active"))
+
+            # Update driver relationships (remove old, add new)
+            session.run("""
+                MATCH (o:Object {id: $object_id})<-[r:RELEVANT_TO]-(d)
+                DELETE r
+            """, object_id=object_id)
+
+            # Recreate driver relationships
+            if "sector" in object_data and "ALL" not in object_data["sector"]:
+                for sector in object_data["sector"]:
+                    session.run("""
+                        MATCH (s:Sector {name: $sector})
+                        MATCH (o:Object {id: $object_id})
+                        WITH s, o
+                        CREATE (s)-[:RELEVANT_TO]->(o)
+                    """, sector=sector, object_id=object_id)
+
+            if "domain" in object_data and "ALL" not in object_data["domain"]:
+                for domain in object_data["domain"]:
+                    session.run("""
+                        MATCH (d:Domain {name: $domain})
+                        MATCH (o:Object {id: $object_id})
+                        WITH d, o
+                        CREATE (d)-[:RELEVANT_TO]->(o)
+                    """, domain=domain, object_id=object_id)
+
+            if "country" in object_data and "ALL" not in object_data["country"]:
+                for country in object_data["country"]:
+                    session.run("""
+                        MATCH (c:Country {name: $country})
+                        MATCH (o:Object {id: $object_id})
+                        WITH c, o
+                        CREATE (c)-[:RELEVANT_TO]->(o)
+                    """, country=country, object_id=object_id)
+
+            if "objectClarifier" in object_data and object_data["objectClarifier"] and object_data["objectClarifier"] != "None":
+                session.run("""
+                    MATCH (oc:ObjectClarifier {name: $clarifier})
+                    MATCH (o:Object {id: $object_id})
+                    WITH oc, o
+                    CREATE (oc)-[:RELEVANT_TO]->(o)
+                """, clarifier=object_data["objectClarifier"], object_id=object_id)
+
+            return {"message": f"Object {object_id} updated successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating object in Neo4j: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update object")
 
 @router.delete("/objects/{object_id}")
 async def delete_object(object_id: str):
     """
-    Delete an object.
-    This is a placeholder for future implementation with Neo4j.
+    Delete an object and its variants, but preserve drivers and other entities.
     """
-    for i, obj in enumerate(dummy_objects):
-        if obj["id"] == object_id:
-            deleted_obj = dummy_objects.pop(i)
-            return {"message": f"Object {object_id} deleted successfully", "deleted_object": deleted_obj}
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if object exists
+            existing = session.run("MATCH (o:Object {id: $object_id}) RETURN o", object_id=object_id).single()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Object not found")
+
+            # Delete object and its variants, but preserve relationships to drivers
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[r:HAS_RELATIONSHIP]->(rel:Relationship)
+                DETACH DELETE v, rel, o
+            """, object_id=object_id)
+
+            return {"message": f"Object {object_id} deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting object in Neo4j: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete object")
+
+@router.post("/objects/upload", response_model=CSVUploadResponse)
+async def upload_objects_csv(file: UploadFile = File(...)):
+    """
+    Upload objects from CSV file.
+    CSV must have columns: Sector, Domain, Country, Object Clarifier, Being, Avatar, Object
+    """
+    print(f"DEBUG: CSV upload request received. File: {file.filename}, Content-Type: {file.content_type}")
+
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        # Read CSV content
+        content = await file.read()
+        csv_content = content.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(csv_content))
+
+        # Validate required columns - support both formats
+        required_columns = ['Sector', 'Domain', 'Country', 'Object Clarifier', 'Being', 'Avatar', 'Object']
+        print(f"DEBUG: CSV fieldnames: {csv_reader.fieldnames}")
+
+        if not csv_reader.fieldnames:
+            raise HTTPException(
+                status_code=400,
+                detail="CSV file appears to be empty or has no headers"
+            )
+
+        # Check if all required columns are present
+        missing_columns = [col for col in required_columns if col not in csv_reader.fieldnames]
+        if missing_columns:
+            print(f"DEBUG: Missing columns: {missing_columns}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV must contain columns: {', '.join(required_columns)}. Missing: {', '.join(missing_columns)}"
+            )
+
+        created_objects = []
+        errors = []
+
+        with driver.session() as session:
+            for row_num, row in enumerate(csv_reader, start=2):  # Start at 2 because of header
+                try:
+                    # Validate row data using Pydantic schema
+                    try:
+                        csv_row = CSVRowData(**row)
+                    except Exception as validation_error:
+                        errors.append(f"Row {row_num}: Validation error - {str(validation_error)}")
+                        continue
+
+                    # Parse driver selections
+                    sector = [s.strip() for s in csv_row.Sector.split(',') if s.strip()]
+                    domain = [d.strip() for d in csv_row.Domain.split(',') if d.strip()]
+                    country = [c.strip() for c in csv_row.Country.split(',') if c.strip()]
+                    object_clarifier = csv_row.ObjectClarifier.strip() if csv_row.ObjectClarifier and csv_row.ObjectClarifier.strip() else None
+
+                    # Validate driver values exist in database
+                    for sector_name in sector:
+                        if sector_name != "ALL":
+                            exists = session.run("MATCH (s:Sector {name: $name}) RETURN s", name=sector_name).single()
+                            if not exists:
+                                errors.append(f"Row {row_num}: Sector '{sector_name}' not found in drivers")
+                                continue
+
+                    for domain_name in domain:
+                        if domain_name != "ALL":
+                            exists = session.run("MATCH (d:Domain {name: $name}) RETURN d", name=domain_name).single()
+                            if not exists:
+                                errors.append(f"Row {row_num}: Domain '{domain_name}' not found in drivers")
+                                continue
+
+                    for country_name in country:
+                        if country_name != "ALL":
+                            exists = session.run("MATCH (c:Country {name: $name}) RETURN c", name=country_name).single()
+                            if not exists:
+                                errors.append(f"Row {row_num}: Country '{country_name}' not found in drivers")
+                                continue
+
+                    if object_clarifier and object_clarifier != "None":
+                        exists = session.run("MATCH (oc:ObjectClarifier {name: $name}) RETURN oc", name=object_clarifier).single()
+                        if not exists:
+                            errors.append(f"Row {row_num}: Object Clarifier '{object_clarifier}' not found in drivers")
+                            continue
+
+                    # Check for duplicate objects
+                    existing = session.run("""
+                        MATCH (o:Object {being: $being, avatar: $avatar, object: $object})
+                        RETURN o.id as id
+                    """, being=csv_row.Being, avatar=csv_row.Avatar, object=csv_row.Object).single()
+
+                    if existing:
+                        errors.append(f"Row {row_num}: Object with Being='{csv_row.Being}', Avatar='{csv_row.Avatar}', Object='{csv_row.Object}' already exists")
+                        continue
+
+                    # Create object
+                    object_data = {
+                        "sector": sector,
+                        "domain": domain,
+                        "country": country,
+                        "objectClarifier": object_clarifier,
+                        "being": csv_row.Being,
+                        "avatar": csv_row.Avatar,
+                        "object": csv_row.Object,
+                        "status": "Active"
+                    }
+
+                    # Use the create_object logic
+                    new_id = str(uuid.uuid4())
+
+                    # Concatenate driver string
+                    sector_str = "ALL" if "ALL" in sector else ", ".join(sector)
+                    domain_str = "ALL" if "ALL" in domain else ", ".join(domain)
+                    country_str = "ALL" if "ALL" in country else ", ".join(country)
+                    clarifier_str = object_clarifier or "None"
+                    driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+
+                    # Create the Object node
+                    session.run("""
+                        CREATE (o:Object {
+                            id: $id,
+                            driver: $driver,
+                            being: $being,
+                            avatar: $avatar,
+                            object: $object,
+                            status: $status
+                        })
+                    """,
+                    id=new_id,
+                    driver=driver_string,
+                    being=csv_row.Being,
+                    avatar=csv_row.Avatar,
+                    object=csv_row.Object,
+                    status="Active")
+
+                    # Create taxonomy relationships
+                    session.run("""
+                        MERGE (b:Being {name: $being})
+                        MERGE (a:Avatar {name: $avatar})
+                        MERGE (o:Object {id: $object_id})
+                        MERGE (b)-[:HAS_AVATAR]->(a)
+                        MERGE (a)-[:HAS_OBJECT]->(o)
+                    """, being=csv_row.Being, avatar=csv_row.Avatar, object_id=new_id)
+
+                    # Create driver relationships
+                    if "ALL" not in sector:
+                        for sector_name in sector:
+                            session.run("""
+                                MATCH (s:Sector {name: $sector})
+                                MATCH (o:Object {id: $object_id})
+                                WITH s, o
+                                CREATE (s)-[:RELEVANT_TO]->(o)
+                            """, sector=sector_name, object_id=new_id)
+
+                    if "ALL" not in domain:
+                        for domain_name in domain:
+                            session.run("""
+                                MATCH (d:Domain {name: $domain})
+                                MATCH (o:Object {id: $object_id})
+                                WITH d, o
+                                CREATE (d)-[:RELEVANT_TO]->(o)
+                            """, domain=domain_name, object_id=new_id)
+
+                    if "ALL" not in country:
+                        for country_name in country:
+                            session.run("""
+                                MATCH (c:Country {name: $country})
+                                MATCH (o:Object {id: $object_id})
+                                WITH c, o
+                                CREATE (c)-[:RELEVANT_TO]->(o)
+                            """, country=country_name, object_id=new_id)
+
+                    if object_clarifier and object_clarifier != "None":
+                        session.run("""
+                            MATCH (oc:ObjectClarifier {name: $clarifier})
+                            MATCH (o:Object {id: $object_id})
+                            WITH oc, o
+                            CREATE (oc)-[:RELEVANT_TO]->(o)
+                        """, clarifier=object_clarifier, object_id=new_id)
+
+                    created_objects.append({
+                        "id": new_id,
+                        "being": csv_row.Being,
+                        "avatar": csv_row.Avatar,
+                        "object": csv_row.Object,
+                        "driver": driver_string
+                    })
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+
+        return {
+            "message": f"CSV upload completed. Created {len(created_objects)} objects.",
+            "created_objects": created_objects,
+            "errors": errors
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error processing CSV upload: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process CSV upload")
+
+@router.get("/objects/taxonomy/beings", response_model=List[str])
+async def get_beings():
+    """Get all available Beings for dropdowns"""
+    driver = get_driver()
+    if not driver:
+        return ["Master", "Mate", "Process", "Adjunct", "Rule", "Roster"]
     
-    raise HTTPException(status_code=404, detail="Object not found")
+    try:
+        with driver.session() as session:
+            result = session.run("MATCH (b:Being) RETURN b.name as name ORDER BY name")
+            return [record["name"] for record in result]
+    except Exception as e:
+        print(f"Error fetching beings: {e}")
+        return ["Master", "Mate", "Process", "Adjunct", "Rule", "Roster"]
+
+@router.get("/objects/taxonomy/avatars", response_model=List[str])
+async def get_avatars(being: Optional[str] = None):
+    """Get all available Avatars for dropdowns, optionally filtered by Being"""
+    driver = get_driver()
+    if not driver:
+        return ["Company", "Company Affiliate", "Employee", "Product", "Customer", "Supplier"]
+    
+    try:
+        with driver.session() as session:
+            if being:
+                result = session.run("""
+                    MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar)
+                    RETURN a.name as name ORDER BY name
+                """, being=being)
+            else:
+                result = session.run("MATCH (a:Avatar) RETURN a.name as name ORDER BY name")
+            return [record["name"] for record in result]
+    except Exception as e:
+        print(f"Error fetching avatars: {e}")
+        return ["Company", "Company Affiliate", "Employee", "Product", "Customer", "Supplier"]
+
+@router.get("/objects/taxonomy/objects", response_model=List[str])
+async def get_objects_by_taxonomy(being: Optional[str] = None, avatar: Optional[str] = None):
+    """Get all available Objects for dropdowns, optionally filtered by Being and Avatar"""
+    driver = get_driver()
+    if not driver:
+        return []
+    
+    try:
+        with driver.session() as session:
+            if being and avatar:
+                result = session.run("""
+                    MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})-[:HAS_OBJECT]->(o:Object)
+                    RETURN o.object as name ORDER BY name
+                """, being=being, avatar=avatar)
+            elif being:
+                result = session.run("""
+                    MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar)-[:HAS_OBJECT]->(o:Object)
+                    RETURN o.object as name ORDER BY name
+                """, being=being)
+            else:
+                result = session.run("MATCH (o:Object) RETURN o.object as name ORDER BY name")
+            return [record["name"] for record in result]
+    except Exception as e:
+        print(f"Error fetching objects: {e}")
+        return []
+
+# Relationship Management Endpoints
+@router.post("/objects/{object_id}/relationships", response_model=Dict[str, Any])
+async def create_relationship(
+    object_id: str,
+    relationship_type: str = Form(...),
+    role: str = Form(...),
+    to_being: str = Form(...),
+    to_avatar: str = Form(...),
+    to_object: str = Form(...)
+):
+    """Create a new relationship for an object"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Create the relationship
+            relationship_id = str(uuid.uuid4())
+            
+            # Handle "ALL" values in target fields
+            target_being = to_being if to_being != "ALL" else None
+            target_avatar = to_avatar if to_avatar != "ALL" else None
+            target_object = to_object if to_object != "ALL" else None
+            
+            # Create relationship node
+            session.run("""
+                CREATE (r:Relationship {
+                    id: $relationship_id,
+                    type: $relationship_type,
+                    role: $role,
+                    toBeing: $to_being,
+                    toAvatar: $to_avatar,
+                    toObject: $to_object
+                })
+            """, relationship_id=relationship_id, relationship_type=relationship_type, 
+                role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+            
+            # Connect relationship to object
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                MATCH (r:Relationship {id: $relationship_id})
+                CREATE (o)-[:HAS_RELATIONSHIP]->(r)
+            """, object_id=object_id, relationship_id=relationship_id)
+            
+            # Update relationship count
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
+                RETURN count(r) as rel_count
+            """, object_id=object_id).single()
+            
+            rel_count = count_result["rel_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=object_id, rel_count=rel_count)
+            
+            return {
+                "id": relationship_id,
+                "type": relationship_type,
+                "role": role,
+                "toBeing": to_being,
+                "toAvatar": to_avatar,
+                "toObject": to_object
+            }
+    except Exception as e:
+        print(f"Error creating relationship: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create relationship: {e}")
+
+@router.delete("/objects/{object_id}/relationships/{relationship_id}")
+async def delete_relationship(object_id: str, relationship_id: str):
+    """Delete a relationship from an object"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Delete the relationship
+            session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship {id: $relationship_id})
+                DETACH DELETE r
+            """, object_id=object_id, relationship_id=relationship_id)
+            
+            # Update relationship count
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
+                RETURN count(r) as rel_count
+            """, object_id=object_id).single()
+            
+            rel_count = count_result["rel_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=object_id, rel_count=rel_count)
+            
+            return {"message": "Relationship deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting relationship: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete relationship: {e}")
+
+# Variant Management Endpoints
+@router.post("/objects/{object_id}/variants", response_model=Dict[str, Any])
+async def create_variant(object_id: str, variant_name: str = Form(...)):
+    """Create a new variant for an object"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Create the variant
+            variant_id = str(uuid.uuid4())
+            
+            # Create variant node
+            session.run("""
+                CREATE (v:Variant {
+                    id: $variant_id,
+                    name: $variant_name
+                })
+            """, variant_id=variant_id, variant_name=variant_name)
+            
+            # Connect variant to object
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                MATCH (v:Variant {id: $variant_id})
+                CREATE (o)-[:HAS_VARIANT]->(v)
+            """, object_id=object_id, variant_id=variant_id)
+            
+            # Update variant count
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                RETURN count(v) as var_count
+            """, object_id=object_id).single()
+            
+            var_count = count_result["var_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.variants = $var_count
+            """, object_id=object_id, var_count=var_count)
+            
+            return {
+                "id": variant_id,
+                "name": variant_name
+            }
+    except Exception as e:
+        print(f"Error creating variant: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create variant: {e}")
+
+@router.delete("/objects/{object_id}/variants/{variant_id}")
+async def delete_variant(object_id: str, variant_id: str):
+    """Delete a variant from an object"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Delete the variant
+            session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                DETACH DELETE v
+            """, object_id=object_id, variant_id=variant_id)
+            
+            # Update variant count
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                RETURN count(v) as var_count
+            """, object_id=object_id).single()
+            
+            var_count = count_result["var_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.variants = $var_count
+            """, object_id=object_id, var_count=var_count)
+            
+            return {"message": "Variant deleted successfully"}
+    except Exception as e:
+        print(f"Error deleting variant: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete variant: {e}")
+
+# Update Object with Relationships and Variants
+@router.put("/objects/{object_id}", response_model=Dict[str, Any])
+async def update_object_with_relationships_and_variants(
+    object_id: str,
+    relationships: Optional[List[Dict[str, Any]]] = Form(None),
+    variants: Optional[List[Dict[str, Any]]] = Form(None)
+):
+    """Update an object with its relationships and variants"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Clear existing relationships and variants
+            session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
+                DETACH DELETE r
+            """, object_id=object_id)
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                DETACH DELETE v
+            """, object_id=object_id)
+            
+            # Create new relationships
+            if relationships:
+                for rel in relationships:
+                    relationship_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (r:Relationship {
+                            id: $relationship_id,
+                            type: $relationship_type,
+                            role: $role,
+                            toBeing: $to_being,
+                            toAvatar: $to_avatar,
+                            toObject: $to_object
+                        })
+                    """, relationship_id=relationship_id, 
+                        relationship_type=rel.get("type", "Inter-Table"),
+                        role=rel.get("role", ""),
+                        to_being=rel.get("toBeing", "ALL"),
+                        to_avatar=rel.get("toAvatar", "ALL"),
+                        to_object=rel.get("toObject", "ALL"))
+                    
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        MATCH (r:Relationship {id: $relationship_id})
+                        CREATE (o)-[:HAS_RELATIONSHIP]->(r)
+                    """, object_id=object_id, relationship_id=relationship_id)
+            
+            # Create new variants
+            if variants:
+                for var in variants:
+                    variant_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (v:Variant {
+                            id: $variant_id,
+                            name: $variant_name
+                        })
+                    """, variant_id=variant_id, variant_name=var.get("name", ""))
+                    
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        MATCH (v:Variant {id: $variant_id})
+                        CREATE (o)-[:HAS_VARIANT]->(v)
+                    """, object_id=object_id, variant_id=variant_id)
+            
+            # Update counts
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = COUNT { (o)-[:HAS_RELATIONSHIP]->(:Relationship) },
+                    o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
+            """, object_id=object_id)
+            
+            return {"message": "Object updated successfully"}
+    except Exception as e:
+        print(f"Error updating object: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update object: {e}")

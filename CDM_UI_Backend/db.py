@@ -19,10 +19,13 @@ class Neo4jConnection:
             print(f"Attempting to connect to Neo4j at {self.uri}")
             print(f"Username: {self.username}")
             
-            # For Neo4j Aura, the neo4j+s:// scheme handles SSL automatically
-            # We just need to use the correct connection parameters
+            # For Neo4j Aura, use neo4j+ssc scheme for self-signed certificates
+            # This resolves SSL certificate verification issues
+            working_uri = self.uri.replace("neo4j+s://", "neo4j+ssc://")
+            print(f"Using working URI: {working_uri}")
+            
             self.driver = GraphDatabase.driver(
-                self.uri, 
+                working_uri, 
                 auth=(self.username, self.password),
                 max_connection_lifetime=30 * 60,  # 30 minutes
                 max_connection_pool_size=50,
@@ -59,7 +62,8 @@ class Neo4jConnection:
     def get_driver(self):
         """Get the Neo4j driver instance"""
         if not self.driver:
-            self.connect()
+            if not self.connect():
+                return None
         return self.driver
     
     def close(self):
