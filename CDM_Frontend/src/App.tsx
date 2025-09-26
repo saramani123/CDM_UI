@@ -32,7 +32,7 @@ function App() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   
   // Use API hook for objects data
-  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject } = useObjects();
+  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants } = useObjects();
   
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
@@ -56,23 +56,30 @@ function App() {
 
   // Sync API objects data with local state
   React.useEffect(() => {
-    if (apiObjects.length > 0) {
-      setData(apiObjects);
-    } else if (objectsError) {
-      // Fallback to mock data if API fails
-      setData(mockObjectData);
+    if (!objectsLoading) {
+      if (objectsError) {
+        // Fallback to mock data if API fails
+        console.log('Objects API failed, using mock data:', objectsError);
+        setData(mockObjectData);
+      } else {
+        // Always use API data, even if empty
+        setData(apiObjects);
+      }
     }
-  }, [apiObjects, objectsError]);
+  }, [apiObjects, objectsError, objectsLoading]);
 
   // Sync API drivers data with local state
   React.useEffect(() => {
-    if (apiDrivers && (apiDrivers.sectors.length > 0 || apiDrivers.domains.length > 0 || apiDrivers.countries.length > 0 || apiDrivers.objectClarifiers.length > 0 || apiDrivers.variableClarifiers.length > 0)) {
-      setDriversState(apiDrivers);
-    } else if (driversError) {
-      // Keep mock data if API fails
-      console.log('Drivers API failed, using mock data:', driversError);
+    if (!driversLoading) {
+      if (driversError) {
+        // Keep mock data if API fails
+        console.log('Drivers API failed, using mock data:', driversError);
+      } else if (apiDrivers) {
+        // Always use API data, even if empty
+        setDriversState(apiDrivers);
+      }
     }
-  }, [apiDrivers, driversError]);
+  }, [apiDrivers, driversError, driversLoading]);
 
   // Make objects data available globally for variable object relationships
   React.useEffect(() => {
@@ -229,7 +236,28 @@ function App() {
 
   const handleAddObject = async (newObjectData: ObjectData) => {
     try {
-      await createObject(newObjectData);
+      // Convert the UI format to API format
+      const driverParts = newObjectData.driver.split(', ').map(part => part.trim());
+      const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
+      const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
+      const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
+      const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
+      
+      const apiObjectData = {
+        sector: sector,
+        domain: domain,
+        country: country,
+        objectClarifier: objectClarifier,
+        being: newObjectData.being,
+        avatar: newObjectData.avatar,
+        object: newObjectData.object,
+        status: newObjectData.status || 'Active',
+        // Include relationships and variants if they exist
+        relationships: newObjectData.relationshipsList || [],
+        variants: (newObjectData.variantsList || []).map(v => v.name)
+      };
+      
+      await createObject(apiObjectData);
       setIsAddObjectOpen(false);
     } catch (error) {
       console.error('Failed to create object:', error);
@@ -260,8 +288,25 @@ function App() {
     }
   };
 
-  const handleBulkEdit = (updatedData: Record<string, any>) => {
+  const handleBulkEdit = async (updatedData: Record<string, any>) => {
     const selectedIds = selectedRows.map(row => row.id);
+    
+    // If this is for objects and we have relationships or variants, call the backend API
+    if (activeTab === 'objects' && (updatedData.relationshipsList || updatedData.variantsList)) {
+      try {
+        for (const objectId of selectedIds) {
+          await updateObjectWithRelationshipsAndVariants(
+            objectId, 
+            updatedData.relationshipsList || [], 
+            updatedData.variantsList || []
+          );
+        }
+      } catch (error) {
+        console.error('Failed to update objects with relationships and variants:', error);
+        // Fall back to local state update
+      }
+    }
+    
     const updateFunction = (prev: any[]) => prev.map((item: any) => {
       if (selectedIds.includes(item.id)) {
         const updated = { ...item };
@@ -338,7 +383,7 @@ function App() {
     setSelectedRows([]);
     setSelectedRowForMetadata(null);
   };
-  const handleMetadataSave = (updatedData: Record<string, any>) => {
+  const handleMetadataSave = async (updatedData: Record<string, any>) => {
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
       
@@ -346,6 +391,31 @@ function App() {
         // Map objectName back to object field for the grid
         gridData.object = updatedData.objectName || updatedData.object;
         delete gridData.objectName;
+        
+        // Handle relationships and variants
+        if (updatedData.relationshipsList || updatedData.variantsList) {
+          try {
+            // Save relationships and variants to backend
+            if (updatedData.relationshipsList) {
+              for (const relationship of updatedData.relationshipsList) {
+                if (relationship.role && relationship.toBeing && relationship.toAvatar && relationship.toObject) {
+                  await createRelationship(selectedRowForMetadata.id, relationship);
+                }
+              }
+            }
+            
+            if (updatedData.variantsList) {
+              for (const variant of updatedData.variantsList) {
+                if (variant.name) {
+                  await createVariant(selectedRowForMetadata.id, variant.name);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error saving relationships/variants:', error);
+            // Still update local state even if API fails
+          }
+        }
         
         setData(prev => prev.map(item => 
           item.id === selectedRowForMetadata.id 
@@ -405,6 +475,7 @@ function App() {
   };
 
   const handleBulkObjectUpload = (objects: ObjectData[]) => {
+    // Add objects to local state to refresh the UI
     setData(prev => [...prev, ...objects]);
     setIsBulkObjectUploadOpen(false);
   };
