@@ -213,6 +213,7 @@ async def create_object(object_data: ObjectCreateRequest):
             session.run("""
                 CREATE (o:Object {
                     id: $id,
+                    name: $object,
                     driver: $driver,
                     being: $being,
                     avatar: $avatar,
@@ -231,10 +232,10 @@ async def create_object(object_data: ObjectCreateRequest):
             session.run("""
                 MERGE (b:Being {name: $being})
                 MERGE (a:Avatar {name: $avatar})
-                MERGE (o:Object {id: $object_id})
+                MERGE (o:Object {id: $object_id, name: $object_name})
                 MERGE (b)-[:HAS_AVATAR]->(a)
                 MERGE (a)-[:HAS_OBJECT]->(o)
-            """, being=object_data.being, avatar=object_data.avatar, object_id=new_id)
+            """, being=object_data.being, avatar=object_data.avatar, object_id=new_id, object_name=object_data.object)
             
             # Create driver relationships
             # Sector relationships
