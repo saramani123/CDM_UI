@@ -717,6 +717,37 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         """, clarifier=object_clarifier, object_id=new_id)
 
                     print(f"DEBUG: Successfully created object {new_id}")
+                    # Get relationships for the newly created object
+                    relationships_result = session.run("""
+                        MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                        RETURN r.type as type, r.role as role,
+                               other.being as toBeing, other.avatar as toAvatar, other.object as toObject
+                    """, object_id=new_id)
+
+                    relationships = []
+                    for rel_record in relationships_result:
+                        relationships.append({
+                            "id": str(uuid.uuid4()),
+                            "type": rel_record["type"],
+                            "role": rel_record["role"],
+                            "toBeing": rel_record["toBeing"],
+                            "toAvatar": rel_record["toAvatar"],
+                            "toObject": rel_record["toObject"]
+                        })
+
+                    # Get variants for the newly created object
+                    variants_result = session.run("""
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        RETURN v.name as name
+                    """, object_id=new_id)
+
+                    variants = []
+                    for var_record in variants_result:
+                        variants.append({
+                            "id": str(uuid.uuid4()),
+                            "name": var_record["name"]
+                        })
+
                     created_objects.append({
                         "id": new_id,
                         "driver": driver_string,
@@ -724,11 +755,11 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         "avatar": csv_row.Avatar,
                         "object": csv_row.Object,
                         "status": "Active",
-                        "relationships": 0,
-                        "variants": 0,
+                        "relationships": len(relationships),
+                        "variants": len(variants),
                         "variables": 0,
-                        "relationshipsList": [],
-                        "variantsList": []
+                        "relationshipsList": relationships,
+                        "variantsList": variants
                     })
 
                 except Exception as e:
