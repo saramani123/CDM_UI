@@ -716,17 +716,28 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             CREATE (oc)-[:RELEVANT_TO]->(o)
                         """, clarifier=object_clarifier, object_id=new_id)
 
+                    print(f"DEBUG: Successfully created object {new_id}")
                     created_objects.append({
                         "id": new_id,
+                        "driver": driver_string,
                         "being": csv_row.Being,
                         "avatar": csv_row.Avatar,
                         "object": csv_row.Object,
-                        "driver": driver_string
+                        "status": "Active",
+                        "relationships": 0,
+                        "variants": 0,
+                        "variables": 0,
+                        "relationshipsList": [],
+                        "variantsList": []
                     })
 
                 except Exception as e:
                     errors.append(f"Row {row_num}: {str(e)}")
 
+        print(f"DEBUG: CSV upload completed. Created {len(created_objects)} objects.")
+        print(f"DEBUG: Created objects: {created_objects}")
+        print(f"DEBUG: Errors: {errors}")
+        
         return {
             "message": f"CSV upload completed. Created {len(created_objects)} objects.",
             "created_objects": created_objects,
