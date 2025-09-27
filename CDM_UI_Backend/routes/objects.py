@@ -305,10 +305,8 @@ async def create_object(object_data: ObjectCreateRequest):
             
             # Create relationships if provided
             relationships = getattr(object_data, 'relationships', [])
-            print(f"DEBUG: Creating object with {len(relationships)} relationships")
             if relationships:
                 for rel in relationships:
-                    print(f"DEBUG: Processing relationship: {rel}")
                     # Find the target object based on toBeing, toAvatar, toObject
                     target_result = session.run("""
                         MATCH (target:Object)
@@ -323,7 +321,6 @@ async def create_object(object_data: ObjectCreateRequest):
                     
                     if target_result:
                         target_id = target_result["target_id"]
-                        print(f"DEBUG: Found target object {target_id}, creating relationship")
                         session.run("""
                             MATCH (source:Object {id: $source_id})
                             MATCH (target:Object {id: $target_id})
@@ -340,9 +337,6 @@ async def create_object(object_data: ObjectCreateRequest):
                             toBeing=rel.get("toBeing", "ALL"),
                             toAvatar=rel.get("toAvatar", "ALL"),
                             toObject=rel.get("toObject", "ALL"))
-                        print(f"DEBUG: Relationship created successfully")
-                    else:
-                        print(f"DEBUG: No target object found for {rel.get('toBeing')}, {rel.get('toAvatar')}, {rel.get('toObject')}")
             
             # Calculate actual relationship count
             rel_count_result = session.run("""
