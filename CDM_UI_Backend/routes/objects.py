@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 import uuid
 import csv
 import io
+import json
 from db import get_driver
 from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRowData
 
@@ -373,7 +374,12 @@ async def create_object(object_data: ObjectCreateRequest):
         raise HTTPException(status_code=500, detail="Failed to create object")
 
 @router.put("/objects/{object_id}", response_model=Dict[str, Any])
-async def update_object(object_id: str, object_data: Dict[str, Any]):
+async def update_object(
+    object_id: str, 
+    object_data: Optional[Dict[str, Any]] = None,
+    relationships: Optional[str] = Form(None),
+    variants: Optional[str] = Form(None)
+):
     """
     Update an existing object.
     """
@@ -1031,19 +1037,37 @@ async def delete_variant(object_id: str, variant_id: str):
         print(f"Error deleting variant: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete variant: {e}")
 
-# Update Object with Relationships and Variants
-@router.put("/objects/{object_id}", response_model=Dict[str, Any])
-async def update_object_with_relationships_and_variants(
+# Bulk update relationships and variants
+@router.put("/objects/{object_id}/bulk", response_model=Dict[str, Any])
+async def bulk_update_object_relationships_and_variants(
     object_id: str,
-    relationships: Optional[List[Dict[str, Any]]] = Form(None),
-    variants: Optional[List[Dict[str, Any]]] = Form(None)
+    relationships: Optional[str] = Form(None),
+    variants: Optional[str] = Form(None)
 ):
-    """Update an object with its relationships and variants"""
+    """Bulk update an object's relationships and variants"""
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
     
     try:
+        # Parse JSON strings
+        parsed_relationships = []
+        parsed_variants = []
+        
+        if relationships:
+            try:
+                parsed_relationships = json.loads(relationships)
+            except json.JSONDecodeError:
+                print(f"Error parsing relationships JSON: {relationships}")
+                parsed_relationships = []
+        
+        if variants:
+            try:
+                parsed_variants = json.loads(variants)
+            except json.JSONDecodeError:
+                print(f"Error parsing variants JSON: {variants}")
+                parsed_variants = []
+        
         with driver.session() as session:
             # Clear existing relationships and variants
             session.run("""
@@ -1057,8 +1081,8 @@ async def update_object_with_relationships_and_variants(
             """, object_id=object_id)
             
             # Create new relationships
-            if relationships:
-                for rel in relationships:
+            if parsed_relationships:
+                for rel in parsed_relationships:
                     # Find the target object
                     target_result = session.run("""
                         MATCH (target:Object)
@@ -1091,8 +1115,8 @@ async def update_object_with_relationships_and_variants(
                             to_object=rel.get("toObject", "ALL"))
             
             # Create new variants
-            if variants:
-                for var in variants:
+            if parsed_variants:
+                for var in parsed_variants:
                     variant_id = str(uuid.uuid4())
                     session.run("""
                         CREATE (v:Variant {
@@ -1114,7 +1138,7 @@ async def update_object_with_relationships_and_variants(
                     o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
             """, object_id=object_id)
             
-            return {"message": "Object updated successfully"}
+            return {"message": "Object relationships and variants updated successfully"}
     except Exception as e:
         print(f"Error updating object: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update object: {e}")
