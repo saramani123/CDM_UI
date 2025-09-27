@@ -12,13 +12,13 @@ class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     
-    // Prepare headers - only add Content-Type if not explicitly set to empty
+    // Prepare headers - only add Content-Type if not explicitly set
     let headers: HeadersInit = {};
-    if (options.headers && Object.keys(options.headers).length > 0) {
-      // Use provided headers as-is
+    if (options.headers !== undefined) {
+      // Use provided headers as-is (even if empty object)
       headers = options.headers;
     } else {
-      // Use default Content-Type
+      // Use default Content-Type only if no headers provided at all
       headers = {
         'Content-Type': 'application/json',
       };
