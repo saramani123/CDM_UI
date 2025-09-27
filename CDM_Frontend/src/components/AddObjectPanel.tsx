@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
+import { Settings, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
 import { getAvatarOptions, getDriversData, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { useDrivers } from '../hooks/useDrivers';
+import { useObjects } from '../hooks/useObjects';
 
 interface CompositeKey {
   id: string;
@@ -30,12 +32,157 @@ interface AddObjectPanelProps {
   allData?: any[];
 }
 
+interface CollapsibleSectionProps {
+  title: string;
+  sectionKey: string;
+  icon?: React.ReactNode;
+  actions?: React.ReactNode;
+  children: React.ReactNode;
+  isExpanded: boolean;
+  onToggle: (sectionKey: string) => void;
+}
+
+interface MultiSelectProps {
+  label: string;
+  options: string[];
+  values: string[];
+  onChange: (values: string[]) => void;
+}
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ 
+  title, 
+  sectionKey, 
+  icon, 
+  actions, 
+  children, 
+  isExpanded, 
+  onToggle 
+}) => {
+  return (
+    <div className="border-t border-ag-dark-border pt-8">
+      <div 
+        className="flex items-center justify-between cursor-pointer hover:bg-ag-dark-bg rounded p-3 -m-3 transition-colors mb-4"
+        onClick={() => onToggle(sectionKey)}
+      >
+        <div className="flex items-center gap-2">
+          {isExpanded ? (
+            <ChevronDown className="w-4 h-4 text-ag-dark-text-secondary" />
+          ) : (
+            <ChevronRight className="w-4 h-4 text-ag-dark-text-secondary" />
+          )}
+          {icon}
+          <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
+        </div>
+        {isExpanded && actions && (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {actions}
+          </div>
+        )}
+      </div>
+      
+      {isExpanded && (
+        <div className="mt-6 ml-6 pb-6">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen]);
+  
+  const handleToggle = (option: string) => {
+    if (option === 'ALL') {
+      if (values.includes('ALL')) {
+        onChange([]);
+      } else {
+        onChange(['ALL']);
+      }
+    } else {
+      const newValues = values.includes(option)
+        ? values.filter(v => v !== option && v !== 'ALL')
+        : [...values.filter(v => v !== 'ALL'), option];
+      onChange(newValues);
+    }
+    // Keep dropdown open for multiple selections
+  };
+
+  const displayText = values.length === 0 
+    ? `Select ${label}` 
+    : values.includes('ALL') 
+      ? 'ALL' 
+      : values.length === 1 
+        ? values[0] 
+        : `${values.length} selected`;
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+          backgroundPosition: 'right 12px center',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: '16px'
+        }}
+      >
+        {displayText}
+      </button>
+      
+      {isOpen && (
+        <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          {options.map((option) => (
+            <label
+              key={option}
+              className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                type="checkbox"
+                checked={values.includes(option)}
+                onChange={() => handleToggle(option)}
+                className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+              />
+              <span className="text-sm text-ag-dark-text">{option}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   isOpen,
   onClose,
   onAdd,
   allData = []
 }) => {
+  // Use API hooks
+  const { drivers: apiDrivers } = useDrivers();
+  const { getBeings, getAvatars } = useObjects();
+  
   // Basic form data
   const [formData, setFormData] = useState({
     being: '',
@@ -51,7 +198,57 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     objectClarifier: ''
   });
 
-  const driversData = getDriversData();
+  // Use API drivers data with fallback to mock data
+  const driversData = apiDrivers && (apiDrivers.sectors.length > 0 || apiDrivers.domains.length > 0) 
+    ? apiDrivers 
+    : getDriversData();
+  
+  // Taxonomy data from API
+  const [beings, setBeings] = useState<string[]>([]);
+  const [avatars, setAvatars] = useState<string[]>([]);
+  
+  // Load taxonomy data from API
+  useEffect(() => {
+    const loadTaxonomyData = async () => {
+      try {
+        const beingsData = await getBeings();
+        setBeings(beingsData as string[]);
+      } catch (error) {
+        console.error('Failed to load beings:', error);
+        // Fallback to mock data
+        setBeings(['Master', 'Mate', 'Process', 'Adjunct', 'Rule', 'Roster']);
+      }
+    };
+    
+    if (isOpen && beings.length === 0) {
+      loadTaxonomyData();
+    }
+  }, [isOpen, getBeings, beings.length]);
+  
+  // Load avatars when being changes
+  useEffect(() => {
+    const loadAvatars = async () => {
+      if (formData.being) {
+        try {
+        const avatarsData = await getAvatars(formData.being);
+        setAvatars(avatarsData as string[]);
+        } catch (error) {
+          console.error('Failed to load avatars:', error);
+          // Fallback to mock data
+          setAvatars(getAvatarOptions(formData.being, '***, ***, ***, ***'));
+        }
+      } else {
+        setAvatars([]);
+      }
+    };
+    
+    if (formData.being) {
+      loadAvatars();
+    } else {
+      setAvatars([]);
+    }
+  }, [formData.being, getAvatars]);
+  
   // Identifier data
   const [discreteId, setDiscreteId] = useState('Public ID');
   const [compositeKeys, setCompositeKeys] = useState<CompositeKey[]>([
@@ -88,7 +285,8 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     driverSelections.country,
     driverSelections.objectClarifier
   );
-  const avatarOptions = getAvatarOptions(formData.being || '', driverString);
+  // Use API avatars data with fallback to mock data
+  const avatarOptions = avatars.length > 0 ? avatars : getAvatarOptions(formData.being || '', driverString);
 
   // Get distinct values from data for relationships
   const getDistinctBeings = () => {
@@ -297,134 +495,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     onClose();
   };
 
-  // Multi-select component
-  const MultiSelect: React.FC<{
-    label: string;
-    options: string[];
-    values: string[];
-    onChange: (values: string[]) => void;
-  }> = ({ label, options, values, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-
-    // Close dropdown when clicking outside
-    useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-          setIsOpen(false);
-        }
-      };
-
-      if (isOpen) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
-
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }, [isOpen]);
-    
-    const handleToggle = (option: string) => {
-      if (option === 'ALL') {
-        if (values.includes('ALL')) {
-          onChange([]);
-        } else {
-          onChange(['ALL']);
-        }
-      } else {
-        const newValues = values.includes(option)
-          ? values.filter(v => v !== option && v !== 'ALL')
-          : [...values.filter(v => v !== 'ALL'), option];
-        onChange(newValues);
-      }
-      // Keep dropdown open for multiple selections
-    };
-
-    const displayText = values.length === 0 
-      ? `Select ${label}` 
-      : values.includes('ALL') 
-        ? 'ALL' 
-        : values.length === 1 
-          ? values[0] 
-          : `${values.length} selected`;
-
-    return (
-      <div className="relative" ref={dropdownRef}>
-        <button
-          type="button"
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left"
-          style={{
-            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-            backgroundPosition: 'right 12px center',
-            backgroundRepeat: 'no-repeat',
-            backgroundSize: '16px'
-          }}
-        >
-          {displayText}
-        </button>
-        
-        {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {options.map((option) => (
-              <label
-                key={option}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  type="checkbox"
-                  checked={values.includes(option)}
-                  onChange={() => handleToggle(option)}
-                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-                />
-                <span className="text-sm text-ag-dark-text">{option}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
-  const CollapsibleSection: React.FC<{
-    title: string;
-    sectionKey: string;
-    icon?: React.ReactNode;
-    actions?: React.ReactNode;
-    children: React.ReactNode;
-  }> = ({ title, sectionKey, icon, actions, children }) => {
-    const isExpanded = expandedSections[sectionKey];
-    
-    return (
-      <div className="border-t border-ag-dark-border pt-8">
-        <div 
-          className="flex items-center justify-between cursor-pointer hover:bg-ag-dark-bg rounded p-3 -m-3 transition-colors mb-4"
-          onClick={() => toggleSection(sectionKey)}
-        >
-          <div className="flex items-center gap-2">
-            {isExpanded ? (
-              <ChevronDown className="w-4 h-4 text-ag-dark-text-secondary" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-ag-dark-text-secondary" />
-            )}
-            {icon}
-            <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
-          </div>
-          {isExpanded && actions && (
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {actions}
-            </div>
-          )}
-        </div>
-        
-        {isExpanded && (
-          <div className="mt-6 ml-6 pb-6">
-            {children}
-          </div>
-        )}
-      </div>
-    );
-  };
 
   return (
     <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6">
@@ -444,7 +514,13 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
 
       {/* Basic Fields */}
       {/* Drivers Section */}
-      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Drivers" 
+        sectionKey="drivers" 
+        icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}
+        isExpanded={expandedSections.drivers}
+        onToggle={toggleSection}
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -509,7 +585,13 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       </CollapsibleSection>
 
       {/* Ontology Section */}
-      <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Ontology" 
+        sectionKey="ontology" 
+        icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}
+        isExpanded={expandedSections.ontology}
+        onToggle={toggleSection}
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -527,12 +609,11 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
               }}
             >
               <option value="">Select Being</option>
-              <option value="Master">Master</option>
-              <option value="Mate">Mate</option>
-              <option value="Process">Process</option>
-              <option value="Adjunct">Adjunct</option>
-              <option value="Rule">Rule</option>
-              <option value="Roster">Roster</option>
+              {beings.map((being) => (
+                <option key={being} value={being}>
+                  {being}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -577,7 +658,13 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       </CollapsibleSection>
 
       {/* Identifiers Section */}
-      <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Identifiers" 
+        sectionKey="identifiers" 
+        icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />}
+        isExpanded={expandedSections.identifiers}
+        onToggle={toggleSection}
+      >
         <div className="space-y-6">
           {/* Discrete ID */}
           <div>
@@ -603,7 +690,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
           {/* Composite Keys */}
           <div className="space-y-4">
             <h5 className="text-sm font-medium text-ag-dark-text">Composite Keys</h5>
-            {compositeKeys.map((compositeKey, index) => (
+            {compositeKeys.map((compositeKey) => (
               <div key={compositeKey.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-ag-dark-text">
@@ -678,6 +765,8 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         title="Relationships" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+        isExpanded={expandedSections.relationships}
+        onToggle={toggleSection}
         actions={
           <>
             <button
@@ -757,6 +846,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
                         value={relationship.role}
                         onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
                         className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                        style={{ scrollBehavior: 'auto' }}
                       />
                     </div>
                   </div>
@@ -850,6 +940,8 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         title="Variants" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        isExpanded={expandedSections.variants}
+        onToggle={toggleSection}
         actions={
           <>
             <button
@@ -906,6 +998,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
                     value={variant.name}
                     onChange={(e) => handleVariantChange(variant.id, e.target.value)}
                     className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                    style={{ scrollBehavior: 'auto' }}
                   />
                 </div>
               </div>

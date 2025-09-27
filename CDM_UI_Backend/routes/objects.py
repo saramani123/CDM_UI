@@ -22,14 +22,13 @@ async def get_objects():
             # Get all objects with their relationships and variants counts
             result = session.run("""
                 MATCH (o:Object)
-                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                OPTIONAL MATCH (o)-[:RELATES_TO]->(other:Object)
                 OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
-                OPTIONAL MATCH (o)-[:RELATES_TO_VARIABLE]->(var:Variable)
                 RETURN o.id as id, o.driver as driver, o.being as being,
                        o.avatar as avatar, o.object as object, o.status as status,
-                       count(DISTINCT r) as relationships,
+                       count(DISTINCT other) as relationships,
                        count(DISTINCT v) as variants,
-                       count(DISTINCT var) as variables
+                       0 as variables
                 ORDER BY o.id
             """)
 
@@ -52,6 +51,7 @@ async def get_objects():
 
             # Get relationships for each object
             for obj in objects:
+                # Get direct RELATES_TO relationships
                 relationships_result = session.run("""
                     MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
                     RETURN r.type as type, r.role as role,
@@ -68,6 +68,7 @@ async def get_objects():
                         "toAvatar": rel_record["toAvatar"],
                         "toObject": rel_record["toObject"]
                     })
+                
                 obj["relationshipsList"] = relationships
 
                 # Get variants for each object
@@ -112,6 +113,18 @@ async def get_object(object_id: str):
             if not record:
                 raise HTTPException(status_code=404, detail="Object not found")
 
+            # Get relationship count
+            rel_count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
+            """, object_id=object_id).single()
+            
+            # Get variant count
+            var_count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                RETURN count(v) as var_count
+            """, object_id=object_id).single()
+
             obj = {
                 "id": record["id"],
                 "driver": record["driver"],
@@ -119,8 +132,8 @@ async def get_object(object_id: str):
                 "avatar": record["avatar"],
                 "object": record["object"],
                 "status": record["status"],
-                "relationships": 0,
-                "variants": 0,
+                "relationships": rel_count_result["rel_count"] if rel_count_result else 0,
+                "variants": var_count_result["var_count"] if var_count_result else 0,
                 "variables": 0,
                 "relationshipsList": [],
                 "variantsList": []
@@ -143,6 +156,7 @@ async def get_object(object_id: str):
                     "toAvatar": rel_record["toAvatar"],
                     "toObject": rel_record["toObject"]
                 })
+            
             obj["relationshipsList"] = relationships
 
             # Get variants
@@ -291,19 +305,58 @@ async def create_object(object_data: ObjectCreateRequest):
             
             # Create relationships if provided
             relationships = getattr(object_data, 'relationships', [])
+            print(f"DEBUG: Creating object with {len(relationships)} relationships")
             if relationships:
                 for rel in relationships:
-                    session.run("""
-                        MATCH (o1:Object {id: $object_id})
-                        MATCH (o2:Object {being: $toBeing, avatar: $toAvatar, object: $toObject})
-                        CREATE (o1)-[:RELATES_TO {type: $type, role: $role}]->(o2)
-                    """, 
-                    object_id=new_id,
-                    toBeing=rel["toBeing"],
-                    toAvatar=rel["toAvatar"],
-                    toObject=rel["toObject"],
-                    type=rel["type"],
-                    role=rel["role"])
+                    print(f"DEBUG: Processing relationship: {rel}")
+                    # Find the target object based on toBeing, toAvatar, toObject
+                    target_result = session.run("""
+                        MATCH (target:Object)
+                        WHERE (target.being = $toBeing OR $toBeing = "ALL")
+                          AND (target.avatar = $toAvatar OR $toAvatar = "ALL")
+                          AND (target.object = $toObject OR $toObject = "ALL")
+                        RETURN target.id as target_id
+                        LIMIT 1
+                    """, toBeing=rel.get("toBeing", "ALL"), 
+                        toAvatar=rel.get("toAvatar", "ALL"), 
+                        toObject=rel.get("toObject", "ALL")).single()
+                    
+                    if target_result:
+                        target_id = target_result["target_id"]
+                        print(f"DEBUG: Found target object {target_id}, creating relationship")
+                        session.run("""
+                            MATCH (source:Object {id: $source_id})
+                            MATCH (target:Object {id: $target_id})
+                            CREATE (source)-[:RELATES_TO {
+                                type: $type,
+                                role: $role,
+                                toBeing: $toBeing,
+                                toAvatar: $toAvatar,
+                                toObject: $toObject
+                            }]->(target)
+                        """, source_id=new_id, target_id=target_id,
+                            type=rel.get("type", "Inter-Table"),
+                            role=rel.get("role", ""),
+                            toBeing=rel.get("toBeing", "ALL"),
+                            toAvatar=rel.get("toAvatar", "ALL"),
+                            toObject=rel.get("toObject", "ALL"))
+                        print(f"DEBUG: Relationship created successfully")
+                    else:
+                        print(f"DEBUG: No target object found for {rel.get('toBeing')}, {rel.get('toAvatar')}, {rel.get('toObject')}")
+            
+            # Calculate actual relationship count
+            rel_count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
+            """, object_id=new_id).single()
+            
+            rel_count = rel_count_result["rel_count"] if rel_count_result else 0
+            
+            # Update the object's relationship count in the database
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=new_id, rel_count=rel_count)
             
             return {
                 "id": new_id,
@@ -312,7 +365,7 @@ async def create_object(object_data: ObjectCreateRequest):
                 "avatar": object_data.avatar,
                 "object": object_data.object,
                 "status": getattr(object_data, 'status', 'Active'),
-                "relationships": 0,
+                "relationships": rel_count,
                 "variants": len(variants),
                 "variables": 0,
                 "relationshipsList": relationships,
@@ -405,6 +458,69 @@ async def update_object(object_id: str, object_data: Dict[str, Any]):
         print(f"Error updating object in Neo4j: {e}")
         raise HTTPException(status_code=500, detail="Failed to update object")
 
+@router.post("/objects/cleanup-relationships")
+async def cleanup_old_relationships():
+    """Clean up old Relationship nodes and convert them to RELATES_TO edges"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Get all old Relationship nodes and their connections
+            old_relationships = session.run("""
+                MATCH (o:Object)-[:HAS_RELATIONSHIP]->(r:Relationship)
+                RETURN o.id as source_id, r.type as type, r.role as role,
+                       r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject
+            """).data()
+            
+            print(f"Found {len(old_relationships)} old relationship nodes to convert")
+            
+            # Convert each old relationship to a RELATES_TO edge
+            for rel in old_relationships:
+                # Find the target object
+                target_result = session.run("""
+                    MATCH (target:Object)
+                    WHERE (target.being = $toBeing OR $toBeing = "ALL")
+                      AND (target.avatar = $toAvatar OR $toAvatar = "ALL")
+                      AND (target.object = $toObject OR $toObject = "ALL")
+                    RETURN target.id as target_id
+                    LIMIT 1
+                """, toBeing=rel["toBeing"], toAvatar=rel["toAvatar"], toObject=rel["toObject"]).single()
+                
+                if target_result:
+                    # Create the new RELATES_TO relationship
+                    session.run("""
+                        MATCH (source:Object {id: $source_id})
+                        MATCH (target:Object {id: $target_id})
+                        CREATE (source)-[:RELATES_TO {
+                            type: $type,
+                            role: $role,
+                            toBeing: $toBeing,
+                            toAvatar: $toAvatar,
+                            toObject: $toObject
+                        }]->(target)
+                    """, source_id=rel["source_id"], target_id=target_result["target_id"],
+                        type=rel["type"], role=rel["role"],
+                        toBeing=rel["toBeing"], toAvatar=rel["toAvatar"], toObject=rel["toObject"])
+            
+            # Delete all old Relationship nodes
+            session.run("""
+                MATCH (r:Relationship)
+                DETACH DELETE r
+            """)
+            
+            # Update all object relationship counts
+            session.run("""
+                MATCH (o:Object)
+                SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) }
+            """)
+            
+            return {"message": f"Converted {len(old_relationships)} old relationships to RELATES_TO edges"}
+    except Exception as e:
+        print(f"Error cleaning up relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to cleanup relationships: {e}")
+
 @router.delete("/objects/{object_id}")
 async def delete_object(object_id: str):
     """
@@ -425,8 +541,9 @@ async def delete_object(object_id: str):
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
-                OPTIONAL MATCH (o)-[r:HAS_RELATIONSHIP]->(rel:Relationship)
-                DETACH DELETE v, rel, o
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                DELETE r
+                DETACH DELETE v, o
             """, object_id=object_id)
 
             return {"message": f"Object {object_id} deleted successfully"}
@@ -718,38 +835,40 @@ async def create_relationship(
     
     try:
         with driver.session() as session:
-            # Create the relationship
-            relationship_id = str(uuid.uuid4())
+            # Find the target object based on to_being, to_avatar, to_object
+            target_result = session.run("""
+                MATCH (target:Object)
+                WHERE (target.being = $to_being OR $to_being = "ALL")
+                  AND (target.avatar = $to_avatar OR $to_avatar = "ALL")
+                  AND (target.object = $to_object OR $to_object = "ALL")
+                RETURN target.id as target_id
+                LIMIT 1
+            """, to_being=to_being, to_avatar=to_avatar, to_object=to_object).single()
             
-            # Handle "ALL" values in target fields
-            target_being = to_being if to_being != "ALL" else None
-            target_avatar = to_avatar if to_avatar != "ALL" else None
-            target_object = to_object if to_object != "ALL" else None
+            if not target_result:
+                raise HTTPException(status_code=404, detail="Target object not found")
             
-            # Create relationship node
+            target_id = target_result["target_id"]
+            
+            # Create direct RELATES_TO relationship between objects
+            print(f"DEBUG: Creating direct RELATES_TO relationship from {object_id} to {target_id}")
             session.run("""
-                CREATE (r:Relationship {
-                    id: $relationship_id,
+                MATCH (source:Object {id: $source_id})
+                MATCH (target:Object {id: $target_id})
+                CREATE (source)-[:RELATES_TO {
                     type: $relationship_type,
                     role: $role,
                     toBeing: $to_being,
                     toAvatar: $to_avatar,
                     toObject: $to_object
-                })
-            """, relationship_id=relationship_id, relationship_type=relationship_type, 
+                }]->(target)
+            """, source_id=object_id, target_id=target_id, relationship_type=relationship_type,
                 role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
-            
-            # Connect relationship to object
-            session.run("""
-                MATCH (o:Object {id: $object_id})
-                MATCH (r:Relationship {id: $relationship_id})
-                CREATE (o)-[:HAS_RELATIONSHIP]->(r)
-            """, object_id=object_id, relationship_id=relationship_id)
             
             # Update relationship count
             count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
-                RETURN count(r) as rel_count
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
             """, object_id=object_id).single()
             
             rel_count = count_result["rel_count"] if count_result else 0
@@ -760,7 +879,7 @@ async def create_relationship(
             """, object_id=object_id, rel_count=rel_count)
             
             return {
-                "id": relationship_id,
+                "id": str(uuid.uuid4()),  # Generate a new ID for the response
                 "type": relationship_type,
                 "role": role,
                 "toBeing": to_being,
@@ -780,16 +899,17 @@ async def delete_relationship(object_id: str, relationship_id: str):
     
     try:
         with driver.session() as session:
-            # Delete the relationship
+            # Delete the RELATES_TO relationship
             session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship {id: $relationship_id})
-                DETACH DELETE r
+                MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                WHERE r.role = $relationship_id OR r.type = $relationship_id
+                DELETE r
             """, object_id=object_id, relationship_id=relationship_id)
             
             # Update relationship count
             count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
-                RETURN count(r) as rel_count
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
             """, object_id=object_id).single()
             
             rel_count = count_result["rel_count"] if count_result else 0
@@ -902,8 +1022,8 @@ async def update_object_with_relationships_and_variants(
         with driver.session() as session:
             # Clear existing relationships and variants
             session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_RELATIONSHIP]->(r:Relationship)
-                DETACH DELETE r
+                MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                DELETE r
             """, object_id=object_id)
             
             session.run("""
@@ -914,28 +1034,36 @@ async def update_object_with_relationships_and_variants(
             # Create new relationships
             if relationships:
                 for rel in relationships:
-                    relationship_id = str(uuid.uuid4())
-                    session.run("""
-                        CREATE (r:Relationship {
-                            id: $relationship_id,
-                            type: $relationship_type,
-                            role: $role,
-                            toBeing: $to_being,
-                            toAvatar: $to_avatar,
-                            toObject: $to_object
-                        })
-                    """, relationship_id=relationship_id, 
-                        relationship_type=rel.get("type", "Inter-Table"),
-                        role=rel.get("role", ""),
-                        to_being=rel.get("toBeing", "ALL"),
-                        to_avatar=rel.get("toAvatar", "ALL"),
-                        to_object=rel.get("toObject", "ALL"))
+                    # Find the target object
+                    target_result = session.run("""
+                        MATCH (target:Object)
+                        WHERE (target.being = $to_being OR $to_being = "ALL")
+                          AND (target.avatar = $to_avatar OR $to_avatar = "ALL")
+                          AND (target.object = $to_object OR $to_object = "ALL")
+                        RETURN target.id as target_id
+                        LIMIT 1
+                    """, to_being=rel.get("toBeing", "ALL"), 
+                        to_avatar=rel.get("toAvatar", "ALL"), 
+                        to_object=rel.get("toObject", "ALL")).single()
                     
-                    session.run("""
-                        MATCH (o:Object {id: $object_id})
-                        MATCH (r:Relationship {id: $relationship_id})
-                        CREATE (o)-[:HAS_RELATIONSHIP]->(r)
-                    """, object_id=object_id, relationship_id=relationship_id)
+                    if target_result:
+                        target_id = target_result["target_id"]
+                        session.run("""
+                            MATCH (source:Object {id: $source_id})
+                            MATCH (target:Object {id: $target_id})
+                            CREATE (source)-[:RELATES_TO {
+                                type: $relationship_type,
+                                role: $role,
+                                toBeing: $to_being,
+                                toAvatar: $to_avatar,
+                                toObject: $to_object
+                            }]->(target)
+                        """, source_id=object_id, target_id=target_id,
+                            relationship_type=rel.get("type", "Inter-Table"),
+                            role=rel.get("role", ""),
+                            to_being=rel.get("toBeing", "ALL"),
+                            to_avatar=rel.get("toAvatar", "ALL"),
+                            to_object=rel.get("toObject", "ALL"))
             
             # Create new variants
             if variants:
@@ -957,7 +1085,7 @@ async def update_object_with_relationships_and_variants(
             # Update counts
             session.run("""
                 MATCH (o:Object {id: $object_id})
-                SET o.relationships = COUNT { (o)-[:HAS_RELATIONSHIP]->(:Relationship) },
+                SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
                     o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
             """, object_id=object_id)
             

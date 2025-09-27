@@ -377,6 +377,7 @@ class ObjectCreateRequest(BaseModel):
     avatar: str = Field(..., description="Avatar type")
     object: str = Field(..., description="Object name")
     variants: Optional[List[str]] = Field(default=[], description="List of variants")
+    relationships: Optional[List[dict]] = Field(default=[], description="List of relationships")
     status: Optional[str] = Field(default="Active", description="Object status")
 
 class ObjectResponse(BaseModel):

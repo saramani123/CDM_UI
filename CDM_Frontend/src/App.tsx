@@ -401,9 +401,10 @@ function App() {
               objectId: selectedRowForMetadata.id 
             });
             
-            // Save relationships and variants to backend
-            if (updatedData.relationshipsList) {
+            // Save relationships to backend
+            if (updatedData.relationshipsList && updatedData.relationshipsList.length > 0) {
               for (const relationship of updatedData.relationshipsList) {
+                // Only create relationships that have required fields filled
                 if (relationship.role && relationship.toBeing && relationship.toAvatar && relationship.toObject) {
                   console.log('Creating relationship:', relationship);
                   await createRelationship(selectedRowForMetadata.id, relationship);
@@ -411,9 +412,11 @@ function App() {
               }
             }
             
-            if (updatedData.variantsList) {
+            // Save variants to backend
+            if (updatedData.variantsList && updatedData.variantsList.length > 0) {
               for (const variant of updatedData.variantsList) {
-                if (variant.name) {
+                // Only create variants that have names
+                if (variant.name && variant.name.trim()) {
                   console.log('Creating variant:', variant);
                   await createVariant(selectedRowForMetadata.id, variant.name);
                 }
@@ -425,6 +428,7 @@ function App() {
           }
         }
         
+        // Update local state with the new data
         setData(prev => prev.map(item => 
           item.id === selectedRowForMetadata.id 
             ? { ...item, ...gridData }

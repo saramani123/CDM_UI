@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText } from 'lucide-react';
+import { apiService } from '../services/api';
 
 interface BulkObjectUploadModalProps {
   isOpen: boolean;
@@ -29,101 +30,75 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
     ]
   };
 
-  const handleFileUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csv = e.target?.result as string;
-      const lines = csv.split('\n').filter(line => line.trim());
+  const handleFileUpload = async (file: File) => {
+    try {
+      console.log('Uploading CSV file:', file.name, 'Type:', file.type, 'Size:', file.size);
+      const result = await apiService.uploadObjectsCSV(file) as {
+        message: string;
+        created_objects: Array<{
+          id: string;
+          being: string;
+          avatar: string;
+          object: string;
+          driver: string;
+        }>;
+        errors: string[];
+      };
+      console.log('CSV upload result:', result);
       
-      if (lines.length < 2) {
-        alert('CSV must contain at least a header row and one data row');
-        return;
+      if (result.errors && result.errors.length > 0) {
+        alert(`CSV Upload completed with errors:\n\n${result.errors.join('\n')}\n\nCreated ${result.created_objects?.length || 0} objects.`);
+      } else {
+        alert(`CSV upload successful! Created ${result.created_objects?.length || 0} objects.`);
       }
-
-      // Skip header row and parse data rows
-      const dataRows = lines.slice(1);
-      const parsedObjects: any[] = [];
-      const errors: string[] = [];
-
-      dataRows.forEach((line, index) => {
-        const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
-        
-        if (values.length < 7) {
-          errors.push(`Row ${index + 2}: Missing columns (expected 7, got ${values.length})`);
-          return;
-        }
-
-        // Check required fields (all 7 columns are required)
-        const requiredFields = ['Sector', 'Domain', 'Country', 'Object Clarifier', 'Being', 'Avatar', 'Object'];
-        const missingFields: string[] = [];
-        
-        for (let i = 0; i < 7; i++) {
-          if (!values[i] || values[i].trim() === '') {
-            missingFields.push(requiredFields[i]);
-          }
-        }
-
-        if (missingFields.length > 0) {
-          errors.push(`Row ${index + 2}: Missing required fields: ${missingFields.join(', ')}`);
-          return;
-        }
-
-        // Create driver string from the four driver components
-        const sector = values[0].trim();
-        const domain = values[1].trim();
-        const country = values[2].trim();
-        const objectClarifier = values[3].trim();
-        
-        const driverString = `${sector}, ${domain}, ${country}, ${objectClarifier === 'None' ? 'None' : objectClarifier}`;
-
-        const newObject = {
-          id: Date.now().toString() + index,
-          driver: driverString,
-          being: values[4].trim(),
-          avatar: values[5].trim(),
-          object: values[6].trim(),
+      
+      // Call onUpload with the created objects to refresh the UI
+      if (result.created_objects && result.created_objects.length > 0) {
+        // Convert the created objects to the format expected by the UI
+        const uiObjects = result.created_objects.map((obj) => ({
+          id: obj.id,
+          driver: obj.driver,
+          being: obj.being,
+          avatar: obj.avatar,
+          object: obj.object,
           relationships: 0,
           variants: 0,
           variables: 54,
           status: 'Active',
           relationshipsList: [],
           variantsList: [],
-        };
-
-        parsedObjects.push(newObject);
-      });
-
-      if (errors.length > 0) {
-        alert(`CSV Upload Errors:\n\n${errors.join('\n')}\n\nPlease fix these errors and try again.`);
-        return;
+        }));
+        onUpload(uiObjects);
       }
-
-      if (parsedObjects.length > 0) {
-        onUpload(parsedObjects);
-        onClose();
-      } else {
-        alert('No valid objects found in CSV. Please check the format.');
+      
+      onClose();
+    } catch (error) {
+      console.error('CSV upload failed:', error);
+      console.error('Error details:', error);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
       }
-    };
-    reader.readAsText(file);
+      alert(`CSV upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
-      handleFileUpload(file);
+    if (file && (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv'))) {
+      await handleFileUpload(file);
     } else {
       alert('Please select a valid CSV file');
     }
   };
 
-  const handleDrop = (event: React.DragEvent) => {
+  const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
     setIsDragOver(false);
     
     const file = event.dataTransfer.files[0];
-    if (file && file.type === 'text/csv') {
-      handleFileUpload(file);
+    if (file && (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv'))) {
+      await handleFileUpload(file);
     } else {
       alert('Please drop a valid CSV file');
     }

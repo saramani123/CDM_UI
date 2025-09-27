@@ -12,13 +12,24 @@ class ApiService {
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
     
-    const defaultOptions: RequestInit = {
-      headers: {
+    // Prepare headers - only add Content-Type if not explicitly set to empty
+    let headers: HeadersInit = {};
+    if (options.headers && Object.keys(options.headers).length > 0) {
+      // Use provided headers as-is
+      headers = options.headers;
+    } else {
+      // Use default Content-Type
+      headers = {
         'Content-Type': 'application/json',
-      },
+      };
+    }
+
+    const mergedOptions: RequestInit = {
+      ...options,
+      headers,
     };
 
-    const response = await fetch(url, { ...defaultOptions, ...options });
+    const response = await fetch(url, mergedOptions);
     
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
@@ -54,6 +65,101 @@ class ApiService {
     return this.request(`/objects/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  // Relationship API
+  async createRelationship(objectId: string, relationshipData: any) {
+    const formData = new FormData();
+    formData.append('relationship_type', relationshipData.type || 'Inter-Table');
+    formData.append('role', relationshipData.role || '');
+    formData.append('to_being', relationshipData.toBeing || 'ALL');
+    formData.append('to_avatar', relationshipData.toAvatar || 'ALL');
+    formData.append('to_object', relationshipData.toObject || 'ALL');
+    
+    return this.request(`/objects/${objectId}/relationships`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
+  async deleteRelationship(objectId: string, relationshipId: string) {
+    return this.request(`/objects/${objectId}/relationships/${relationshipId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Variant API
+  async createVariant(objectId: string, variantName: string) {
+    const formData = new FormData();
+    formData.append('variant_name', variantName);
+    
+    return this.request(`/objects/${objectId}/variants`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
+  async deleteVariant(objectId: string, variantId: string) {
+    return this.request(`/objects/${objectId}/variants/${variantId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Update object with relationships and variants
+  async updateObjectWithRelationshipsAndVariants(objectId: string, relationships: any[], variants: any[]) {
+    const formData = new FormData();
+    if (relationships && relationships.length > 0) {
+      formData.append('relationships', JSON.stringify(relationships));
+    }
+    if (variants && variants.length > 0) {
+      formData.append('variants', JSON.stringify(variants));
+    }
+    
+    return this.request(`/objects/${objectId}`, {
+      method: 'PUT',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
+  async uploadObjectsCSV(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request('/objects/upload', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
+  // Objects Taxonomy API
+  async getBeings() {
+    return this.request('/objects/taxonomy/beings');
+  }
+
+  async getAvatars(being?: string) {
+    const url = being ? `/objects/taxonomy/avatars?being=${encodeURIComponent(being)}` : '/objects/taxonomy/avatars';
+    return this.request(url);
+  }
+
+  async getObjectsByTaxonomy(being?: string, avatar?: string) {
+    let url = '/objects/taxonomy/objects';
+    const params = new URLSearchParams();
+    if (being) params.append('being', being);
+    if (avatar) params.append('avatar', avatar);
+    if (params.toString()) url += `?${params.toString()}`;
+    return this.request(url);
   }
 
   // Variables API (to be implemented)
