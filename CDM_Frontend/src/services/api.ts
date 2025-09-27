@@ -113,19 +113,14 @@ class ApiService {
 
   // Update object with relationships and variants
   async updateObjectWithRelationshipsAndVariants(objectId: string, relationships: any[], variants: any[]) {
-    const formData = new FormData();
-    if (relationships && relationships.length > 0) {
-      formData.append('relationships', JSON.stringify(relationships));
-    }
-    if (variants && variants.length > 0) {
-      formData.append('variants', JSON.stringify(variants));
-    }
-    
     return this.request(`/objects/${objectId}`, {
       method: 'PUT',
-      body: formData,
+      body: JSON.stringify({
+        relationships: relationships || [],
+        variants: variants || []
+      }),
       headers: {
-        // Don't set Content-Type, let browser set it with boundary for FormData
+        'Content-Type': 'application/json',
       },
     });
   }

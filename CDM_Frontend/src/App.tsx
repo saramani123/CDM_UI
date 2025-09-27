@@ -392,7 +392,7 @@ function App() {
         gridData.object = updatedData.objectName || updatedData.object;
         delete gridData.objectName;
         
-        // Handle relationships and variants
+        // Handle relationships and variants using bulk update
         if (updatedData.relationshipsList || updatedData.variantsList) {
           try {
             console.log('Saving relationships and variants:', { 
@@ -401,27 +401,24 @@ function App() {
               objectId: selectedRowForMetadata.id 
             });
             
-            // Save relationships to backend
-            if (updatedData.relationshipsList && updatedData.relationshipsList.length > 0) {
-              for (const relationship of updatedData.relationshipsList) {
-                // Only create relationships that have required fields filled
-                if (relationship.role && relationship.toBeing && relationship.toAvatar && relationship.toObject) {
-                  console.log('Creating relationship:', relationship);
-                  await createRelationship(selectedRowForMetadata.id, relationship);
-                }
-              }
-            }
+            // Filter out empty relationships and variants
+            const validRelationships = (updatedData.relationshipsList || []).filter(rel => 
+              rel.role && rel.toBeing && rel.toAvatar && rel.toObject
+            );
             
-            // Save variants to backend
-            if (updatedData.variantsList && updatedData.variantsList.length > 0) {
-              for (const variant of updatedData.variantsList) {
-                // Only create variants that have names
-                if (variant.name && variant.name.trim()) {
-                  console.log('Creating variant:', variant);
-                  await createVariant(selectedRowForMetadata.id, variant.name);
-                }
-              }
-            }
+            const validVariants = (updatedData.variantsList || []).filter(variant => 
+              variant.name && variant.name.trim()
+            );
+            
+            console.log('Valid relationships:', validRelationships);
+            console.log('Valid variants:', validVariants);
+            
+            // Use bulk update endpoint that handles both additions and deletions
+            await updateObjectWithRelationshipsAndVariants(
+              selectedRowForMetadata.id, 
+              validRelationships, 
+              validVariants
+            );
           } catch (error) {
             console.error('Error saving relationships/variants:', error);
             // Still update local state even if API fails

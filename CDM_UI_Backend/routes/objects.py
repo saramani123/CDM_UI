@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Body
 from typing import List, Dict, Any, Optional
 import uuid
 import csv
@@ -373,12 +373,19 @@ async def create_object(object_data: ObjectCreateRequest):
         print(f"Error creating object in Neo4j: {e}")
         raise HTTPException(status_code=500, detail="Failed to create object")
 
+@router.put("/objects/{object_id}/test", response_model=Dict[str, Any])
+async def test_update_object(
+    object_id: str, 
+    relationships: Optional[str] = Form(None),
+    variants: Optional[str] = Form(None)
+):
+    """Test endpoint for relationships and variants bulk update"""
+    return {"message": "Test endpoint working", "relationships": relationships, "variants": variants}
+
 @router.put("/objects/{object_id}", response_model=Dict[str, Any])
 async def update_object(
     object_id: str, 
-    object_data: Optional[Dict[str, Any]] = None,
-    relationships: Optional[str] = Form(None),
-    variants: Optional[str] = Form(None)
+    request_data: Optional[Dict[str, Any]] = Body(None)
 ):
     """
     Update an existing object.
@@ -394,63 +401,107 @@ async def update_object(
             if not existing:
                 raise HTTPException(status_code=404, detail="Object not found")
 
-            # Update object properties
-            session.run("""
-                MATCH (o:Object {id: $object_id})
-                SET o.being = $being,
-                    o.avatar = $avatar,
-                    o.object = $object,
-                    o.status = $status
-            """,
-            object_id=object_id,
-            being=object_data["being"],
-            avatar=object_data["avatar"],
-            object=object_data["object"],
-            status=object_data.get("status", "Active"))
-
-            # Update driver relationships (remove old, add new)
-            session.run("""
-                MATCH (o:Object {id: $object_id})<-[r:RELEVANT_TO]-(d)
-                DELETE r
-            """, object_id=object_id)
-
-            # Recreate driver relationships
-            if "sector" in object_data and "ALL" not in object_data["sector"]:
-                for sector in object_data["sector"]:
-                    session.run("""
-                        MATCH (s:Sector {name: $sector})
-                        MATCH (o:Object {id: $object_id})
-                        WITH s, o
-                        CREATE (s)-[:RELEVANT_TO]->(o)
-                    """, sector=sector, object_id=object_id)
-
-            if "domain" in object_data and "ALL" not in object_data["domain"]:
-                for domain in object_data["domain"]:
-                    session.run("""
-                        MATCH (d:Domain {name: $domain})
-                        MATCH (o:Object {id: $object_id})
-                        WITH d, o
-                        CREATE (d)-[:RELEVANT_TO]->(o)
-                    """, domain=domain, object_id=object_id)
-
-            if "country" in object_data and "ALL" not in object_data["country"]:
-                for country in object_data["country"]:
-                    session.run("""
-                        MATCH (c:Country {name: $country})
-                        MATCH (o:Object {id: $object_id})
-                        WITH c, o
-                        CREATE (c)-[:RELEVANT_TO]->(o)
-                    """, country=country, object_id=object_id)
-
-            if "objectClarifier" in object_data and object_data["objectClarifier"] and object_data["objectClarifier"] != "None":
+            # Handle relationships and variants bulk update
+            print(f"DEBUG: request_data={request_data}")
+            has_relationships = request_data and 'relationships' in request_data
+            has_variants = request_data and 'variants' in request_data
+            print(f"DEBUG: has_relationships={has_relationships}, has_variants={has_variants}")
+            if has_relationships or has_variants:
+                # Get from request_data
+                parsed_relationships = request_data.get('relationships', []) if request_data else []
+                parsed_variants = request_data.get('variants', []) if request_data else []
+                
+                # Clear existing relationships and variants
                 session.run("""
-                    MATCH (oc:ObjectClarifier {name: $clarifier})
+                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                    DELETE r
+                """, object_id=object_id)
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                    DETACH DELETE v
+                """, object_id=object_id)
+                
+                # Create new relationships
+                if parsed_relationships:
+                    for rel in parsed_relationships:
+                        # Find the target object
+                        target_result = session.run("""
+                            MATCH (target:Object)
+                            WHERE (target.being = $to_being OR $to_being = "ALL")
+                              AND (target.avatar = $to_avatar OR $to_avatar = "ALL")
+                              AND (target.object = $to_object OR $to_object = "ALL")
+                            RETURN target.id as target_id
+                            LIMIT 1
+                        """, to_being=rel.get("toBeing", "ALL"), 
+                            to_avatar=rel.get("toAvatar", "ALL"), 
+                            to_object=rel.get("toObject", "ALL")).single()
+                        
+                        if target_result:
+                            target_id = target_result["target_id"]
+                            session.run("""
+                                MATCH (source:Object {id: $source_id})
+                                MATCH (target:Object {id: $target_id})
+                                CREATE (source)-[:RELATES_TO {
+                                    type: $relationship_type,
+                                    role: $role,
+                                    toBeing: $to_being,
+                                    toAvatar: $to_avatar,
+                                    toObject: $to_object
+                                }]->(target)
+                            """, source_id=object_id, target_id=target_id,
+                                relationship_type=rel.get("type", "Inter-Table"),
+                                role=rel.get("role", ""),
+                                to_being=rel.get("toBeing", "ALL"),
+                                to_avatar=rel.get("toAvatar", "ALL"),
+                                to_object=rel.get("toObject", "ALL"))
+                
+                # Create new variants
+                if parsed_variants:
+                    for var in parsed_variants:
+                        variant_id = str(uuid.uuid4())
+                        session.run("""
+                            CREATE (v:Variant {
+                                id: $variant_id,
+                                name: $variant_name
+                            })
+                        """, variant_id=variant_id, variant_name=var.get("name", ""))
+                        
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            MATCH (v:Variant {id: $variant_id})
+                            CREATE (o)-[:HAS_VARIANT]->(v)
+                        """, object_id=object_id, variant_id=variant_id)
+                
+                # Update counts
+                session.run("""
                     MATCH (o:Object {id: $object_id})
-                    WITH oc, o
-                    CREATE (oc)-[:RELEVANT_TO]->(o)
-                """, clarifier=object_data["objectClarifier"], object_id=object_id)
-
-            return {"message": f"Object {object_id} updated successfully"}
+                    SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
+                        o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
+                """, object_id=object_id)
+                
+                return {"message": "Object relationships and variants updated successfully"}
+            
+            else:
+                # If no relationships or variants provided, just clear them
+                session.run("""
+                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                    DELETE r
+                """, object_id=object_id)
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                    DETACH DELETE v
+                """, object_id=object_id)
+                
+                # Update counts
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
+                        o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
+                """, object_id=object_id)
+                
+                return {"message": "Object relationships and variants cleared successfully"}
 
     except HTTPException:
         raise
@@ -1037,108 +1088,3 @@ async def delete_variant(object_id: str, variant_id: str):
         print(f"Error deleting variant: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete variant: {e}")
 
-# Bulk update relationships and variants
-@router.put("/objects/{object_id}/bulk", response_model=Dict[str, Any])
-async def bulk_update_object_relationships_and_variants(
-    object_id: str,
-    relationships: Optional[str] = Form(None),
-    variants: Optional[str] = Form(None)
-):
-    """Bulk update an object's relationships and variants"""
-    driver = get_driver()
-    if not driver:
-        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
-    
-    try:
-        # Parse JSON strings
-        parsed_relationships = []
-        parsed_variants = []
-        
-        if relationships:
-            try:
-                parsed_relationships = json.loads(relationships)
-            except json.JSONDecodeError:
-                print(f"Error parsing relationships JSON: {relationships}")
-                parsed_relationships = []
-        
-        if variants:
-            try:
-                parsed_variants = json.loads(variants)
-            except json.JSONDecodeError:
-                print(f"Error parsing variants JSON: {variants}")
-                parsed_variants = []
-        
-        with driver.session() as session:
-            # Clear existing relationships and variants
-            session.run("""
-                MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                DELETE r
-            """, object_id=object_id)
-            
-            session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
-                DETACH DELETE v
-            """, object_id=object_id)
-            
-            # Create new relationships
-            if parsed_relationships:
-                for rel in parsed_relationships:
-                    # Find the target object
-                    target_result = session.run("""
-                        MATCH (target:Object)
-                        WHERE (target.being = $to_being OR $to_being = "ALL")
-                          AND (target.avatar = $to_avatar OR $to_avatar = "ALL")
-                          AND (target.object = $to_object OR $to_object = "ALL")
-                        RETURN target.id as target_id
-                        LIMIT 1
-                    """, to_being=rel.get("toBeing", "ALL"), 
-                        to_avatar=rel.get("toAvatar", "ALL"), 
-                        to_object=rel.get("toObject", "ALL")).single()
-                    
-                    if target_result:
-                        target_id = target_result["target_id"]
-                        session.run("""
-                            MATCH (source:Object {id: $source_id})
-                            MATCH (target:Object {id: $target_id})
-                            CREATE (source)-[:RELATES_TO {
-                                type: $relationship_type,
-                                role: $role,
-                                toBeing: $to_being,
-                                toAvatar: $to_avatar,
-                                toObject: $to_object
-                            }]->(target)
-                        """, source_id=object_id, target_id=target_id,
-                            relationship_type=rel.get("type", "Inter-Table"),
-                            role=rel.get("role", ""),
-                            to_being=rel.get("toBeing", "ALL"),
-                            to_avatar=rel.get("toAvatar", "ALL"),
-                            to_object=rel.get("toObject", "ALL"))
-            
-            # Create new variants
-            if parsed_variants:
-                for var in parsed_variants:
-                    variant_id = str(uuid.uuid4())
-                    session.run("""
-                        CREATE (v:Variant {
-                            id: $variant_id,
-                            name: $variant_name
-                        })
-                    """, variant_id=variant_id, variant_name=var.get("name", ""))
-                    
-                    session.run("""
-                        MATCH (o:Object {id: $object_id})
-                        MATCH (v:Variant {id: $variant_id})
-                        CREATE (o)-[:HAS_VARIANT]->(v)
-                    """, object_id=object_id, variant_id=variant_id)
-            
-            # Update counts
-            session.run("""
-                MATCH (o:Object {id: $object_id})
-                SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
-                    o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
-            """, object_id=object_id)
-            
-            return {"message": "Object relationships and variants updated successfully"}
-    except Exception as e:
-        print(f"Error updating object: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update object: {e}")
