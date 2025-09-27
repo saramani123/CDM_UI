@@ -643,18 +643,6 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         continue
 
                     # Create object
-                    object_data = {
-                        "sector": sector,
-                        "domain": domain,
-                        "country": country,
-                        "objectClarifier": object_clarifier,
-                        "being": csv_row.Being,
-                        "avatar": csv_row.Avatar,
-                        "object": csv_row.Object,
-                        "status": "Active"
-                    }
-
-                    # Use the create_object logic
                     new_id = str(uuid.uuid4())
 
                     # Concatenate driver string
@@ -668,18 +656,19 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     session.run("""
                         CREATE (o:Object {
                             id: $id,
+                            name: $object,
                             driver: $driver,
                             being: $being,
                             avatar: $avatar,
                             object: $object,
                             status: $status
                         })
-                    """,
+                    """, 
                     id=new_id,
+                    object=csv_row.Object,
                     driver=driver_string,
                     being=csv_row.Being,
                     avatar=csv_row.Avatar,
-                    object=csv_row.Object,
                     status="Active")
 
                     # Create taxonomy relationships
