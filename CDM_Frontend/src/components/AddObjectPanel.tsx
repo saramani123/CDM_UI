@@ -453,17 +453,35 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       driverSelections.objectClarifier
     );
 
+    // Remove duplicate relationships based on unique combination of properties
+    const uniqueRelationships = relationships.reduce((acc, rel) => {
+      if (!acc.some(existing => 
+        existing.role === rel.role && 
+        existing.toBeing === rel.toBeing && 
+        existing.toAvatar === rel.toAvatar && 
+        existing.toObject === rel.toObject && 
+        existing.type === rel.type
+      )) {
+        acc.push(rel);
+      }
+      return acc;
+    }, [] as Relationship[]);
+    
+    console.log('DEBUG: Original relationships count:', relationships.length);
+    console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
+    console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
+
     const newObject = {
       id: Date.now().toString(),
       driver: driverString,
       being: formData.being,
       avatar: formData.avatar,
       object: formData.objectName,
-      relationships: relationships.length,
+      relationships: uniqueRelationships.length,
       variants: variants.length,
       variables: 54, // Fixed value as requested
       status: 'Active',
-      relationshipsList: relationships,
+      relationshipsList: uniqueRelationships,
       variantsList: variants,
       identifier: {
         discreteId,

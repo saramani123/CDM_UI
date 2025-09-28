@@ -252,6 +252,24 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       driverSelections.objectClarifier
     ) : '';
     
+    // Remove duplicate relationships based on unique combination of properties
+    const uniqueRelationships = relationships.reduce((acc, rel) => {
+      if (!acc.some(existing => 
+        existing.role === rel.role && 
+        existing.toBeing === rel.toBeing && 
+        existing.toAvatar === rel.toAvatar && 
+        existing.toObject === rel.toObject && 
+        existing.type === rel.type
+      )) {
+        acc.push(rel);
+      }
+      return acc;
+    }, [] as Relationship[]);
+    
+    console.log('DEBUG: Original relationships count:', relationships.length);
+    console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
+    console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
+
     const saveData = {
       ...formData,
       ...(driverString && { driver: driverString }),
@@ -259,7 +277,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         discreteId,
         compositeKeys: compositeKeys.filter(key => key.part || key.group)
       },
-      relationshipsList: relationships,
+      relationshipsList: uniqueRelationships,
       variantsList: variants
     };
     onSave(saveData);

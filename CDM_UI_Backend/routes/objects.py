@@ -4,8 +4,20 @@ import uuid
 import csv
 import io
 import json
+from pydantic import BaseModel
 from db import get_driver
 from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRowData
+
+# Pydantic models for JSON body parameters
+class RelationshipCreateRequest(BaseModel):
+    relationship_type: str
+    role: str
+    to_being: str
+    to_avatar: str
+    to_object: str
+
+class VariantCreateRequest(BaseModel):
+    variant_name: str
 
 router = APIRouter()
 
@@ -440,6 +452,29 @@ async def update_object(
                 parsed_relationships = request_data.get('relationships', []) if request_data else []
                 parsed_variants = request_data.get('variants', []) if request_data else []
                 
+                # First, deduplicate relationships in the request data
+                unique_relationships = []
+                seen_relationships = set()
+                
+                if parsed_relationships:
+                    for rel in parsed_relationships:
+                        # Create a unique key for this relationship
+                        rel_key = (
+                            rel.get("role", ""),
+                            rel.get("toBeing", "ALL"),
+                            rel.get("toAvatar", "ALL"),
+                            rel.get("toObject", "ALL"),
+                            rel.get("type", "Inter-Table")
+                        )
+                        
+                        if rel_key not in seen_relationships:
+                            seen_relationships.add(rel_key)
+                            unique_relationships.append(rel)
+                        else:
+                            print(f"DEBUG: Skipping duplicate relationship: {rel}")
+                
+                print(f"DEBUG: Original relationships: {len(parsed_relationships)}, Unique relationships: {len(unique_relationships)}")
+                
                 # Clear existing relationships and variants
                 session.run("""
                     MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
@@ -452,9 +487,9 @@ async def update_object(
                 """, object_id=object_id)
                 
                 # Create new relationships
-                if parsed_relationships:
-                    print(f"DEBUG: Processing {len(parsed_relationships)} relationships")
-                    for i, rel in enumerate(parsed_relationships):
+                if unique_relationships:
+                    print(f"DEBUG: Processing {len(unique_relationships)} unique relationships")
+                    for i, rel in enumerate(unique_relationships):
                         print(f"DEBUG: Processing relationship {i+1}: {rel}")
                         # Find ALL target objects that match the criteria
                         to_being = rel.get("toBeing", "ALL")
@@ -493,11 +528,12 @@ async def update_object(
                             print(f"  - {result['being']}, {result['avatar']}, {result['object']} (ID: {result['target_id']})")
                         
                         # Create relationships to ALL matching objects
-                        for i, target_result in enumerate(target_results):
+                        for j, target_result in enumerate(target_results):
                             target_id = target_result["target_id"]
+                            
                             # Generate unique relationship ID
                             relationship_id = str(uuid.uuid4())
-                            print(f"DEBUG: Creating relationship {i+1}/{len(target_results)} from {object_id} to {target_id} with ID {relationship_id}")
+                            print(f"DEBUG: Creating relationship {j+1}/{len(target_results)} from {object_id} to {target_id} with ID {relationship_id}")
                             try:
                                 session.run("""
                                     MATCH (source:Object {id: $source_id})
@@ -516,9 +552,9 @@ async def update_object(
                                     to_being=rel.get("toBeing", "ALL"),
                                     to_avatar=rel.get("toAvatar", "ALL"),
                                     to_object=rel.get("toObject", "ALL"))
-                                print(f"DEBUG: Successfully created relationship {i+1}")
+                                print(f"DEBUG: Successfully created relationship {j+1}")
                             except Exception as e:
-                                print(f"DEBUG: Error creating relationship {i+1}: {e}")
+                                print(f"DEBUG: Error creating relationship {j+1}: {e}")
                 
                 # Create new variants
                 if parsed_variants:
@@ -971,21 +1007,17 @@ async def get_objects_by_taxonomy(being: Optional[str] = None, avatar: Optional[
 @router.post("/objects/{object_id}/relationships", response_model=Dict[str, Any])
 async def create_relationship(
     object_id: str,
-    relationship_type: str = Form(...),
-    role: str = Form(...),
-    to_being: str = Form(...),
-    to_avatar: str = Form(...),
-    to_object: str = Form(...)
+    request: RelationshipCreateRequest = Body(...)
 ):
     """Create a new relationship for an object"""
-    # Debug form data
+    # Debug request data
     print(f"DEBUG: create_relationship called with:")
     print(f"  object_id: {object_id}")
-    print(f"  relationship_type: '{relationship_type}' (type: {type(relationship_type)}, len: {len(relationship_type)})")
-    print(f"  role: '{role}' (type: {type(role)}, len: {len(role)})")
-    print(f"  to_being: '{to_being}' (type: {type(to_being)}, len: {len(to_being)})")
-    print(f"  to_avatar: '{to_avatar}' (type: {type(to_avatar)}, len: {len(to_avatar)})")
-    print(f"  to_object: '{to_object}' (type: {type(to_object)}, len: {len(to_object)})")
+    print(f"  relationship_type: '{request.relationship_type}' (type: {type(request.relationship_type)}, len: {len(request.relationship_type)})")
+    print(f"  role: '{request.role}' (type: {type(request.role)}, len: {len(request.role)})")
+    print(f"  to_being: '{request.to_being}' (type: {type(request.to_being)}, len: {len(request.to_being)})")
+    print(f"  to_avatar: '{request.to_avatar}' (type: {type(request.to_avatar)}, len: {len(request.to_avatar)})")
+    print(f"  to_object: '{request.to_object}' (type: {type(request.to_object)}, len: {len(request.to_object)})")
     
     driver = get_driver()
     if not driver:
@@ -997,17 +1029,17 @@ async def create_relationship(
             where_conditions = []
             params = {}
             
-            if to_being != "ALL":
+            if request.to_being != "ALL":
                 where_conditions.append("target.being = $to_being")
-                params["to_being"] = to_being
+                params["to_being"] = request.to_being
             
-            if to_avatar != "ALL":
+            if request.to_avatar != "ALL":
                 where_conditions.append("target.avatar = $to_avatar")
-                params["to_avatar"] = to_avatar
+                params["to_avatar"] = request.to_avatar
             
-            if to_object != "ALL":
+            if request.to_object != "ALL":
                 where_conditions.append("target.object = $to_object")
-                params["to_object"] = to_object
+                params["to_object"] = request.to_object
             
             where_clause = " AND ".join(where_conditions) if where_conditions else "true"
             
@@ -1023,7 +1055,7 @@ async def create_relationship(
                 raise HTTPException(status_code=404, detail="No target objects found matching criteria")
             
             print(f"DEBUG: Found {len(target_results)} matching objects for relationship:")
-            print(f"  toBeing: {to_being}, toAvatar: {to_avatar}, toObject: {to_object}")
+            print(f"  toBeing: {request.to_being}, toAvatar: {request.to_avatar}, toObject: {request.to_object}")
             for result in target_results:
                 print(f"  - {result['being']}, {result['avatar']}, {result['object']} (ID: {result['target_id']})")
             
@@ -1046,8 +1078,8 @@ async def create_relationship(
                             toObject: $to_object
                         }]->(target)
                     """, source_id=object_id, target_id=target_id, relationship_id=relationship_id,
-                        relationship_type=relationship_type, role=role, to_being=to_being, 
-                        to_avatar=to_avatar, to_object=to_object)
+                        relationship_type=request.relationship_type, role=request.role, to_being=request.to_being, 
+                        to_avatar=request.to_avatar, to_object=request.to_object)
                     print(f"DEBUG: Successfully created relationship to {target_result['object']}")
                 except Exception as e:
                     print(f"DEBUG: Error creating relationship to {target_result['object']}: {e}")
@@ -1067,11 +1099,11 @@ async def create_relationship(
             
             return {
                 "id": str(uuid.uuid4()),  # Generate a new ID for the response
-                "type": relationship_type,
-                "role": role,
-                "toBeing": to_being,
-                "toAvatar": to_avatar,
-                "toObject": to_object
+                "type": request.relationship_type,
+                "role": request.role,
+                "toBeing": request.to_being,
+                "toAvatar": request.to_avatar,
+                "toObject": request.to_object
             }
     except Exception as e:
         print(f"Error creating relationship: {e}")
@@ -1113,12 +1145,12 @@ async def delete_relationship(object_id: str, relationship_id: str):
 
 # Variant Management Endpoints
 @router.post("/objects/{object_id}/variants", response_model=Dict[str, Any])
-async def create_variant(object_id: str, variant_name: str = Form(...)):
+async def create_variant(object_id: str, request: VariantCreateRequest = Body(...)):
     """Create a new variant for an object"""
-    # Debug form data
+    # Debug request data
     print(f"DEBUG: create_variant called with:")
     print(f"  object_id: {object_id}")
-    print(f"  variant_name: '{variant_name}' (type: {type(variant_name)}, len: {len(variant_name)})")
+    print(f"  variant_name: '{request.variant_name}' (type: {type(request.variant_name)}, len: {len(request.variant_name)})")
     
     driver = get_driver()
     if not driver:
@@ -1135,7 +1167,7 @@ async def create_variant(object_id: str, variant_name: str = Form(...)):
                     id: $variant_id,
                     name: $variant_name
                 })
-            """, variant_id=variant_id, variant_name=variant_name)
+            """, variant_id=variant_id, variant_name=request.variant_name)
             
             # Connect variant to object
             session.run("""
@@ -1159,7 +1191,7 @@ async def create_variant(object_id: str, variant_name: str = Form(...)):
             
             return {
                 "id": variant_id,
-                "name": variant_name
+                "name": request.variant_name
             }
     except Exception as e:
         print(f"Error creating variant: {e}")

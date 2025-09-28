@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
 import { getAvatarOptions, getDriversData, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -219,7 +219,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     ));
   };
 
-  const handleRelationshipChange = (id: string, field: keyof Relationship, value: string) => {
+  const handleRelationshipChange = useCallback((id: string, field: keyof Relationship, value: string) => {
+    console.log(`DEBUG: handleRelationshipChange called with id=${id}, field=${field}, value="${value}"`);
     setRelationships(prev => prev.map(rel => {
       if (rel.id === id) {
         const updated = { ...rel, [field]: value };
@@ -252,11 +253,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           }
         }
         
+        console.log(`DEBUG: Updated relationship:`, updated);
         return updated;
       }
       return rel;
     }));
-  };
+  }, [selectedObject]);
 
   const addRelationship = () => {
     const newRelationship: Relationship = {
@@ -282,11 +284,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setVariants(prev => [...prev, newVariant]);
   };
 
-  const handleVariantChange = (id: string, name: string) => {
+  const handleVariantChange = useCallback((id: string, name: string) => {
+    console.log(`DEBUG: handleVariantChange called with id=${id}, name="${name}"`);
     setVariants(prev => prev.map(variant => 
       variant.id === id ? { ...variant, name } : variant
     ));
-  };
+  }, []);
 
   const deleteVariant = (id: string) => {
     setVariants(prev => prev.filter(variant => variant.id !== id));
@@ -309,6 +312,24 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       driverSelections.objectClarifier
     );
     
+    // Remove duplicate relationships based on unique combination of properties
+    const uniqueRelationships = relationships.reduce((acc, rel) => {
+      if (!acc.some(existing => 
+        existing.role === rel.role && 
+        existing.toBeing === rel.toBeing && 
+        existing.toAvatar === rel.toAvatar && 
+        existing.toObject === rel.toObject && 
+        existing.type === rel.type
+      )) {
+        acc.push(rel);
+      }
+      return acc;
+    }, [] as Relationship[]);
+    
+    console.log('DEBUG: Original relationships count:', relationships.length);
+    console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
+    console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
+    
     const saveData = {
       ...formData,
       driver: driverString,
@@ -316,11 +337,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         discreteId,
         compositeKeys: compositeKeys.filter(key => key.part || key.group)
       },
-      relationshipsList: relationships,
+      relationshipsList: uniqueRelationships,
       variantsList: variants
     };
     console.log('MetadataPanel saving data:', saveData);
-    console.log('Relationships:', relationships);
+    console.log('Relationships:', uniqueRelationships);
     console.log('Variants:', variants);
     onSave?.(saveData);
   };
@@ -834,7 +855,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         value={relationship.role}
                         onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
                         disabled={!isPanelEnabled}
-                        onClick={(e) => e.stopPropagation()}
                         className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                           !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
@@ -1008,7 +1028,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                     value={variant.name}
                     onChange={(e) => handleVariantChange(variant.id, e.target.value)}
                     disabled={!isPanelEnabled}
-                    onClick={(e) => e.stopPropagation()}
                     className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                       !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                     }`}

@@ -69,18 +69,17 @@ class ApiService {
 
   // Relationship API
   async createRelationship(objectId: string, relationshipData: any) {
-    const formData = new FormData();
-    formData.append('relationship_type', relationshipData.type || 'Inter-Table');
-    formData.append('role', relationshipData.role || '');
-    formData.append('to_being', relationshipData.toBeing || 'ALL');
-    formData.append('to_avatar', relationshipData.toAvatar || 'ALL');
-    formData.append('to_object', relationshipData.toObject || 'ALL');
-    
     return this.request(`/objects/${objectId}/relationships`, {
       method: 'POST',
-      body: formData,
+      body: JSON.stringify({
+        relationship_type: relationshipData.type || 'Inter-Table',
+        role: relationshipData.role || '',
+        to_being: relationshipData.toBeing || 'ALL',
+        to_avatar: relationshipData.toAvatar || 'ALL',
+        to_object: relationshipData.toObject || 'ALL'
+      }),
       headers: {
-        // Don't set Content-Type, let browser set it with boundary for FormData
+        'Content-Type': 'application/json',
       },
     });
   }
@@ -93,14 +92,13 @@ class ApiService {
 
   // Variant API
   async createVariant(objectId: string, variantName: string) {
-    const formData = new FormData();
-    formData.append('variant_name', variantName);
-    
     return this.request(`/objects/${objectId}/variants`, {
       method: 'POST',
-      body: formData,
+      body: JSON.stringify({
+        variant_name: variantName
+      }),
       headers: {
-        // Don't set Content-Type, let browser set it with boundary for FormData
+        'Content-Type': 'application/json',
       },
     });
   }
