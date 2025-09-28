@@ -124,13 +124,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   React.useEffect(() => {
     const newRelationships = selectedObject?.relationshipsList || [];
     setRelationships(prev => {
-      // Only update if the relationships actually changed
+      // Only update if the relationships actually changed and we're not in the middle of editing
       if (JSON.stringify(prev) !== JSON.stringify(newRelationships)) {
         return newRelationships;
       }
       return prev;
     });
-  }, [selectedObject]);
+  }, [selectedObject?.id]); // Only depend on the object ID, not the entire selectedObject
 
   // Initialize variants state
   const [variants, setVariants] = useState<Variant[]>(() => {
@@ -145,13 +145,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   React.useEffect(() => {
     const newVariants = selectedObject?.variantsList || [];
     setVariants(prev => {
-      // Only update if the variants actually changed
+      // Only update if the variants actually changed and we're not in the middle of editing
       if (JSON.stringify(prev) !== JSON.stringify(newVariants)) {
         return newVariants;
       }
       return prev;
     });
-  }, [selectedObject]);
+  }, [selectedObject?.id]); // Only depend on the object ID, not the entire selectedObject
 
   // Get distinct values from data
   const getDistinctBeings = () => {
