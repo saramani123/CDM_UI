@@ -122,7 +122,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // Update relationships when selectedObject changes
   React.useEffect(() => {
-    setRelationships(selectedObject?.relationshipsList || []);
+    const newRelationships = selectedObject?.relationshipsList || [];
+    setRelationships(prev => {
+      // Only update if the relationships actually changed
+      if (JSON.stringify(prev) !== JSON.stringify(newRelationships)) {
+        return newRelationships;
+      }
+      return prev;
+    });
   }, [selectedObject]);
 
   // Initialize variants state
@@ -136,7 +143,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // Update variants when selectedObject changes
   React.useEffect(() => {
-    setVariants(selectedObject?.variantsList || []);
+    const newVariants = selectedObject?.variantsList || [];
+    setVariants(prev => {
+      // Only update if the variants actually changed
+      if (JSON.stringify(prev) !== JSON.stringify(newVariants)) {
+        return newVariants;
+      }
+      return prev;
+    });
   }, [selectedObject]);
 
   // Get distinct values from data
@@ -820,6 +834,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         value={relationship.role}
                         onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
                         disabled={!isPanelEnabled}
+                        onClick={(e) => e.stopPropagation()}
                         className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                           !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                         }`}
@@ -993,6 +1008,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                     value={variant.name}
                     onChange={(e) => handleVariantChange(variant.id, e.target.value)}
                     disabled={!isPanelEnabled}
+                    onClick={(e) => e.stopPropagation()}
                     className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                       !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                     }`}
