@@ -854,6 +854,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         placeholder="Enter role..."
                         value={relationship.role}
                         onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
+                        onClick={(e) => e.stopPropagation()}
                         disabled={!isPanelEnabled}
                         className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                           !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -1027,6 +1028,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                     placeholder="Enter variant name..."
                     value={variant.name}
                     onChange={(e) => handleVariantChange(variant.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
                     disabled={!isPanelEnabled}
                     className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                       !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
