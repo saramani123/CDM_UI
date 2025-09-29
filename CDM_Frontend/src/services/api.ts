@@ -249,6 +249,54 @@ class ApiService {
     return this.request(`/drivers/${type}/relationships?name=${encodeURIComponent(name)}`);
   }
 
+  // Variables API
+  async getVariables() {
+    return this.request('/variables');
+  }
+
+  async createVariable(variableData: any) {
+    return this.request('/variables', {
+      method: 'POST',
+      body: JSON.stringify(variableData),
+    });
+  }
+
+  async updateVariable(id: string, variableData: any) {
+    return this.request(`/variables/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(variableData),
+    });
+  }
+
+  async deleteVariable(id: string) {
+    return this.request(`/variables/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async createVariableObjectRelationship(variableId: string, relationshipData: any) {
+    return this.request(`/variables/${variableId}/object-relationships`, {
+      method: 'POST',
+      body: JSON.stringify(relationshipData),
+    });
+  }
+
+  async deleteVariableObjectRelationship(variableId: string, relationshipId: string) {
+    return this.request(`/variables/${variableId}/object-relationships/${relationshipId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async bulkUploadVariables(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request('/variables/bulk-upload', {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
   // Health check
   async healthCheck() {
     return this.request('/health', { method: 'GET' });

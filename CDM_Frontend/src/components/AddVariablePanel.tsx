@@ -66,27 +66,54 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
 
   // Get distinct values from data for object relationships
   const getDistinctBeings = () => {
-    // Get distinct beings from the objects data passed from App.tsx
+    // Get distinct beings from objects data + ALL option
     const objectsData = (window as any).objectsData || [];
-    return [...new Set(objectsData.map((item: any) => item.being))].filter(Boolean);
+    const beings = [...new Set(objectsData.map((item: any) => item.being))].filter(Boolean);
+    return ['ALL', ...beings];
   };
 
   const getDistinctAvatarsForBeing = (being: string) => {
-    // Get distinct avatars for the selected being from objects data
+    // Get distinct avatars for the selected being from objects data + ALL option
     const objectsData = (window as any).objectsData || [];
-    return [...new Set(objectsData
-      .filter((item: any) => item.being === being)
-      .map((item: any) => item.avatar)
-    )].filter(Boolean);
+    let avatars: string[] = [];
+    
+    if (being === 'ALL') {
+      avatars = [...new Set(objectsData.map((item: any) => item.avatar))].filter(Boolean);
+    } else {
+      avatars = [...new Set(objectsData
+        .filter((item: any) => item.being === being)
+        .map((item: any) => item.avatar)
+      )].filter(Boolean);
+    }
+    
+    return ['ALL', ...avatars];
   };
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
-    // Get distinct objects for the selected being and avatar from objects data
+    // Get distinct objects for the selected being and avatar from objects data + ALL option
     const objectsData = (window as any).objectsData || [];
-    return [...new Set(objectsData
-      .filter((item: any) => item.being === being && item.avatar === avatar)
-      .map((item: any) => item.object)
-    )].filter(Boolean);
+    let objects: string[] = [];
+    
+    if (being === 'ALL' && avatar === 'ALL') {
+      objects = [...new Set(objectsData.map((item: any) => item.object))].filter(Boolean);
+    } else if (being === 'ALL') {
+      objects = [...new Set(objectsData
+        .filter((item: any) => item.avatar === avatar)
+        .map((item: any) => item.object)
+      )].filter(Boolean);
+    } else if (avatar === 'ALL') {
+      objects = [...new Set(objectsData
+        .filter((item: any) => item.being === being)
+        .map((item: any) => item.object)
+      )].filter(Boolean);
+    } else {
+      objects = [...new Set(objectsData
+        .filter((item: any) => item.being === being && item.avatar === avatar)
+        .map((item: any) => item.object)
+      )].filter(Boolean);
+    }
+    
+    return ['ALL', ...objects];
   };
 
   const handleChange = (key: string, value: string) => {

@@ -1,25 +1,29 @@
 // Variables data structure and mock data
 export interface VariableData {
   id: string;
+  // Drivers (concatenated from individual selections)
   driver: string;
+  // Taxonomy
   part: string;
-  section: string;
   group: string;
-  variable: string;
+  section: string; // Property of Variable node
+  variable: string; // Name of the Variable
+  // Variable properties
   formatI: string;
   formatII: string;
   gType: string;
   validation?: string;
   default?: string;
-  graph?: string;
+  graph?: string; // Yes/No; default Yes
+  // Relationships
   objectRelationships: number;
-  // Parsed metadata fields
-  sector?: string;
-  domain?: string;
-  country?: string;
+  objectRelationshipsList?: ObjectRelationship[];
+  // Parsed driver fields for UI
+  sector?: string[];
+  domain?: string[];
+  country?: string[];
   variableClarifier?: string;
   status?: string;
-  objectRelationshipsList?: ObjectRelationship[];
 }
 
 export interface ObjectRelationship {
@@ -220,15 +224,15 @@ export const mockVariableData: VariableData[] = [
 ];
 
 export const variableColumns = [
-  { key: 'driver', title: 'Driver', sortable: true, filterable: true, width: '160px' },
-  { key: 'part', title: 'Part', sortable: true, filterable: true, width: '140px' },
+  { key: 'driver', title: 'Drivers', sortable: true, filterable: true, width: '200px' },
+  { key: 'part', title: 'Part', sortable: true, filterable: true, width: '120px' },
+  { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
-  { key: 'group', title: 'Group', sortable: true, filterable: true, width: '160px' },
-  { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '220px' },
+  { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '200px' },
   { key: 'formatI', title: 'Format I', sortable: true, filterable: true, width: '120px' },
   { key: 'formatII', title: 'Format II', sortable: true, filterable: true, width: '140px' },
   { key: 'gType', title: 'G-Type', sortable: true, filterable: true, width: '120px' },
-  { key: 'objectRelationships', title: 'Object Relationships', sortable: true, filterable: false, width: '200px' }
+  { key: 'objectRelationships', title: 'Relationships', sortable: true, filterable: false, width: '150px' }
 ];
 
 // Dropdown options for variable fields

@@ -19,6 +19,7 @@ import { mockListData, listColumns, listMetadataFields, type ListData } from './
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
+import { useVariables } from './hooks/useVariables';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
@@ -37,12 +38,15 @@ function App() {
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
   
+  // Use API hook for variables data
+  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables } = useVariables();
+  
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkObjectUploadOpen, setIsBulkObjectUploadOpen] = useState(false);
-  const [variableData, setVariableData] = useState(mockVariableData);
+  const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
   const [listData, setListData] = useState(mockListData);
@@ -80,6 +84,20 @@ function App() {
       }
     }
   }, [apiDrivers, driversError, driversLoading]);
+
+  // Sync API variables data with local state
+  React.useEffect(() => {
+    if (!variablesLoading) {
+      if (variablesError) {
+        // Fallback to mock data if API fails
+        console.log('Variables API failed, using mock data:', variablesError);
+        setVariableData(mockVariableData);
+      } else {
+        // Always use API data, even if empty
+        setVariableData(apiVariables);
+      }
+    }
+  }, [apiVariables, variablesError, variablesLoading]);
 
   // Make objects data available globally for variable object relationships
   React.useEffect(() => {

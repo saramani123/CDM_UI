@@ -407,13 +407,70 @@ class CSVRowData(BaseModel):
         allow_population_by_field_name = True
         populate_by_name = True
 
+# Variable Models
+class VariableCreateRequest(BaseModel):
+    """Schema for creating a new variable"""
+    driver: str = Field(..., description="Concatenated driver string")
+    part: str = Field(..., description="Part type")
+    group: str = Field(..., description="Group name")
+    section: str = Field(..., description="Section name")
+    variable: str = Field(..., description="Variable name")
+    formatI: str = Field(..., description="Format I")
+    formatII: str = Field(..., description="Format II")
+    gType: Optional[str] = Field("", description="G-Type")
+    validation: Optional[str] = Field("", description="Validation rules")
+    default: Optional[str] = Field("", description="Default value")
+    graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
+    status: Optional[str] = Field("Active", description="Status")
+
+class VariableResponse(BaseModel):
+    """Schema for variable response"""
+    id: str
+    driver: str
+    part: str
+    group: str
+    section: str
+    variable: str
+    formatI: str
+    formatII: str
+    gType: str
+    validation: str
+    default: str
+    graph: str
+    status: str
+    objectRelationships: int
+    objectRelationshipsList: List[dict] = []
+
+class VariableCSVRowData(BaseModel):
+    """Schema for a single CSV row for variable upload"""
+    Sector: str = Field(..., description="Sector name or 'ALL'")
+    Domain: str = Field(..., description="Domain name or 'ALL'")
+    Country: str = Field(..., description="Country name or 'ALL'")
+    VariableClarifier: Optional[str] = Field(None, alias="Variable Clarifier", description="Variable clarifier or None")
+    Part: str = Field(..., description="Part type")
+    Group: str = Field(..., description="Group name")
+    Section: str = Field(..., description="Section name")
+    Variable: str = Field(..., description="Variable name")
+    FormatI: str = Field(..., alias="Format I", description="Format I")
+    FormatII: str = Field(..., alias="Format II", description="Format II")
+    GType: Optional[str] = Field("", alias="G-Type", description="G-Type")
+    Validation: Optional[str] = Field("", description="Validation rules")
+    Default: Optional[str] = Field("", description="Default value")
+    Graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
+    
+    class Config:
+        allow_population_by_field_name = True
+        populate_by_name = True
+
 class CSVUploadRequest(BaseModel):
     """Schema for CSV upload validation"""
     rows: List[CSVRowData] = Field(..., description="List of CSV rows")
 
 class CSVUploadResponse(BaseModel):
+    success: bool
     message: str
-    created_objects: List[ObjectResponse]
+    created_count: int
+    error_count: int
     errors: List[str] = []
 
 if __name__ == "__main__":
