@@ -2,7 +2,6 @@
 export interface VariableData {
   id: string;
   driver: string;
-  clarifier: string;
   part: string;
   section: string;
   group: string;
@@ -18,7 +17,7 @@ export interface VariableData {
   sector?: string;
   domain?: string;
   country?: string;
-  classifier?: string;
+  variableClarifier?: string;
   status?: string;
   objectRelationshipsList?: ObjectRelationship[];
 }
@@ -33,8 +32,7 @@ export interface ObjectRelationship {
 export const mockVariableData: VariableData[] = [
   {
     id: '1',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'ALL, ALL, ALL, Employment Type',
     part: 'Identifier',
     section: 'CDM',
     group: '[Identifier]',
@@ -47,6 +45,7 @@ export const mockVariableData: VariableData[] = [
     graph: 'Y',
     objectRelationships: 2,
     status: 'Active',
+    variableClarifier: 'Employment Type',
     objectRelationshipsList: [
       {
         id: '1',
@@ -58,8 +57,7 @@ export const mockVariableData: VariableData[] = [
   },
   {
     id: '2',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'ALL, ALL, ALL, Pay Type',
     part: 'Identifier',
     section: 'CDM',
     group: '[Identifier]',
@@ -72,12 +70,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 1,
     status: 'Active',
+    variableClarifier: 'Pay Type',
     objectRelationshipsList: []
   },
   {
     id: '3',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Technology, Human Resources, United States, Employment Type',
     part: 'Identifier',
     section: 'CDM',
     group: '[Identifier]',
@@ -90,12 +88,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 0,
     status: 'Active',
+    variableClarifier: 'Employment Type',
     objectRelationshipsList: []
   },
   {
     id: '4',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Healthcare, Finance & Accounting, Canada, Pay Type',
     part: 'Identifier',
     section: 'CDM',
     group: 'Vulqan ID',
@@ -108,12 +106,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 3,
     status: 'Active',
+    variableClarifier: 'Pay Type',
     objectRelationshipsList: []
   },
   {
     id: '5',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Financial Services, Sales & Marketing, United Kingdom, Hour Type',
     part: 'Identifier',
     section: 'CDM',
     group: 'Vulqan ID',
@@ -126,12 +124,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 1,
     status: 'Active',
+    variableClarifier: 'Hour Type',
     objectRelationshipsList: []
   },
   {
     id: '6',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Manufacturing, Operations, Germany, None',
     part: 'Identifier',
     section: 'CDM',
     group: 'Vulqan ID',
@@ -144,12 +142,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 0,
     status: 'Active',
+    variableClarifier: '',
     objectRelationshipsList: []
   },
   {
     id: '7',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'ALL, ALL, ALL, None',
     part: 'Identifier',
     section: 'CDM',
     group: 'Name',
@@ -162,12 +160,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 2,
     status: 'Active',
+    variableClarifier: '',
     objectRelationshipsList: []
   },
   {
     id: '8',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Technology, Information Technology, United States, Pay Type',
     part: 'Identifier',
     section: 'CDM',
     group: 'Name Individual',
@@ -180,12 +178,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 1,
     status: 'Active',
+    variableClarifier: 'Pay Type',
     objectRelationshipsList: []
   },
   {
     id: '9',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'Insurance, Legal & Compliance, United States, Hour Type',
     part: 'Identifier',
     section: 'CDM',
     group: 'Name Individual',
@@ -198,12 +196,12 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 0,
     status: 'Active',
+    variableClarifier: 'Hour Type',
     objectRelationshipsList: []
   },
   {
     id: '10',
-    driver: '***, ***, ***, ***',
-    clarifier: 'ANY',
+    driver: 'ALL, ALL, ALL, None',
     part: 'Identifier',
     section: 'CDM',
     group: 'Name Individual',
@@ -216,13 +214,13 @@ export const mockVariableData: VariableData[] = [
     graph: '',
     objectRelationships: 1,
     status: 'Active',
+    variableClarifier: '',
     objectRelationshipsList: []
   }
 ];
 
 export const variableColumns = [
   { key: 'driver', title: 'Driver', sortable: true, filterable: true, width: '160px' },
-  { key: 'clarifier', title: 'Clarifier', sortable: true, filterable: true, width: '120px' },
   { key: 'part', title: 'Part', sortable: true, filterable: true, width: '140px' },
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '160px' },
@@ -235,10 +233,7 @@ export const variableColumns = [
 
 // Dropdown options for variable fields
 export const variableFieldOptions = {
-  driver: ['***, ***, ***, ***'],
-  clarifier: ['ANY', 'SPECIFIC', 'CONDITIONAL'],
   part: ['Identifier', 'Attribute', 'Measure', 'Reference'],
-  section: ['CDM', 'Business', 'Technical', 'Operational'],
   group: [
     '[Identifier]', 'Vulqan ID', 'Name', 'Name Individual', 'Name Institution', 
     'Name DBA', 'Name Thing', 'Public ID', 'Address', 'Contact', 'Financial'
@@ -251,21 +246,29 @@ export const variableFieldOptions = {
   graph: ['Y', 'N', 'Conditional']
 };
 
+// Helper function to concatenate variable driver selections
+export const concatenateVariableDrivers = (sector: string[], domain: string[], country: string[], variableClarifier: string) => {
+  const sectorStr = sector.includes('ALL') || sector.length === 0 ? 'ALL' : sector.join(', ');
+  const domainStr = domain.includes('ALL') || domain.length === 0 ? 'ALL' : domain.join(', ');
+  const countryStr = country.includes('ALL') || country.length === 0 ? 'ALL' : country.join(', ');
+  const clarifierStr = variableClarifier || 'None';
+  
+  return `${sectorStr}, ${domainStr}, ${countryStr}, ${clarifierStr}`;
+};
+
+// Helper function to parse variable driver string back to selections
+export const parseVariableDriverString = (driverString: string) => {
+  const parts = driverString.split(', ').map(part => part.trim());
+  
+  return {
+    sector: parts[0] === 'ALL' ? ['ALL'] : parts[0] ? [parts[0]] : [],
+    domain: parts[1] === 'ALL' ? ['ALL'] : parts[1] ? [parts[1]] : [],
+    country: parts[2] === 'ALL' ? ['ALL'] : parts[2] ? [parts[2]] : [],
+    variableClarifier: parts[3] === 'None' ? '' : parts[3] || ''
+  };
+};
+
 export const variableMetadataFields = [
-  { 
-    key: 'driver', 
-    label: 'Driver', 
-    type: 'select' as const, 
-    options: variableFieldOptions.driver,
-    required: true
-  },
-  { 
-    key: 'clarifier', 
-    label: 'Clarifier', 
-    type: 'select' as const, 
-    options: variableFieldOptions.clarifier,
-    required: true
-  },
   { 
     key: 'part', 
     label: 'Part', 
@@ -276,8 +279,7 @@ export const variableMetadataFields = [
   { 
     key: 'section', 
     label: 'Section', 
-    type: 'select' as const, 
-    options: variableFieldOptions.section,
+    type: 'text' as const,
     required: true
   },
   { 

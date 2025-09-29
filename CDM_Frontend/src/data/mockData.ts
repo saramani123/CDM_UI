@@ -244,14 +244,27 @@ export const getAvatarOptions = (being: string, driver: string): string[] => {
 };
 
 // Helper function to get drivers data for dropdowns
-export const getDriversData = () => {
-  // This would normally come from the drivers tab data
-  // For now, we'll use the imported data from driversData
+export const getDriversData = (): { sectors: string[]; domains: string[]; countries: string[]; objectClarifiers: string[]; variableClarifiers: string[] } => {
+  // Get the real drivers data from the global state
+  const driversData = (window as any).driversData;
+  
+  if (driversData && driversData.sectors && driversData.sectors.length > 0) {
+    return {
+      sectors: driversData.sectors,
+      domains: driversData.domains,
+      countries: driversData.countries,
+      objectClarifiers: driversData.objectClarifiers,
+      variableClarifiers: driversData.variableClarifiers
+    };
+  }
+  
+  // Fallback to mock data if real data is not available
   return {
     sectors: ['Technology', 'Healthcare', 'Financial Services', 'Manufacturing', 'Retail', 'Energy', 'Transportation', 'Real Estate', 'Education', 'Government', 'Agriculture', 'Entertainment', 'Telecommunications', 'Construction', 'Hospitality'],
     domains: ['Human Resources', 'Finance & Accounting', 'Sales & Marketing', 'Operations', 'Information Technology', 'Legal & Compliance', 'Research & Development', 'Customer Service', 'Supply Chain', 'Quality Assurance', 'Business Intelligence', 'Risk Management', 'Strategic Planning', 'Project Management', 'Data Management'],
     countries: ['United States', 'Canada', 'United Kingdom', 'Germany', 'France', 'Japan', 'Australia', 'Brazil', 'India', 'China', 'Mexico', 'Italy', 'Spain', 'Netherlands', 'Sweden', 'Norway', 'Denmark', 'Finland', 'Switzerland'],
-    objectClarifiers: ['Employment Type', 'Pay Type', 'Hour Type']
+    objectClarifiers: ['Employment Type', 'Pay Type', 'Hour Type'],
+    variableClarifiers: ['Employment Type', 'Pay Type', 'Hour Type', 'None']
   };
 };
 

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText } from 'lucide-react';
+import { concatenateVariableDrivers } from '../data/variablesData';
+import { useDrivers } from '../hooks/useDrivers';
 
 interface BulkVariableUploadModalProps {
   isOpen: boolean;
@@ -13,24 +15,27 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
   onUpload
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
+  const { drivers: driversData } = useDrivers();
 
   if (!isOpen) return null;
 
   const csvFormat = {
     title: 'Upload Variables',
     columns: [
-      { number: 1, name: 'Driver' },
-      { number: 2, name: 'Clarifier' },
-      { number: 3, name: 'Part' },
-      { number: 4, name: 'Section' },
-      { number: 5, name: 'Group' },
-      { number: 6, name: 'Variable' },
-      { number: 7, name: 'Format I' },
-      { number: 8, name: 'Format II' },
-      { number: 9, name: 'G-Type' },
-      { number: 10, name: 'Validation' },
-      { number: 11, name: 'Default' },
-      { number: 12, name: 'Graph' }
+      { number: 1, name: 'Sector' },
+      { number: 2, name: 'Domain' },
+      { number: 3, name: 'Country' },
+      { number: 4, name: 'Variable Clarifier' },
+      { number: 5, name: 'Part' },
+      { number: 6, name: 'Section' },
+      { number: 7, name: 'Group' },
+      { number: 8, name: 'Variable' },
+      { number: 9, name: 'Format I' },
+      { number: 10, name: 'Format II' },
+      { number: 11, name: 'G-Type' },
+      { number: 12, name: 'Validation' },
+      { number: 13, name: 'Default' },
+      { number: 14, name: 'Graph' }
     ]
   };
 
@@ -53,13 +58,13 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
       dataRows.forEach((line, index) => {
         const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
         
-        if (values.length < 12) {
-          errors.push(`Row ${index + 2}: Missing columns (expected 12, got ${values.length})`);
+        if (values.length < 14) {
+          errors.push(`Row ${index + 2}: Missing columns (expected 14, got ${values.length})`);
           return;
         }
 
-        // Check required fields (columns 1-9: Driver through G-Type)
-        const requiredFields = ['Driver', 'Clarifier', 'Part', 'Section', 'Group', 'Variable', 'Format I', 'Format II'];
+        // Check required fields (columns 1-8: Sector through Variable)
+        const requiredFields = ['Sector', 'Domain', 'Country', 'Variable Clarifier', 'Part', 'Section', 'Group', 'Variable'];
         const missingFields: string[] = [];
         
         for (let i = 0; i < 8; i++) {
@@ -73,20 +78,45 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
           return;
         }
 
+        // Parse driver selections
+        const sector = values[0].trim() === 'ALL' ? ['ALL'] : values[0].trim().split(',').map(s => s.trim());
+        const domain = values[1].trim() === 'ALL' ? ['ALL'] : values[1].trim().split(',').map(d => d.trim());
+        const country = values[2].trim() === 'ALL' ? ['ALL'] : values[2].trim().split(',').map(c => c.trim());
+        const variableClarifier = values[3].trim() || '';
+
+        // Validate driver selections against real drivers data
+        const invalidSectors = sector.filter(s => s !== 'ALL' && !driversData.sectors.includes(s));
+        const invalidDomains = domain.filter(d => d !== 'ALL' && !driversData.domains.includes(d));
+        const invalidCountries = country.filter(c => c !== 'ALL' && !driversData.countries.includes(c));
+        const invalidClarifiers = variableClarifier && variableClarifier !== 'None' && !driversData.variableClarifiers.includes(variableClarifier);
+
+        if (invalidSectors.length > 0 || invalidDomains.length > 0 || invalidCountries.length > 0 || invalidClarifiers) {
+          const invalidFields = [];
+          if (invalidSectors.length > 0) invalidFields.push(`Invalid Sectors: ${invalidSectors.join(', ')}`);
+          if (invalidDomains.length > 0) invalidFields.push(`Invalid Domains: ${invalidDomains.join(', ')}`);
+          if (invalidCountries.length > 0) invalidFields.push(`Invalid Countries: ${invalidCountries.join(', ')}`);
+          if (invalidClarifiers) invalidFields.push(`Invalid Variable Clarifier: ${variableClarifier}`);
+          
+          errors.push(`Row ${index + 2}: ${invalidFields.join('; ')}`);
+          return;
+        }
+
+        // Generate driver string
+        const driverString = concatenateVariableDrivers(sector, domain, country, variableClarifier);
+
         const newVariable = {
           id: Date.now().toString() + index,
-          driver: values[0].trim(),
-          clarifier: values[1].trim(),
-          part: values[2].trim(),
-          section: values[3].trim(),
-          group: values[4].trim(),
-          variable: values[5].trim(),
-          formatI: values[6].trim(),
-          formatII: values[7].trim(),
-          gType: values[8] && values[8].trim() !== '' ? values[8].trim() : '',
-          validation: values[9] && values[9].trim() !== '' ? values[9].trim() : '',
-          default: values[10] && values[10].trim() !== '' ? values[10].trim() : '',
-          graph: values[11] && values[11].trim() !== '' ? values[11].trim() : '',
+          driver: driverString,
+          part: values[4].trim(),
+          section: values[5].trim(),
+          group: values[6].trim(),
+          variable: values[7].trim(),
+          formatI: values[8].trim(),
+          formatII: values[9].trim(),
+          gType: values[10] && values[10].trim() !== '' ? values[10].trim() : '',
+          validation: values[11] && values[11].trim() !== '' ? values[11].trim() : '',
+          default: values[12] && values[12].trim() !== '' ? values[12].trim() : '',
+          graph: values[13] && values[13].trim() !== '' ? values[13].trim() : '',
           objectRelationships: 0,
           status: 'Active',
           objectRelationshipsList: []

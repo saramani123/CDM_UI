@@ -91,6 +91,11 @@ function App() {
   React.useEffect(() => {
     (window as any).variablesData = variableData;
   }, [variableData]);
+
+  // Make drivers data available globally for variable driver selections
+  React.useEffect(() => {
+    (window as any).driversData = driversState;
+  }, [driversState]);
   // Get current metadata fields with values from selected row
   const currentMetadataFields = useMemo(() => {
     if (activeTab === 'lists') {

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
-import { variableFieldOptions } from '../data/variablesData';
+import { variableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
+import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 
 interface VariableMetadataField {
@@ -46,6 +47,21 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     return initial;
   });
 
+  // Driver selections state
+  const [driverSelections, setDriverSelections] = useState(() => {
+    if (selectedVariable?.driver) {
+      return parseVariableDriverString(selectedVariable.driver);
+    }
+    return {
+      sector: [],
+      domain: [],
+      country: [],
+      variableClarifier: ''
+    };
+  });
+
+  const { drivers: driversData } = useDrivers();
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
@@ -61,7 +77,19 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       newFormData[field.key] = field.value !== undefined ? field.value : '';
     });
     setFormData(newFormData);
-  }, [fields]);
+    
+    // Update driver selections when selected variable changes
+    if (selectedVariable?.driver) {
+      setDriverSelections(parseVariableDriverString(selectedVariable.driver));
+    } else {
+      setDriverSelections({
+        sector: [],
+        domain: [],
+        country: [],
+        variableClarifier: ''
+      });
+    }
+  }, [fields, selectedVariable]);
 
   // Initialize object relationships state
   const [objectRelationships, setObjectRelationships] = useState<ObjectRelationship[]>(() => {
@@ -118,6 +146,20 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }));
   };
 
+  const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
+    if (field === 'variableClarifier') {
+      setDriverSelections(prev => ({
+        ...prev,
+        variableClarifier: value as string
+      }));
+    } else {
+      setDriverSelections(prev => ({
+        ...prev,
+        [field]: value as string[]
+      }));
+    }
+  };
+
   const handleObjectRelationshipChange = (id: string, field: keyof ObjectRelationship, value: string) => {
     setObjectRelationships(prev => prev.map(rel => {
       if (rel.id === id) {
@@ -156,11 +198,114 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const handleSave = () => {
+    // Generate driver string from selections
+    const driverString = concatenateVariableDrivers(
+      driverSelections.sector,
+      driverSelections.domain,
+      driverSelections.country,
+      driverSelections.variableClarifier
+    );
+
     const saveData = {
       ...formData,
+      driver: driverString,
       objectRelationshipsList: objectRelationships
     };
     onSave?.(saveData);
+  };
+
+  // Multi-select component
+  const MultiSelect: React.FC<{
+    label: string;
+    options: string[];
+    values: string[];
+    onChange: (values: string[]) => void;
+    disabled?: boolean;
+  }> = ({ label, options, values, onChange, disabled }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+          setIsOpen(false);
+        }
+      };
+
+      if (isOpen) {
+        document.addEventListener('mousedown', handleClickOutside);
+      }
+
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }, [isOpen]);
+    
+    const handleToggle = (option: string) => {
+      if (option === 'ALL') {
+        if (values.includes('ALL')) {
+          onChange([]);
+        } else {
+          onChange(['ALL']);
+        }
+      } else {
+        const newValues = values.includes(option)
+          ? values.filter(v => v !== option && v !== 'ALL')
+          : [...values.filter(v => v !== 'ALL'), option];
+        onChange(newValues);
+      }
+      // Keep dropdown open for multiple selections
+    };
+
+    const displayText = values.length === 0 
+      ? `Select ${label}` 
+      : values.includes('ALL') 
+        ? 'ALL' 
+        : values.length === 1 
+          ? values[0] 
+          : `${values.length} selected`;
+
+    return (
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          disabled={disabled}
+          className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
+            disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+            backgroundPosition: 'right 12px center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: '16px'
+          }}
+        >
+          {displayText}
+        </button>
+        
+        {isOpen && (
+          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            {options.map((option) => (
+              <label
+                key={option}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={values.includes(option)}
+                  onChange={() => handleToggle(option)}
+                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                />
+                <span className="text-sm text-ag-dark-text">{option}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const CollapsibleSection: React.FC<{
@@ -226,11 +371,50 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Driver
+              Sector
+            </label>
+            <MultiSelect
+              label="Sector"
+              options={driversData.sectors}
+              values={driverSelections.sector}
+              onChange={(values) => handleDriverSelectionChange('sector', values)}
+              disabled={!isPanelEnabled}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Domain
+            </label>
+            <MultiSelect
+              label="Domain"
+              options={driversData.domains}
+              values={driverSelections.domain}
+              onChange={(values) => handleDriverSelectionChange('domain', values)}
+              disabled={!isPanelEnabled}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Country
+            </label>
+            <MultiSelect
+              label="Country"
+              options={driversData.countries}
+              values={driverSelections.country}
+              onChange={(values) => handleDriverSelectionChange('country', values)}
+              disabled={!isPanelEnabled}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Variable Clarifier
             </label>
             <select
-              value={formData.driver}
-              onChange={(e) => handleChange('driver', e.target.value)}
+              value={driverSelections.variableClarifier}
+              onChange={(e) => handleDriverSelectionChange('variableClarifier', e.target.value)}
               disabled={!isPanelEnabled}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -242,10 +426,10 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 backgroundSize: '16px'
               }}
             >
-              <option value="">Select Driver</option>
-              {variableFieldOptions.driver.map((option) => (
-                <option key={option} value={option}>
-                  {option}
+              <option value="">None</option>
+              {driversData.variableClarifiers.map((clarifier) => (
+                <option key={clarifier} value={clarifier}>
+                  {clarifier}
                 </option>
               ))}
             </select>
@@ -256,33 +440,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Clarifier
-            </label>
-            <select
-              value={formData.clarifier}
-              onChange={(e) => handleChange('clarifier', e.target.value)}
-              disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Clarifier</option>
-              {variableFieldOptions.clarifier.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Part
@@ -314,27 +471,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Section
             </label>
-            <select
+            <input
+              type="text"
               value={formData.section}
               onChange={(e) => handleChange('section', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter section..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Section</option>
-              {variableFieldOptions.section.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>
