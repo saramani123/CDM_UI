@@ -1,0 +1,10 @@
+Sector,Domain,Country,"Variable Clarifier",Part,Section,Group,Variable,"Format I","Format II","G-Type",Validation,Default,Graph
+ALL,ALL,ALL,None,Identifier,CDM,"Vulqan ID",Caption,Loose,Special,Custom,Specific,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Vulqan ID","Z ID",Loose,Special,Custom,Specific,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,Name,Name,Loose,Text,Free,Length,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","Name Prefix",Tight,List,Static,List,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","First Name",Tight,Text,Free,Length,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","Middle Name",Tight,Text,Free,Length,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","Last Name",Tight,Text,Free,Length,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","Name Suffix",Tight,List,Static,List,,Yes
+ALL,ALL,ALL,None,Identifier,CDM,"Name Individual","Full Name",Tight,Text,Free,Length,,Yes

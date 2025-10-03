@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText } from 'lucide-react';
-import { concatenateVariableDrivers } from '../data/variablesData';
-import { useDrivers } from '../hooks/useDrivers';
 
 interface BulkVariableUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (variables: any[]) => void;
+  onUpload: (file: File) => void;
 }
 
 export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = ({
@@ -15,7 +13,6 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
   onUpload
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
-  const { drivers: driversData } = useDrivers();
 
   if (!isOpen) return null;
 
@@ -40,104 +37,15 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
   };
 
   const handleFileUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const csv = e.target?.result as string;
-      const lines = csv.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
-        alert('CSV must contain at least a header row and one data row');
-        return;
-      }
+    // Validate file type
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      alert('Please select a valid CSV file');
+      return;
+    }
 
-      // Skip header row and parse data rows
-      const dataRows = lines.slice(1);
-      const parsedVariables: any[] = [];
-      const errors: string[] = [];
-
-      dataRows.forEach((line, index) => {
-        const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
-        
-        if (values.length < 14) {
-          errors.push(`Row ${index + 2}: Missing columns (expected 14, got ${values.length})`);
-          return;
-        }
-
-        // Check required fields (columns 1-8: Sector through Variable)
-        const requiredFields = ['Sector', 'Domain', 'Country', 'Variable Clarifier', 'Part', 'Section', 'Group', 'Variable'];
-        const missingFields: string[] = [];
-        
-        for (let i = 0; i < 8; i++) {
-          if (!values[i] || values[i].trim() === '') {
-            missingFields.push(requiredFields[i]);
-          }
-        }
-
-        if (missingFields.length > 0) {
-          errors.push(`Row ${index + 2}: Missing required fields: ${missingFields.join(', ')}`);
-          return;
-        }
-
-        // Parse driver selections
-        const sector = values[0].trim() === 'ALL' ? ['ALL'] : values[0].trim().split(',').map(s => s.trim());
-        const domain = values[1].trim() === 'ALL' ? ['ALL'] : values[1].trim().split(',').map(d => d.trim());
-        const country = values[2].trim() === 'ALL' ? ['ALL'] : values[2].trim().split(',').map(c => c.trim());
-        const variableClarifier = values[3].trim() || '';
-
-        // Validate driver selections against real drivers data
-        const invalidSectors = sector.filter(s => s !== 'ALL' && !driversData.sectors.includes(s));
-        const invalidDomains = domain.filter(d => d !== 'ALL' && !driversData.domains.includes(d));
-        const invalidCountries = country.filter(c => c !== 'ALL' && !driversData.countries.includes(c));
-        const invalidClarifiers = variableClarifier && variableClarifier !== 'None' && !driversData.variableClarifiers.includes(variableClarifier);
-
-        if (invalidSectors.length > 0 || invalidDomains.length > 0 || invalidCountries.length > 0 || invalidClarifiers) {
-          const invalidFields = [];
-          if (invalidSectors.length > 0) invalidFields.push(`Invalid Sectors: ${invalidSectors.join(', ')}`);
-          if (invalidDomains.length > 0) invalidFields.push(`Invalid Domains: ${invalidDomains.join(', ')}`);
-          if (invalidCountries.length > 0) invalidFields.push(`Invalid Countries: ${invalidCountries.join(', ')}`);
-          if (invalidClarifiers) invalidFields.push(`Invalid Variable Clarifier: ${variableClarifier}`);
-          
-          errors.push(`Row ${index + 2}: ${invalidFields.join('; ')}`);
-          return;
-        }
-
-        // Generate driver string
-        const driverString = concatenateVariableDrivers(sector, domain, country, variableClarifier);
-
-        const newVariable = {
-          id: Date.now().toString() + index,
-          driver: driverString,
-          part: values[4].trim(),
-          section: values[5].trim(),
-          group: values[6].trim(),
-          variable: values[7].trim(),
-          formatI: values[8].trim(),
-          formatII: values[9].trim(),
-          gType: values[10] && values[10].trim() !== '' ? values[10].trim() : '',
-          validation: values[11] && values[11].trim() !== '' ? values[11].trim() : '',
-          default: values[12] && values[12].trim() !== '' ? values[12].trim() : '',
-          graph: values[13] && values[13].trim() !== '' ? values[13].trim() : '',
-          objectRelationships: 0,
-          status: 'Active',
-          objectRelationshipsList: []
-        };
-
-        parsedVariables.push(newVariable);
-      });
-
-      if (errors.length > 0) {
-        alert(`CSV Upload Errors:\n\n${errors.join('\n')}\n\nPlease fix these errors and try again.`);
-        return;
-      }
-
-      if (parsedVariables.length > 0) {
-        onUpload(parsedVariables);
-        onClose();
-      } else {
-        alert('No valid variables found in CSV. Please check the format.');
-      }
-    };
-    reader.readAsText(file);
+    // Pass the file directly to the parent component
+    onUpload(file);
+    onClose();
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {

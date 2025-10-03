@@ -110,21 +110,21 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onCha
     };
   }, [isOpen]);
   
-  const handleToggle = (option: string) => {
-    if (option === 'ALL') {
-      if (values.includes('ALL')) {
-        onChange([]);
+    const handleToggle = (option: string) => {
+      if (option === 'ALL') {
+        if (values.includes('ALL')) {
+          onChange([]);
+        } else {
+          onChange(['ALL']);
+        }
       } else {
-        onChange(['ALL']);
+        const newValues = values.includes(option)
+          ? values.filter(v => v !== option && v !== 'ALL')
+          : [...values.filter(v => v !== 'ALL'), option];
+        onChange(newValues);
       }
-    } else {
-      const newValues = values.includes(option)
-        ? values.filter(v => v !== option && v !== 'ALL')
-        : [...values.filter(v => v !== 'ALL'), option];
-      onChange(newValues);
-    }
-    // Keep dropdown open for multiple selections
-  };
+      // Keep dropdown open for multiple selections
+    };
 
   const displayText = values.length === 0 
     ? `Select ${label}` 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
+import { Settings, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
 import { variableFieldOptions, concatenateVariableDrivers } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -21,8 +21,7 @@ interface AddVariablePanelProps {
 export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   isOpen,
   onClose,
-  onAdd,
-  allData = []
+  onAdd
 }) => {
   // Basic form data
   const [formData, setFormData] = useState({
@@ -65,10 +64,10 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   if (!isOpen) return null;
 
   // Get distinct values from data for object relationships
-  const getDistinctBeings = () => {
+  const getDistinctBeings = (): string[] => {
     // Get distinct beings from objects data + ALL option
     const objectsData = (window as any).objectsData || [];
-    const beings = [...new Set(objectsData.map((item: any) => item.being))].filter(Boolean);
+    const beings = [...new Set(objectsData.map((item: any) => item.being))].filter(Boolean) as string[];
     return ['ALL', ...beings];
   };
 
@@ -78,12 +77,12 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     let avatars: string[] = [];
     
     if (being === 'ALL') {
-      avatars = [...new Set(objectsData.map((item: any) => item.avatar))].filter(Boolean);
+      avatars = [...new Set(objectsData.map((item: any) => item.avatar))].filter(Boolean) as string[];
     } else {
       avatars = [...new Set(objectsData
         .filter((item: any) => item.being === being)
         .map((item: any) => item.avatar)
-      )].filter(Boolean);
+      )].filter(Boolean) as string[];
     }
     
     return ['ALL', ...avatars];
@@ -95,22 +94,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     let objects: string[] = [];
     
     if (being === 'ALL' && avatar === 'ALL') {
-      objects = [...new Set(objectsData.map((item: any) => item.object))].filter(Boolean);
+      objects = [...new Set(objectsData.map((item: any) => item.object))].filter(Boolean) as string[];
     } else if (being === 'ALL') {
       objects = [...new Set(objectsData
         .filter((item: any) => item.avatar === avatar)
         .map((item: any) => item.object)
-      )].filter(Boolean);
+      )].filter(Boolean) as string[];
     } else if (avatar === 'ALL') {
       objects = [...new Set(objectsData
         .filter((item: any) => item.being === being)
         .map((item: any) => item.object)
-      )].filter(Boolean);
+      )].filter(Boolean) as string[];
     } else {
       objects = [...new Set(objectsData
         .filter((item: any) => item.being === being && item.avatar === avatar)
         .map((item: any) => item.object)
-      )].filter(Boolean);
+      )].filter(Boolean) as string[];
     }
     
     return ['ALL', ...objects];
@@ -745,7 +744,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                         }}
                       >
                         <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being) => (
+                        {getDistinctBeings().map((being: string) => (
                           <option key={being} value={being}>
                             {being}
                           </option>

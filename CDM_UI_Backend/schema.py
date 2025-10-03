@@ -31,6 +31,9 @@ def create_constraints_and_indexes():
                 "CREATE CONSTRAINT avatar_name_unique IF NOT EXISTS FOR (a:Avatar) REQUIRE a.name IS UNIQUE",
                 "CREATE CONSTRAINT variant_name_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.name IS UNIQUE",
                 "CREATE CONSTRAINT object_name_unique IF NOT EXISTS FOR (o:Object) REQUIRE o.name IS UNIQUE",
+                # Variables taxonomy constraints
+                "CREATE CONSTRAINT part_name_unique IF NOT EXISTS FOR (p:Part) REQUIRE p.name IS UNIQUE",
+                "CREATE CONSTRAINT group_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.name IS UNIQUE",
                 # Relationship and Variant constraints
                 "CREATE CONSTRAINT relationship_id_unique IF NOT EXISTS FOR (r:Relationship) REQUIRE r.id IS UNIQUE",
                 "CREATE CONSTRAINT variant_id_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.id IS UNIQUE"
@@ -62,6 +65,9 @@ def create_constraints_and_indexes():
                 "CREATE INDEX avatar_name_index IF NOT EXISTS FOR (a:Avatar) ON (a.name)",
                 "CREATE INDEX variant_name_index IF NOT EXISTS FOR (v:Variant) ON (v.name)",
                 "CREATE INDEX object_name_index IF NOT EXISTS FOR (o:Object) ON (o.name)",
+                # Variables taxonomy indexes
+                "CREATE INDEX part_name_index IF NOT EXISTS FOR (p:Part) ON (p.name)",
+                "CREATE INDEX group_name_index IF NOT EXISTS FOR (g:Group) ON (g.name)",
                 # Relationship and Variant indexes
                 "CREATE INDEX relationship_type_index IF NOT EXISTS FOR (r:Relationship) ON (r.type)",
                 "CREATE INDEX relationship_role_index IF NOT EXISTS FOR (r:Relationship) ON (r.role)",

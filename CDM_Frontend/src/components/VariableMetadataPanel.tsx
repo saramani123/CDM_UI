@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
-import { variableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
+import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 
@@ -61,6 +61,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   });
 
   const { drivers: driversData } = useDrivers();
+  
+  // Get dynamic field options from existing variables data
+  const dynamicFieldOptions = getVariableFieldOptions(allData);
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -107,23 +110,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // Get distinct values from data for object relationships
   const getDistinctBeings = () => {
     // Get distinct beings from objects data + ALL option
-    const objectsData = (window as any).objectsData || [];
-    const beings = [...new Set(objectsData.map((item: any) => item.being))].filter(Boolean);
+    const objectsData = ((window as any).objectsData || []) as any[];
+    const beings = [...new Set(objectsData.map((item: any) => item.being as string))].filter(Boolean) as string[];
     return ['ALL', ...beings];
   };
 
   const getDistinctAvatarsForBeing = (being: string) => {
     // Get distinct avatars for the selected being from objects data + ALL option
-    const objectsData = (window as any).objectsData || [];
+    const objectsData = ((window as any).objectsData || []) as any[];
     let avatars: string[] = [];
     
     if (being === 'ALL') {
-      avatars = [...new Set(objectsData.map((item: any) => item.avatar))].filter(Boolean);
+      avatars = [...new Set(objectsData.map((item: any) => item.avatar as string))].filter(Boolean) as string[];
     } else {
       avatars = [...new Set(objectsData
         .filter((item: any) => item.being === being)
-        .map((item: any) => item.avatar)
-      )].filter(Boolean);
+        .map((item: any) => item.avatar as string)
+      )].filter(Boolean) as string[];
     }
     
     return ['ALL', ...avatars];
@@ -131,26 +134,26 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
     // Get distinct objects for the selected being and avatar from objects data + ALL option
-    const objectsData = (window as any).objectsData || [];
+    const objectsData = ((window as any).objectsData || []) as any[];
     let objects: string[] = [];
     
     if (being === 'ALL' && avatar === 'ALL') {
-      objects = [...new Set(objectsData.map((item: any) => item.object))].filter(Boolean);
+      objects = [...new Set(objectsData.map((item: any) => item.object as string))].filter(Boolean) as string[];
     } else if (being === 'ALL') {
       objects = [...new Set(objectsData
         .filter((item: any) => item.avatar === avatar)
-        .map((item: any) => item.object)
-      )].filter(Boolean);
+        .map((item: any) => item.object as string)
+      )].filter(Boolean) as string[];
     } else if (avatar === 'ALL') {
       objects = [...new Set(objectsData
         .filter((item: any) => item.being === being)
-        .map((item: any) => item.object)
-      )].filter(Boolean);
+        .map((item: any) => item.object as string)
+      )].filter(Boolean) as string[];
     } else {
       objects = [...new Set(objectsData
         .filter((item: any) => item.being === being && item.avatar === avatar)
-        .map((item: any) => item.object)
-      )].filter(Boolean);
+        .map((item: any) => item.object as string)
+      )].filter(Boolean) as string[];
     }
     
     return ['ALL', ...objects];
@@ -402,7 +405,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             </label>
             <MultiSelect
               label="Sector"
-              options={driversData.sectors}
+              options={['ALL', ...driversData.sectors]}
               values={driverSelections.sector}
               onChange={(values) => handleDriverSelectionChange('sector', values)}
               disabled={!isPanelEnabled}
@@ -415,7 +418,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             </label>
             <MultiSelect
               label="Domain"
-              options={driversData.domains}
+              options={['ALL', ...driversData.domains]}
               values={driverSelections.domain}
               onChange={(values) => handleDriverSelectionChange('domain', values)}
               disabled={!isPanelEnabled}
@@ -428,7 +431,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             </label>
             <MultiSelect
               label="Country"
-              options={driversData.countries}
+              options={['ALL', ...driversData.countries]}
               values={driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
               disabled={!isPanelEnabled}
@@ -486,7 +489,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Part</option>
-              {variableFieldOptions.part.map((option) => (
+              {dynamicFieldOptions.part.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -529,7 +532,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Group</option>
-              {variableFieldOptions.group.map((option) => (
+              {dynamicFieldOptions.group.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -577,7 +580,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format I</option>
-              {variableFieldOptions.formatI.map((option) => (
+              {dynamicFieldOptions.formatI.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -604,7 +607,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format II</option>
-              {variableFieldOptions.formatII.map((option) => (
+              {dynamicFieldOptions.formatII.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -631,7 +634,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select G-Type</option>
-              {variableFieldOptions.gType.map((option) => (
+              {dynamicFieldOptions.gType.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -658,7 +661,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Validation</option>
-              {variableFieldOptions.validation.map((option) => (
+              {dynamicFieldOptions.validation.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -685,7 +688,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Default</option>
-              {variableFieldOptions.default.map((option) => (
+              {dynamicFieldOptions.default.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -712,7 +715,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Graph</option>
-              {variableFieldOptions.graph.map((option) => (
+              {dynamicFieldOptions.graph.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

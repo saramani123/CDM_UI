@@ -94,6 +94,7 @@ function App() {
         setVariableData(mockVariableData);
       } else {
         // Always use API data, even if empty
+        console.log('Using API variables data:', apiVariables);
         setVariableData(apiVariables);
       }
     }
@@ -290,21 +291,63 @@ function App() {
     }
   };
 
-  const handleAddVariable = (newVariableData: VariableData) => {
-    setVariableData(prev => [...prev, newVariableData]);
-    setIsAddVariableOpen(false);
+  const handleAddVariable = async (newVariableData: VariableData) => {
+    try {
+      // Create variable via API
+      const createdVariable = await createVariable({
+        driver: newVariableData.driver,
+        part: newVariableData.part,
+        group: newVariableData.group,
+        section: newVariableData.section,
+        variable: newVariableData.variable,
+        formatI: newVariableData.formatI,
+        formatII: newVariableData.formatII,
+        gType: newVariableData.gType || '',
+        validation: newVariableData.validation || '',
+        default: newVariableData.default || '',
+        graph: newVariableData.graph || 'Y',
+        status: newVariableData.status || 'Active'
+      });
+      
+      // Create object relationships if any
+      if (newVariableData.objectRelationshipsList && newVariableData.objectRelationshipsList.length > 0) {
+        for (const relationship of newVariableData.objectRelationshipsList) {
+          await createObjectRelationship(createdVariable.id, {
+            toBeing: relationship.toBeing,
+            toAvatar: relationship.toAvatar,
+            toObject: relationship.toObject
+          });
+        }
+      }
+      
+      setIsAddVariableOpen(false);
+    } catch (error) {
+      console.error('Error creating variable:', error);
+      alert('Failed to create variable. Please try again.');
+    }
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (confirm(`Are you sure you want to delete ${selectedRows.length} ${activeTab}?`)) {
       const selectedIds = selectedRows.map(row => row.id);
-      if (activeTab === 'lists') {
+      
+      if (activeTab === 'variables') {
+        // Delete variables via API
+        try {
+          for (const id of selectedIds) {
+            await deleteVariable(id);
+          }
+          setVariableData(prev => prev.filter(item => !selectedIds.includes(item.id)));
+        } catch (error) {
+          console.error('Error deleting variables:', error);
+          alert('Failed to delete some variables. Please try again.');
+        }
+      } else if (activeTab === 'lists') {
         setListData(prev => prev.filter(item => !selectedIds.includes(item.id)));
-      } else if (activeTab === 'variables') {
-        setVariableData(prev => prev.filter(item => !selectedIds.includes(item.id)));
       } else {
         setData(prev => prev.filter(item => !selectedIds.includes(item.id)));
       }
+      
       setSelectedRows([]);
       setSelectedRowForMetadata(null);
       setIsBulkDeleteOpen(false);
@@ -410,7 +453,24 @@ function App() {
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
       
-      if (activeTab === 'objects') {
+      if (activeTab === 'variables') {
+        // Handle variables update via API
+        try {
+          await updateVariable(selectedRowForMetadata.id, updatedData);
+          
+          // Update local state
+          setVariableData(prev => prev.map(item => 
+            item.id === selectedRowForMetadata.id 
+              ? { ...item, ...updatedData }
+              : item
+          ));
+          
+          setSelectedRowForMetadata({ ...selectedRowForMetadata, ...gridData });
+        } catch (error) {
+          console.error('Error updating variable:', error);
+          alert('Failed to update variable. Please try again.');
+        }
+      } else if (activeTab === 'objects') {
         // Map objectName back to object field for the grid
         gridData.object = updatedData.objectName || updatedData.object;
         delete gridData.objectName;
@@ -512,9 +572,15 @@ function App() {
     setIsBulkObjectUploadOpen(false);
   };
 
-  const handleBulkVariableUpload = (variables: VariableData[]) => {
-    setVariableData(prev => [...prev, ...variables]);
-    setIsBulkVariableUploadOpen(false);
+  const handleBulkVariableUpload = async (file: File) => {
+    try {
+      const result = await bulkUploadVariables(file);
+      console.log('Bulk upload result:', result);
+      setIsBulkVariableUploadOpen(false);
+    } catch (error) {
+      console.error('Bulk upload failed:', error);
+      alert(`Bulk upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   };
 
   const handleBulkListUpload = (lists: ListData[]) => {

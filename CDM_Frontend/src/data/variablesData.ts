@@ -33,195 +33,7 @@ export interface ObjectRelationship {
   toObject: string;
 }
 
-export const mockVariableData: VariableData[] = [
-  {
-    id: '1',
-    driver: 'ALL, ALL, ALL, Employment Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: '[Identifier]',
-    variable: '[Identifier]',
-    formatI: 'Special',
-    formatII: 'Custom',
-    gType: 'Loose',
-    validation: 'Length',
-    default: '',
-    graph: 'Y',
-    objectRelationships: 2,
-    status: 'Active',
-    variableClarifier: 'Employment Type',
-    objectRelationshipsList: [
-      {
-        id: '1',
-        toBeing: 'Master',
-        toAvatar: 'Company',
-        toObject: 'Company'
-      }
-    ]
-  },
-  {
-    id: '2',
-    driver: 'ALL, ALL, ALL, Pay Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: '[Identifier]',
-    variable: '[Identifier] #',
-    formatI: 'List',
-    formatII: 'Static',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 1,
-    status: 'Active',
-    variableClarifier: 'Pay Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '3',
-    driver: 'Technology, Human Resources, United States, Employment Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: '[Identifier]',
-    variable: '[Identifier] Variable Special',
-    formatI: 'Text',
-    formatII: 'Custom',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 0,
-    status: 'Active',
-    variableClarifier: 'Employment Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '4',
-    driver: 'Healthcare, Finance & Accounting, Canada, Pay Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Vulqan ID',
-    variable: 'DB ID',
-    formatI: 'Special',
-    formatII: 'Custom',
-    gType: 'Loose',
-    validation: 'Length',
-    default: '',
-    graph: '',
-    objectRelationships: 3,
-    status: 'Active',
-    variableClarifier: 'Pay Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '5',
-    driver: 'Financial Services, Sales & Marketing, United Kingdom, Hour Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Vulqan ID',
-    variable: 'Caption',
-    formatI: 'Special',
-    formatII: 'Custom',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 1,
-    status: 'Active',
-    variableClarifier: 'Hour Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '6',
-    driver: 'Manufacturing, Operations, Germany, None',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Vulqan ID',
-    variable: 'Z ID',
-    formatI: 'Special',
-    formatII: 'Custom',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 0,
-    status: 'Active',
-    variableClarifier: '',
-    objectRelationshipsList: []
-  },
-  {
-    id: '7',
-    driver: 'ALL, ALL, ALL, None',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Name',
-    variable: 'Name',
-    formatI: 'Text',
-    formatII: 'Free',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 2,
-    status: 'Active',
-    variableClarifier: '',
-    objectRelationshipsList: []
-  },
-  {
-    id: '8',
-    driver: 'Technology, Information Technology, United States, Pay Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Name Individual',
-    variable: 'Name Prefix',
-    formatI: 'List',
-    formatII: 'Static',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 1,
-    status: 'Active',
-    variableClarifier: 'Pay Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '9',
-    driver: 'Insurance, Legal & Compliance, United States, Hour Type',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Name Individual',
-    variable: 'First Name',
-    formatI: 'Text',
-    formatII: 'Free',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 0,
-    status: 'Active',
-    variableClarifier: 'Hour Type',
-    objectRelationshipsList: []
-  },
-  {
-    id: '10',
-    driver: 'ALL, ALL, ALL, None',
-    part: 'Identifier',
-    section: 'CDM',
-    group: 'Name Individual',
-    variable: 'Middle Name',
-    formatI: 'Text',
-    formatII: 'Free',
-    gType: 'Loose',
-    validation: '',
-    default: '',
-    graph: '',
-    objectRelationships: 1,
-    status: 'Active',
-    variableClarifier: '',
-    objectRelationshipsList: []
-  }
-];
+export const mockVariableData: VariableData[] = [];
 
 export const variableColumns = [
   { key: 'driver', title: 'Drivers', sortable: true, filterable: true, width: '200px' },
@@ -235,7 +47,23 @@ export const variableColumns = [
   { key: 'objectRelationships', title: 'Relationships', sortable: true, filterable: false, width: '150px' }
 ];
 
-// Dropdown options for variable fields
+// Function to get distinct values from existing variables data
+export const getVariableFieldOptions = (allData: VariableData[] = []) => {
+  const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+  
+  return {
+    part: [...new Set(variablesData.map((item: VariableData) => item.part))].filter(Boolean).sort() as string[],
+    group: [...new Set(variablesData.map((item: VariableData) => item.group))].filter(Boolean).sort() as string[],
+    formatI: [...new Set(variablesData.map((item: VariableData) => item.formatI))].filter(Boolean).sort() as string[],
+    formatII: [...new Set(variablesData.map((item: VariableData) => item.formatII))].filter(Boolean).sort() as string[],
+    gType: [...new Set(variablesData.map((item: VariableData) => item.gType))].filter(Boolean).sort() as string[],
+    validation: [...new Set(variablesData.map((item: VariableData) => item.validation))].filter(Boolean).sort() as string[],
+    default: [...new Set(variablesData.map((item: VariableData) => item.default))].filter(Boolean).sort() as string[],
+    graph: [...new Set(variablesData.map((item: VariableData) => item.graph))].filter(Boolean).sort() as string[]
+  };
+};
+
+// Fallback static options (used when no data is available)
 export const variableFieldOptions = {
   part: ['Identifier', 'Attribute', 'Measure', 'Reference'],
   group: [
