@@ -1,4 +1,6 @@
 // Variables data structure and mock data
+import { getDriversData } from './mockData';
+
 export interface VariableData {
   id: string;
   // Drivers (concatenated from individual selections)
@@ -92,10 +94,13 @@ export const concatenateVariableDrivers = (sector: string[], domain: string[], c
 export const parseVariableDriverString = (driverString: string) => {
   const parts = driverString.split(', ').map(part => part.trim());
   
+  // Get all available driver options to determine what "ALL" should include
+  const driversData = getDriversData();
+  
   return {
-    sector: parts[0] === 'ALL' ? ['ALL'] : parts[0] ? [parts[0]] : [],
-    domain: parts[1] === 'ALL' ? ['ALL'] : parts[1] ? [parts[1]] : [],
-    country: parts[2] === 'ALL' ? ['ALL'] : parts[2] ? [parts[2]] : [],
+    sector: parts[0] === 'ALL' ? ['ALL', ...driversData.sectors] : parts[0] ? [parts[0]] : [],
+    domain: parts[1] === 'ALL' ? ['ALL', ...driversData.domains] : parts[1] ? [parts[1]] : [],
+    country: parts[2] === 'ALL' ? ['ALL', ...driversData.countries] : parts[2] ? [parts[2]] : [],
     variableClarifier: parts[3] === 'None' ? '' : parts[3] || ''
   };
 };

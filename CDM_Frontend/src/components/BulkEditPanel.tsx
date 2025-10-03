@@ -316,13 +316,23 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         if (values.includes('ALL')) {
           onChange([]);
         } else {
-          onChange(['ALL']);
+          // When ALL is selected, select ALL individual values too
+          const allIndividualValues = options.filter(opt => opt !== 'ALL');
+          onChange(['ALL', ...allIndividualValues]);
         }
       } else {
         const newValues = values.includes(option)
           ? values.filter(v => v !== option && v !== 'ALL')
           : [...values.filter(v => v !== 'ALL'), option];
-        onChange(newValues);
+        
+        // If all individual values are selected, also select ALL
+        const allIndividualValues = options.filter(opt => opt !== 'ALL');
+        const allSelected = allIndividualValues.every(opt => newValues.includes(opt));
+        if (allSelected && allIndividualValues.length > 0) {
+          onChange(['ALL', ...newValues]);
+        } else {
+          onChange(newValues);
+        }
       }
       // Keep dropdown open for multiple selections
     };
@@ -446,7 +456,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </label>
             <MultiSelect
               label="Sector"
-              options={driversData.sectors}
+              options={['ALL', ...driversData.sectors]}
               values={driverSelections.sector}
               onChange={(values) => handleDriverSelectionChange('sector', values)}
             />
@@ -458,7 +468,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </label>
             <MultiSelect
               label="Domain"
-              options={driversData.domains}
+              options={['ALL', ...driversData.domains]}
               values={driverSelections.domain}
               onChange={(values) => handleDriverSelectionChange('domain', values)}
             />
@@ -470,7 +480,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </label>
             <MultiSelect
               label="Country"
-              options={driversData.countries}
+              options={['ALL', ...driversData.countries]}
               values={driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
             />
@@ -492,7 +502,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               }}
             >
               <option value="">Keep Current Object Clarifier</option>
-              {driversData.objectClarifiers.filter(option => option !== 'None').map((option) => (
+              <option value="">None</option>
+              {driversData.objectClarifiers.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

@@ -266,7 +266,16 @@ async def create_object(object_data: ObjectCreateRequest):
             
             # Create driver relationships
             # Sector relationships
-            if "ALL" not in object_data.sector:
+            if "ALL" in object_data.sector:
+                # Create relationships to ALL existing sectors
+                session.run("""
+                    MATCH (s:Sector)
+                    MATCH (o:Object {id: $object_id})
+                    WITH s, o
+                    CREATE (s)-[:RELEVANT_TO]->(o)
+                """, object_id=new_id)
+            else:
+                # Create relationships to selected sectors only
                 for sector in object_data.sector:
                     session.run("""
                         MATCH (s:Sector {name: $sector})
@@ -276,7 +285,16 @@ async def create_object(object_data: ObjectCreateRequest):
                     """, sector=sector, object_id=new_id)
             
             # Domain relationships
-            if "ALL" not in object_data.domain:
+            if "ALL" in object_data.domain:
+                # Create relationships to ALL existing domains
+                session.run("""
+                    MATCH (d:Domain)
+                    MATCH (o:Object {id: $object_id})
+                    WITH d, o
+                    CREATE (d)-[:RELEVANT_TO]->(o)
+                """, object_id=new_id)
+            else:
+                # Create relationships to selected domains only
                 for domain in object_data.domain:
                     session.run("""
                         MATCH (d:Domain {name: $domain})
@@ -286,7 +304,16 @@ async def create_object(object_data: ObjectCreateRequest):
                     """, domain=domain, object_id=new_id)
             
             # Country relationships
-            if "ALL" not in object_data.country:
+            if "ALL" in object_data.country:
+                # Create relationships to ALL existing countries
+                session.run("""
+                    MATCH (c:Country)
+                    MATCH (o:Object {id: $object_id})
+                    WITH c, o
+                    CREATE (c)-[:RELEVANT_TO]->(o)
+                """, object_id=new_id)
+            else:
+                # Create relationships to selected countries only
                 for country in object_data.country:
                     session.run("""
                         MATCH (c:Country {name: $country})
@@ -440,6 +467,105 @@ async def update_object(
             existing = session.run("MATCH (o:Object {id: $object_id}) RETURN o", object_id=object_id).single()
             if not existing:
                 raise HTTPException(status_code=404, detail="Object not found")
+
+            # Handle driver updates
+            has_driver = request_data and 'driver' in request_data
+            if has_driver:
+                print(f"DEBUG: Processing driver update")
+                driver_string = request_data.get('driver', '')
+                
+                # Update the driver string on the object
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.driver = $driver
+                """, object_id=object_id, driver=driver_string)
+                
+                # Clear existing driver relationships
+                session.run("""
+                    MATCH (o:Object {id: $object_id})<-[r:RELEVANT_TO]-(d)
+                    WHERE d:Sector OR d:Domain OR d:Country OR d:ObjectClarifier
+                    DELETE r
+                """, object_id=object_id)
+                
+                # Parse driver string to recreate relationships
+                parts = driver_string.split(', ')
+                if len(parts) >= 4:
+                    sector_str = parts[0].strip()
+                    domain_str = parts[1].strip()
+                    country_str = parts[2].strip()
+                    clarifier_str = parts[3].strip()
+                    
+                    # Create new driver relationships
+                    # Sector relationships
+                    if sector_str == "ALL":
+                        # Create relationships to ALL existing sectors
+                        session.run("""
+                            MATCH (s:Sector)
+                            MATCH (o:Object {id: $object_id})
+                            WITH s, o
+                            CREATE (s)-[:RELEVANT_TO]->(o)
+                        """, object_id=object_id)
+                    else:
+                        # Create relationships to selected sectors only
+                        sectors = [s.strip() for s in sector_str.split(',')]
+                        for sector in sectors:
+                            session.run("""
+                                MATCH (s:Sector {name: $sector})
+                                MATCH (o:Object {id: $object_id})
+                                WITH s, o
+                                CREATE (s)-[:RELEVANT_TO]->(o)
+                            """, sector=sector, object_id=object_id)
+                    
+                    # Domain relationships
+                    if domain_str == "ALL":
+                        # Create relationships to ALL existing domains
+                        session.run("""
+                            MATCH (d:Domain)
+                            MATCH (o:Object {id: $object_id})
+                            WITH d, o
+                            CREATE (d)-[:RELEVANT_TO]->(o)
+                        """, object_id=object_id)
+                    else:
+                        # Create relationships to selected domains only
+                        domains = [d.strip() for d in domain_str.split(',')]
+                        for domain in domains:
+                            session.run("""
+                                MATCH (d:Domain {name: $domain})
+                                MATCH (o:Object {id: $object_id})
+                                WITH d, o
+                                CREATE (d)-[:RELEVANT_TO]->(o)
+                            """, domain=domain, object_id=object_id)
+                    
+                    # Country relationships
+                    if country_str == "ALL":
+                        # Create relationships to ALL existing countries
+                        session.run("""
+                            MATCH (c:Country)
+                            MATCH (o:Object {id: $object_id})
+                            WITH c, o
+                            CREATE (c)-[:RELEVANT_TO]->(o)
+                        """, object_id=object_id)
+                    else:
+                        # Create relationships to selected countries only
+                        countries = [c.strip() for c in country_str.split(',')]
+                        for country in countries:
+                            session.run("""
+                                MATCH (c:Country {name: $country})
+                                MATCH (o:Object {id: $object_id})
+                                WITH c, o
+                                CREATE (c)-[:RELEVANT_TO]->(o)
+                            """, country=country, object_id=object_id)
+                    
+                    # Object Clarifier relationship
+                    if clarifier_str and clarifier_str != "None":
+                        session.run("""
+                            MATCH (oc:ObjectClarifier {name: $clarifier})
+                            MATCH (o:Object {id: $object_id})
+                            WITH oc, o
+                            CREATE (oc)-[:RELEVANT_TO]->(o)
+                        """, clarifier=clarifier_str, object_id=object_id)
+                
+                return {"message": "Object driver updated successfully"}
 
             # Handle relationships and variants bulk update
             print(f"DEBUG: request_data={request_data}")
