@@ -33,10 +33,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Sector relationships
         if sector_str == "ALL":
-            # Create or connect to the "ALL" sector node
+            # Connect to ALL existing sectors
             session.run("""
-                MERGE (s:Sector {name: "ALL"})
-                WITH s
+                MATCH (s:Sector)
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (s)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
@@ -53,10 +52,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Domain relationships
         if domain_str == "ALL":
-            # Create or connect to the "ALL" domain node
+            # Connect to ALL existing domains
             session.run("""
-                MERGE (d:Domain {name: "ALL"})
-                WITH d
+                MATCH (d:Domain)
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (d)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
@@ -72,10 +70,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Country relationships
         if country_str == "ALL":
-            # Create or connect to the "ALL" country node
+            # Connect to ALL existing countries
             session.run("""
-                MERGE (c:Country {name: "ALL"})
-                WITH c
+                MATCH (c:Country)
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (c)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
@@ -616,6 +613,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                     // Create Variable node with all properties
                     CREATE (v:Variable {
                         id: $id,
+                        driver: $driver,
                         name: $variable,
                         section: $section,
                         formatI: $formatI,

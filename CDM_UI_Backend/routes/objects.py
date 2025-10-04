@@ -267,68 +267,65 @@ async def create_object(object_data: ObjectCreateRequest):
             # Create driver relationships
             # Sector relationships
             if "ALL" in object_data.sector:
-                # Create relationships to ALL existing sectors
+                # Connect to ALL existing sectors
                 session.run("""
                     MATCH (s:Sector)
                     MATCH (o:Object {id: $object_id})
-                    WITH s, o
-                    CREATE (s)-[:RELEVANT_TO]->(o)
+                    MERGE (s)-[:RELEVANT_TO]->(o)
                 """, object_id=new_id)
             else:
                 # Create relationships to selected sectors only
                 for sector in object_data.sector:
                     session.run("""
-                        MATCH (s:Sector {name: $sector})
+                        MERGE (s:Sector {name: $sector})
+                        WITH s
                         MATCH (o:Object {id: $object_id})
-                        WITH s, o
-                        CREATE (s)-[:RELEVANT_TO]->(o)
+                        MERGE (s)-[:RELEVANT_TO]->(o)
                     """, sector=sector, object_id=new_id)
             
             # Domain relationships
             if "ALL" in object_data.domain:
-                # Create relationships to ALL existing domains
+                # Connect to ALL existing domains
                 session.run("""
                     MATCH (d:Domain)
                     MATCH (o:Object {id: $object_id})
-                    WITH d, o
-                    CREATE (d)-[:RELEVANT_TO]->(o)
+                    MERGE (d)-[:RELEVANT_TO]->(o)
                 """, object_id=new_id)
             else:
                 # Create relationships to selected domains only
                 for domain in object_data.domain:
                     session.run("""
-                        MATCH (d:Domain {name: $domain})
+                        MERGE (d:Domain {name: $domain})
+                        WITH d
                         MATCH (o:Object {id: $object_id})
-                        WITH d, o
-                        CREATE (d)-[:RELEVANT_TO]->(o)
+                        MERGE (d)-[:RELEVANT_TO]->(o)
                     """, domain=domain, object_id=new_id)
             
             # Country relationships
             if "ALL" in object_data.country:
-                # Create relationships to ALL existing countries
+                # Connect to ALL existing countries
                 session.run("""
                     MATCH (c:Country)
                     MATCH (o:Object {id: $object_id})
-                    WITH c, o
-                    CREATE (c)-[:RELEVANT_TO]->(o)
+                    MERGE (c)-[:RELEVANT_TO]->(o)
                 """, object_id=new_id)
             else:
                 # Create relationships to selected countries only
                 for country in object_data.country:
                     session.run("""
-                        MATCH (c:Country {name: $country})
+                        MERGE (c:Country {name: $country})
+                        WITH c
                         MATCH (o:Object {id: $object_id})
-                        WITH c, o
-                        CREATE (c)-[:RELEVANT_TO]->(o)
+                        MERGE (c)-[:RELEVANT_TO]->(o)
                     """, country=country, object_id=new_id)
             
             # Object Clarifier relationship
             if objectClarifier and objectClarifier != "None":
                 session.run("""
-                    MATCH (oc:ObjectClarifier {name: $clarifier})
+                    MERGE (oc:ObjectClarifier {name: $clarifier})
+                    WITH oc
                     MATCH (o:Object {id: $object_id})
-                    WITH oc, o
-                    CREATE (oc)-[:RELEVANT_TO]->(o)
+                    MERGE (oc)-[:RELEVANT_TO]->(o)
                 """, clarifier=objectClarifier, object_id=new_id)
             
             # Create variants if provided
@@ -498,71 +495,71 @@ async def update_object(
                     # Create new driver relationships
                     # Sector relationships
                     if sector_str == "ALL":
-                        # Create relationships to ALL existing sectors
+                        # Create or connect to the "ALL" sector node
                         session.run("""
-                            MATCH (s:Sector)
+                            MERGE (s:Sector {name: "ALL"})
+                            WITH s
                             MATCH (o:Object {id: $object_id})
-                            WITH s, o
-                            CREATE (s)-[:RELEVANT_TO]->(o)
+                            MERGE (s)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
                     else:
                         # Create relationships to selected sectors only
                         sectors = [s.strip() for s in sector_str.split(',')]
                         for sector in sectors:
                             session.run("""
-                                MATCH (s:Sector {name: $sector})
+                                MERGE (s:Sector {name: $sector})
+                                WITH s
                                 MATCH (o:Object {id: $object_id})
-                                WITH s, o
-                                CREATE (s)-[:RELEVANT_TO]->(o)
+                                MERGE (s)-[:RELEVANT_TO]->(o)
                             """, sector=sector, object_id=object_id)
                     
                     # Domain relationships
                     if domain_str == "ALL":
-                        # Create relationships to ALL existing domains
+                        # Create or connect to the "ALL" domain node
                         session.run("""
-                            MATCH (d:Domain)
+                            MERGE (d:Domain {name: "ALL"})
+                            WITH d
                             MATCH (o:Object {id: $object_id})
-                            WITH d, o
-                            CREATE (d)-[:RELEVANT_TO]->(o)
+                            MERGE (d)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
                     else:
                         # Create relationships to selected domains only
                         domains = [d.strip() for d in domain_str.split(',')]
                         for domain in domains:
                             session.run("""
-                                MATCH (d:Domain {name: $domain})
+                                MERGE (d:Domain {name: $domain})
+                                WITH d
                                 MATCH (o:Object {id: $object_id})
-                                WITH d, o
-                                CREATE (d)-[:RELEVANT_TO]->(o)
+                                MERGE (d)-[:RELEVANT_TO]->(o)
                             """, domain=domain, object_id=object_id)
                     
                     # Country relationships
                     if country_str == "ALL":
-                        # Create relationships to ALL existing countries
+                        # Create or connect to the "ALL" country node
                         session.run("""
-                            MATCH (c:Country)
+                            MERGE (c:Country {name: "ALL"})
+                            WITH c
                             MATCH (o:Object {id: $object_id})
-                            WITH c, o
-                            CREATE (c)-[:RELEVANT_TO]->(o)
+                            MERGE (c)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
                     else:
                         # Create relationships to selected countries only
                         countries = [c.strip() for c in country_str.split(',')]
                         for country in countries:
                             session.run("""
-                                MATCH (c:Country {name: $country})
+                                MERGE (c:Country {name: $country})
+                                WITH c
                                 MATCH (o:Object {id: $object_id})
-                                WITH c, o
-                                CREATE (c)-[:RELEVANT_TO]->(o)
+                                MERGE (c)-[:RELEVANT_TO]->(o)
                             """, country=country, object_id=object_id)
                     
                     # Object Clarifier relationship
                     if clarifier_str and clarifier_str != "None":
                         session.run("""
-                            MATCH (oc:ObjectClarifier {name: $clarifier})
+                            MERGE (oc:ObjectClarifier {name: $clarifier})
+                            WITH oc
                             MATCH (o:Object {id: $object_id})
-                            WITH oc, o
-                            CREATE (oc)-[:RELEVANT_TO]->(o)
+                            MERGE (oc)-[:RELEVANT_TO]->(o)
                         """, clarifier=clarifier_str, object_id=object_id)
                 
                 return {"message": "Object driver updated successfully"}
@@ -967,39 +964,61 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     """, being=csv_row.Being, avatar=csv_row.Avatar, object_id=new_id)
 
                     # Create driver relationships
-                    if "ALL" not in sector:
+                    # Sector relationships
+                    if "ALL" in sector:
+                        session.run("""
+                            MATCH (s:Sector)
+                            MATCH (o:Object {id: $object_id})
+                            MERGE (s)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
                         for sector_name in sector:
                             session.run("""
-                                MATCH (s:Sector {name: $sector})
+                                MERGE (s:Sector {name: $sector})
+                                WITH s
                                 MATCH (o:Object {id: $object_id})
-                                WITH s, o
-                                CREATE (s)-[:RELEVANT_TO]->(o)
+                                MERGE (s)-[:RELEVANT_TO]->(o)
                             """, sector=sector_name, object_id=new_id)
 
-                    if "ALL" not in domain:
+                    # Domain relationships
+                    if "ALL" in domain:
+                        session.run("""
+                            MATCH (d:Domain)
+                            MATCH (o:Object {id: $object_id})
+                            MERGE (d)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
                         for domain_name in domain:
                             session.run("""
-                                MATCH (d:Domain {name: $domain})
+                                MERGE (d:Domain {name: $domain})
+                                WITH d
                                 MATCH (o:Object {id: $object_id})
-                                WITH d, o
-                                CREATE (d)-[:RELEVANT_TO]->(o)
+                                MERGE (d)-[:RELEVANT_TO]->(o)
                             """, domain=domain_name, object_id=new_id)
 
-                    if "ALL" not in country:
+                    # Country relationships
+                    if "ALL" in country:
+                        session.run("""
+                            MATCH (c:Country)
+                            MATCH (o:Object {id: $object_id})
+                            MERGE (c)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
                         for country_name in country:
                             session.run("""
-                                MATCH (c:Country {name: $country})
+                                MERGE (c:Country {name: $country})
+                                WITH c
                                 MATCH (o:Object {id: $object_id})
-                                WITH c, o
-                                CREATE (c)-[:RELEVANT_TO]->(o)
+                                MERGE (c)-[:RELEVANT_TO]->(o)
                             """, country=country_name, object_id=new_id)
 
+                    # Object Clarifier relationship
                     if object_clarifier and object_clarifier != "None":
                         session.run("""
-                            MATCH (oc:ObjectClarifier {name: $clarifier})
+                            MERGE (oc:ObjectClarifier {name: $clarifier})
+                            WITH oc
                             MATCH (o:Object {id: $object_id})
-                            WITH oc, o
-                            CREATE (oc)-[:RELEVANT_TO]->(o)
+                            MERGE (oc)-[:RELEVANT_TO]->(o)
                         """, clarifier=object_clarifier, object_id=new_id)
 
                     print(f"DEBUG: Successfully created object {new_id}")
