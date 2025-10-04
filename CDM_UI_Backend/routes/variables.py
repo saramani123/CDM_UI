@@ -33,9 +33,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Sector relationships
         if sector_str == "ALL":
-            # Connect to all existing distinct sectors
+            # Create or connect to the "ALL" sector node
             session.run("""
-                MATCH (s:Sector)
+                MERGE (s:Sector {name: "ALL"})
                 WITH s
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (s)-[:RELEVANT_TO]->(v)
@@ -53,9 +53,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Domain relationships
         if domain_str == "ALL":
-            # Connect to all existing distinct domains
+            # Create or connect to the "ALL" domain node
             session.run("""
-                MATCH (d:Domain)
+                MERGE (d:Domain {name: "ALL"})
                 WITH d
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (d)-[:RELEVANT_TO]->(v)
@@ -72,9 +72,9 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Country relationships
         if country_str == "ALL":
-            # Connect to all existing distinct countries
+            # Create or connect to the "ALL" country node
             session.run("""
-                MATCH (c:Country)
+                MERGE (c:Country {name: "ALL"})
                 WITH c
                 MATCH (v:Variable {id: $variable_id})
                 MERGE (c)-[:RELEVANT_TO]->(v)
@@ -163,7 +163,7 @@ async def get_variables():
                     "gType": record["gType"],
                     "validation": record["validation"] or "",
                     "default": record["default"] or "",
-                    "graph": record["graph"] or "Y",
+                    "graph": record["graph"] or "Yes",
                     "status": record["status"] or "Active",
                     "objectRelationships": record["objectRelationships"],
                     "objectRelationshipsList": []
@@ -234,7 +234,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 "gType": variable_data.gType,
                 "validation": variable_data.validation or "",
                 "default": variable_data.default or "",
-                "graph": variable_data.graph or "Y",
+                "graph": variable_data.graph or "Yes",
                 "status": variable_data.status or "Active"
             })
 
@@ -337,7 +337,7 @@ async def update_variable(variable_id: str, variable_data: VariableCreateRequest
                 "gType": variable_data.gType,
                 "validation": variable_data.validation or "",
                 "default": variable_data.default or "",
-                "graph": variable_data.graph or "Y",
+                "graph": variable_data.graph or "Yes",
                 "status": variable_data.status or "Active"
             })
 
@@ -587,7 +587,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 "gType": row.get('G-Type', '').strip() or '',
                 "validation": row.get('Validation', '').strip() or '',
                 "default": row.get('Default', '').strip() or '',
-                "graph": row.get('Graph', 'Y').strip() or 'Y',
+                "graph": row.get('Graph', 'Yes').strip() or 'Yes',
                 "status": "Active"
             }
             
