@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronUp, ChevronDown, Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
+import { Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 
 interface Column {
@@ -31,7 +31,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
 }) => {
   const [sortConfig, setSortConfig] = useState<{
     key: string; 
-    type: 'asc' | 'desc' | 'custom' | 'none';
+    type: 'custom' | 'none';
     customOrder?: string[];
   } | null>(null);
   const [filters, setFilters] = useState<Record<string, string>>({});
@@ -58,10 +58,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }));
   };
 
-  const handleColumnSort = (columnKey: string, type: 'asc' | 'desc' | 'custom' | 'none') => {
+  const handleColumnSort = (columnKey: string, type: 'custom' | 'none') => {
     if (type === 'none') {
       setSortConfig(null);
     } else {
+      // For custom sort, don't overwrite the sortConfig - it should already be set by handleCustomSort
+      if (type === 'custom') {
+        console.log('🎯 HANDLE COLUMN SORT - CUSTOM:', { columnKey, currentSortConfig: sortConfig });
+        // Don't modify the sortConfig for custom sort - it's already set by handleCustomSort
+        return;
+      }
       setSortConfig({
         key: columnKey,
         type,
@@ -71,11 +77,26 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleCustomSort = (columnKey: string, customOrder: string[]) => {
-    setSortConfig({
-      key: columnKey,
-      type: 'custom',
-      customOrder
+    console.log('📊 DATAGRID RECEIVED:', {
+      columnKey,
+      customOrder,
+      customOrderLength: customOrder.length,
+      previousSortConfig: sortConfig
     });
+    
+    const newSortConfig = {
+      key: columnKey,
+      type: 'custom' as const,
+      customOrder
+    };
+    
+    console.log('📊 SETTING SORT CONFIG:', newSortConfig);
+    setSortConfig(newSortConfig);
+    
+    // Add a small delay to see if the state is being set correctly
+    setTimeout(() => {
+      console.log('📊 SORT CONFIG AFTER SET:', sortConfig);
+    }, 100);
   };
 
   const handleFilter = (key: string, value: string) => {
@@ -85,7 +106,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }));
   };
 
+  const handleClearAllFilters = () => {
+    setFilters({});
+    setColumnFilters({});
+    setSortConfig(null);
+  };
+
+  const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null;
+
   const filteredAndSortedData = useMemo(() => {
+    console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length });
+    
     let processedData = [...data];
 
     // Apply text filters
@@ -108,40 +139,87 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
     // Apply sorting
     if (sortConfig) {
+      console.log('🎯 SORT CONFIG EXISTS:', sortConfig);
       if (sortConfig.type === 'custom' && sortConfig.customOrder) {
+        console.log('🔄 APPLYING CUSTOM SORT TO DATA:', {
+          columnKey: sortConfig.key,
+          customOrder: sortConfig.customOrder,
+          customOrderLength: sortConfig.customOrder.length,
+          dataCount: processedData.length,
+          sampleData: processedData.slice(0, 3).map(item => item[sortConfig.key])
+        });
+        
+        // Log the original order before sorting
+        const originalOrder = processedData.map(item => item[sortConfig.key]);
+        console.log('📋 ORIGINAL ORDER:', originalOrder);
+        
         processedData.sort((a, b) => {
           const aValue = String(a[sortConfig.key] || '');
           const bValue = String(b[sortConfig.key] || '');
           const aIndex = sortConfig.customOrder!.indexOf(aValue);
           const bIndex = sortConfig.customOrder!.indexOf(bValue);
-          return aIndex - bIndex;
-        });
-      } else {
-        processedData.sort((a, b) => {
-          const aValue = a[sortConfig.key];
-          const bValue = b[sortConfig.key];
           
-          // Handle numeric columns
-          if (['relationships', 'variants', 'variables'].includes(sortConfig.key)) {
-            const aNum = Number(aValue) || 0;
-            const bNum = Number(bValue) || 0;
-            return sortConfig.type === 'asc' ? aNum - bNum : bNum - aNum;
-          }
+          console.log(`🔍 COMPARING: "${aValue}" (index ${aIndex}) vs "${bValue}" (index ${bIndex})`);
           
-          // Handle text columns
-          if (aValue < bValue) {
-            return sortConfig.type === 'asc' ? -1 : 1;
+          // If a value is not found in custom order, put it at the end
+          if (aIndex === -1 && bIndex === -1) {
+            return aValue.localeCompare(bValue); // Alphabetical fallback
           }
-          if (aValue > bValue) {
-            return sortConfig.type === 'asc' ? 1 : -1;
-          }
-          return 0;
+          if (aIndex === -1) return 1; // a goes to end
+          if (bIndex === -1) return -1; // b goes to end
+          
+          const result = aIndex - bIndex;
+          console.log(`✅ RESULT: ${result} (${aValue} ${result < 0 ? 'comes before' : result > 0 ? 'comes after' : 'equals'} ${bValue})`);
+          return result;
         });
+        
+        const finalOrder = processedData.map(item => item[sortConfig.key]);
+        console.log('📋 FINAL SORTED ORDER:', finalOrder);
+        console.log('🔄 ORDER CHANGED:', JSON.stringify(originalOrder) !== JSON.stringify(finalOrder));
       }
     }
 
     return processedData;
   }, [data, filters, columnFilters, sortConfig]);
+
+  // Calculate available filter options for each column based on current filters
+  const getAvailableFilterOptions = useMemo(() => {
+    const options: Record<string, string[]> = {};
+    
+    // Start with all data
+    let currentData = [...data];
+    
+    // Apply text filters first
+    Object.entries(filters).forEach(([key, filterValue]) => {
+      if (filterValue) {
+        currentData = currentData.filter(item =>
+          String(item[key]).toLowerCase().includes(filterValue.toLowerCase())
+        );
+      }
+    });
+    
+    // For each column, calculate available options based on other column filters
+    columns.forEach(column => {
+      if (column.filterable) {
+        let columnData = [...currentData];
+        
+        // Apply all column filters except the current one
+        Object.entries(columnFilters).forEach(([key, filterValues]) => {
+          if (key !== column.key && filterValues.length > 0) {
+            columnData = columnData.filter(item =>
+              filterValues.includes(String(item[key] || ''))
+            );
+          }
+        });
+        
+        // Get distinct values for this column, sorted alphabetically
+        const distinctValues = [...new Set(columnData.map(item => String(item[column.key] || '')))].filter(Boolean);
+        options[column.key] = distinctValues.sort();
+      }
+    });
+    
+    return options;
+  }, [data, filters, columnFilters, columns]);
 
   const handleRowDragStart = (row: Record<string, any>) => {
     setDraggedRow(row);
@@ -183,12 +261,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
       return <ArrowUpDown className="w-4 h-4" />;
     }
     
-    if (hasSort && sortConfig?.type === 'asc') {
-      return <ChevronUp className="w-4 h-4 text-ag-dark-accent" />;
-    }
-    if (hasSort && sortConfig?.type === 'desc') {
-      return <ChevronDown className="w-4 h-4 text-ag-dark-accent" />;
-    }
     if (hasSort && sortConfig?.type === 'custom') {
       return <GripVertical className="w-4 h-4 text-ag-dark-accent" />;
     }
@@ -197,6 +269,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
     
     return <Filter className="w-4 h-4" />;
+  };
+
+  const getColumnHeaderClass = (column: Column) => {
+    const hasFilter = columnFilters[column.key]?.length > 0;
+    const hasSort = sortConfig?.key === column.key;
+    
+    if (hasFilter || hasSort) {
+      return "bg-ag-dark-accent bg-opacity-10 border-ag-dark-accent border-opacity-50";
+    }
+    return "";
   };
 
   const getCurrentSort = (columnKey: string) => {
@@ -240,6 +322,18 @@ export const DataGrid: React.FC<DataGridProps> = ({
       <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden">
         {/* Grid Container with Horizontal Scroll */}
         <div className="overflow-x-auto">
+          {/* Clear Filters Button */}
+          {hasActiveFilters && (
+            <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2">
+              <button
+                onClick={handleClearAllFilters}
+                className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+              >
+                Clear All Filters & Sorts
+              </button>
+            </div>
+          )}
+          
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
             <div className="flex text-sm font-medium text-ag-dark-text">
@@ -254,10 +348,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
               {columns.map((column) => (
                 <div
                   key={column.key}
-                  className="flex items-center justify-between px-4 py-3 border-r border-ag-dark-border whitespace-nowrap"
+                  className={`flex items-center justify-between px-4 py-3 border-r border-ag-dark-border whitespace-nowrap ${getColumnHeaderClass(column)}`}
                   style={{ width: column.width }}
                 >
-                  <span className="text-ag-dark-text font-medium text-sm truncate pr-2">{column.title}</span>
+                  <span className="text-ag-dark-text font-medium text-sm truncate pr-2">
+                    {column.title}
+                    {columnFilters[column.key]?.length > 0 && (
+                      <span className="ml-1 text-xs text-ag-dark-accent">
+                        ({columnFilters[column.key].length})
+                      </span>
+                    )}
+                  </span>
                   {(column.sortable || column.filterable) && (
                     <button
                       onClick={(e) => handleColumnHeaderClick(column, e)}
@@ -364,6 +465,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
           currentFilters={getCurrentFilters(openDropdown)}
           currentSort={getCurrentSort(openDropdown)}
           position={dropdownPosition}
+          availableOptions={getAvailableFilterOptions[openDropdown] || []}
         />
       )}
     </>

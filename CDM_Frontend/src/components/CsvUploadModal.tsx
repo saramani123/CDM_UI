@@ -5,7 +5,7 @@ interface CsvUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   type: 'relationships' | 'variants' | 'object-relationships';
-  onUpload: (data: any[]) => void;
+  onUpload: (data: any[] | File) => void;
 }
 
 export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
@@ -50,7 +50,13 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const csv = e.target?.result as string;
+      let csv = e.target?.result as string;
+      
+      // Remove BOM if present
+      if (csv.charCodeAt(0) === 0xFEFF) {
+        csv = csv.slice(1);
+      }
+      
       const lines = csv.split('\n').filter(line => line.trim());
       
       if (lines.length < 2) {
@@ -63,7 +69,14 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
       const parsedData: any[] = [];
 
       dataRows.forEach((line, index) => {
-        const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
+        // Try different separators: comma, semicolon, tab
+        let values = line.split(',').map(val => val.trim().replace(/"/g, ''));
+        if (values.length === 1 && line.includes(';')) {
+          values = line.split(';').map(val => val.trim().replace(/"/g, ''));
+        }
+        if (values.length === 1 && line.includes('\t')) {
+          values = line.split('\t').map(val => val.trim().replace(/"/g, ''));
+        }
         
         if (type === 'relationships') {
           if (values.length >= 5) {
@@ -95,7 +108,11 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
         }
       });
 
-      if (parsedData.length > 0) {
+      if (type === 'variants') {
+        // For variants, pass the file directly to the API handler
+        onUpload(file);
+        onClose();
+      } else if (parsedData.length > 0) {
         onUpload(parsedData);
         onClose();
       } else {
@@ -107,7 +124,7 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
+    if (file && (file.type === 'text/csv' || file.type === 'application/csv' || file.name.endsWith('.csv'))) {
       handleFileUpload(file);
     } else {
       alert('Please select a valid CSV file');
@@ -119,7 +136,7 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
     setIsDragOver(false);
     
     const file = event.dataTransfer.files[0];
-    if (file && file.type === 'text/csv') {
+    if (file && (file.type === 'text/csv' || file.type === 'application/csv' || file.name.endsWith('.csv'))) {
       handleFileUpload(file);
     } else {
       alert('Please drop a valid CSV file');

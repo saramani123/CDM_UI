@@ -77,7 +77,7 @@ export const mockObjectData: ObjectData[] = [
   {
     id: '2',
     driver: 'ALL, ALL, ALL, Pay Type',
-    being: 'Master',
+    being: 'Employee',
     avatar: 'Company Affiliate',
     object: 'Entity',
     relationships: 1,
@@ -102,7 +102,7 @@ export const mockObjectData: ObjectData[] = [
   {
     id: '4',
     driver: 'Healthcare, Finance & Accounting, Canada, Pay Type',
-    being: 'Master',
+    being: 'Customer',
     avatar: 'Company Affiliate',
     object: 'Team',
     relationships: 30,
@@ -114,7 +114,7 @@ export const mockObjectData: ObjectData[] = [
   {
     id: '5',
     driver: 'Financial Services, Sales & Marketing, United Kingdom, Hour Type',
-    being: 'Master',
+    being: 'Supplier',
     avatar: 'Company Affiliate',
     object: 'Region',
     relationships: 39,
@@ -126,7 +126,7 @@ export const mockObjectData: ObjectData[] = [
   {
     id: '6',
     driver: 'Manufacturing, Operations, Germany, None',
-    being: 'Master',
+    being: 'Product',
     avatar: 'Company Affiliate',
     object: 'Location',
     relationships: 13,

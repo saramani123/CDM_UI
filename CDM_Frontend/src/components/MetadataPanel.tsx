@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
 import { getAvatarOptions, getDriversData, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { apiService } from '../services/api';
 
 interface MetadataField {
   key: string;
@@ -295,12 +296,51 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setVariants(prev => prev.filter(variant => variant.id !== id));
   };
 
-  const handleRelationshipCsvUpload = (uploadedRelationships: Relationship[]) => {
-    setRelationships(prev => [...prev, ...uploadedRelationships]);
+  const handleRelationshipCsvUpload = (data: any[] | File) => {
+    if (Array.isArray(data)) {
+      setRelationships(prev => [...prev, ...data]);
+    }
   };
 
-  const handleVariantCsvUpload = (uploadedVariants: Variant[]) => {
-    setVariants(prev => [...prev, ...uploadedVariants]);
+  const handleVariantCsvUpload = async (data: any[] | File) => {
+    if (!selectedObject?.id) {
+      alert('No object selected for variant upload');
+      return;
+    }
+
+    // Check if it's a File (new API-based upload) or array (old client-side parsing)
+    if (data instanceof File) {
+      try {
+        const result = await apiService.bulkUploadVariants(selectedObject.id, data);
+        console.log('Bulk variants upload result:', result);
+        
+        // Show success message
+        const response = result as any;
+        alert(response.message || `Successfully uploaded ${response.created_count} variants`);
+        
+        // Refresh the variants list by fetching the updated object data
+        // This will trigger a re-render with the new variants
+        window.location.reload(); // Simple refresh for now
+      } catch (error) {
+        console.error('Bulk variants upload failed:', error);
+        alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Old client-side parsing logic (for relationships and object-relationships)
+      setVariants(prev => {
+        const existingNames = new Set(prev.map(v => v.name.toLowerCase()));
+        const newVariants = data.filter(variant => 
+          !existingNames.has(variant.name.toLowerCase())
+        );
+        
+        if (newVariants.length < data.length) {
+          const skippedCount = data.length - newVariants.length;
+          alert(`Uploaded ${newVariants.length} new variants. Skipped ${skippedCount} duplicates.`);
+        }
+        
+        return [...prev, ...newVariants];
+      });
+    }
   };
 
   const handleSave = () => {
@@ -684,7 +724,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           {/* Composite Keys */}
           <div className="space-y-4">
             <h5 className="text-sm font-medium text-ag-dark-text">Composite Keys</h5>
-            {compositeKeys.map((compositeKey, index) => (
+            {compositeKeys.map((compositeKey) => (
               <div key={compositeKey.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-sm font-medium text-ag-dark-text">

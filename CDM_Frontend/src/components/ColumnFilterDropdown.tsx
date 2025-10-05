@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Filter, ArrowUpDown, ArrowUp, ArrowDown, X, Check, GripVertical } from 'lucide-react';
+import { Filter, ArrowUpDown, X, Check, GripVertical } from 'lucide-react';
 
 interface ColumnFilterDropdownProps {
   column: {
@@ -12,11 +12,12 @@ interface ColumnFilterDropdownProps {
   isOpen: boolean;
   onClose: () => void;
   onFilter: (filters: string[]) => void;
-  onSort: (type: 'asc' | 'desc' | 'custom' | 'none') => void;
+  onSort: (type: 'custom' | 'none') => void;
   onCustomSort?: (order: string[]) => void;
   currentFilters: string[];
-  currentSort: { type: 'asc' | 'desc' | 'custom' | 'none'; customOrder?: string[] };
+  currentSort: { type: 'custom' | 'none'; customOrder?: string[] };
   position: { top: number; left: number };
+  availableOptions?: string[];
 }
 
 export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
@@ -29,7 +30,8 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   onCustomSort,
   currentFilters,
   currentSort,
-  position
+  position,
+  availableOptions
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<'filter' | 'sort'>('filter');
@@ -37,17 +39,44 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   const [customSortOrder, setCustomSortOrder] = useState<string[]>(
     currentSort.customOrder || []
   );
+  const [workingSortOrder, setWorkingSortOrder] = useState<string[]>(
+    currentSort.customOrder || []
+  );
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  // Get distinct values for the column
-  const distinctValues = [...new Set(data.map(item => String(item[column.key] || '')))].filter(Boolean);
+  // Get distinct values for the column - use availableOptions if provided, otherwise calculate from data
+  const distinctValues = availableOptions && availableOptions.length > 0 
+    ? availableOptions 
+    : [...new Set(data.map(item => String(item[column.key] || '')))].filter(Boolean);
+  
 
   // Initialize custom sort order if empty
   useEffect(() => {
     if (customSortOrder.length === 0 && distinctValues.length > 0) {
-      setCustomSortOrder(distinctValues);
+      setCustomSortOrder([...distinctValues]);
+      setWorkingSortOrder([...distinctValues]);
     }
   }, [distinctValues, customSortOrder.length]);
+
+  // Initialize working sort order when dropdown opens (only once per session)
+  useEffect(() => {
+    if (isOpen && workingSortOrder.length === 0) {
+      const initialOrder = customSortOrder.length > 0 ? customSortOrder : distinctValues;
+      console.log('🚀 INITIALIZING WORKING ORDER:', {
+        customOrder: customSortOrder,
+        distinctValues: distinctValues,
+        initialOrder: initialOrder,
+        column: column.key
+      });
+      setWorkingSortOrder([...initialOrder]);
+    }
+  }, [isOpen, customSortOrder, distinctValues, workingSortOrder.length]);
+
+  // Reset temp filters when dropdown opens
+  useEffect(() => {
+    setTempFilters(currentFilters);
+  }, [currentFilters, isOpen]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -87,11 +116,49 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
     onFilter([]);
   };
 
-  const handleSort = (type: 'asc' | 'desc' | 'custom' | 'none') => {
+  const handleSelectAll = () => {
+    setTempFilters([...distinctValues]);
+  };
+
+  const handleToggleSelectAll = () => {
+    if (tempFilters.length === distinctValues.length) {
+      handleClearFilters();
+    } else {
+      handleSelectAll();
+    }
+  };
+
+  const handleSort = (type: 'custom' | 'none') => {
     if (type === 'custom' && onCustomSort) {
-      onCustomSort(customSortOrder);
+      // Use working order if it has been modified, otherwise use custom order
+      const orderToUse = workingSortOrder.length > 0 ? workingSortOrder : customSortOrder;
+      onCustomSort([...orderToUse]);
     }
     onSort(type);
+    onClose();
+  };
+
+  const handleApplyCustomSort = () => {
+    console.log('🎯 APPLYING CUSTOM SORT:', {
+      workingOrder: workingSortOrder,
+      customOrder: customSortOrder,
+      column: column.key,
+      workingOrderLength: workingSortOrder.length,
+      customOrderLength: customSortOrder.length
+    });
+    
+    // Ensure we have a valid working order
+    if (workingSortOrder.length === 0) {
+      console.error('❌ Working order is empty!');
+      return;
+    }
+    
+    if (onCustomSort) {
+      console.log('📤 Sending to DataGrid:', [...workingSortOrder]);
+      onCustomSort([...workingSortOrder]); // Use working order, not the original
+    }
+    setCustomSortOrder([...workingSortOrder]); // Update the actual custom order
+    onSort('custom');
     onClose();
   };
 
@@ -99,22 +166,39 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
     setDraggedItem(value);
   };
 
-  const handleDragOver = (e: React.DragEvent, targetValue: string) => {
+  const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
-    if (draggedItem && draggedItem !== targetValue) {
-      const draggedIndex = customSortOrder.indexOf(draggedItem);
-      const targetIndex = customSortOrder.indexOf(targetValue);
+    setDragOverIndex(index);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedItem) {
+      const draggedIndex = workingSortOrder.indexOf(draggedItem);
       
-      const newOrder = [...customSortOrder];
-      newOrder.splice(draggedIndex, 1);
-      newOrder.splice(targetIndex, 0, draggedItem);
+      console.log('🎯 DRAG DROP:', {
+        draggedItem,
+        draggedIndex,
+        dropIndex,
+        currentOrder: workingSortOrder
+      });
       
-      setCustomSortOrder(newOrder);
+      if (draggedIndex !== -1 && draggedIndex !== dropIndex) {
+        const newOrder = [...workingSortOrder];
+        const [removed] = newOrder.splice(draggedIndex, 1);
+        newOrder.splice(dropIndex, 0, removed);
+        
+        console.log('🔄 NEW ORDER:', newOrder);
+        setWorkingSortOrder(newOrder); // Only update working order, not the actual custom order
+      }
     }
+    setDraggedItem(null);
+    setDragOverIndex(null);
   };
 
   const handleDragEnd = () => {
     setDraggedItem(null);
+    setDragOverIndex(null);
   };
 
   return (
@@ -169,13 +253,23 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
         {!isNumericColumn && activeTab === 'filter' && (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-ag-dark-text">Select values to show:</span>
-              <button
-                onClick={handleClearFilters}
-                className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
-              >
-                Clear All
-              </button>
+              <span className="text-sm text-ag-dark-text">
+                Select values to show ({distinctValues.length} available):
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleToggleSelectAll}
+                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
+                >
+                  {tempFilters.length === distinctValues.length ? 'Clear All' : 'Select All'}
+                </button>
+                <button
+                  onClick={handleClearFilters}
+                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
             
             <div className="space-y-2 max-h-48 overflow-y-auto">
@@ -186,7 +280,7 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
                 >
                   <input
                     type="checkbox"
-                    checked={tempFilters.length === 0 || tempFilters.includes(value)}
+                    checked={tempFilters.includes(value)}
                     onChange={(e) => handleFilterChange(value, e.target.checked)}
                     className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
                   />
@@ -209,71 +303,40 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
         {/* Sort Tab */}
         {(isNumericColumn || activeTab === 'sort') && (
           <div className="space-y-3">
-            <span className="text-sm text-ag-dark-text">Sort options:</span>
+            <span className="text-sm text-ag-dark-text">Custom Sort</span>
             
             <div className="space-y-2">
-              <button
-                onClick={() => handleSort('asc')}
-                className={`w-full flex items-center gap-2 p-2 rounded text-sm transition-colors ${
-                  currentSort.type === 'asc'
-                    ? 'bg-ag-dark-accent text-white'
-                    : 'text-ag-dark-text hover:bg-ag-dark-bg'
-                }`}
-              >
-                <ArrowUp className="w-4 h-4" />
-                {isNumericColumn ? 'Low to High' : 'A to Z'}
-              </button>
-              
-              <button
-                onClick={() => handleSort('desc')}
-                className={`w-full flex items-center gap-2 p-2 rounded text-sm transition-colors ${
-                  currentSort.type === 'desc'
-                    ? 'bg-ag-dark-accent text-white'
-                    : 'text-ag-dark-text hover:bg-ag-dark-bg'
-                }`}
-              >
-                <ArrowDown className="w-4 h-4" />
-                {isNumericColumn ? 'High to Low' : 'Z to A'}
-              </button>
-
               {!isNumericColumn && (
                 <div className="border-t border-ag-dark-border pt-3">
-                  <button
-                    onClick={() => handleSort('custom')}
-                    className={`w-full flex items-center gap-2 p-2 rounded text-sm transition-colors mb-3 ${
-                      currentSort.type === 'custom'
-                        ? 'bg-ag-dark-accent text-white'
-                        : 'text-ag-dark-text hover:bg-ag-dark-bg'
-                    }`}
-                  >
-                    <GripVertical className="w-4 h-4" />
-                    Custom Order
-                  </button>
 
                   <div className="space-y-1 max-h-32 overflow-y-auto">
                     <span className="text-xs text-ag-dark-text-secondary">Drag to reorder:</span>
-                    {customSortOrder.map((value, index) => (
+                    {console.log('🎨 RENDERING WORKING ORDER:', { workingSortOrder, column: column.key })}
+                    {workingSortOrder.map((value, index) => (
                       <div
                         key={value}
                         draggable
                         onDragStart={() => handleDragStart(value)}
-                        onDragOver={(e) => handleDragOver(e, value)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDrop={(e) => handleDrop(e, index)}
                         onDragEnd={handleDragEnd}
                         className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
                           draggedItem === value
                             ? 'bg-ag-dark-accent bg-opacity-20'
+                            : dragOverIndex === index
+                            ? 'bg-ag-dark-accent bg-opacity-10'
                             : 'hover:bg-ag-dark-bg'
                         }`}
                       >
                         <GripVertical className="w-3 h-3 text-ag-dark-text-secondary" />
-                        <span className="text-xs text-ag-dark-text-secondary">{index + 1}.</span>
-                        <span className="text-ag-dark-text truncate">{value}</span>
+                        <span className="text-xs text-ag-dark-text-secondary w-4">{index + 1}.</span>
+                        <span className="text-ag-dark-text truncate flex-1">{value}</span>
                       </div>
                     ))}
                   </div>
 
                   <button
-                    onClick={() => handleSort('custom')}
+                    onClick={handleApplyCustomSort}
                     className="w-full mt-3 bg-ag-dark-accent text-white py-2 px-3 rounded text-sm hover:bg-ag-dark-accent-hover transition-colors"
                   >
                     Apply Custom Order

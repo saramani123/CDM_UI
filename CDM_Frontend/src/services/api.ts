@@ -109,6 +109,19 @@ class ApiService {
     });
   }
 
+  async bulkUploadVariants(objectId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request(`/objects/${objectId}/variants/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
   // Update object with relationships and variants
   async updateObjectWithRelationshipsAndVariants(objectId: string, relationships: any[], variants: any[]) {
     return this.request(`/objects/${objectId}`, {
@@ -291,6 +304,9 @@ class ApiService {
     return this.request('/variables/bulk-upload', {
       method: 'POST',
       body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
     });
   }
 
