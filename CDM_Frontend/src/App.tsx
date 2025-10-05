@@ -13,7 +13,7 @@ import { AddVariablePanel } from './components/AddVariablePanel';
 import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
-import { mockObjectData, tabs, objectColumns, metadataFields, getAvatarOptions, type ObjectData } from './data/mockData';
+import { mockObjectData, objectColumns, metadataFields, getAvatarOptions, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
@@ -55,6 +55,37 @@ function App() {
   // Drivers tab state - use API data with fallback to mock data
   const [driversState, setDriversState] = useState(driversData);
   const [selectedColumn, setSelectedColumn] = useState<ColumnType | undefined>();
+
+  // Calculate dynamic tab counts
+  const driversCount = useMemo(() => {
+    if (apiDrivers) {
+      return (apiDrivers.sectors?.length || 0) + 
+             (apiDrivers.domains?.length || 0) + 
+             (apiDrivers.countries?.length || 0) + 
+             (apiDrivers.objectClarifiers?.length || 0) + 
+             (apiDrivers.variableClarifiers?.length || 0);
+    }
+    return 15; // fallback to mock data count
+  }, [apiDrivers]);
+
+  const objectsCount = useMemo(() => {
+    return apiObjects?.length || 0;
+  }, [apiObjects]);
+
+  const variablesCount = useMemo(() => {
+    return apiVariables?.length || 0;
+  }, [apiVariables]);
+
+  // Dynamic tabs with calculated counts
+  const dynamicTabs = useMemo(() => [
+    { id: 'drivers', label: 'Drivers', count: driversCount },
+    { id: 'objects', label: 'Objects', count: objectsCount },
+    { id: 'variables', label: 'Variables', count: variablesCount },
+    { id: 'lists', label: 'Lists', count: 45 }, // Keep lists as static for now
+    { id: 'functions', label: 'Functions' },
+    { id: 'ledgers', label: 'Ledgers' },
+    { id: 'sources', label: 'Sources' }
+  ], [driversCount, objectsCount, variablesCount]);
   const [selectedItem, setSelectedItem] = useState<string | undefined>();
 
   // Sync API objects data with local state
@@ -731,7 +762,7 @@ function App() {
       {/* Tab Navigation */}
       <div className="px-6">
         <TabNavigation 
-          tabs={tabs} 
+          tabs={dynamicTabs} 
           activeTab={activeTab} 
           onTabChange={setActiveTab} 
         />

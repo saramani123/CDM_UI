@@ -918,11 +918,18 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             errors.append(f"Row {row_num}: Object Clarifier '{object_clarifier}' not found in drivers")
                             continue
 
-                    # Check for duplicate objects
+                    # Check for duplicate objects (full combination check)
+                    # First, get the driver string to check for exact duplicates
+                    sector_str = "ALL" if "ALL" in sector else ", ".join(sector)
+                    domain_str = "ALL" if "ALL" in domain else ", ".join(domain)
+                    country_str = "ALL" if "ALL" in country else ", ".join(country)
+                    clarifier_str = object_clarifier or "None"
+                    driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+                    
                     existing = session.run("""
-                        MATCH (o:Object {being: $being, avatar: $avatar, object: $object})
+                        MATCH (o:Object {being: $being, avatar: $avatar, object: $object, driver: $driver})
                         RETURN o.id as id
-                    """, being=csv_row.Being, avatar=csv_row.Avatar, object=csv_row.Object).single()
+                    """, being=csv_row.Being, avatar=csv_row.Avatar, object=csv_row.Object, driver=driver_string).single()
 
                     if existing:
                         errors.append(f"Row {row_num}: Object with Being='{csv_row.Being}', Avatar='{csv_row.Avatar}', Object='{csv_row.Object}' already exists")
@@ -930,13 +937,6 @@ async def upload_objects_csv(file: UploadFile = File(...)):
 
                     # Create object
                     new_id = str(uuid.uuid4())
-
-                    # Concatenate driver string
-                    sector_str = "ALL" if "ALL" in sector else ", ".join(sector)
-                    domain_str = "ALL" if "ALL" in domain else ", ".join(domain)
-                    country_str = "ALL" if "ALL" in country else ", ".join(country)
-                    clarifier_str = object_clarifier or "None"
-                    driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
 
                     # Create the Object node
                     session.run("""
@@ -1055,11 +1055,14 @@ async def upload_objects_csv(file: UploadFile = File(...)):
         print(f"DEBUG: Created objects: {created_objects}")
         print(f"DEBUG: Errors: {errors}")
         
-        return {
-            "message": f"CSV upload completed. Created {len(created_objects)} objects.",
-            "created_objects": created_objects,
-            "errors": errors
-        }
+        return CSVUploadResponse(
+            success=True,
+            message=f"CSV upload completed. Created {len(created_objects)} objects.",
+            created_count=len(created_objects),
+            error_count=len(errors),
+            errors=errors,
+            created_objects=created_objects
+        )
 
     except HTTPException:
         raise

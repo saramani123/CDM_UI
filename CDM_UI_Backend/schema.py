@@ -410,7 +410,6 @@ class CSVRowData(BaseModel):
     Object: str = Field(..., description="Object name")
     
     class Config:
-        allow_population_by_field_name = True
         populate_by_name = True
 
 # Variable Models
@@ -493,6 +492,7 @@ class CSVUploadResponse(BaseModel):
     created_count: int
     error_count: int
     errors: List[str] = []
+    created_objects: List[dict] = []
 
 if __name__ == "__main__":
     setup_schema()
