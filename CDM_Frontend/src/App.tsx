@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Upload, Download, Edit2, Filter, ArrowUpDown } from 'lucide-react';
+import { Plus, Upload, Edit2 } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -29,7 +29,6 @@ function App() {
   const [selectedRows, setSelectedRows] = useState<ObjectData[]>([]);
   const [selectedRowForMetadata, setSelectedRowForMetadata] = useState<ObjectData | null>(null);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
-  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [filters, setFilters] = useState<Record<string, string>>({});
   
   // Use API hook for objects data
@@ -847,15 +846,6 @@ function App() {
               
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setIsFilterOpen(!isFilterOpen)}
-                  className={`inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium transition-colors ${
-                    isFilterOpen ? 'bg-ag-dark-accent text-white' : 'bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                  }`}
-                >
-                  <Filter className="w-4 h-4" />
-                </button>
-                
-                <button
                   onClick={() => {
                     if (activeTab === 'lists') {
                       setIsBulkListUploadOpen(true);
@@ -907,7 +897,7 @@ function App() {
               data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
               filters={filters}
               onFilterChange={handleFilterChange}
-              isOpen={isFilterOpen}
+              isOpen={false}
               activeTab={activeTab}
             />
             
