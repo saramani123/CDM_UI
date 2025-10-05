@@ -1284,23 +1284,47 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
     
     try:
         with driver.session() as session:
-            # Create the variant
-            variant_id = str(uuid.uuid4())
+            # Check if variant already exists globally
+            existing_variant = session.run("""
+                MATCH (v:Variant {name: $variant_name})
+                RETURN v.id as id
+            """, variant_name=request.variant_name).single()
             
-            # Create variant node
-            session.run("""
-                CREATE (v:Variant {
-                    id: $variant_id,
-                    name: $variant_name
-                })
-            """, variant_id=variant_id, variant_name=request.variant_name)
-            
-            # Connect variant to object
-            session.run("""
-                MATCH (o:Object {id: $object_id})
-                MATCH (v:Variant {id: $variant_id})
-                CREATE (o)-[:HAS_VARIANT]->(v)
-            """, object_id=object_id, variant_id=variant_id)
+            if existing_variant:
+                # Variant exists globally, check if already connected to this object
+                variant_id = existing_variant["id"]
+                already_connected = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                    RETURN v.id as id
+                """, object_id=object_id, variant_id=variant_id).single()
+                
+                if already_connected:
+                    raise HTTPException(status_code=409, detail="Variant already exists for this object")
+                
+                # Connect existing variant to object
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    MATCH (v:Variant {id: $variant_id})
+                    CREATE (o)-[:HAS_VARIANT]->(v)
+                """, object_id=object_id, variant_id=variant_id)
+            else:
+                # Create new variant
+                variant_id = str(uuid.uuid4())
+                
+                # Create variant node
+                session.run("""
+                    CREATE (v:Variant {
+                        id: $variant_id,
+                        name: $variant_name
+                    })
+                """, variant_id=variant_id, variant_name=request.variant_name)
+                
+                # Connect variant to object
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    MATCH (v:Variant {id: $variant_id})
+                    CREATE (o)-[:HAS_VARIANT]->(v)
+                """, object_id=object_id, variant_id=variant_id)
             
             # Update variant count
             count_result = session.run("""
@@ -1355,4 +1379,191 @@ async def delete_variant(object_id: str, variant_id: str):
     except Exception as e:
         print(f"Error deleting variant: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete variant: {e}")
+
+@router.post("/objects/{object_id}/variants/upload", response_model=CSVUploadResponse)
+async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
+    """Bulk upload variants for an object from CSV file"""
+    print(f"DEBUG: bulk_upload_variants called with object_id={object_id}, file={file.filename}")
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        # Read CSV content and parse it robustly
+        content = await file.read()
+        print(f"CSV content length: {len(content)}")
+        
+        # Decode content and handle BOM
+        try:
+            text_content = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text_content = content.decode('utf-8')
+        
+        # Parse CSV manually to handle unquoted fields with spaces
+        # Normalize line endings first to handle Windows-style (\r\n) and Unix-style (\n) newlines
+        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        lines = text_content.strip().split('\n')
+        if not lines:
+            raise HTTPException(status_code=400, detail="Empty CSV file")
+        
+        # Get headers from first line
+        headers = [h.strip() for h in lines[0].split(',')]
+        
+        # Parse data rows
+        rows = []
+        for i, line in enumerate(lines[1:], start=2):
+            if not line.strip():
+                continue
+            
+            # Simple split by comma - this handles unquoted fields with spaces
+            values = [v.strip() for v in line.split(',')]
+            
+            # Create row dictionary
+            row = {}
+            for j, header in enumerate(headers):
+                row[header] = values[j] if j < len(values) else ""
+            rows.append(row)
+                    
+        print(f"Successfully parsed {len(rows)} rows from CSV")
+    except Exception as e:
+        print(f"Error in CSV parsing: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+    
+    # Database operations are outside the CSV parsing try-catch
+    created_variants = []
+    errors = []
+    skipped_count = 0
+    
+    try:
+        with driver.session() as session:
+            print(f"DEBUG: Starting session for object {object_id}")
+            # Get existing variants for this object to check for duplicates
+            existing_variants_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                RETURN v.name as name
+            """, object_id=object_id)
+            
+            existing_variant_names = {record["name"].lower() for record in existing_variants_result}
+            
+            # Get all global variants to check for existing ones
+            global_variants_result = session.run("""
+                MATCH (v:Variant)
+                RETURN v.name as name, v.id as id
+            """)
+            
+            global_variants = {record["name"].lower(): record["id"] for record in global_variants_result}
+            print(f"DEBUG: Found {len(global_variants)} global variants: {list(global_variants.keys())}")
+            
+            for row_num, row in enumerate(rows, start=2):
+                # Get variant name from the row
+                variant_name = row.get('Variant', '').strip()
+                if not variant_name:
+                    errors.append(f"Row {row_num}: Variant name is required")
+                    continue
+                
+                # Check for duplicates (case-insensitive) - only for this specific object
+                if variant_name.lower() in existing_variant_names:
+                    skipped_count += 1
+                    print(f"Skipping duplicate variant for this object: {variant_name}")
+                    continue
+                
+                # Check if variant exists globally by querying it directly
+                existing_variant = session.run("""
+                    MATCH (v:Variant {name: $variant_name})
+                    RETURN v.id as id
+                """, variant_name=variant_name).single()
+                
+                if existing_variant:
+                    # Variant exists globally, just connect it to this object
+                    print(f"Connecting existing global variant to object: {variant_name}")
+                    
+                    variant_id = existing_variant["id"]
+                    
+                    # Check if this variant is already connected to this object
+                    already_connected = session.run("""
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                        RETURN v.id as id
+                    """, object_id=object_id, variant_id=variant_id).single()
+                    
+                    if not already_connected:
+                        # Connect existing variant to object (MERGE to avoid duplicate relationships)
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            MATCH (v:Variant {id: $variant_id})
+                            MERGE (o)-[:HAS_VARIANT]->(v)
+                        """, object_id=object_id, variant_id=variant_id)
+                        
+                        # Add to existing variants set to avoid duplicates within the same upload
+                        existing_variant_names.add(variant_name.lower())
+                        
+                        created_variants.append({
+                            "id": variant_id,
+                            "name": variant_name
+                        })
+                    else:
+                        print(f"Variant {variant_name} already connected to this object, skipping")
+                        skipped_count += 1
+                else:
+                    # Create new variant
+                    print(f"Creating new variant: {variant_name}")
+                    variant_id = str(uuid.uuid4())
+                    
+                    try:
+                        # Create variant node
+                        session.run("""
+                            CREATE (v:Variant {
+                                id: $variant_id,
+                                name: $variant_name
+                            })
+                        """, variant_id=variant_id, variant_name=variant_name)
+                        
+                        # Connect variant to object
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            MATCH (v:Variant {id: $variant_id})
+                            CREATE (o)-[:HAS_VARIANT]->(v)
+                        """, object_id=object_id, variant_id=variant_id)
+                        
+                        # Add to existing variants set to avoid duplicates within the same upload
+                        existing_variant_names.add(variant_name.lower())
+                        
+                        created_variants.append({
+                            "id": variant_id,
+                            "name": variant_name
+                        })
+                    except Exception as create_error:
+                        print(f"Error creating variant {variant_name}: {create_error}")
+                        errors.append(f"Row {row_num}: Failed to create variant '{variant_name}': {str(create_error)}")
+            
+            # Update variant count for the object
+            if created_variants:
+                count_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                    RETURN count(v) as var_count
+                """, object_id=object_id).single()
+                
+                var_count = count_result["var_count"] if count_result else 0
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.variants = $var_count
+                """, object_id=object_id, var_count=var_count)
+    
+    except Exception as session_error:
+        print(f"DEBUG: Session error: {str(session_error)}")
+        errors.append(f"Database session error: {str(session_error)}")
+
+    return CSVUploadResponse(
+        success=True,
+        message=f"Successfully created {len(created_variants)} variants. Skipped {skipped_count} duplicates.",
+        created_count=len(created_variants),
+        error_count=len(errors),
+        errors=errors
+    )
 

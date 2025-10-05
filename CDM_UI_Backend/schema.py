@@ -29,7 +29,7 @@ def create_constraints_and_indexes():
                 # Objects taxonomy constraints
                 "CREATE CONSTRAINT being_name_unique IF NOT EXISTS FOR (b:Being) REQUIRE b.name IS UNIQUE",
                 "CREATE CONSTRAINT avatar_name_unique IF NOT EXISTS FOR (a:Avatar) REQUIRE a.name IS UNIQUE",
-                "CREATE CONSTRAINT variant_name_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.name IS UNIQUE",
+                # Removed global unique constraint on variant names - variants can have same name for different objects
                 "CREATE CONSTRAINT object_name_unique IF NOT EXISTS FOR (o:Object) REQUIRE o.name IS UNIQUE",
                 # Variables taxonomy constraints
                 "CREATE CONSTRAINT part_name_unique IF NOT EXISTS FOR (p:Part) REQUIRE p.name IS UNIQUE",
