@@ -60,6 +60,11 @@ function App() {
 
   // Sync API objects data with local state
   React.useEffect(() => {
+    console.log('App - objectsLoading:', objectsLoading);
+    console.log('App - objectsError:', objectsError);
+    console.log('App - apiObjects length:', apiObjects?.length);
+    console.log('App - apiObjects first item:', apiObjects?.[0]);
+    
     if (!objectsLoading) {
       if (objectsError) {
         // Fallback to mock data if API fails
@@ -67,6 +72,7 @@ function App() {
         setData(mockObjectData);
       } else {
         // Always use API data, even if empty
+        console.log('App - Setting data to apiObjects:', apiObjects);
         setData(apiObjects);
       }
     }
@@ -87,6 +93,13 @@ function App() {
 
   // Sync API variables data with local state
   React.useEffect(() => {
+    console.log('Variables effect triggered:', { 
+      variablesLoading, 
+      variablesError, 
+      apiVariablesLength: apiVariables?.length,
+      apiVariablesType: typeof apiVariables,
+      apiVariablesIsArray: Array.isArray(apiVariables)
+    });
     if (!variablesLoading) {
       if (variablesError) {
         // Fallback to mock data if API fails
@@ -95,6 +108,7 @@ function App() {
       } else {
         // Always use API data, even if empty
         console.log('Using API variables data:', apiVariables);
+        console.log('Setting variableData to:', apiVariables);
         setVariableData(apiVariables);
       }
     }
@@ -450,25 +464,66 @@ function App() {
     setSelectedRowForMetadata(null);
   };
   const handleMetadataSave = async (updatedData: Record<string, any>) => {
+    console.log('handleMetadataSave called with:', updatedData);
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
       
       if (activeTab === 'variables') {
         // Handle variables update via API
         try {
-          await updateVariable(selectedRowForMetadata.id, updatedData);
+          // Filter out objectRelationshipsList from the variable update data
+          const { objectRelationshipsList, ...variableUpdateData } = updatedData;
+          
+          console.log('objectRelationshipsList:', objectRelationshipsList);
+          console.log('variableUpdateData:', variableUpdateData);
+          
+          const result = await updateVariable(selectedRowForMetadata.id, variableUpdateData);
+          
+          // Handle object relationships if they exist
+          if (objectRelationshipsList && objectRelationshipsList.length > 0) {
+            console.log('Creating object relationships:', objectRelationshipsList);
+            try {
+              // Create object relationships in Neo4j
+              for (const relationship of objectRelationshipsList) {
+                console.log('Creating relationship:', relationship);
+                if (relationship.toBeing && relationship.toAvatar && relationship.toObject) {
+                  console.log('Calling createObjectRelationship with:', {
+                    toBeing: relationship.toBeing,
+                    toAvatar: relationship.toAvatar,
+                    toObject: relationship.toObject
+                  });
+                  await createObjectRelationship(selectedRowForMetadata.id, {
+                    toBeing: relationship.toBeing,
+                    toAvatar: relationship.toAvatar,
+                    toObject: relationship.toObject
+                  });
+                  console.log('Relationship created successfully');
+                }
+              }
+            } catch (relationshipError) {
+              console.error('Error creating object relationships:', relationshipError);
+              // Show error to user but don't fail the entire save
+              alert('Variable saved but failed to create some object relationships. Please check the relationships section.');
+            }
+          } else {
+            console.log('No object relationships to create');
+          }
           
           // Update local state
           setVariableData(prev => prev.map(item => 
             item.id === selectedRowForMetadata.id 
-              ? { ...item, ...updatedData }
+              ? { ...item, ...variableUpdateData }
               : item
           ));
           
           setSelectedRowForMetadata({ ...selectedRowForMetadata, ...gridData });
+          
+          // Return success to indicate the save was successful
+          return result;
         } catch (error) {
           console.error('Error updating variable:', error);
           alert('Failed to update variable. Please try again.');
+          throw error; // Re-throw the error so the calling function knows it failed
         }
       } else if (activeTab === 'objects') {
         // Map objectName back to object field for the grid
@@ -925,6 +980,7 @@ function App() {
                   onSave={handleMetadataSave}
                   selectedVariable={selectedRowForMetadata}
                   allData={variableData}
+                  objectsData={data}
                   selectedCount={selectedRows.length}
                 />
               ) : (

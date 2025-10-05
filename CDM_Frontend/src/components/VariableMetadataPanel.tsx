@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
+import { apiService } from '../services/api';
 import { CsvUploadModal } from './CsvUploadModal';
 
 interface VariableMetadataField {
@@ -23,10 +24,11 @@ interface ObjectRelationship {
 interface VariableMetadataPanelProps {
   title: string;
   fields: VariableMetadataField[];
-  onSave?: (data: Record<string, any>) => void;
+  onSave?: (data: Record<string, any>) => void | Promise<any>;
   onClose?: () => void;
   selectedVariable?: any;
   allData?: any[];
+  objectsData?: any[];
   selectedCount?: number;
 }
 
@@ -37,6 +39,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   onClose,
   selectedVariable,
   allData = [],
+  objectsData = [],
   selectedCount = 0
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
@@ -61,6 +64,39 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   });
 
   const { drivers: driversData } = useDrivers();
+  
+  // Debug: Log objects data
+  console.log('VariableMetadataPanel - objectsData:', objectsData);
+  console.log('VariableMetadataPanel - objectsData length:', objectsData?.length);
+  console.log('VariableMetadataPanel - first object:', objectsData?.[0]);
+
+  // Load existing object relationships when a variable is selected
+  useEffect(() => {
+    const loadExistingRelationships = async () => {
+      if (selectedVariable?.id) {
+        try {
+          console.log('Loading existing relationships for variable:', selectedVariable.id);
+          const response = await apiService.getVariableObjectRelationships(selectedVariable.id);
+          console.log('Existing relationships response:', response);
+          
+          if (response.relationships && response.relationships.length > 0) {
+            setObjectRelationships(response.relationships);
+            console.log('Loaded existing relationships:', response.relationships);
+          } else {
+            setObjectRelationships([]);
+            console.log('No existing relationships found');
+          }
+        } catch (error) {
+          console.error('Error loading existing relationships:', error);
+          setObjectRelationships([]);
+        }
+      } else {
+        setObjectRelationships([]);
+      }
+    };
+
+    loadExistingRelationships();
+  }, [selectedVariable?.id]);
   
   // Get dynamic field options from existing variables data
   const dynamicFieldOptions = getVariableFieldOptions(allData);
@@ -110,14 +146,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // Get distinct values from data for object relationships
   const getDistinctBeings = () => {
     // Get distinct beings from objects data + ALL option
-    const objectsData = ((window as any).objectsData || []) as any[];
     const beings = [...new Set(objectsData.map((item: any) => item.being as string))].filter(Boolean) as string[];
-    return ['ALL', ...beings];
+    const result = ['ALL', ...beings];
+    console.log('getDistinctBeings - objectsData length:', objectsData?.length);
+    console.log('getDistinctBeings - beings:', beings);
+    console.log('getDistinctBeings - result:', result);
+    return result;
   };
 
   const getDistinctAvatarsForBeing = (being: string) => {
     // Get distinct avatars for the selected being from objects data + ALL option
-    const objectsData = ((window as any).objectsData || []) as any[];
     let avatars: string[] = [];
     
     if (being === 'ALL') {
@@ -134,7 +172,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
     // Get distinct objects for the selected being and avatar from objects data + ALL option
-    const objectsData = ((window as any).objectsData || []) as any[];
     let objects: string[] = [];
     
     if (being === 'ALL' && avatar === 'ALL') {
@@ -219,29 +256,61 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     setObjectRelationships(prev => [...prev, newRelationship]);
   };
 
-  const deleteObjectRelationship = (id: string) => {
-    setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
+  const deleteObjectRelationship = async (id: string) => {
+    try {
+      console.log('Deleting object relationship:', id);
+      
+      // Find the relationship to get its details
+      const relationship = objectRelationships.find(rel => rel.id === id);
+      if (!relationship) {
+        console.error('Relationship not found:', id);
+        return;
+      }
+      
+      console.log('Deleting relationship:', relationship);
+      
+      // Call the backend API to delete the relationship
+      await apiService.deleteVariableObjectRelationship(selectedVariable?.id || '', relationship);
+      
+      // Remove from local state
+      setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
+      
+      console.log('Successfully deleted relationship');
+    } catch (error) {
+      console.error('Error deleting object relationship:', error);
+      alert('Failed to delete object relationship. Please try again.');
+    }
   };
 
   const handleObjectRelationshipCsvUpload = (uploadedRelationships: ObjectRelationship[]) => {
     setObjectRelationships(prev => [...prev, ...uploadedRelationships]);
   };
 
-  const handleSave = () => {
-    // Generate driver string from selections
-    const driverString = concatenateVariableDrivers(
-      driverSelections.sector,
-      driverSelections.domain,
-      driverSelections.country,
-      driverSelections.variableClarifier
-    );
+  const handleSave = async () => {
+    try {
+      // Generate driver string from selections
+      const driverString = concatenateVariableDrivers(
+        driverSelections.sector,
+        driverSelections.domain,
+        driverSelections.country,
+        driverSelections.variableClarifier
+      );
 
-    const saveData = {
-      ...formData,
-      driver: driverString,
-      objectRelationshipsList: objectRelationships
-    };
-    onSave?.(saveData);
+      const saveData = {
+        ...formData,
+        driver: driverString,
+        objectRelationshipsList: objectRelationships
+      };
+
+      console.log('VariableMetadataPanel handleSave - objectRelationships:', objectRelationships);
+      console.log('VariableMetadataPanel handleSave - saveData:', saveData);
+
+      // Call the main save operation (which will handle object relationships)
+      await onSave?.(saveData);
+    } catch (error) {
+      console.error('Error saving variable:', error);
+      alert('Failed to update variable. Please try again.');
+    }
   };
 
   // Multi-select component

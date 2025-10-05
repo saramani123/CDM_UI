@@ -429,6 +429,21 @@ class VariableCreateRequest(BaseModel):
     graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
     status: Optional[str] = Field("Active", description="Status")
 
+class VariableUpdateRequest(BaseModel):
+    """Schema for updating a variable - all fields optional for partial updates"""
+    driver: Optional[str] = None
+    part: Optional[str] = None
+    group: Optional[str] = None
+    section: Optional[str] = None
+    variable: Optional[str] = None
+    formatI: Optional[str] = None
+    formatII: Optional[str] = None
+    gType: Optional[str] = None
+    validation: Optional[str] = None
+    default: Optional[str] = None
+    graph: Optional[str] = None
+    status: Optional[str] = None
+
 class VariableResponse(BaseModel):
     """Schema for variable response"""
     id: str

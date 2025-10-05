@@ -11,7 +11,13 @@ export const useVariables = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await apiService.getVariables();
+      console.log('Fetching variables from API...');
+      const data = await apiService.getVariables() as VariableData[];
+      console.log('Variables API response:', data);
+      console.log('Variables count:', data?.length || 0);
+      console.log('First variable:', data?.[0]);
+      console.log('Data type:', typeof data);
+      console.log('Is array:', Array.isArray(data));
       setVariables(data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch variables');
@@ -23,7 +29,7 @@ export const useVariables = () => {
 
   const createVariable = async (variableData: Omit<VariableData, 'id' | 'objectRelationships' | 'objectRelationshipsList'>) => {
     try {
-      const newVariable = await apiService.createVariable(variableData);
+      const newVariable = await apiService.createVariable(variableData) as VariableData;
       setVariables(prev => [...prev, newVariable]);
       return newVariable;
     } catch (err) {
@@ -34,11 +40,13 @@ export const useVariables = () => {
 
   const updateVariable = async (id: string, variableData: Partial<VariableData>) => {
     try {
-      const updatedVariable = await apiService.updateVariable(id, variableData);
+      const updatedVariable = await apiService.updateVariable(id, variableData) as VariableData;
       setVariables(prev => prev.map(v => v.id === id ? updatedVariable : v));
       return updatedVariable;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update variable');
+      // Refresh data to ensure consistency after error
+      await fetchVariables();
       throw err;
     }
   };

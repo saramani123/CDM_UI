@@ -156,32 +156,8 @@ class ApiService {
   }
 
   // Variables API (to be implemented)
-  async getVariables() {
-    return this.request('/variables');
-  }
-
   async getVariable(id: string) {
     return this.request(`/variables/${id}`);
-  }
-
-  async createVariable(variableData: any) {
-    return this.request('/variables', {
-      method: 'POST',
-      body: JSON.stringify(variableData),
-    });
-  }
-
-  async updateVariable(id: string, variableData: any) {
-    return this.request(`/variables/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(variableData),
-    });
-  }
-
-  async deleteVariable(id: string) {
-    return this.request(`/variables/${id}`, {
-      method: 'DELETE',
-    });
   }
 
   // Lists API (to be implemented)
@@ -274,16 +250,37 @@ class ApiService {
     });
   }
 
-  async createVariableObjectRelationship(variableId: string, relationshipData: any) {
+  async getVariableObjectRelationships(variableId: string) {
     return this.request(`/variables/${variableId}/object-relationships`, {
-      method: 'POST',
-      body: JSON.stringify(relationshipData),
+      method: 'GET',
     });
   }
 
-  async deleteVariableObjectRelationship(variableId: string, relationshipId: string) {
-    return this.request(`/variables/${variableId}/object-relationships/${relationshipId}`, {
+  async createVariableObjectRelationship(variableId: string, relationshipData: any) {
+    // Convert frontend field names to backend field names
+    const backendData = {
+      to_being: relationshipData.toBeing,
+      to_avatar: relationshipData.toAvatar,
+      to_object: relationshipData.toObject
+    };
+    
+    return this.request(`/variables/${variableId}/object-relationships`, {
+      method: 'POST',
+      body: JSON.stringify(backendData),
+    });
+  }
+
+  async deleteVariableObjectRelationship(variableId: string, relationshipData: any) {
+    // Convert frontend field names to backend field names
+    const backendData = {
+      to_being: relationshipData.toBeing,
+      to_avatar: relationshipData.toAvatar,
+      to_object: relationshipData.toObject
+    };
+    
+    return this.request(`/variables/${variableId}/object-relationships`, {
       method: 'DELETE',
+      body: JSON.stringify(backendData),
     });
   }
 
