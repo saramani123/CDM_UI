@@ -95,6 +95,18 @@ export const useVariables = () => {
     }
   };
 
+  const bulkUpdateVariables = async (bulkData: any) => {
+    try {
+      const result = await apiService.bulkUpdateVariables(bulkData);
+      // Refresh variables after bulk update
+      await fetchVariables();
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to bulk update variables');
+      throw err;
+    }
+  };
+
   useEffect(() => {
     fetchVariables();
   }, []);
@@ -110,5 +122,6 @@ export const useVariables = () => {
     createObjectRelationship,
     deleteObjectRelationship,
     bulkUploadVariables,
+    bulkUpdateVariables,
   };
 };

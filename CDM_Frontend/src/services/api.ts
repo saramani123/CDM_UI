@@ -310,6 +310,13 @@ class ApiService {
     });
   }
 
+  async bulkUpdateVariables(bulkData: any) {
+    return this.request('/variables/bulk-update', {
+      method: 'PUT',
+      body: JSON.stringify(bulkData),
+    });
+  }
+
   // Health check
   async healthCheck() {
     return this.request('/health', { method: 'GET' });
