@@ -42,6 +42,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const [draggedRow, setDraggedRow] = useState<Record<string, any> | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
+  // Sync local selection state with prop changes
+  React.useEffect(() => {
+    setLocalSelectedRows(selectedRows);
+  }, [selectedRows]);
+
   const handleColumnHeaderClick = (column: Column, event: React.MouseEvent) => {
     const rect = (event.target as HTMLElement).getBoundingClientRect();
     setDropdownPosition({

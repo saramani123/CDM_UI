@@ -7,6 +7,12 @@ from db import get_driver
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+# ObjectRelationshipCreateRequest class definition
+class ObjectRelationshipCreateRequest(BaseModel):
+    to_being: str
+    to_avatar: str
+    to_object: str
+
 def create_constraints_and_indexes():
     """Create constraints and indexes for the CDM schema"""
     driver = get_driver()
@@ -442,6 +448,31 @@ class VariableUpdateRequest(BaseModel):
     default: Optional[str] = None
     graph: Optional[str] = None
     status: Optional[str] = None
+
+class BulkVariableUpdateRequest(BaseModel):
+    """Schema for bulk updating variables"""
+    variable_ids: List[str] = Field(..., description="List of variable IDs to update")
+    driver: Optional[str] = None
+    part: Optional[str] = None
+    group: Optional[str] = None
+    section: Optional[str] = None
+    variable: Optional[str] = None
+    formatI: Optional[str] = None
+    formatII: Optional[str] = None
+    gType: Optional[str] = None
+    validation: Optional[str] = None
+    default: Optional[str] = None
+    graph: Optional[str] = None
+    status: Optional[str] = None
+    objectRelationshipsList: Optional[List[ObjectRelationshipCreateRequest]] = None
+
+class BulkVariableUpdateResponse(BaseModel):
+    """Schema for bulk variable update response"""
+    success: bool
+    message: str
+    updated_count: int
+    error_count: int
+    errors: List[str] = []
 
 class VariableResponse(BaseModel):
     """Schema for variable response"""

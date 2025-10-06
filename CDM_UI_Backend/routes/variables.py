@@ -6,13 +6,9 @@ import json
 import csv
 from pydantic import BaseModel, Field
 from db import get_driver
-from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData
+from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest
 
 # Pydantic models for JSON body parameters
-class ObjectRelationshipCreateRequest(BaseModel):
-    to_being: str
-    to_avatar: str
-    to_object: str
 
 router = APIRouter()
 
@@ -33,11 +29,11 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Sector relationships
         if sector_str == "ALL":
-            # Create or connect to the "ALL" sector node
+            # Create relationships to ALL existing sectors
             session.run("""
-                MERGE (s:Sector {name: "ALL"})
-                WITH s
+                MATCH (s:Sector)
                 MATCH (v:Variable {id: $variable_id})
+                WITH s, v
                 MERGE (s)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
         else:
@@ -53,11 +49,11 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Domain relationships
         if domain_str == "ALL":
-            # Create or connect to the "ALL" domain node
+            # Create relationships to ALL existing domains
             session.run("""
-                MERGE (d:Domain {name: "ALL"})
-                WITH d
+                MATCH (d:Domain)
                 MATCH (v:Variable {id: $variable_id})
+                WITH d, v
                 MERGE (d)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
         else:
@@ -72,11 +68,11 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         
         # Handle Country relationships
         if country_str == "ALL":
-            # Create or connect to the "ALL" country node
+            # Create relationships to ALL existing countries
             session.run("""
-                MERGE (c:Country {name: "ALL"})
-                WITH c
+                MATCH (c:Country)
                 MATCH (v:Variable {id: $variable_id})
+                WITH c, v
                 MERGE (c)-[:RELEVANT_TO]->(v)
             """, variable_id=variable_id)
         else:
@@ -268,6 +264,120 @@ async def create_variable(variable_data: VariableCreateRequest):
     except Exception as e:
         print(f"Error creating variable: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create variable: {str(e)}")
+
+@router.put("/variables/bulk-update", response_model=BulkVariableUpdateResponse)
+async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
+    """
+    Bulk update multiple variables with the same changes.
+    Only updates fields that are provided (not None) and not "Keep Current" values.
+    Applies validation rules: overwrites only where new value chosen, leaves Keep Current fields untouched.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    updated_count = 0
+    errors = []
+
+    try:
+        with driver.session() as session:
+            for variable_id in bulk_data.variable_ids:
+                try:
+                    print(f"Processing variable ID: {variable_id}")
+                    # Get current variable data - first check if variable exists
+                    print(f"Running query for variable {variable_id}")
+                    current_result = session.run("""
+                        MATCH (v:Variable {id: $id})
+                        RETURN v
+                    """, {"id": variable_id})
+
+                    print(f"Query executed, getting single record")
+                    current_record = current_result.single()
+                    print(f"Record result: {current_record}")
+                    if not current_record:
+                        print(f"Variable {variable_id} not found in database")
+                        errors.append(f"Variable {variable_id} not found")
+                        continue
+                    
+                    print(f"Variable {variable_id} found, proceeding with update")
+
+                    current_variable = current_record["v"]
+
+                    # Build dynamic SET clause for only provided fields that are not "Keep Current"
+                    set_clauses = []
+                    params = {"id": variable_id}
+                    
+                    # Only update fields that are provided and not "Keep Current" values
+                    if bulk_data.variable is not None and bulk_data.variable.strip() != "Keep Current":
+                        set_clauses.append("v.name = $variable")
+                        params["variable"] = bulk_data.variable
+                    if bulk_data.section is not None and bulk_data.section.strip() != "Keep Current":
+                        set_clauses.append("v.section = $section")
+                        params["section"] = bulk_data.section
+                    if bulk_data.formatI is not None and bulk_data.formatI.strip() != "Keep Current":
+                        set_clauses.append("v.formatI = $formatI")
+                        params["formatI"] = bulk_data.formatI
+                    if bulk_data.formatII is not None and bulk_data.formatII.strip() != "Keep Current":
+                        set_clauses.append("v.formatII = $formatII")
+                        params["formatII"] = bulk_data.formatII
+                    if bulk_data.gType is not None and bulk_data.gType.strip() != "Keep Current":
+                        set_clauses.append("v.gType = $gType")
+                        params["gType"] = bulk_data.gType
+                    if bulk_data.validation is not None and bulk_data.validation.strip() != "Keep Current":
+                        set_clauses.append("v.validation = $validation")
+                        params["validation"] = bulk_data.validation
+                    if bulk_data.default is not None and bulk_data.default.strip() != "Keep Current":
+                        set_clauses.append("v.default = $default")
+                        params["default"] = bulk_data.default
+                    if bulk_data.graph is not None and bulk_data.graph.strip() != "Keep Current":
+                        set_clauses.append("v.graph = $graph")
+                        params["graph"] = bulk_data.graph
+                    if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
+                        set_clauses.append("v.status = $status")
+                        params["status"] = bulk_data.status
+
+                    # Only update if there are fields to update
+                    if set_clauses:
+                        update_query = f"""
+                            MATCH (v:Variable {{id: $id}})
+                            SET {', '.join(set_clauses)}
+                        """
+                        session.run(update_query, params)
+
+                    # Update driver relationships if driver field is provided and not "Keep Current"
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                        print(f"Updating driver relationships with: {bulk_data.driver}")
+                        await create_driver_relationships(session, variable_id, bulk_data.driver)
+
+                    # Handle object relationships if provided
+                    if bulk_data.objectRelationshipsList is not None and len(bulk_data.objectRelationshipsList) > 0:
+                        print(f"Processing {len(bulk_data.objectRelationshipsList)} object relationships")
+                        for relationship in bulk_data.objectRelationshipsList:
+                            try:
+                                # Create object relationship for this variable (append new relationships with deduplication)
+                                await create_object_relationship_for_variable(session, variable_id, relationship)
+                            except Exception as e:
+                                print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
+                                errors.append(f"Failed to create object relationship for variable {variable_id}: {str(e)}")
+
+                    updated_count += 1
+
+                except Exception as e:
+                    print(f"Error updating variable {variable_id}: {str(e)}")
+                    errors.append(f"Failed to update variable {variable_id}: {str(e)}")
+                    continue
+
+        return BulkVariableUpdateResponse(
+            success=updated_count > 0,
+            message=f"Updated {updated_count} variables successfully",
+            updated_count=updated_count,
+            error_count=len(errors),
+            errors=errors
+        )
+
+    except Exception as e:
+        print(f"Error in bulk update: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk update variables: {str(e)}")
 
 @router.put("/variables/{variable_id}", response_model=VariableResponse)
 async def update_variable(variable_id: str, variable_data: VariableUpdateRequest):
@@ -722,3 +832,194 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         error_count=len(errors),
         errors=errors
     )
+
+@router.get("/variables/test/{variable_id}")
+async def test_variable_lookup(variable_id: str):
+    """Test endpoint to check if variable lookup works"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (v:Variable {id: $id})
+                RETURN v
+            """, {"id": variable_id})
+            
+            record = result.single()
+            if not record:
+                return {"found": False, "message": "Variable not found"}
+            else:
+                return {"found": True, "variable": dict(record["v"])}
+    except Exception as e:
+        return {"error": str(e)}
+
+@router.put("/variables/bulk-update", response_model=BulkVariableUpdateResponse)
+async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
+    """
+    Bulk update multiple variables with the same changes.
+    Only updates fields that are provided (not None) and not "Keep Current" values.
+    Applies validation rules: overwrites only where new value chosen, leaves Keep Current fields untouched.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    updated_count = 0
+    errors = []
+
+    try:
+        with driver.session() as session:
+            for variable_id in bulk_data.variable_ids:
+                try:
+                    print(f"Processing variable ID: {variable_id}")
+                    # Get current variable data - first check if variable exists
+                    print(f"Running query for variable {variable_id}")
+                    current_result = session.run("""
+                        MATCH (v:Variable {id: $id})
+                        RETURN v
+                    """, {"id": variable_id})
+
+                    print(f"Query executed, getting single record")
+                    current_record = current_result.single()
+                    print(f"Record result: {current_record}")
+                    if not current_record:
+                        print(f"Variable {variable_id} not found in database")
+                        errors.append(f"Variable {variable_id} not found")
+                        continue
+                    
+                    print(f"Variable {variable_id} found, proceeding with update")
+
+                    current_variable = current_record["v"]
+
+                    # Build dynamic SET clause for only provided fields that are not "Keep Current"
+                    set_clauses = []
+                    params = {"id": variable_id}
+                    
+                    # Only update fields that are provided and not "Keep Current" values
+                    if bulk_data.variable is not None and bulk_data.variable.strip() != "Keep Current":
+                        set_clauses.append("v.name = $variable")
+                        params["variable"] = bulk_data.variable
+                    if bulk_data.section is not None and bulk_data.section.strip() != "Keep Current":
+                        set_clauses.append("v.section = $section")
+                        params["section"] = bulk_data.section
+                    if bulk_data.formatI is not None and bulk_data.formatI.strip() != "Keep Current":
+                        set_clauses.append("v.formatI = $formatI")
+                        params["formatI"] = bulk_data.formatI
+                    if bulk_data.formatII is not None and bulk_data.formatII.strip() != "Keep Current":
+                        set_clauses.append("v.formatII = $formatII")
+                        params["formatII"] = bulk_data.formatII
+                    if bulk_data.gType is not None and bulk_data.gType.strip() != "Keep Current":
+                        set_clauses.append("v.gType = $gType")
+                        params["gType"] = bulk_data.gType
+                    if bulk_data.validation is not None and bulk_data.validation.strip() != "Keep Current":
+                        set_clauses.append("v.validation = $validation")
+                        params["validation"] = bulk_data.validation
+                    if bulk_data.default is not None and bulk_data.default.strip() != "Keep Current":
+                        set_clauses.append("v.default = $default")
+                        params["default"] = bulk_data.default
+                    if bulk_data.graph is not None and bulk_data.graph.strip() != "Keep Current":
+                        set_clauses.append("v.graph = $graph")
+                        params["graph"] = bulk_data.graph
+                    if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
+                        set_clauses.append("v.status = $status")
+                        params["status"] = bulk_data.status
+
+                    # Only update if there are fields to update
+                    if set_clauses:
+                        update_query = f"""
+                            MATCH (v:Variable {{id: $id}})
+                            SET {', '.join(set_clauses)}
+                        """
+                        session.run(update_query, params)
+
+                    # Update driver relationships if driver field is provided and not "Keep Current"
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                        print(f"Updating driver relationships with: {bulk_data.driver}")
+                        await create_driver_relationships(session, variable_id, bulk_data.driver)
+
+                    # Handle object relationships if provided
+                    if bulk_data.objectRelationshipsList is not None and len(bulk_data.objectRelationshipsList) > 0:
+                        print(f"Processing {len(bulk_data.objectRelationshipsList)} object relationships")
+                        for relationship in bulk_data.objectRelationshipsList:
+                            try:
+                                # Create object relationship for this variable (append new relationships with deduplication)
+                                await create_object_relationship_for_variable(session, variable_id, relationship)
+                            except Exception as e:
+                                print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
+                                errors.append(f"Failed to create object relationship for variable {variable_id}: {str(e)}")
+
+                    updated_count += 1
+
+                except Exception as e:
+                    print(f"Error updating variable {variable_id}: {str(e)}")
+                    errors.append(f"Failed to update variable {variable_id}: {str(e)}")
+                    continue
+
+        return BulkVariableUpdateResponse(
+            success=updated_count > 0,
+            message=f"Updated {updated_count} variables successfully",
+            updated_count=updated_count,
+            error_count=len(errors),
+            errors=errors
+        )
+
+    except Exception as e:
+        print(f"Error in bulk update: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk update variables: {str(e)}")
+
+async def create_object_relationship_for_variable(session, variable_id: str, relationship_data: ObjectRelationshipCreateRequest):
+    """
+    Create an object relationship for a variable.
+    Note: Variable existence is already verified in the calling function.
+    """
+    try:
+        # Find matching objects based on the relationship criteria
+        if relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL" and relationship_data.to_object == "ALL":
+            # Connect to all objects
+            objects_result = session.run("MATCH (o:Object) RETURN o")
+        elif relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL":
+            # Connect to all objects with specific object name
+            objects_result = session.run("MATCH (o:Object {object: $object}) RETURN o", {"object": relationship_data.to_object})
+        elif relationship_data.to_being == "ALL":
+            # Connect to all objects with specific avatar and object
+            objects_result = session.run("MATCH (o:Object {avatar: $avatar, object: $object}) RETURN o", 
+                {"avatar": relationship_data.to_avatar, "object": relationship_data.to_object})
+        elif relationship_data.to_object == "ALL":
+            # Connect to all objects with specific being and avatar (regardless of object name)
+            objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar}) RETURN o", 
+                {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar})
+        else:
+            # Connect to specific being, avatar, and object
+            objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar, object: $object}) RETURN o", 
+                {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar, "object": relationship_data.to_object})
+
+        # Create relationships with HAS_SPECIFIC_VARIABLE relationship name
+        relationships_created = 0
+        for record in objects_result:
+            # Check if relationship already exists to avoid duplicates
+            existing_rel = session.run("""
+                MATCH (o:Object {id: $object_id})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                RETURN r
+            """, {
+                "variable_id": variable_id, 
+                "object_id": record["o"]["id"]
+            }).single()
+            
+            if not existing_rel:
+                session.run("""
+                    MATCH (v:Variable {id: $variable_id})
+                    MATCH (o:Object {id: $object_id})
+                    MERGE (o)-[:HAS_SPECIFIC_VARIABLE {createdBy: "frontend"}]->(v)
+                """, {
+                    "variable_id": variable_id, 
+                    "object_id": record["o"]["id"]
+                })
+                relationships_created += 1
+
+        return relationships_created
+
+    except Exception as e:
+        print(f"Error creating object relationship: {e}")
+        raise e

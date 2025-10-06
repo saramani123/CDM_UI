@@ -11,6 +11,7 @@ import { BulkObjectUploadModal } from './components/BulkObjectUploadModal';
 import { VariableMetadataPanel } from './components/VariableMetadataPanel';
 import { AddVariablePanel } from './components/AddVariablePanel';
 import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
+import { BulkEditVariablesPanel } from './components/BulkEditVariablesPanel';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
 import { mockObjectData, objectColumns, metadataFields, getAvatarOptions, type ObjectData } from './data/mockData';
@@ -38,7 +39,7 @@ function App() {
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
   
   // Use API hook for variables data
-  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables } = useVariables();
+  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables, bulkUpdateVariables } = useVariables();
   
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
@@ -48,6 +49,7 @@ function App() {
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
+  const [isBulkEditVariablesOpen, setIsBulkEditVariablesOpen] = useState(false);
   const [listData, setListData] = useState(mockListData);
   const [isBulkListUploadOpen, setIsBulkListUploadOpen] = useState(false);
   const [isAddListOpen, setIsAddListOpen] = useState(false);
@@ -159,6 +161,12 @@ function App() {
   React.useEffect(() => {
     (window as any).driversData = driversState;
   }, [driversState]);
+
+  // Clear selection when switching tabs
+  React.useEffect(() => {
+    setSelectedRows([]);
+    setSelectedRowForMetadata(null);
+  }, [activeTab]);
   // Get current metadata fields with values from selected row
   const currentMetadataFields = useMemo(() => {
     if (activeTab === 'lists') {
@@ -401,6 +409,30 @@ function App() {
   const handleBulkEdit = async (updatedData: Record<string, any>) => {
     const selectedIds = selectedRows.map(row => row.id);
     
+    // Handle variables bulk edit via API
+    if (activeTab === 'variables') {
+      try {
+        // Prepare bulk update data
+        const bulkUpdateData = {
+          variable_ids: selectedIds,
+          ...updatedData
+        };
+        
+        // Call the bulk update API
+        await bulkUpdateVariables(bulkUpdateData);
+        
+        // Close modal and clear selections
+        setIsBulkEditVariablesOpen(false);
+        setSelectedRows([]);
+        setSelectedRowForMetadata(null);
+        return;
+      } catch (error) {
+        console.error('Failed to bulk update variables:', error);
+        alert('Failed to update variables. Please try again.');
+        return;
+      }
+    }
+    
     // If this is for objects and we have relationships or variants, call the backend API
     if (activeTab === 'objects' && (updatedData.relationshipsList || updatedData.variantsList)) {
       try {
@@ -421,21 +453,7 @@ function App() {
       if (selectedIds.includes(item.id)) {
         const updated = { ...item };
         
-        if (activeTab === 'variables') {
-          // Update variable fields if they were changed
-          Object.keys(updatedData).forEach(key => {
-            if (updatedData[key] && key !== 'objectRelationshipsList') {
-              updated[key] = updatedData[key];
-            }
-          });
-          
-          // Append new object relationships if any were added
-          if (updatedData.objectRelationshipsList && updatedData.objectRelationshipsList.length > 0) {
-            const existingRelationships = updated.objectRelationshipsList || [];
-            updated.objectRelationshipsList = [...existingRelationships, ...updatedData.objectRelationshipsList];
-            updated.objectRelationships = updated.objectRelationshipsList.length;
-          }
-        } else if (activeTab === 'lists') {
+        if (activeTab === 'lists') {
           // Update list fields if they were changed
           Object.keys(updatedData).forEach(key => {
             if (updatedData[key] && !['variablesAttachedList', 'listValuesList'].includes(key)) {
@@ -483,8 +501,6 @@ function App() {
 
     if (activeTab === 'lists') {
       setListData(updateFunction);
-    } else if (activeTab === 'variables') {
-      setVariableData(updateFunction);
     } else {
       setData(updateFunction);
     }
@@ -910,7 +926,13 @@ function App() {
                     </button>
                     
                     <button
-                     onClick={() => setIsBulkEditOpen(true)}
+                     onClick={() => {
+                       if (activeTab === 'variables') {
+                         setIsBulkEditVariablesOpen(true);
+                       } else {
+                         setIsBulkEditOpen(true);
+                       }
+                     }}
                       className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-warning text-white rounded text-sm font-medium hover:bg-orange-600 transition-colors"
                     >
                       <Edit2 className="w-4 h-4" />
@@ -981,6 +1003,17 @@ function App() {
                 selectedCount={selectedRows.length}
                 allData={activeTab === 'variables' ? variableData : data}
                 activeTab={activeTab}
+              />
+            </div>
+          ) : (isBulkEditVariablesOpen && activeTab === 'variables') ? (
+            <div className="lg:col-span-1">
+              <BulkEditVariablesPanel
+                isOpen={isBulkEditVariablesOpen}
+                onClose={() => setIsBulkEditVariablesOpen(false)}
+                onSave={handleBulkEdit}
+                selectedCount={selectedRows.length}
+                allData={variableData}
+                objectsData={data}
               />
             </div>
           ) : (
@@ -1054,6 +1087,7 @@ function App() {
         onClose={() => setIsBulkListUploadOpen(false)}
         onUpload={handleBulkListUpload}
       />
+
     </div>
   );
 }
