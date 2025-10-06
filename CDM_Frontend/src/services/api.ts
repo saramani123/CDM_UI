@@ -234,6 +234,7 @@ class ApiService {
     });
   }
 
+
   async getDriverRelationships(type: string, name: string) {
     return this.request(`/drivers/${type}/relationships?name=${encodeURIComponent(name)}`);
   }

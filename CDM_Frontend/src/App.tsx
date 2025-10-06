@@ -744,6 +744,14 @@ function App() {
     }
   };
 
+  const handleDriversReorder = (columnType: ColumnType, newOrder: string[]) => {
+    // Update local state only - no API calls
+    setDriversState(prev => ({
+      ...prev,
+      [columnType]: newOrder
+    }));
+  };
+
   const exportToCsv = () => {
     const currentData = activeTab === 'variables' ? variableData : data;
     const currentColumns = activeTab === 'variables' ? variableColumns : objectColumns;
@@ -764,9 +772,9 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-ag-dark-bg">
+    <div className="h-screen bg-ag-dark-bg flex flex-col">
       {/* Header */}
-      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-6">
+      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-6 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-ag-dark-text">Canonical Data Model</h1>
           <p className="text-sm text-ag-dark-text-secondary mt-1">
@@ -776,7 +784,7 @@ function App() {
       </div>
 
       {/* Tab Navigation */}
-      <div className="px-6">
+      <div className="px-6 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
         <TabNavigation 
           tabs={dynamicTabs} 
           activeTab={activeTab} 
@@ -785,7 +793,7 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div className="px-6 py-6">
+      <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
         {['functions', 'ledgers', 'sources'].includes(activeTab) ? (
           <div className="flex items-center justify-center min-h-[400px]">
@@ -796,10 +804,10 @@ function App() {
             </div>
           </div>
         ) : activeTab === 'drivers' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
             {/* Drivers Columns */}
-            <div className="lg:col-span-3">
-              <div className="flex items-center justify-between mb-4">
+            <div className="lg:col-span-3 flex flex-col h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
+              <div className="flex items-center justify-between mb-4 flex-shrink-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
                 <div>
                   <h2 className="text-lg font-semibold text-ag-dark-text">Drivers</h2>
                   <p className="text-sm text-ag-dark-text-secondary">
@@ -814,12 +822,13 @@ function App() {
                 </div>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
                 <DriversColumn
                   title="Sector"
                   items={driversState.sectors}
                   onHeaderClick={() => handleColumnHeaderClick('sectors')}
                   onItemClick={(item) => handleItemClick('sectors', item)}
+                  onReorder={(newOrder) => handleDriversReorder('sectors', newOrder)}
                   selectedItem={selectedColumn === 'sectors' ? selectedItem : undefined}
                   canAddNew={true}
                 />
@@ -828,6 +837,7 @@ function App() {
                   items={driversState.domains}
                   onHeaderClick={() => handleColumnHeaderClick('domains')}
                   onItemClick={(item) => handleItemClick('domains', item)}
+                  onReorder={(newOrder) => handleDriversReorder('domains', newOrder)}
                   selectedItem={selectedColumn === 'domains' ? selectedItem : undefined}
                   canAddNew={true}
                 />
@@ -836,6 +846,7 @@ function App() {
                   items={driversState.countries}
                   onHeaderClick={() => handleColumnHeaderClick('countries')}
                   onItemClick={(item) => handleItemClick('countries', item)}
+                  onReorder={(newOrder) => handleDriversReorder('countries', newOrder)}
                   selectedItem={selectedColumn === 'countries' ? selectedItem : undefined}
                   canAddNew={false}
                 />
@@ -844,6 +855,7 @@ function App() {
                   items={driversState.objectClarifiers}
                   onHeaderClick={() => handleColumnHeaderClick('objectClarifiers')}
                   onItemClick={(item) => handleItemClick('objectClarifiers', item)}
+                  onReorder={(newOrder) => handleDriversReorder('objectClarifiers', newOrder)}
                   selectedItem={selectedColumn === 'objectClarifiers' ? selectedItem : undefined}
                   canAddNew={true}
                 />
@@ -852,6 +864,7 @@ function App() {
                   items={driversState.variableClarifiers}
                   onHeaderClick={() => handleColumnHeaderClick('variableClarifiers')}
                   onItemClick={(item) => handleItemClick('variableClarifiers', item)}
+                  onReorder={(newOrder) => handleDriversReorder('variableClarifiers', newOrder)}
                   selectedItem={selectedColumn === 'variableClarifiers' ? selectedItem : undefined}
                   canAddNew={true}
                 />
@@ -859,7 +872,7 @@ function App() {
             </div>
 
             {/* Drivers Metadata Panel */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
               <DriversMetadataPanel
                 title={selectedColumn ? `${columnLabels[selectedColumn]} Metadata` : 'Column Metadata'}
                 selectedColumn={selectedColumn}

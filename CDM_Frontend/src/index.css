@@ -3,8 +3,12 @@
 @tailwind utilities;
 
 @layer base {
-  body {
+  html, body {
     font-family: 'IBM Plex Sans', system-ui, sans-serif;
     font-size: 14px;
+    background-color: #1a1d23; /* ag-dark-bg equivalent */
+    margin: 0;
+    padding: 0;
+    height: 100%;
   }
 }

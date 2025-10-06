@@ -32,7 +32,7 @@ async def get_drivers(driver_type: DriverType):
     try:
         label = get_driver_label(driver_type)
         with driver.session() as session:
-            result = session.run(f"MATCH (d:{label}) RETURN d.name as name ORDER BY d.name")
+            result = session.run(f"MATCH (d:{label}) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name")
             drivers = [record["name"] for record in result]
             return drivers
             
@@ -74,6 +74,35 @@ async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
     except Exception as e:
         print(f"Error creating {driver_type}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create {driver_type}")
+
+@router.put("/drivers/{driver_type}/reorder/")
+async def reorder_drivers(driver_type: DriverType, reorder_data: Dict[str, Any]):
+    """
+    Reorder drivers of a specific type.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=503, detail="Neo4j connection not available")
+    
+    try:
+        ordered_names = reorder_data.get("orderedNames", [])
+        if not ordered_names:
+            raise HTTPException(status_code=400, detail="orderedNames is required")
+        
+        label = get_driver_label(driver_type)
+        with driver.session() as session:
+            # Update the order property for each driver
+            for index, name in enumerate(ordered_names):
+                session.run("""
+                    MATCH (d:{label} {{name: $name}})
+                    SET d.order = $order
+                """.format(label=label), name=name, order=index)
+            
+            return {"message": f"Successfully reordered {len(ordered_names)} {driver_type}"}
+            
+    except Exception as e:
+        print(f"Error reordering {driver_type}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reorder drivers: {str(e)}")
 
 @router.put("/drivers/{driver_type}/{old_name}")
 async def update_driver(driver_type: DriverType, old_name: str, driver_data: Dict[str, Any]):
