@@ -1,0 +1,159 @@
+Sector,Domain,Country,Object Clarifier,Being,Avatar,Object
+ALL,ALL,ALL,ALL,Master,Employee,Employee
+ALL,ALL,ALL,ALL,Master,Employee,Staff
+ALL,ALL,ALL,ALL,Master,Employee,Staff
+ALL,ALL,ALL,ALL,Master,Product,Product
+ALL,ALL,ALL,ALL,Master,Product,Product
+ALL,ALL,ALL,ALL,Master,Product,Policy
+ALL,ALL,ALL,Employment Type,Master,Product,Product
+ALL,ALL,ALL,Pay Type,Master,Product,Service
+Financial Services,Banking,ALL,Job Title,Master,Product,Product
+Professional Services,ALL,ALL,Job Title,Master,Product,Service
+Financial Services,Investment,ALL,Job Title,Master,Product,Program
+Professional Services,ALL,ALL,Job Title,Master,Customer,Customer
+Manufacturing,ALL,ALL,Job Title,Master,Customer,Customer
+Healthcare,ALL,ALL,Job Title,Master,Customer,Customer
+Education,ALL,ALL,Job Title,Master,Customer,Client
+ALL,ALL,ALL,ALL,Master,Customer,Client
+Financial Services,Banking,ALL,ALL,Master,Customer,Customer
+Professional Services,ALL,ALL,ALL,Master,Customer,Patient
+Financial Services,Investment,ALL,ALL,Master,Customer,Student
+Professionals,ALL,ALL,ALL,Master,Supplier,Supplier
+Manufacturing,ALL,ALL,ALL,Master,Supplier,Vendor
+Healthcare,ALL,ALL,ALL,Master,Supplier,Vendor
+Education,ALL,ALL,ALL,Master,Supplier,Vendor
+ALL,ALL,ALL,ALL,Master,Supplier,Vendor
+Financial Services,Banking,ALL,ALL,Master,Supplier,Supplier
+Professional Services,ALL,ALL,ALL,Master,Supplier,Supplier
+Financial Services,Investment,ALL,ALL,Master,Supplier,Supplier
+Professionals,ALL,ALL,ALL,Mate,Person,Person
+Manufacturing,ALL,ALL,ALL,Mate,Person,Individual
+Healthcare,ALL,ALL,ALL,Mate,Person,Institution
+Education,ALL,ALL,ALL,Mate,Person,Intermediary
+ALL,ALL,ALL,ALL,Mate,Person,Target
+Financial Services,Banking,ALL,ALL,Mate,Person,Authority
+Professional Services,ALL,ALL,ALL,Mate,Person,Fiduciary
+Financial Services,Investment,ALL,ALL,Mate,Person,Institution
+Professionals,ALL,ALL,ALL,Mate,Person,Intermediary
+Manufacturing,ALL,ALL,ALL,Mate,Person,Institution
+Healthcare,ALL,ALL,ALL,Mate,Person,Intermediary
+Education,ALL,ALL,ALL,Mate,Person,Institution
+ALL,ALL,ALL,ALL,Mate,Thing,Ingredient
+ALL,ALL,ALL,ALL,Mate,Thing,System
+ALL,ALL,ALL,ALL,Mate,Thing,Program
+ALL,ALL,ALL,ALL,Mate,Thing,Document
+ALL,ALL,ALL,ALL,Mate,Thing,Security
+ALL,ALL,ALL,ALL,Mate,Thing,Vehicle
+ALL,ALL,ALL,ALL,Mate,Reference,Reference
+Professional Services,ALL,ALL,ALL,Mate,Reference,Currency
+Professional Services,ALL,ALL,ALL,Mate,Reference,Interest
+Financial Services,Investment,ALL,ALL,Mate,Reference,Tax
+Financial Services,Investment,ALL,ALL,Mate,Reference,Holiday
+Healthcare,ALL,ALL,ALL,Mate,Reference,Schedule
+ALL,ALL,ALL,ALL,Mate,Reference,Parameter
+ALL,ALL,ALL,ALL,Mate,Reference,Reference
+ALL,ALL,ALL,ALL,Mate,Reference,Reference
+ALL,ALL,ALL,ALL,Mate,Reference,Reference
+Financial Services,Investment,ALL,ALL,Mate,Register,Register
+Manufacturing,ALL,ALL,ALL,Mate,Register,Chart
+ALL,ALL,ALL,ALL,Mate,Register,Trial
+ALL,ALL,ALL,ALL,Mate,Register,Transaction
+ALL,ALL,ALL,ALL,Mate,Register,Lot
+ALL,ALL,ALL,ALL,Mate,Register,Inventory
+ALL,ALL,ALL,ALL,Mate,Register,Holding
+ALL,ALL,ALL,ALL,Process,Activity,Activity
+ALL,ALL,ALL,ALL,Process,Activity,Initiation
+Financial Services,Investment,ALL,ALL,Process,Activity,Action
+ALL,HR,ALL,ALL,Process,Activity,Completion
+ALL,Finance,ALL,ALL,Process,Activity,Execution
+ALL,ALL,ALL,ALL,Process,Activity,Activation
+ALL,ALL,ALL,ALL,Process,Activity,Assignment
+ALL,ALL,ALL,ALL,Process,Activity,Alert
+ALL,ALL,ALL,ALL,Process,Activity,Approval
+ALL,ALL,ALL,ALL,Process,Activity,Invitation
+ALL,ALL,ALL,ALL,Process,Activity,Evaluation
+Financial Services,Investment,ALL,ALL,Process,Activity,Interaction
+ALL,ALL,ALL,ALL,Process,Activity,Verification
+ALL,ALL,ALL,ALL,Process,Activity,Analysis
+ALL,ALL,ALL,ALL,Process,Activity,Matching
+ALL,ALL,ALL,ALL,Process,Activity,Scheduling
+ALL,ALL,ALL,ALL,Process,Activity,Observation
+ALL,ALL,ALL,ALL,Process,Activity,Distribution
+ALL,ALL,ALL,ALL,Process,Activity,Documentation
+ALL,ALL,ALL,ALL,Process,Activity,Revision
+ALL,ALL,ALL,ALL,Process,Activity,Closure
+ALL,ALL,ALL,ALL,Process,Activity,Report
+ALL,ALL,ALL,ALL,Process,Activity,Email
+ALL,ALL,ALL,ALL,Process,Activity,Text
+ALL,ALL,ALL,ALL,Process,Activity,Call
+ALL,ALL,ALL,ALL,Process,Activity,Letter
+ALL,ALL,ALL,ALL,Process,Activity,Session
+ALL,ALL,ALL,ALL,Process,Activity,Execution
+ALL,ALL,ALL,ALL,Process,Activity,Revision
+ALL,ALL,ALL,ALL,Process,Transaction,Transaction
+ALL,ALL,ALL,ALL,Process,Transaction,Order
+ALL,ALL,ALL,ALL,Process,Transaction,Purchase Order
+ALL,ALL,ALL,ALL,Process,Transaction,Charge
+ALL,ALL,ALL,ALL,Process,Transaction,Invoice
+ALL,ALL,ALL,ALL,Process,Transaction,Bill
+ALL,ALL,ALL,ALL,Process,Transaction,Receipt
+ALL,ALL,ALL,ALL,Process,Transaction,Statement
+ALL,ALL,ALL,ALL,Process,Transaction,Bid
+ALL,ALL,ALL,ALL,Process,Transaction,Quote
+Professional Services,ALL,ALL,ALL,Process,Transaction,Issuance
+Professional Services,ALL,ALL,ALL,Process,Transaction,Charge
+ALL,ALL,ALL,ALL,Process,Transaction,Claim
+ALL,ALL,ALL,ALL,Process,Transaction,Distribution
+ALL,ALL,ALL,ALL,Process,Transaction,Withdrawal
+ALL,ALL,ALL,ALL,Process,Transaction,Trade
+ALL,ALL,ALL,ALL,Process,Transaction,Confirmation
+ALL,ALL,ALL,ALL,Process,Transaction,Settlement
+ALL,ALL,ALL,ALL,Process,Transaction,Subscription
+ALL,ALL,ALL,ALL,Process,Transaction,Redemption
+ALL,ALL,ALL,ALL,Process,Transaction,Fulfillment
+Professional Services,ALL,ALL,ALL,Process,Transaction,Return
+Professional Services,ALL,ALL,ALL,Process,Transaction,Timesheet
+Professional Services,ALL,ALL,ALL,Process,Transaction,Earning
+Professional Services,ALL,ALL,ALL,Process,Transaction,Vacation
+Professional Services,ALL,ALL,ALL,Process,Transaction,Disbursement
+Professional Services,ALL,ALL,ALL,Process,Transaction,Drawdown
+Financial Services,Investment,ALL,ALL,Process,Payment,Payment
+Financial Services,Investment,ALL,ALL,Process,Payment,Authorization
+Financial Services,Investment,ALL,ALL,Process,Payment,Deposit
+Financial Services,Investment,ALL,ALL,Process,Payment,Refund
+Financial Services,Investment,ALL,ALL,Process,Payment,Cancellation
+Manufacturing,ALL,ALL,ALL,Process,Posting,Posting
+Manufacturing,ALL,ALL,ALL,Process,Posting,Journal Entry
+ALL,HR,ALL,ALL,Process,Posting,Adjustment
+ALL,HR,ALL,ALL,Process,Posting,Accrual
+ALL,HR,ALL,ALL,Process,Posting,Allocation
+ALL,Finance,ALL,ALL,Process,Posting,Transfer
+ALL,Finance,ALL,ALL,Process,Posting,Valuation
+ALL,ALL,ALL,ALL,Process,Posting,Reconciliation
+ALL,ALL,ALL,ALL,Process,Posting,Review
+ALL,ALL,ALL,ALL,Process,Posting,Consolidation
+ALL,ALL,ALL,ALL,Adjunct,Account,Account
+ALL,ALL,ALL,ALL,Adjunct,Account,Bank Account
+ALL,ALL,ALL,ALL,Adjunct,Account,Credit Card
+ALL,ALL,ALL,ALL,Adjunct,Affiliate,Affiliate
+ALL,ALL,ALL,ALL,Adjunct,Affiliate,Contact
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Attribute
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Setting
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Pricing
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Configuration
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Period
+ALL,ALL,ALL,ALL,Rule,Trigger,Trigger
+ALL,ALL,ALL,ALL,Rule,Validator,Validator
+ALL,ALL,ALL,ALL,Roster,List,Static
+ALL,ALL,ALL,ALL,Roster,List,Dynamic
+ALL,ALL,ALL,ALL,Adjunct,Affiliate,Affiliate
+ALL,ALL,ALL,ALL,Adjunct,Affiliate,Contact
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Attribute
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Setting
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Pricing
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Configuration
+ALL,ALL,ALL,ALL,Adjunct,Attribute,Period
+ALL,ALL,ALL,ALL,Rule,Trigger,Trigger
+ALL,ALL,ALL,ALL,Rule,Validator,Validator
+ALL,ALL,ALL,ALL,Roster,List,Static
+ALL,ALL,ALL,ALL,Roster,List,Dynamic
