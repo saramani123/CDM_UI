@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
-import { getAvatarOptions, getDriversData, concatenateDrivers, parseDriverString } from '../data/mockData';
+import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data/mockData';
+import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 import { apiService } from '../services/api';
 
@@ -40,6 +41,8 @@ interface MetadataPanelProps {
   selectedObject?: any;
   allData?: any[];
   selectedCount?: number;
+  affectedObjectIds?: Set<string>;
+  deletedDriverType?: string | null;
 }
 
 export const MetadataPanel: React.FC<MetadataPanelProps> = ({
@@ -49,7 +52,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   onClose,
   selectedObject,
   allData = [],
-  selectedCount = 0
+  selectedCount = 0,
+  affectedObjectIds = new Set(),
+  deletedDriverType = null
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {};
@@ -72,7 +77,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     };
   });
 
-  const driversData = getDriversData();
+  const { drivers: driversData } = useDrivers();
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
@@ -180,6 +185,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // Check if panel should be enabled (exactly 1 object selected)
   const isPanelEnabled = selectedCount === 1;
+  
+  // Check if the selected object is affected by driver deletion
+  const isSelectedObjectAffected = selectedObject && affectedObjectIds.has(selectedObject.id);
+  const hasDeletedSector = selectedObject && selectedObject.driver && selectedObject.driver.startsWith('-');
+  const isSectorDeleted = (isSelectedObjectAffected && deletedDriverType === 'sectors') || hasDeletedSector;
 
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
@@ -553,11 +563,23 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Sector
+              {(driverSelections.sector.length === 0 || isSectorDeleted) && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
             </label>
+            {isSectorDeleted ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please reselect sector
+              </div>
+            ) : driverSelections.sector.length === 0 ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please select a relevant Sector
+              </div>
+            ) : null}
             <MultiSelect
               label="Sector"
               options={['ALL', ...driversData.sectors]}
-              values={driverSelections.sector}
+              values={isSectorDeleted ? [] : driverSelections.sector}
               onChange={(values) => handleDriverSelectionChange('sector', values)}
               disabled={!isPanelEnabled}
             />
@@ -566,7 +588,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Domain
+              {driverSelections.domain.length === 0 && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
             </label>
+            {driverSelections.domain.length === 0 ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please select a relevant Domain
+              </div>
+            ) : null}
             <MultiSelect
               label="Domain"
               options={['ALL', ...driversData.domains]}
@@ -579,7 +609,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Country
+              {driverSelections.country.length === 0 && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
             </label>
+            {driverSelections.country.length === 0 ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please select a relevant Country
+              </div>
+            ) : null}
             <MultiSelect
               label="Country"
               options={['ALL', ...driversData.countries]}

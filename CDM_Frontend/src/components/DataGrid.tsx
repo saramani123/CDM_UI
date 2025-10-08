@@ -18,6 +18,8 @@ interface DataGridProps {
   onDelete?: (row: Record<string, any>) => void;
   selectedRows?: Record<string, any>[];
   onReorder?: (newData: Record<string, any>[]) => void;
+  affectedIds?: Set<string>;
+  deletedDriverType?: string | null;
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -27,8 +29,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onEdit,
   onDelete,
   selectedRows = [],
-  onReorder
+  onReorder,
+  affectedIds = new Set(),
+  deletedDriverType = null
 }) => {
+  console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
+  console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
   const [sortConfig, setSortConfig] = useState<{
     key: string; 
     type: 'custom' | 'none';
@@ -120,7 +126,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null;
 
   const filteredAndSortedData = useMemo(() => {
-    console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length });
+    console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length, affectedIds: affectedIds.size, affectedIdsArray: Array.from(affectedIds) });
     
     let processedData = [...data];
 
@@ -141,6 +147,19 @@ export const DataGrid: React.FC<DataGridProps> = ({
         );
       }
     });
+
+    // Prioritize affected items at the top
+    console.log('🔍 DataGrid - affectedIds.size:', affectedIds.size);
+    console.log('🔍 DataGrid - affectedIds:', Array.from(affectedIds));
+    console.log('🔍 DataGrid - processedData count:', processedData.length);
+    
+    if (affectedIds.size > 0) {
+      const affectedItems = processedData.filter(row => affectedIds.has(row.id));
+      const nonAffectedItems = processedData.filter(row => !affectedIds.has(row.id));
+      processedData = [...affectedItems, ...nonAffectedItems];
+      console.log(`🎯 MOVED ${affectedItems.length} affected items to top`);
+      console.log('🔍 DataGrid - affected items:', affectedItems.map(item => ({ id: item.id, object: item.object, driver: item.driver })));
+    }
 
     // Apply sorting
     if (sortConfig) {
@@ -185,7 +204,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
 
     return processedData;
-  }, [data, filters, columnFilters, sortConfig]);
+  }, [data, filters, columnFilters, sortConfig, affectedIds]);
 
   // Calculate available filter options for each column based on current filters
   const getAvailableFilterOptions = useMemo(() => {
@@ -322,6 +341,40 @@ export const DataGrid: React.FC<DataGridProps> = ({
     return localSelectedRows.some(selectedRow => selectedRow.id === row.id);
   }
 
+  function isRowAffected(row: Record<string, any>) {
+    // Check if row is in affectedIds (from driver deletion)
+    const isAffectedByIds = affectedIds.has(row.id);
+    
+    // Also check if the driver field starts with "-" (indicating deleted sector)
+    const hasDeletedSector = row.driver && row.driver.startsWith('-');
+    
+    const isAffected = isAffectedByIds || hasDeletedSector;
+    
+    if (isAffected) {
+      console.log(`Row ${row.id} is affected (by IDs: ${isAffectedByIds}, by driver: ${hasDeletedSector})`);
+    }
+    return isAffected;
+  }
+
+  function formatDriverWithDeletedSector(driverString: string, deletedDriverType: string | null) {
+    if (!driverString || !deletedDriverType) return driverString;
+    
+    const parts = driverString.split(', ');
+    if (parts.length >= 4) {
+      if (deletedDriverType === 'sectors' && parts[0] !== 'ALL') {
+        parts[0] = '-';
+      } else if (deletedDriverType === 'domains' && parts[1] !== 'ALL') {
+        parts[1] = '-';
+      } else if (deletedDriverType === 'countries' && parts[2] !== 'ALL') {
+        parts[2] = '-';
+      } else if (deletedDriverType === 'objectClarifiers' && parts[3] !== 'None') {
+        parts[3] = '-';
+      }
+    }
+    
+    return parts.join(', ');
+  }
+
   return (
     <>
       <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden">
@@ -398,6 +451,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors ${
                   isRowSelected(row) ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
                 } ${
+                  isRowAffected(row) ? 'bg-red-900 bg-opacity-30 border-red-500 border-opacity-50' : ''
+                } ${
                   dragOverIndex === index ? 'border-t-2 border-t-ag-dark-accent' : ''
                 } ${
                   draggedRow?.id === row.id ? 'opacity-50' : ''
@@ -425,8 +480,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       (column.key === 'object' || column.key === 'variable' || column.key === 'list') 
                         ? 'font-semibold' 
                         : ''
+                    } ${
+                      column.key === 'driver' && (isRowAffected(row) || (row.driver && row.driver.startsWith('-'))) ? 'text-red-400' : ''
                     }`}>
-                      {row[column.key] || '-'}
+                      {column.key === 'driver' && (isRowAffected(row) || (row.driver && row.driver.startsWith('-'))) ? 
+                        formatDriverWithDeletedSector(row[column.key], deletedDriverType) : 
+                        (row[column.key] || '-')
+                      }
                     </span>
                   </div>
                 ))}

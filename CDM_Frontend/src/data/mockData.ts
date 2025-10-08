@@ -280,16 +280,54 @@ export const concatenateDrivers = (sector: string[], domain: string[], country: 
 
 // Helper function to parse driver string back to selections
 export const parseDriverString = (driverString: string) => {
-  const parts = driverString.split(', ').map(part => part.trim());
-  
   // Get all available driver options to determine what "ALL" should include
   const driversData = getDriversData();
   
+  // Split by ', ' but handle cases where sector/domain names contain commas
+  // We need to be more careful about splitting since sector names can contain commas
+  const parts = driverString.split(', ');
+  
+  // If we have more than 4 parts, it means one of the first parts contains commas
+  // We need to reconstruct the proper parts
+  let sector = '';
+  let domain = '';
+  let country = '';
+  let objectClarifier = '';
+  
+  if (parts.length === 4) {
+    // Normal case: exactly 4 parts
+    sector = parts[0].trim();
+    domain = parts[1].trim();
+    country = parts[2].trim();
+    objectClarifier = parts[3].trim();
+  } else if (parts.length > 4) {
+    // Complex case: one of the first parts contains commas
+    // We need to identify which part is which by checking against known values
+    
+    // The last part is always the object clarifier
+    objectClarifier = parts[parts.length - 1].trim();
+    
+    // The second to last part is always the country
+    country = parts[parts.length - 2].trim();
+    
+    // The third to last part is always the domain
+    domain = parts[parts.length - 3].trim();
+    
+    // Everything before that is the sector
+    sector = parts.slice(0, parts.length - 3).join(', ').trim();
+  } else {
+    // Fallback: try to parse what we can
+    sector = parts[0]?.trim() || '';
+    domain = parts[1]?.trim() || '';
+    country = parts[2]?.trim() || '';
+    objectClarifier = parts[3]?.trim() || '';
+  }
+  
   return {
-    sector: parts[0] === 'ALL' ? ['ALL', ...driversData.sectors] : parts[0] ? [parts[0]] : [],
-    domain: parts[1] === 'ALL' ? ['ALL', ...driversData.domains] : parts[1] ? [parts[1]] : [],
-    country: parts[2] === 'ALL' ? ['ALL', ...driversData.countries] : parts[2] ? [parts[2]] : [],
-    objectClarifier: parts[3] === 'None' ? '' : parts[3] || ''
+    sector: sector === 'ALL' ? ['ALL', ...driversData.sectors] : sector ? [sector] : [],
+    domain: domain === 'ALL' ? ['ALL', ...driversData.domains] : domain ? [domain] : [],
+    country: country === 'ALL' ? ['ALL', ...driversData.countries] : country ? [country] : [],
+    objectClarifier: objectClarifier === 'None' ? '' : objectClarifier || ''
   };
 };
 

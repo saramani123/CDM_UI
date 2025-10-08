@@ -76,14 +76,14 @@ export const useDrivers = () => {
 
   const deleteDriver = async (type: ColumnType, name: string) => {
     try {
-      await apiService.deleteDriver(type, name);
+      const response = await apiService.deleteDriver(type, name);
       // Refresh the specific driver type
       const updatedDrivers = await apiService.getDrivers(type);
       setDrivers(prev => ({
         ...prev,
         [type]: updatedDrivers || []
       }));
-      return true;
+      return response; // Return the full response with affected objects/variables
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to delete ${type}`);
       throw err;

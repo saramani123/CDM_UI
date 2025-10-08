@@ -16,6 +16,7 @@ export const useObjects = () => {
       setLoading(true);
       setError(null);
       const data = await apiService.getObjects();
+      console.log('🔄 fetchObjects - API response:', data.slice(0, 3).map(obj => ({ id: obj.id, driver: obj.driver })));
       setObjects(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch objects');
@@ -38,10 +39,17 @@ export const useObjects = () => {
 
   const updateObject = async (id: string, objectData: Partial<ObjectData>) => {
     try {
+      console.log('🔄 updateObject called:', { id, objectData });
       const updatedObject = await apiService.updateObject(id, objectData);
-      setObjects(prev => prev.map(obj => obj.id === id ? updatedObject : obj));
+      console.log('✅ updateObject response:', updatedObject);
+      setObjects(prev => {
+        const newObjects = prev.map(obj => obj.id === id ? updatedObject : obj);
+        console.log('🔄 Updated objects state:', newObjects.find(obj => obj.id === id));
+        return newObjects;
+      });
       return updatedObject;
     } catch (err) {
+      console.error('❌ updateObject error:', err);
       setError(err instanceof Error ? err.message : 'Failed to update object');
       throw err;
     }

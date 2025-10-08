@@ -489,11 +489,31 @@ async def update_object(
                 
                 # Parse driver string to recreate relationships
                 parts = driver_string.split(', ')
+                print(f"DEBUG: Driver string parts: {parts} (length: {len(parts)})")
+                
                 if len(parts) >= 4:
-                    sector_str = parts[0].strip()
-                    domain_str = parts[1].strip()
-                    country_str = parts[2].strip()
-                    clarifier_str = parts[3].strip()
+                    # Handle cases where we have more than 4 parts (multiple sectors/domains)
+                    if len(parts) == 4:
+                        # Normal case: exactly 4 parts
+                        sector_str = parts[0].strip()
+                        domain_str = parts[1].strip()
+                        country_str = parts[2].strip()
+                        clarifier_str = parts[3].strip()
+                    else:
+                        # Complex case: one of the first parts contains commas
+                        # The last part is always the object clarifier
+                        clarifier_str = parts[-1].strip()
+                        
+                        # The second to last part is always the country
+                        country_str = parts[-2].strip()
+                        
+                        # The third to last part is always the domain
+                        domain_str = parts[-3].strip()
+                        
+                        # Everything before that is the sector
+                        sector_str = ', '.join(parts[:-3]).strip()
+                    
+                    print(f"DEBUG: Parsed - Sector: '{sector_str}', Domain: '{domain_str}', Country: '{country_str}', Clarifier: '{clarifier_str}'")
                     
                     # Create new driver relationships
                     # Sector relationships
@@ -508,13 +528,18 @@ async def update_object(
                     else:
                         # Create relationships to selected sectors only
                         sectors = [s.strip() for s in sector_str.split(',')]
+                        print(f"DEBUG: Creating relationships to sectors: {sectors}")
                         for sector in sectors:
-                            session.run("""
-                                MATCH (s:Sector {name: $sector})
-                                MATCH (o:Object {id: $object_id})
-                                WITH s, o
-                                CREATE (s)-[:RELEVANT_TO]->(o)
-                            """, sector=sector, object_id=object_id)
+                            if sector:  # Skip empty strings
+                                result = session.run("""
+                                    MATCH (s:Sector {name: $sector})
+                                    MATCH (o:Object {id: $object_id})
+                                    WITH s, o
+                                    CREATE (s)-[:RELEVANT_TO]->(o)
+                                    RETURN s.name as name
+                                """, sector=sector, object_id=object_id)
+                                created = result.single()
+                                print(f"DEBUG: Created relationship to sector: {created['name'] if created else 'NOT FOUND'}")
                     
                     # Domain relationships
                     if domain_str == "ALL":
@@ -528,13 +553,18 @@ async def update_object(
                     else:
                         # Create relationships to selected domains only
                         domains = [d.strip() for d in domain_str.split(',')]
+                        print(f"DEBUG: Creating relationships to domains: {domains}")
                         for domain in domains:
-                            session.run("""
-                                MATCH (d:Domain {name: $domain})
-                                MATCH (o:Object {id: $object_id})
-                                WITH d, o
-                                CREATE (d)-[:RELEVANT_TO]->(o)
-                            """, domain=domain, object_id=object_id)
+                            if domain:  # Skip empty strings
+                                result = session.run("""
+                                    MATCH (d:Domain {name: $domain})
+                                    MATCH (o:Object {id: $object_id})
+                                    WITH d, o
+                                    CREATE (d)-[:RELEVANT_TO]->(o)
+                                    RETURN d.name as name
+                                """, domain=domain, object_id=object_id)
+                                created = result.single()
+                                print(f"DEBUG: Created relationship to domain: {created['name'] if created else 'NOT FOUND'}")
                     
                     # Country relationships
                     if country_str == "ALL":

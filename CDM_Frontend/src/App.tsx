@@ -24,6 +24,7 @@ import { useVariables } from './hooks/useVariables';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
+import { DriverDeleteModal } from './components/DriverDeleteModal';
 
 function App() {
   const [activeTab, setActiveTab] = useState('objects');
@@ -33,13 +34,13 @@ function App() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   
   // Use API hook for objects data
-  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, createRelationship, createVariant } = useObjects();
+  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, createRelationship, createVariant, fetchObjects } = useObjects();
   
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
   
   // Use API hook for variables data
-  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables, bulkUpdateVariables } = useVariables();
+  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
   
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
@@ -57,6 +58,17 @@ function App() {
   // Drivers tab state - use API data with fallback to mock data
   const [driversState, setDriversState] = useState(driversData);
   const [selectedColumn, setSelectedColumn] = useState<ColumnType | undefined>();
+  
+  // Driver delete modal state
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [driverToDelete, setDriverToDelete] = useState<{name: string, type: ColumnType} | null>(null);
+  
+  // Track affected items for highlighting
+  const [affectedObjectIds, setAffectedObjectIds] = useState<Set<string>>(new Set());
+  const [affectedVariableIds, setAffectedVariableIds] = useState<Set<string>>(new Set());
+  
+  // Track which driver was deleted to show specific warning messages
+  const [deletedDriverType, setDeletedDriverType] = useState<ColumnType | null>(null);
 
   // Calculate dynamic tab counts
   const driversCount = useMemo(() => {
@@ -96,6 +108,7 @@ function App() {
     console.log('App - objectsError:', objectsError);
     console.log('App - apiObjects length:', apiObjects?.length);
     console.log('App - apiObjects first item:', apiObjects?.[0]);
+    console.log('App - affectedObjectIds:', affectedObjectIds);
     
     if (!objectsLoading) {
       if (objectsError) {
@@ -105,7 +118,16 @@ function App() {
       } else {
         // Always use API data, even if empty
         console.log('App - Setting data to apiObjects:', apiObjects);
+        console.log('App - Affected object IDs before data update:', Array.from(affectedObjectIds));
+        
+        // Check if any of the affected objects are in the new data
+        if (affectedObjectIds.size > 0) {
+          const affectedObjectsInNewData = apiObjects?.filter(obj => affectedObjectIds.has(obj.id)) || [];
+          console.log('App - Affected objects in new data:', affectedObjectsInNewData.map(obj => ({ id: obj.id, driver: obj.driver })));
+        }
+        
         setData(apiObjects);
+        console.log('App - Data updated, affected object IDs should still be:', Array.from(affectedObjectIds));
       }
     }
   }, [apiObjects, objectsError, objectsLoading]);
@@ -433,19 +455,47 @@ function App() {
       }
     }
     
-    // If this is for objects and we have relationships or variants, call the backend API
-    if (activeTab === 'objects' && (updatedData.relationshipsList || updatedData.variantsList)) {
+    // Handle objects bulk edit via API
+    if (activeTab === 'objects') {
       try {
+        console.log('🔄 Bulk edit - selectedIds:', selectedIds);
+        console.log('🔄 Bulk edit - updatedData:', updatedData);
+        
+        // Update each selected object via API
         for (const objectId of selectedIds) {
-          await updateObjectWithRelationshipsAndVariants(
-            objectId, 
-            updatedData.relationshipsList || [], 
-            updatedData.variantsList || []
-          );
+          // Prepare the update data for this object
+          const objectUpdateData = { ...updatedData };
+          console.log(`🔄 Bulk edit - updating object ${objectId} with data:`, objectUpdateData);
+          
+          // Call the updateObject API for each object
+          await updateObject(objectId, objectUpdateData);
         }
+        
+        console.log('✅ Bulk edit completed successfully');
+        
+        // Force refresh the data to ensure UI shows updated values
+        console.log('🔄 Forcing data refresh after bulk edit...');
+        // Store current affected state before refresh
+        const currentAffectedObjects = new Set(affectedObjectIds);
+        const currentAffectedVariables = new Set(affectedVariableIds);
+        const currentDeletedDriverType = deletedDriverType;
+        
+        await fetchObjects();
+        
+        // Restore affected state after refresh
+        setAffectedObjectIds(currentAffectedObjects);
+        setAffectedVariableIds(currentAffectedVariables);
+        setDeletedDriverType(currentDeletedDriverType);
+        
+        // Close modal and clear selections
+        setIsBulkEditOpen(false);
+        setSelectedRows([]);
+        setSelectedRowForMetadata(null);
+        return;
       } catch (error) {
-        console.error('Failed to update objects with relationships and variants:', error);
-        // Fall back to local state update
+        console.error('❌ Failed to bulk update objects:', error);
+        alert('Failed to update objects. Please try again.');
+        return;
       }
     }
     
@@ -564,6 +614,15 @@ function App() {
           
           setSelectedRowForMetadata({ ...selectedRowForMetadata, ...gridData });
           
+          // Clear highlighting for this item if it was affected by driver deletion
+          if (affectedVariableIds.has(selectedRowForMetadata.id)) {
+            setAffectedVariableIds(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(selectedRowForMetadata.id);
+              return newSet;
+            });
+          }
+          
           // Return success to indicate the save was successful
           return result;
         } catch (error) {
@@ -575,6 +634,17 @@ function App() {
         // Map objectName back to object field for the grid
         gridData.object = updatedData.objectName || updatedData.object;
         delete gridData.objectName;
+        
+        try {
+          // Update the object via API
+          console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: gridData });
+          await updateObject(selectedRowForMetadata.id, gridData);
+          console.log('Object updated successfully');
+        } catch (error) {
+          console.error('Error updating object:', error);
+          alert('Failed to update object. Please try again.');
+          throw error;
+        }
         
         // Handle relationships and variants using bulk update
         if (updatedData.relationshipsList || updatedData.variantsList) {
@@ -615,6 +685,15 @@ function App() {
             ? { ...item, ...gridData }
             : item
         ));
+        
+        // Clear highlighting for this item if it was affected by driver deletion
+        if (affectedObjectIds.has(selectedRowForMetadata.id)) {
+          setAffectedObjectIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(selectedRowForMetadata.id);
+            return newSet;
+          });
+        }
       } else if (activeTab === 'lists') {
         setListData(prev => prev.map(item => 
           item.id === selectedRowForMetadata.id 
@@ -752,6 +831,88 @@ function App() {
     }));
   };
 
+  const handleDriverDeleteClick = (driverName: string, columnType: ColumnType) => {
+    setDriverToDelete({ name: driverName, type: columnType });
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDriverDeleteConfirm = async () => {
+    if (!driverToDelete) return;
+    
+    try {
+      console.log(`Deleting driver: ${driverToDelete.name} of type: ${driverToDelete.type}`);
+      const response = await deleteDriver(driverToDelete.type, driverToDelete.name);
+      
+      console.log('🔍 DELETE RESPONSE:', response);
+      console.log('🔍 RESPONSE TYPE:', typeof response);
+      console.log('🔍 RESPONSE KEYS:', response ? Object.keys(response) : 'null');
+      
+      // Handle affected items for highlighting
+      if (response && typeof response === 'object' && 'affected_objects' in response) {
+        const affectedObjects = (response as any).affected_objects || [];
+        const affectedVariables = (response as any).affected_variables || [];
+        
+        console.log('🔍 AFFECTED OBJECTS:', affectedObjects);
+        console.log('🔍 AFFECTED VARIABLES:', affectedVariables);
+        
+        // Update affected IDs for highlighting
+        const affectedObjectIds = new Set(affectedObjects.map((obj: any) => String(obj.id)));
+        const affectedVariableIds = new Set(affectedVariables.map((var_: any) => String(var_.id)));
+        
+        console.log('🔍 AFFECTED OBJECT IDS:', Array.from(affectedObjectIds));
+        console.log('🔍 AFFECTED VARIABLE IDS:', Array.from(affectedVariableIds));
+        
+        setAffectedObjectIds(affectedObjectIds);
+        setAffectedVariableIds(affectedVariableIds);
+        
+        // Set the deleted driver type for specific warning messages
+        setDeletedDriverType(driverToDelete.type);
+        
+        // Don't auto-clear highlighting - let it persist until user reassigns driver
+        console.log('Highlighting will persist until user reassigns the deleted driver');
+        
+        console.log(`Driver deletion affected ${affectedObjects.length} objects and ${affectedVariables.length} variables`);
+        
+        // Add a small delay to ensure backend has processed the changes
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Refresh data to show updated driver strings
+        console.log('🔄 Refreshing data after driver deletion...');
+        if (activeTab === 'objects') {
+          await fetchObjects();
+          console.log('✅ Objects data refreshed');
+          
+          // Force a re-render to ensure the updated data is displayed
+          console.log('🔄 Forcing re-render after data refresh...');
+          setTimeout(() => {
+            console.log('🔄 Re-render triggered');
+          }, 100);
+        } else if (activeTab === 'variables') {
+          await fetchVariables();
+          console.log('✅ Variables data refreshed');
+        }
+      }
+      
+      // Close modal and clear selection
+      setIsDeleteModalOpen(false);
+      setDriverToDelete(null);
+      
+      // Clear selected item if it was the deleted one
+      if (selectedItem === driverToDelete.name && selectedColumn === driverToDelete.type) {
+        setSelectedItem(undefined);
+        setSelectedColumn(undefined);
+      }
+    } catch (error) {
+      console.error('Failed to delete driver:', error);
+      alert(`Failed to delete driver: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDriverDeleteCancel = () => {
+    setIsDeleteModalOpen(false);
+    setDriverToDelete(null);
+  };
+
   const exportToCsv = () => {
     const currentData = activeTab === 'variables' ? variableData : data;
     const currentColumns = activeTab === 'variables' ? variableColumns : objectColumns;
@@ -831,6 +992,7 @@ function App() {
                   onReorder={(newOrder) => handleDriversReorder('sectors', newOrder)}
                   selectedItem={selectedColumn === 'sectors' ? selectedItem : undefined}
                   canAddNew={true}
+                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'sectors')}
                 />
                 <DriversColumn
                   title="Domain"
@@ -840,6 +1002,7 @@ function App() {
                   onReorder={(newOrder) => handleDriversReorder('domains', newOrder)}
                   selectedItem={selectedColumn === 'domains' ? selectedItem : undefined}
                   canAddNew={true}
+                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'domains')}
                 />
                 <DriversColumn
                   title="Country"
@@ -849,6 +1012,7 @@ function App() {
                   onReorder={(newOrder) => handleDriversReorder('countries', newOrder)}
                   selectedItem={selectedColumn === 'countries' ? selectedItem : undefined}
                   canAddNew={false}
+                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'countries')}
                 />
                 <DriversColumn
                   title="Object Clarifier"
@@ -858,6 +1022,7 @@ function App() {
                   onReorder={(newOrder) => handleDriversReorder('objectClarifiers', newOrder)}
                   selectedItem={selectedColumn === 'objectClarifiers' ? selectedItem : undefined}
                   canAddNew={true}
+                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'objectClarifiers')}
                 />
                 <DriversColumn
                   title="Variable Clarifier"
@@ -867,6 +1032,7 @@ function App() {
                   onReorder={(newOrder) => handleDriversReorder('variableClarifiers', newOrder)}
                   selectedItem={selectedColumn === 'variableClarifiers' ? selectedItem : undefined}
                   canAddNew={true}
+                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'variableClarifiers')}
                 />
               </div>
             </div>
@@ -976,6 +1142,8 @@ function App() {
               onDelete={handleDelete}
               selectedRows={selectedRows}
               onReorder={activeTab === 'lists' ? setListData : activeTab === 'variables' ? setVariableData : setData}
+              affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
+              deletedDriverType={deletedDriverType}
             />
           </div>
 
@@ -1058,6 +1226,8 @@ function App() {
                   selectedObject={selectedRowForMetadata}
                   allData={data}
                   selectedCount={selectedRows.length}
+                  affectedObjectIds={affectedObjectIds}
+                  deletedDriverType={deletedDriverType}
                 />
               )}
             </div>
@@ -1099,6 +1269,15 @@ function App() {
         isOpen={isBulkListUploadOpen}
         onClose={() => setIsBulkListUploadOpen(false)}
         onUpload={handleBulkListUpload}
+      />
+
+      {/* Driver Delete Confirmation Modal */}
+      <DriverDeleteModal
+        isOpen={isDeleteModalOpen}
+        onClose={handleDriverDeleteCancel}
+        onConfirm={handleDriverDeleteConfirm}
+        driverName={driverToDelete?.name || ''}
+        driverType={driverToDelete ? columnLabels[driverToDelete.type] : ''}
       />
 
     </div>

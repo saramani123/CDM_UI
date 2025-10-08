@@ -1,5 +1,5 @@
 import React from 'react';
-import { Plus, GripVertical } from 'lucide-react';
+import { Plus, GripVertical, Trash2 } from 'lucide-react';
 import {
   DndContext,
   closestCenter,
@@ -28,6 +28,7 @@ interface DriversColumnProps {
   onReorder?: (newItems: string[]) => void;
   selectedItem?: string;
   canAddNew: boolean;
+  onDeleteItem?: (item: string) => void;
 }
 
 interface SortableItemProps {
@@ -35,9 +36,10 @@ interface SortableItemProps {
   index: number;
   onItemClick: (item: string) => void;
   selectedItem?: string;
+  onDeleteItem?: (item: string) => void;
 }
 
-const SortableItem: React.FC<SortableItemProps> = ({ item, index, onItemClick, selectedItem }) => {
+const SortableItem: React.FC<SortableItemProps> = ({ item, index, onItemClick, selectedItem, onDeleteItem }) => {
   const {
     attributes,
     listeners,
@@ -52,11 +54,16 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, index, onItemClick, s
     transition,
   };
 
+  const handleDeleteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDeleteItem?.(item);
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`p-2 border-b border-ag-dark-border last:border-b-0 cursor-pointer hover:bg-ag-dark-bg transition-colors flex items-center gap-2 ${
+      className={`group p-2 border-b border-ag-dark-border last:border-b-0 cursor-pointer hover:bg-ag-dark-bg transition-colors flex items-center gap-2 ${
         selectedItem === item ? 'bg-ag-dark-accent bg-opacity-20 border-l-4 border-l-ag-dark-accent' : ''
       } ${isDragging ? 'opacity-50' : ''}`}
       onClick={() => onItemClick(item)}
@@ -69,6 +76,15 @@ const SortableItem: React.FC<SortableItemProps> = ({ item, index, onItemClick, s
         <GripVertical className="w-4 h-4" />
       </div>
       <span className="text-sm text-ag-dark-text flex-1">{item}</span>
+      {onDeleteItem && (
+        <button
+          onClick={handleDeleteClick}
+          className="opacity-30 group-hover:opacity-100 hover:opacity-100 text-ag-dark-text-secondary hover:text-red-400 transition-all duration-200 p-1 rounded hover:bg-red-900/20"
+          title="Delete driver"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 };
@@ -80,7 +96,8 @@ export const DriversColumn: React.FC<DriversColumnProps> = ({
   onItemClick,
   onReorder,
   selectedItem,
-  canAddNew
+  canAddNew,
+  onDeleteItem
 }) => {
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -128,6 +145,7 @@ export const DriversColumn: React.FC<DriversColumnProps> = ({
                 index={index}
                 onItemClick={onItemClick}
                 selectedItem={selectedItem}
+                onDeleteItem={onDeleteItem}
               />
             ))}
           </SortableContext>
