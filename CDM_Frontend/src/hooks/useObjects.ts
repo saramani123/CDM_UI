@@ -26,6 +26,11 @@ export const useObjects = () => {
     }
   };
 
+  // Fetch objects on mount
+  useEffect(() => {
+    fetchObjects();
+  }, []);
+
   const createObject = async (objectData: any) => {
     try {
       const newObject = await apiService.createObject(objectData);

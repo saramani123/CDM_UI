@@ -28,11 +28,11 @@ export const useDrivers = () => {
       ]);
       
       setDrivers({
-        sectors: sectors || [],
-        domains: domains || [],
-        countries: countries || [],
-        objectClarifiers: objectClarifiers || [],
-        variableClarifiers: variableClarifiers || []
+        sectors: Array.isArray(sectors) ? sectors : [],
+        domains: Array.isArray(domains) ? domains : [],
+        countries: Array.isArray(countries) ? countries : [],
+        objectClarifiers: Array.isArray(objectClarifiers) ? objectClarifiers : [],
+        variableClarifiers: Array.isArray(variableClarifiers) ? variableClarifiers : []
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch drivers');
@@ -41,6 +41,11 @@ export const useDrivers = () => {
       setLoading(false);
     }
   };
+
+  // Fetch drivers on mount
+  useEffect(() => {
+    fetchDrivers();
+  }, []);
 
   const createDriver = async (type: ColumnType, name: string) => {
     try {
