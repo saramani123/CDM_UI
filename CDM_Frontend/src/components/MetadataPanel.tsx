@@ -195,6 +195,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     const parts = driverString.split(', ');
     const deleted = [];
     if (parts.length >= 4) {
+      // Check if any part is exactly "-" (indicating deleted driver)
+      // Don't flag hyphens within names like "E-commerce"
       if (parts[0] === '-') deleted.push('sectors');
       if (parts[1] === '-') deleted.push('domains');
       if (parts[2] === '-') deleted.push('countries');

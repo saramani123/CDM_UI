@@ -155,6 +155,10 @@ async def delete_driver(driver_type: DriverType, name: str):
     if driver_type == "countries":
         raise HTTPException(status_code=403, detail="Countries cannot be deleted - they are pre-defined")
     
+    # ALL values cannot be deleted (UI convenience only)
+    if name == "ALL":
+        raise HTTPException(status_code=403, detail="'ALL' cannot be deleted - it's a UI convenience for multiselect")
+    
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=503, detail="Neo4j connection not available")
