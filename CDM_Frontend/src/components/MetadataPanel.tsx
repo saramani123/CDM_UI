@@ -188,8 +188,26 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   
   // Check if the selected object is affected by driver deletion
   const isSelectedObjectAffected = selectedObject && affectedObjectIds.has(selectedObject.id);
-  const hasDeletedSector = selectedObject && selectedObject.driver && selectedObject.driver.startsWith('-');
-  const isSectorDeleted = (isSelectedObjectAffected && deletedDriverType === 'sectors') || hasDeletedSector;
+  
+  // Check which specific drivers are deleted
+  const getDeletedDrivers = (driverString: string) => {
+    if (!driverString) return [];
+    const parts = driverString.split(', ');
+    const deleted = [];
+    if (parts.length >= 4) {
+      if (parts[0] === '-') deleted.push('sectors');
+      if (parts[1] === '-') deleted.push('domains');
+      if (parts[2] === '-') deleted.push('countries');
+      if (parts[3] === '-') deleted.push('objectClarifiers');
+    }
+    return deleted;
+  };
+  
+  const deletedDrivers = selectedObject ? getDeletedDrivers(selectedObject.driver) : [];
+  const isSectorDeleted = deletedDrivers.includes('sectors') || (isSelectedObjectAffected && deletedDriverType === 'sectors');
+  const isDomainDeleted = deletedDrivers.includes('domains') || (isSelectedObjectAffected && deletedDriverType === 'domains');
+  const isCountryDeleted = deletedDrivers.includes('countries') || (isSelectedObjectAffected && deletedDriverType === 'countries');
+  const isObjectClarifierDeleted = deletedDrivers.includes('objectClarifiers') || (isSelectedObjectAffected && deletedDriverType === 'objectClarifiers');
 
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
@@ -588,11 +606,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Domain
-              {driverSelections.domain.length === 0 && (
+              {(driverSelections.domain.length === 0 || isDomainDeleted) && (
                 <span className="text-red-500 ml-1">*</span>
               )}
             </label>
-            {driverSelections.domain.length === 0 ? (
+            {isDomainDeleted ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please reselect domain
+              </div>
+            ) : driverSelections.domain.length === 0 ? (
               <div className="text-red-400 text-sm mb-2">
                 Please select a relevant Domain
               </div>
@@ -600,7 +622,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             <MultiSelect
               label="Domain"
               options={['ALL', ...driversData.domains]}
-              values={driverSelections.domain}
+              values={isDomainDeleted ? [] : driverSelections.domain}
               onChange={(values) => handleDriverSelectionChange('domain', values)}
               disabled={!isPanelEnabled}
             />
@@ -609,11 +631,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Country
-              {driverSelections.country.length === 0 && (
+              {(driverSelections.country.length === 0 || isCountryDeleted) && (
                 <span className="text-red-500 ml-1">*</span>
               )}
             </label>
-            {driverSelections.country.length === 0 ? (
+            {isCountryDeleted ? (
+              <div className="text-red-400 text-sm mb-2">
+                Please reselect country
+              </div>
+            ) : driverSelections.country.length === 0 ? (
               <div className="text-red-400 text-sm mb-2">
                 Please select a relevant Country
               </div>
@@ -621,7 +647,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             <MultiSelect
               label="Country"
               options={['ALL', ...driversData.countries]}
-              values={driverSelections.country}
+              values={isCountryDeleted ? [] : driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
               disabled={!isPanelEnabled}
             />
@@ -630,9 +656,17 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Object Clarifier
+              {isObjectClarifierDeleted && (
+                <span className="text-red-500 ml-1">*</span>
+              )}
             </label>
+            {isObjectClarifierDeleted && (
+              <div className="text-red-400 text-sm mb-2">
+                Please reselect object clarifier
+              </div>
+            )}
             <select
-              value={driverSelections.objectClarifier}
+              value={isObjectClarifierDeleted ? "" : driverSelections.objectClarifier}
               onChange={(e) => handleObjectClarifierChange(e.target.value)}
               disabled={!isPanelEnabled}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${

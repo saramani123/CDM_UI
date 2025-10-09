@@ -345,22 +345,23 @@ export const DataGrid: React.FC<DataGridProps> = ({
     // Check if row is in affectedIds (from driver deletion)
     const isAffectedByIds = affectedIds.has(row.id);
     
-    // Also check if the driver field starts with "-" (indicating deleted sector)
-    const hasDeletedSector = row.driver && row.driver.startsWith('-');
+    // Also check if the driver field has any "-" (indicating deleted driver)
+    const hasDeletedDriverValue = row.driver && hasDeletedDriver(row.driver);
     
-    const isAffected = isAffectedByIds || hasDeletedSector;
+    const isAffected = isAffectedByIds || hasDeletedDriverValue;
     
     if (isAffected) {
-      console.log(`Row ${row.id} is affected (by IDs: ${isAffectedByIds}, by driver: ${hasDeletedSector})`);
+      console.log(`Row ${row.id} is affected (by IDs: ${isAffectedByIds}, by driver: ${hasDeletedDriverValue})`);
     }
     return isAffected;
   }
 
   function formatDriverWithDeletedSector(driverString: string, deletedDriverType: string | null) {
-    if (!driverString || !deletedDriverType) return driverString;
+    if (!driverString) return driverString;
     
     const parts = driverString.split(', ');
     if (parts.length >= 4) {
+      // Handle specific deleted driver type
       if (deletedDriverType === 'sectors' && parts[0] !== 'ALL') {
         parts[0] = '-';
       } else if (deletedDriverType === 'domains' && parts[1] !== 'ALL') {
@@ -373,6 +374,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
     
     return parts.join(', ');
+  }
+
+  function hasDeletedDriver(driverString: string) {
+    if (!driverString) return false;
+    const parts = driverString.split(', ');
+    return parts.length >= 4 && parts.some(part => part === '-');
   }
 
   return (
@@ -481,9 +488,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                         ? 'font-semibold' 
                         : ''
                     } ${
-                      column.key === 'driver' && (isRowAffected(row) || (row.driver && row.driver.startsWith('-'))) ? 'text-red-400' : ''
+                      column.key === 'driver' && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 'text-red-400' : ''
                     }`}>
-                      {column.key === 'driver' && (isRowAffected(row) || (row.driver && row.driver.startsWith('-'))) ? 
+                      {column.key === 'driver' && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 
                         formatDriverWithDeletedSector(row[column.key], deletedDriverType) : 
                         (row[column.key] || '-')
                       }
