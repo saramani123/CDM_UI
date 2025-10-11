@@ -145,6 +145,17 @@ function App() {
     }
   }, [apiDrivers, driversError, driversLoading]);
 
+  // Sync selectedRowForMetadata with updated data
+  React.useEffect(() => {
+    if (selectedRowForMetadata && data.length > 0) {
+      const updatedObject = data.find(obj => obj.id === selectedRowForMetadata.id);
+      if (updatedObject && JSON.stringify(updatedObject) !== JSON.stringify(selectedRowForMetadata)) {
+        console.log('App - Updating selectedRowForMetadata with fresh data:', updatedObject);
+        setSelectedRowForMetadata(updatedObject);
+      }
+    }
+  }, [data, selectedRowForMetadata]);
+
   // Sync API variables data with local state
   React.useEffect(() => {
     console.log('Variables effect triggered:', { 
@@ -645,14 +656,18 @@ function App() {
           throw error; // Re-throw the error so the calling function knows it failed
         }
       } else if (activeTab === 'objects') {
-        // Map objectName back to object field for the grid
-        gridData.object = updatedData.objectName || updatedData.object;
-        delete gridData.objectName;
+        // Create clean object with only basic fields for the API
+        const basicFields = {
+          being: updatedData.being,
+          avatar: updatedData.avatar,
+          object: updatedData.object,
+          driver: updatedData.driver
+        };
         
         try {
           // Update the object via API
-          console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: gridData });
-          await updateObject(selectedRowForMetadata.id, gridData);
+          console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: basicFields });
+          await updateObject(selectedRowForMetadata.id, basicFields);
           console.log('Object updated successfully');
         } catch (error) {
           console.error('Error updating object:', error);

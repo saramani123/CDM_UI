@@ -57,11 +57,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   deletedDriverType = null
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
-    const initial: Record<string, any> = {};
-    fields.forEach(field => {
-      initial[field.key] = field.value !== undefined ? field.value : '';
-    });
-    return initial;
+    // Initialize form data from selected object if available
+    if (selectedObject) {
+      return {
+        being: selectedObject.being || '',
+        avatar: selectedObject.avatar || '',
+        object: selectedObject.object || ''
+      };
+    }
+    // Fallback to empty values
+    return {
+      being: '',
+      avatar: '',
+      object: ''
+    };
   });
 
   // Driver selections state
@@ -101,10 +110,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       console.log('MetadataPanel: selected object changed from', prevSelectedObjectId.current, 'to', currentObjectId);
       prevSelectedObjectId.current = currentObjectId;
       
-      const newFormData: Record<string, any> = {};
-      fields.forEach(field => {
-        newFormData[field.key] = field.value !== undefined ? field.value : '';
-      });
+      // Initialize form data from the selected object, not from fields
+      const newFormData: Record<string, any> = {
+        being: selectedObject?.being || '',
+        avatar: selectedObject?.avatar || '',
+        object: selectedObject?.object || ''
+      };
       console.log('MetadataPanel: newFormData for new object', newFormData);
       setFormData(newFormData);
     }
@@ -120,7 +131,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         objectClarifier: ''
       });
     }
-  }, [selectedObject?.id, fields]); // Include fields dependency but only reset when object actually changes
+  }, [selectedObject?.id]); // Only reset when object actually changes
 
   // Get dynamic avatar options based on current being and driver values
   const avatarOptions = getAvatarOptions(formData.being || '', formData.driver || '', allData);
@@ -442,8 +453,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     
     const saveData = {
       ...formData,
-      // Ensure object field is preserved from the selected object
-      object: selectedObject?.object || formData.object,
+      // Use the form data object value (user input)
+      object: formData.object,
       driver: driverString,
       identifier: {
         discreteId,
