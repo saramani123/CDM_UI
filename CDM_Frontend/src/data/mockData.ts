@@ -34,167 +34,7 @@ export interface Variant {
   name: string;
 }
 
-export const mockObjectData: ObjectData[] = [
-  {
-    id: '1',
-    driver: 'ALL, ALL, ALL, Employment Type',
-    being: 'Master',
-    avatar: 'Company',
-    object: 'Company',
-    relationships: 13,
-    variants: 23,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: [
-      {
-        id: '1',
-        type: 'Inter-Table',
-        role: 'Employer',
-        toBeing: 'Master',
-        toAvatar: 'Employee',
-        toObject: 'Employee'
-      },
-      {
-        id: '2',
-        type: 'Inter-Table',
-        role: 'Owner',
-        toBeing: 'Master',
-        toAvatar: 'Product',
-        toObject: 'Product'
-      }
-    ],
-    variantsList: [
-      {
-        id: '1',
-        name: 'Public Company'
-      },
-      {
-        id: '2',
-        name: 'Private Company'
-      }
-    ]
-  },
-  {
-    id: '2',
-    driver: 'ALL, ALL, ALL, Pay Type',
-    being: 'Employee',
-    avatar: 'Company Affiliate',
-    object: 'Entity',
-    relationships: 1,
-    variants: 2,
-    variables: 45,
-    status: 'Active',
-    relationshipsList: [],
-    variantsList: []
-  },
-  {
-    id: '3',
-    driver: 'Technology, Human Resources, United States, Employment Type',
-    being: 'Master',
-    avatar: 'Company Affiliate',
-    object: 'Department',
-    relationships: 13,
-    variants: 23,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '4',
-    driver: 'Healthcare, Finance & Accounting, Canada, Pay Type',
-    being: 'Customer',
-    avatar: 'Company Affiliate',
-    object: 'Team',
-    relationships: 30,
-    variants: 19,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '5',
-    driver: 'Financial Services, Sales & Marketing, United Kingdom, Hour Type',
-    being: 'Supplier',
-    avatar: 'Company Affiliate',
-    object: 'Region',
-    relationships: 39,
-    variants: 23,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '6',
-    driver: 'Manufacturing, Operations, Germany, None',
-    being: 'Product',
-    avatar: 'Company Affiliate',
-    object: 'Location',
-    relationships: 13,
-    variants: 23,
-    variables: 20,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '7',
-    driver: 'ALL, ALL, ALL, Employment Type',
-    being: 'Master',
-    avatar: 'Employee',
-    object: 'Employee',
-    relationships: 6,
-    variants: 11,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '8',
-    driver: 'Technology, Information Technology, United States, Pay Type',
-    being: 'Master',
-    avatar: 'Employee',
-    object: 'Employee',
-    relationships: 13,
-    variants: 23,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '9',
-    driver: 'Insurance, Legal & Compliance, United States, Hour Type',
-    being: 'Master',
-    avatar: 'Employee',
-    object: 'Employee',
-    relationships: 34,
-    variants: 23,
-    variables: 35,
-    status: 'Active',
-    relationshipsList: []
-  },
-  {
-    id: '10',
-    driver: 'ALL, ALL, ALL, None',
-    being: 'Master',
-    avatar: 'Product',
-    object: 'Product',
-    relationships: 13,
-    variants: 23,
-    variables: 54,
-    status: 'Active',
-    relationshipsList: [],
-    variantsList: []
-  }
-];
-
-export const tabs = [
-  { id: 'drivers', label: 'Drivers', count: 15 },
-  { id: 'objects', label: 'Objects', count: 23 },
-  { id: 'variables', label: 'Variables', count: 156 },
-  { id: 'lists', label: 'Lists', count: 45 },
-  { id: 'functions', label: 'Functions' },
-  { id: 'ledgers', label: 'Ledgers' },
-  { id: 'sources', label: 'Sources' }
-];
+export const mockObjectData: ObjectData[] = [];
 
 export const objectColumns = [
   { key: 'driver', title: 'Driver', sortable: true, filterable: true, width: '200px' },
@@ -217,30 +57,36 @@ export const parseDriverField = (driver: string) => {
   };
 };
 
-// Dropdown options based on your data patterns
-export const getAvatarOptions = (being: string, driver: string): string[] => {
-  // For now, only handle the default driver case
-  if (driver === '***, ***, ***, ***') {
-    switch (being) {
-      case 'Master':
-        return ['Company', 'Company Affiliate', 'Employee', 'Product', 'Customer', 'Supplier'];
-      case 'Mate':
-        return ['Person', 'Thing', 'Reference', 'Register'];
-      case 'Process':
-        return ['Activity', 'Transaction', 'Payment', 'Posting'];
-      case 'Adjunct':
-        return ['Account', 'Attribute'];
-      case 'Rule':
-        return ['Trigger', 'Validator'];
-      case 'Roster':
-        return ['List'];
-      default:
-        return ['Company', 'Company Affiliate', 'Employee', 'Product', 'Customer', 'Supplier'];
-    }
+// Dropdown options based on actual data from objects
+export const getAvatarOptions = (being: string, driver: string, allData: any[] = []): string[] => {
+  // If we have actual data, use it to get distinct avatars for the selected being
+  if (allData && allData.length > 0 && being) {
+    const distinctAvatars = [...new Set(
+      allData
+        .filter(obj => obj.being === being)
+        .map(obj => obj.avatar)
+        .filter(Boolean)
+    )];
+    return distinctAvatars.length > 0 ? distinctAvatars : [];
   }
   
-  // Default fallback for other drivers
-  return ['Company', 'Company Affiliate', 'Employee', 'Product', 'Customer', 'Supplier'];
+  // Fallback to hardcoded values if no data available
+  switch (being) {
+    case 'Master':
+      return ['Company', 'Company Affiliate', 'Employee', 'Product', 'Customer', 'Supplier'];
+    case 'Mate':
+      return ['Person', 'Thing', 'Reference', 'Register'];
+    case 'Process':
+      return ['Activity', 'Transaction', 'Payment', 'Posting'];
+    case 'Adjunct':
+      return ['Account', 'Attribute'];
+    case 'Rule':
+      return ['Trigger', 'Validator'];
+    case 'Roster':
+      return ['List'];
+    default:
+      return ['Company', 'Company Affiliate', 'Employee', 'Product', 'Customer', 'Supplier'];
+  }
 };
 
 // Helper function to get drivers data for dropdowns
@@ -258,7 +104,18 @@ export const getDriversData = (): { sectors: string[]; domains: string[]; countr
     };
   }
   
-  // Fallback to mock data if real data is not available
+  // In production, return empty arrays to show empty dropdowns
+  if (import.meta.env.PROD) {
+    return {
+      sectors: [],
+      domains: [],
+      countries: [],
+      objectClarifiers: [],
+      variableClarifiers: []
+    };
+  }
+  
+  // Fallback to mock data only in development
   return {
     sectors: ['Technology', 'Healthcare', 'Financial Services', 'Manufacturing', 'Retail', 'Energy', 'Transportation', 'Real Estate', 'Education', 'Government', 'Agriculture', 'Entertainment', 'Telecommunications', 'Construction', 'Hospitality'],
     domains: ['Human Resources', 'Finance & Accounting', 'Sales & Marketing', 'Operations', 'Information Technology', 'Legal & Compliance', 'Research & Development', 'Customer Service', 'Supply Chain', 'Quality Assurance', 'Business Intelligence', 'Risk Management', 'Strategic Planning', 'Project Management', 'Data Management'],
@@ -278,75 +135,44 @@ export const concatenateDrivers = (sector: string[], domain: string[], country: 
   return `${sectorStr}, ${domainStr}, ${countryStr}, ${clarifierStr}`;
 };
 
-// Helper function to parse driver string back to selections
+// Helper function to parse driver string into components
 export const parseDriverString = (driverString: string) => {
-  // Get all available driver options to determine what "ALL" should include
-  const driversData = getDriversData();
-  
-  // Split by ', ' but handle cases where sector/domain names contain commas
-  // We need to be more careful about splitting since sector names can contain commas
-  const parts = driverString.split(', ');
-  
-  // If we have more than 4 parts, it means one of the first parts contains commas
-  // We need to reconstruct the proper parts
-  let sector = '';
-  let domain = '';
-  let country = '';
-  let objectClarifier = '';
-  
-  if (parts.length === 4) {
-    // Normal case: exactly 4 parts
-    sector = parts[0].trim();
-    domain = parts[1].trim();
-    country = parts[2].trim();
-    objectClarifier = parts[3].trim();
-  } else if (parts.length > 4) {
-    // Complex case: one of the first parts contains commas
-    // We need to identify which part is which by checking against known values
-    
-    // The last part is always the object clarifier
-    objectClarifier = parts[parts.length - 1].trim();
-    
-    // The second to last part is always the country
-    country = parts[parts.length - 2].trim();
-    
-    // The third to last part is always the domain
-    domain = parts[parts.length - 3].trim();
-    
-    // Everything before that is the sector
-    sector = parts.slice(0, parts.length - 3).join(', ').trim();
-  } else {
-    // Fallback: try to parse what we can
-    sector = parts[0]?.trim() || '';
-    domain = parts[1]?.trim() || '';
-    country = parts[2]?.trim() || '';
-    objectClarifier = parts[3]?.trim() || '';
+  if (!driverString) {
+    return {
+      sector: [],
+      domain: [],
+      country: [],
+      objectClarifier: ''
+    };
   }
   
+  const parts = driverString.split(',').map(part => part.trim());
   return {
-    sector: sector === 'ALL' ? ['ALL', ...driversData.sectors] : sector ? [sector] : [],
-    domain: domain === 'ALL' ? ['ALL', ...driversData.domains] : domain ? [domain] : [],
-    country: country === 'ALL' ? ['ALL', ...driversData.countries] : country ? [country] : [],
-    objectClarifier: objectClarifier === 'None' ? '' : objectClarifier || ''
+    sector: parts[0] && parts[0] !== '-' ? [parts[0]] : [],
+    domain: parts[1] && parts[1] !== '-' ? [parts[1]] : [],
+    country: parts[2] && parts[2] !== '-' ? [parts[2]] : [],
+    objectClarifier: parts[3] || ''
   };
 };
 
+// Metadata fields for object editing
 export const metadataFields = [
-  { 
-    key: 'being', 
-    label: 'Being', 
-    type: 'select' as const, 
-    options: ['Master', 'Mate', 'Process', 'Adjunct', 'Rule', 'Roster'] 
-  },
-  { 
-    key: 'avatar', 
-    label: 'Avatar', 
-    type: 'select' as const, 
-    options: [] // Will be populated dynamically based on being + driver
-  },
-  { 
-    key: 'objectName', 
-    label: 'Object Name', 
-    type: 'text' as const 
-  }
-]
+  { key: 'object', label: 'Object', type: 'text' as const, required: true },
+  { key: 'being', label: 'Being', type: 'text' as const, required: true },
+  { key: 'avatar', label: 'Avatar', type: 'text' as const, required: true },
+  { key: 'sector', label: 'Sector', type: 'text' as const, required: false },
+  { key: 'domain', label: 'Domain', type: 'text' as const, required: false },
+  { key: 'country', label: 'Country', type: 'text' as const, required: false },
+  { key: 'classifier', label: 'Classifier', type: 'text' as const, required: false },
+  { key: 'identifier', label: 'Identifier', type: 'text' as const, required: false },
+  { key: 'discret', label: 'Discret', type: 'text' as const, required: false },
+  { key: 'status', label: 'Status', type: 'select' as const, options: ['Active', 'Inactive', 'Draft'], required: false }
+];
+
+// Helper function to get metadata fields for a specific object
+export const getMetadataFields = (object: ObjectData) => {
+  return metadataFields.map(field => ({
+    ...field,
+    value: object[field.key as keyof ObjectData] || ''
+  }));
+};

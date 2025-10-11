@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
-import { getAvatarOptions, getDriversData, concatenateDrivers } from '../data/mockData';
+import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { useDrivers } from '../hooks/useDrivers';
 
 interface CompositeKey {
   id: string;
@@ -55,7 +56,15 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     objectClarifier: ''
   });
 
-  const driversData = getDriversData();
+  // Use only API drivers data
+  const { drivers: apiDrivers } = useDrivers();
+  const driversData = apiDrivers || {
+    sectors: [],
+    domains: [],
+    countries: [],
+    objectClarifiers: [],
+    variableClarifiers: []
+  };
 
   // Identifier data
   const [discreteId, setDiscreteId] = useState('');
@@ -93,7 +102,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     driverSelections.country,
     driverSelections.objectClarifier
   );
-  const avatarOptions = getAvatarOptions(formData.being || '', driverString);
+  const avatarOptions = getAvatarOptions(formData.being || '', driverString, allData);
 
   // Get distinct values from data for relationships
   const getDistinctBeings = () => {
@@ -532,12 +541,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               }}
             >
               <option value="">Keep Current Being</option>
-              <option value="Master">Master</option>
-              <option value="Mate">Mate</option>
-              <option value="Process">Process</option>
-              <option value="Adjunct">Adjunct</option>
-              <option value="Rule">Rule</option>
-              <option value="Roster">Roster</option>
+              {getDistinctBeings().filter(being => being !== 'ALL').map(being => (
+                <option key={being} value={being}>{being}</option>
+              ))}
             </select>
           </div>
 

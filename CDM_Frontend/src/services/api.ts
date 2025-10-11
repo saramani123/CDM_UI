@@ -1,6 +1,16 @@
 // API service for connecting to CDM_U Backend
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+// Determine API base URL based on environment
+const getApiBaseUrl = () => {
+  // In production (Vercel), use the backend URL from environment
+  if (import.meta.env.PROD) {
+    return import.meta.env.VITE_API_BASE_URL || 'https://cdm-backend-jf594ohd5-saras-projects-4c70d85d.vercel.app/api/v1';
+  }
+  // In development, use localhost
+  return 'http://localhost:8000/api/v1';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 export interface ApiResponse<T> {
   data?: T;

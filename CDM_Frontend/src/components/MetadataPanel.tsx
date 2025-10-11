@@ -87,13 +87,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     variants: false
   });
 
-  // Update form data when fields change (when a new row is selected)
+  // Track the previous selected object ID to detect actual object changes
+  const prevSelectedObjectId = useRef<string | null>(null);
+  const isUserTyping = useRef(false);
+  const typingTimeout = useRef<NodeJS.Timeout | null>(null);
+  
+  // Update form data when a new object is selected (not on every field change)
   React.useEffect(() => {
-    const newFormData: Record<string, any> = {};
-    fields.forEach(field => {
-      newFormData[field.key] = field.value !== undefined ? field.value : '';
-    });
-    setFormData(newFormData);
+    const currentObjectId = selectedObject?.id;
+    
+    // Only reset form data when the selected object actually changes AND we have a valid object AND user is not typing
+    if (currentObjectId && currentObjectId !== prevSelectedObjectId.current && !isUserTyping.current) {
+      console.log('MetadataPanel: selected object changed from', prevSelectedObjectId.current, 'to', currentObjectId);
+      prevSelectedObjectId.current = currentObjectId;
+      
+      const newFormData: Record<string, any> = {};
+      fields.forEach(field => {
+        newFormData[field.key] = field.value !== undefined ? field.value : '';
+      });
+      console.log('MetadataPanel: newFormData for new object', newFormData);
+      setFormData(newFormData);
+    }
     
     // Update driver selections when selected object changes
     if (selectedObject?.driver) {
@@ -106,10 +120,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         objectClarifier: ''
       });
     }
-  }, [fields]);
+  }, [selectedObject?.id, fields]); // Include fields dependency but only reset when object actually changes
 
   // Get dynamic avatar options based on current being and driver values
-  const avatarOptions = getAvatarOptions(formData.being || '', formData.driver || '');
+  const avatarOptions = getAvatarOptions(formData.being || '', formData.driver || '', allData);
 
   // Initialize composite keys state
   const [discreteId, setDiscreteId] = useState('Public ID');
@@ -219,10 +233,29 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   const handleChange = (key: string, value: string | number) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    console.log('MetadataPanel handleChange called:', { key, value });
+    
+    // Mark user as typing
+    isUserTyping.current = true;
+    
+    // Clear existing timeout
+    if (typingTimeout.current) {
+      clearTimeout(typingTimeout.current);
+    }
+    
+    // Set timeout to mark user as no longer typing
+    typingTimeout.current = setTimeout(() => {
+      isUserTyping.current = false;
+    }, 500); // 500ms delay after last keystroke
+    
+    setFormData(prev => {
+      const newFormData = {
+        ...prev,
+        [key]: value
+      };
+      console.log('MetadataPanel newFormData after change:', newFormData);
+      return newFormData;
+    });
   };
 
   const handleDriverSelectionChange = (type: 'sector' | 'domain' | 'country', values: string[]) => {
@@ -374,6 +407,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   const handleSave = () => {
+    console.log('🔴 MetadataPanel handleSave called');
+    console.log('🔴 Current formData:', formData);
+    console.log('🔴 Current driverSelections:', driverSelections);
+    console.log('🔴 Selected object:', selectedObject);
+    
     // Generate driver string from selections
     const driverString = concatenateDrivers(
       driverSelections.sector,
@@ -381,6 +419,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       driverSelections.country,
       driverSelections.objectClarifier
     );
+    
+    console.log('🔴 Generated driverString:', driverString);
     
     // Remove duplicate relationships based on unique combination of properties
     const uniqueRelationships = relationships.reduce((acc, rel) => {
@@ -402,6 +442,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     
     const saveData = {
       ...formData,
+      // Ensure object field is preserved from the selected object
+      object: selectedObject?.object || formData.object,
       driver: driverString,
       identifier: {
         discreteId,
@@ -410,9 +452,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       relationshipsList: uniqueRelationships,
       variantsList: variants
     };
-    console.log('MetadataPanel saving data:', saveData);
-    console.log('Relationships:', uniqueRelationships);
-    console.log('Variants:', variants);
+    console.log('🔴 MetadataPanel saving data:', saveData);
+    console.log('🔴 Relationships:', uniqueRelationships);
+    console.log('🔴 Variants:', variants);
+    console.log('🔴 Calling onSave with:', saveData);
     onSave?.(saveData);
   };
 
@@ -426,6 +469,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   }> = ({ label, options, values, onChange, disabled }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -471,7 +515,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     };
 
     const displayText = values.length === 0 
-      ? `Select ${label}` 
+      ? (options.length === 0 ? `No values found — please add new items in Drivers tab` : `Select ${label}`)
       : values.includes('ALL') 
         ? 'ALL' 
         : values.length === 1 
@@ -499,21 +543,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         
         {isOpen && (
           <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {options.map((option) => (
-              <label
-                key={option}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  type="checkbox"
-                  checked={values.includes(option)}
-                  onChange={() => handleToggle(option)}
-                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-                />
-                <span className="text-sm text-ag-dark-text">{option}</span>
-              </label>
-            ))}
+            {options.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-ag-dark-text-secondary italic">
+                No values found — please add new items in Drivers tab
+              </div>
+            ) : (
+              options.map((option) => (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={values.includes(option)}
+                    onChange={() => handleToggle(option)}
+                    className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-ag-dark-text">{option}</span>
+                </label>
+              ))
+            )}
           </div>
         )}
       </div>
@@ -714,12 +764,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               }}
             >
               <option value="">Select Being</option>
-              <option value="Master">Master</option>
-              <option value="Mate">Mate</option>
-              <option value="Process">Process</option>
-              <option value="Adjunct">Adjunct</option>
-              <option value="Rule">Rule</option>
-              <option value="Roster">Roster</option>
+              {fields.find(f => f.key === 'being')?.options?.map(option => (
+                <option key={option} value={option}>{option}</option>
+              )) || [
+                'Master', 'Mate', 'Process', 'Adjunct', 'Rule', 'Roster'
+              ].map(option => (
+                <option key={option} value={option}>{option}</option>
+              ))}
             </select>
           </div>
 
@@ -756,8 +807,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             </label>
             <input
               type="text"
-              value={formData.objectName}
-              onChange={(e) => handleChange('objectName', e.target.value)}
+              value={formData.object}
+              onChange={(e) => handleChange('object', e.target.value)}
               disabled={!isPanelEnabled}
               onClick={(e) => e.stopPropagation()}
               className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${

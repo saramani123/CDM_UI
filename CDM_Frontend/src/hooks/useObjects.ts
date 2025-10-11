@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { ObjectData } from '../data/mockData';
 
@@ -11,7 +11,7 @@ export const useObjects = () => {
   const [beingsCache, setBeingsCache] = useState<string[]>([]);
   const [avatarsCache, setAvatarsCache] = useState<Record<string, string[]>>({});
 
-  const fetchObjects = async () => {
+  const fetchObjects = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -24,12 +24,12 @@ export const useObjects = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // Fetch objects on mount
   useEffect(() => {
     fetchObjects();
-  }, []);
+  }, [fetchObjects]);
 
   const createObject = async (objectData: any) => {
     try {
@@ -45,11 +45,15 @@ export const useObjects = () => {
   const updateObject = async (id: string, objectData: Partial<ObjectData>) => {
     try {
       console.log('🔄 updateObject called:', { id, objectData });
+      console.log('🔄 Current objects before update:', objects.find(obj => obj.id === id));
       const updatedObject = await apiService.updateObject(id, objectData);
       console.log('✅ updateObject response:', updatedObject);
       setObjects(prev => {
+        console.log('🔄 Previous objects state before update:', prev.find(obj => obj.id === id));
         const newObjects = prev.map(obj => obj.id === id ? updatedObject : obj);
         console.log('🔄 Updated objects state:', newObjects.find(obj => obj.id === id));
+        console.log('🔄 Full updated objects array length:', newObjects.length);
+        console.log('🔄 Updated object being set:', updatedObject);
         return newObjects;
       });
       return updatedObject;

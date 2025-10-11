@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
-import { getAvatarOptions, getDriversData, concatenateDrivers } from '../data/mockData';
+import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useObjects } from '../hooks/useObjects';
@@ -137,7 +137,7 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onCha
     };
 
   const displayText = values.length === 0 
-    ? `Select ${label}` 
+    ? (options.length === 0 ? `No values found — please add new items in Drivers tab` : `Select ${label}`)
     : values.includes('ALL') 
       ? 'ALL' 
       : values.length === 1 
@@ -162,21 +162,27 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onCha
       
       {isOpen && (
         <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-          {options.map((option) => (
-            <label
-              key={option}
-              className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <input
-                type="checkbox"
-                checked={values.includes(option)}
-                onChange={() => handleToggle(option)}
-                className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-              />
-              <span className="text-sm text-ag-dark-text">{option}</span>
-            </label>
-          ))}
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-ag-dark-text-secondary italic">
+              No values found — please add new items in Drivers tab
+            </div>
+          ) : (
+            options.map((option) => (
+              <label
+                key={option}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={values.includes(option)}
+                  onChange={() => handleToggle(option)}
+                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                />
+                <span className="text-sm text-ag-dark-text">{option}</span>
+              </label>
+            ))
+          )}
         </div>
       )}
     </div>
@@ -208,10 +214,14 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     objectClarifier: ''
   });
 
-  // Use API drivers data with fallback to mock data
-  const driversData = apiDrivers && (apiDrivers.sectors.length > 0 || apiDrivers.domains.length > 0) 
-    ? apiDrivers 
-    : getDriversData();
+  // Use only API drivers data
+  const driversData = apiDrivers || {
+    sectors: [],
+    domains: [],
+    countries: [],
+    objectClarifiers: [],
+    variableClarifiers: []
+  };
   
   // Taxonomy data from API
   const [beings, setBeings] = useState<string[]>([]);

@@ -278,8 +278,22 @@ function App() {
             return selectedRowForMetadata.being;
           case 'avatar':
             return selectedRowForMetadata.avatar;
-          case 'objectName':
+          case 'object':
             return selectedRowForMetadata.object;
+          case 'sector':
+            return selectedRowForMetadata.sector || '';
+          case 'domain':
+            return selectedRowForMetadata.domain || '';
+          case 'country':
+            return selectedRowForMetadata.country || '';
+          case 'classifier':
+            return selectedRowForMetadata.classifier || '';
+          case 'identifier':
+            return selectedRowForMetadata.identifier || '';
+          case 'discret':
+            return selectedRowForMetadata.discret || '';
+          case 'status':
+            return selectedRowForMetadata.status || 'Active';
           default:
             return '';
         }
@@ -679,12 +693,8 @@ function App() {
           }
         }
         
-        // Update local state with the new data
-        setData(prev => prev.map(item => 
-          item.id === selectedRowForMetadata.id 
-            ? { ...item, ...gridData }
-            : item
-        ));
+        // Note: No need to manually update local state here - the useObjects hook will handle it
+        // The useEffect in App.tsx will sync the data state with apiObjects from the hook
         
         // Clear highlighting for this item if it was affected by driver deletion
         if (affectedObjectIds.has(selectedRowForMetadata.id)) {

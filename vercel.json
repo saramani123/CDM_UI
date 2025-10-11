@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "CDM_Frontend/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    },
+    {
+      "src": "CDM_UI_Backend/main.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/CDM_UI_Backend/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/CDM_Frontend/dist/$1"
+    }
+  ],
+  "env": {
+    "ENVIRONMENT": "production",
+    "NEO4J_INSTANCE_NAME": "vulqan-cdm-prod"
+  }
+}

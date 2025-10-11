@@ -595,13 +595,68 @@ async def update_object(
                             CREATE (oc)-[:RELEVANT_TO]->(o)
                         """, clarifier=clarifier_str, object_id=object_id)
                 
-                return {"message": "Object driver updated successfully"}
+                # Don't return here - continue to process basic field updates
+
+            # Handle basic field updates (being, avatar, object, etc.)
+            if request_data:
+                print(f"DEBUG: Processing basic field updates: {request_data}")
+                print(f"DEBUG: Being field: {request_data.get('being', 'NOT_FOUND')}")
+                print(f"DEBUG: Avatar field: {request_data.get('avatar', 'NOT_FOUND')}")
+                print(f"DEBUG: Object field: {request_data.get('object', 'NOT_FOUND')}")
+                print(f"DEBUG: ObjectName field: {request_data.get('objectName', 'NOT_FOUND')}")
+                
+                # Build dynamic SET clause for basic fields
+                set_clauses = []
+                params = {"object_id": object_id}
+                
+                if 'being' in request_data and request_data['being']:
+                    set_clauses.append("o.being = $being")
+                    params["being"] = request_data['being']
+                
+                if 'avatar' in request_data and request_data['avatar']:
+                    set_clauses.append("o.avatar = $avatar")
+                    params["avatar"] = request_data['avatar']
+                
+                if 'object' in request_data and request_data['object']:
+                    set_clauses.append("o.object = $object")
+                    params["object"] = request_data['object']
+                elif 'objectName' in request_data and request_data['objectName']:
+                    set_clauses.append("o.object = $objectName")
+                    params["objectName"] = request_data['objectName']
+                
+                if 'discreteId' in request_data and request_data['discreteId']:
+                    set_clauses.append("o.discreteId = $discreteId")
+                    params["discreteId"] = request_data['discreteId']
+                
+                # Update basic fields if any
+                if set_clauses:
+                    update_query = f"""
+                        MATCH (o:Object {{id: $object_id}})
+                        SET {', '.join(set_clauses)}
+                    """
+                    print(f"DEBUG: Executing update query: {update_query}")
+                    print(f"DEBUG: With parameters: {params}")
+                    session.run(update_query, params)
+                    print(f"DEBUG: Updated basic fields: {set_clauses}")
+                    
+                    # Verify the update was successful
+                    verify_result = session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        RETURN o.being as being, o.avatar as avatar, o.object as object
+                    """, object_id=object_id).single()
+                    
+                    if verify_result:
+                        print(f"DEBUG: Verification - Being: {verify_result['being']}, Avatar: {verify_result['avatar']}, Object: {verify_result['object']}")
+                    else:
+                        print("DEBUG: Verification failed - object not found")
 
             # Handle relationships and variants bulk update
             print(f"DEBUG: request_data={request_data}")
-            has_relationships = request_data and 'relationships' in request_data
-            has_variants = request_data and 'variants' in request_data
+            has_relationships = request_data and 'relationships' in request_data and request_data['relationships']
+            has_variants = request_data and 'variants' in request_data and request_data['variants']
             print(f"DEBUG: has_relationships={has_relationships}, has_variants={has_variants}")
+            
+            # Only process relationships/variants if they are explicitly provided
             if has_relationships or has_variants:
                 print(f"DEBUG: Processing relationships and variants update")
                 # Get from request_data
@@ -738,26 +793,25 @@ async def update_object(
                 
                 return {"message": "Object relationships and variants updated successfully"}
             
+            # Return the updated object data
+            updated_object = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
+                       o.driver as driver, o.relationships as relationships, o.variants as variants
+            """, object_id=object_id).single()
+            
+            if updated_object:
+                return {
+                    "id": updated_object["id"],
+                    "being": updated_object["being"],
+                    "avatar": updated_object["avatar"], 
+                    "object": updated_object["object"],
+                    "driver": updated_object["driver"],
+                    "relationships": updated_object["relationships"],
+                    "variants": updated_object["variants"]
+                }
             else:
-                # If no relationships or variants provided, just clear them
-                session.run("""
-                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                    DELETE r
-                """, object_id=object_id)
-                
-                session.run("""
-                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
-                    DETACH DELETE v
-                """, object_id=object_id)
-                
-                # Update counts
-                session.run("""
-                    MATCH (o:Object {id: $object_id})
-                    SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
-                        o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
-                """, object_id=object_id)
-                
-                return {"message": "Object relationships and variants cleared successfully"}
+                return {"message": "Object updated successfully"}
 
     except HTTPException:
         raise

@@ -4,7 +4,13 @@ from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# In production, Vercel will inject environment variables
+# In development, load from .env.dev
+if os.getenv("VERCEL") is None:  # Not in Vercel (local development)
+    load_dotenv(".env.dev")
+else:  # In Vercel (production)
+    # Environment variables are automatically injected by Vercel
+    pass
 
 class Neo4jConnection:
     def __init__(self):
@@ -16,7 +22,12 @@ class Neo4jConnection:
     def connect(self):
         """Initialize connection to Neo4j database"""
         try:
+            environment = os.getenv("ENVIRONMENT", "development")
+            instance_name = os.getenv("NEO4J_INSTANCE_NAME", "unknown")
+            
             print(f"Attempting to connect to Neo4j at {self.uri}")
+            print(f"Environment: {environment}")
+            print(f"Instance: {instance_name}")
             print(f"Username: {self.username}")
             
             # For Neo4j Aura, use neo4j+ssc scheme for self-signed certificates
@@ -38,7 +49,11 @@ class Neo4jConnection:
             with self.driver.session() as session:
                 result = session.run("RETURN 1 as test")
                 record = result.single()
-                print(f"Successfully connected to Neo4j! Test result: {record['test']}")
+                
+                if environment == "production":
+                    print(f"✅ Connected to production Neo4j Aura - {instance_name}")
+                else:
+                    print(f"Successfully connected to Neo4j! Test result: {record['test']}")
                 
                 # Get database info
                 try:
