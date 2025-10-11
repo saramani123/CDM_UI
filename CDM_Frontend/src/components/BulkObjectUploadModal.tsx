@@ -63,7 +63,7 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
           object: obj.object,
           relationships: 0,
           variants: 0,
-          variables: 54,
+          variables: '-',
           status: 'Active',
           relationshipsList: [],
           variantsList: [],
