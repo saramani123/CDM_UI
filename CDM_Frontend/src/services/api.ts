@@ -4,7 +4,7 @@
 const getApiBaseUrl = () => {
   // In production (Vercel), use the backend URL from environment
   if (import.meta.env.PROD) {
-    return import.meta.env.VITE_API_BASE_URL || 'https://cdm-backend-jf594ohd5-saras-projects-4c70d85d.vercel.app/api/v1';
+    return import.meta.env.VITE_API_BASE_URL || 'https://cdm-backend.onrender.com/api/v1';
   }
   // In development, use localhost
   return 'http://localhost:8000/api/v1';

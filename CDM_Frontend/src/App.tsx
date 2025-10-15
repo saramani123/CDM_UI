@@ -140,7 +140,35 @@ function App() {
         console.log('Drivers API failed, using mock data:', driversError);
       } else if (apiDrivers) {
         // Always use API data, even if empty
-        setDriversState(apiDrivers);
+        // Apply saved order from localStorage if available
+        const orderedDrivers = { ...apiDrivers };
+        
+        // Check for saved order for each column type
+        Object.keys(apiDrivers).forEach(columnType => {
+          const storageKey = `cdm_drivers_order_${columnType}`;
+          const savedOrder = localStorage.getItem(storageKey);
+          
+          if (savedOrder) {
+            try {
+              const parsedOrder = JSON.parse(savedOrder);
+              const currentItems = apiDrivers[columnType as keyof typeof apiDrivers] || [];
+              
+              // Only apply saved order if it contains the same items (no additions/removals)
+              if (Array.isArray(parsedOrder) && 
+                  parsedOrder.length === currentItems.length &&
+                  parsedOrder.every(item => currentItems.includes(item))) {
+                orderedDrivers[columnType as keyof typeof orderedDrivers] = parsedOrder;
+                console.log(`Applied saved order for ${columnType}:`, parsedOrder);
+              } else {
+                console.log(`Saved order for ${columnType} is outdated, using API order`);
+              }
+            } catch (error) {
+              console.error(`Failed to parse saved order for ${columnType}:`, error);
+            }
+          }
+        });
+        
+        setDriversState(orderedDrivers);
       }
     }
   }, [apiDrivers, driversError, driversLoading]);
@@ -888,11 +916,15 @@ function App() {
   };
 
   const handleDriversReorder = (columnType: ColumnType, newOrder: string[]) => {
-    // Update local state only - no API calls
+    // Update local state
     setDriversState(prev => ({
       ...prev,
       [columnType]: newOrder
     }));
+    
+    // Persist the new order to localStorage
+    const storageKey = `cdm_drivers_order_${columnType}`;
+    localStorage.setItem(storageKey, JSON.stringify(newOrder));
   };
 
   const handleDriverDeleteClick = (driverName: string, columnType: ColumnType) => {
