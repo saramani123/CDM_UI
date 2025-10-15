@@ -652,16 +652,22 @@ async def update_object(
 
             # Handle relationships and variants bulk update
             print(f"DEBUG: request_data={request_data}")
+            print(f"DEBUG: request_data keys: {list(request_data.keys()) if request_data else 'None'}")
             has_relationships = request_data and 'relationships' in request_data and request_data['relationships']
             has_variants = request_data and 'variants' in request_data and request_data['variants']
-            print(f"DEBUG: has_relationships={has_relationships}, has_variants={has_variants}")
+            has_variants_list = request_data and 'variantsList' in request_data and request_data['variantsList']
+            print(f"DEBUG: has_relationships={has_relationships}, has_variants={has_variants}, has_variants_list={has_variants_list}")
+            if has_variants_list:
+                print(f"DEBUG: variantsList content: {request_data['variantsList']}")
+                print(f"DEBUG: variantsList length: {len(request_data['variantsList']) if request_data['variantsList'] else 0}")
             
             # Only process relationships/variants if they are explicitly provided
-            if has_relationships or has_variants:
+            if has_relationships or has_variants or has_variants_list:
                 print(f"DEBUG: Processing relationships and variants update")
                 # Get from request_data
                 parsed_relationships = request_data.get('relationships', []) if request_data else []
                 parsed_variants = request_data.get('variants', []) if request_data else []
+                parsed_variants_list = request_data.get('variantsList', []) if request_data else []
                 
                 # First, deduplicate relationships in the request data
                 unique_relationships = []
@@ -686,16 +692,20 @@ async def update_object(
                 
                 print(f"DEBUG: Original relationships: {len(parsed_relationships)}, Unique relationships: {len(unique_relationships)}")
                 
-                # Clear existing relationships and variants
-                session.run("""
-                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                    DELETE r
-                """, object_id=object_id)
+                # Clear existing relationships (always clear for relationships)
+                if has_relationships:
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                        DELETE r
+                    """, object_id=object_id)
                 
-                session.run("""
-                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
-                    DETACH DELETE v
-                """, object_id=object_id)
+                # Only clear existing variants if using 'variants' field (replace mode)
+                # For 'variantsList' field (bulk edit), we append variants instead of replacing
+                if has_variants:
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        DETACH DELETE v
+                    """, object_id=object_id)
                 
                 # Create new relationships
                 if unique_relationships:
@@ -767,22 +777,67 @@ async def update_object(
                             except Exception as e:
                                 print(f"DEBUG: Error creating relationship {j+1}: {e}")
                 
-                # Create new variants
+                # Create new variants (handle both 'variants' and 'variantsList')
+                variants_to_create = []
                 if parsed_variants:
-                    for var in parsed_variants:
-                        variant_id = str(uuid.uuid4())
-                        session.run("""
-                            CREATE (v:Variant {
-                                id: $variant_id,
-                                name: $variant_name
-                            })
-                        """, variant_id=variant_id, variant_name=var.get("name", ""))
+                    variants_to_create.extend(parsed_variants)
+                if parsed_variants_list:
+                    variants_to_create.extend(parsed_variants_list)
+                
+                if variants_to_create:
+                    print(f"DEBUG: Processing {len(variants_to_create)} variants")
+                    for var in variants_to_create:
+                        variant_name = var.get("name", "").strip()
+                        if not variant_name:
+                            continue
+                            
+                        print(f"DEBUG: Processing variant: {variant_name}")
                         
-                        session.run("""
-                            MATCH (o:Object {id: $object_id})
-                            MATCH (v:Variant {id: $variant_id})
-                            CREATE (o)-[:HAS_VARIANT]->(v)
-                        """, object_id=object_id, variant_id=variant_id)
+                        # Check if variant already exists for this object (case-insensitive)
+                        existing_variant_for_object = session.run("""
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            WHERE toLower(v.name) = toLower($variant_name)
+                            RETURN v.id as id, v.name as name
+                        """, object_id=object_id, variant_name=variant_name).single()
+                        
+                        if existing_variant_for_object:
+                            print(f"DEBUG: Variant '{variant_name}' already exists for object {object_id}, skipping")
+                            continue
+                        
+                        # Check if variant exists globally (case-insensitive)
+                        existing_variant = session.run("""
+                            MATCH (v:Variant)
+                            WHERE toLower(v.name) = toLower($variant_name)
+                            RETURN v.id as id, v.name as name
+                        """, variant_name=variant_name).single()
+                        
+                        if existing_variant:
+                            # Variant exists globally, connect it to this object
+                            variant_id = existing_variant["id"]
+                            print(f"DEBUG: Connecting existing global variant '{variant_name}' to object {object_id}")
+                            
+                            session.run("""
+                                MATCH (o:Object {id: $object_id})
+                                MATCH (v:Variant {id: $variant_id})
+                                CREATE (o)-[:HAS_VARIANT]->(v)
+                            """, object_id=object_id, variant_id=variant_id)
+                        else:
+                            # Create new variant
+                            variant_id = str(uuid.uuid4())
+                            print(f"DEBUG: Creating new variant '{variant_name}' for object {object_id}")
+                            
+                            session.run("""
+                                CREATE (v:Variant {
+                                    id: $variant_id,
+                                    name: $variant_name
+                                })
+                            """, variant_id=variant_id, variant_name=variant_name)
+                            
+                            session.run("""
+                                MATCH (o:Object {id: $object_id})
+                                MATCH (v:Variant {id: $variant_id})
+                                CREATE (o)-[:HAS_VARIANT]->(v)
+                            """, object_id=object_id, variant_id=variant_id)
                 
                 # Update counts
                 session.run("""
@@ -791,7 +846,25 @@ async def update_object(
                         o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
                 """, object_id=object_id)
                 
-                return {"message": "Object relationships and variants updated successfully"}
+                # Return the updated object data instead of just a message
+                updated_object = session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
+                           o.driver as driver, o.relationships as relationships, o.variants as variants
+                """, object_id=object_id).single()
+                
+                if updated_object:
+                    return {
+                        "id": updated_object["id"],
+                        "being": updated_object["being"],
+                        "avatar": updated_object["avatar"], 
+                        "object": updated_object["object"],
+                        "driver": updated_object["driver"],
+                        "relationships": updated_object["relationships"],
+                        "variants": updated_object["variants"]
+                    }
+                else:
+                    return {"message": "Object relationships and variants updated successfully"}
             
             # Return the updated object data
             updated_object = session.run("""
@@ -1548,8 +1621,11 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                 RETURN v.name as name, v.id as id
             """)
             
-            global_variants = {record["name"].lower(): record["id"] for record in global_variants_result}
+            global_variants = {record["name"].lower(): {"id": record["id"], "original_name": record["name"]} for record in global_variants_result}
             print(f"DEBUG: Found {len(global_variants)} global variants: {list(global_variants.keys())}")
+            
+            # Track variants within this CSV upload to detect duplicates within the file
+            csv_variant_names = set()
             
             for row_num, row in enumerate(rows, start=2):
                 # Get variant name from the row
@@ -1558,24 +1634,26 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                     errors.append(f"Row {row_num}: Variant name is required")
                     continue
                 
+                # Check for duplicates within the CSV file itself (case-insensitive)
+                if variant_name.lower() in csv_variant_names:
+                    errors.append(f"Row {row_num}: Duplicate variant name '{variant_name}' found within the CSV file")
+                    continue
+                
                 # Check for duplicates (case-insensitive) - only for this specific object
                 if variant_name.lower() in existing_variant_names:
                     skipped_count += 1
                     print(f"Skipping duplicate variant for this object: {variant_name}")
                     continue
                 
-                # Check if variant exists globally by querying it directly (case-insensitive)
-                existing_variant = session.run("""
-                    MATCH (v:Variant)
-                    WHERE toLower(v.name) = toLower($variant_name)
-                    RETURN v.id as id, v.name as name
-                """, variant_name=variant_name).single()
+                # Add to CSV tracking set
+                csv_variant_names.add(variant_name.lower())
                 
-                if existing_variant:
+                # Check if variant exists globally using our pre-loaded data (case-insensitive)
+                if variant_name.lower() in global_variants:
                     # Variant exists globally, just connect it to this object
                     print(f"Connecting existing global variant to object: {variant_name}")
                     
-                    variant_id = existing_variant["id"]
+                    variant_id = global_variants[variant_name.lower()]["id"]
                     
                     # Check if this variant is already connected to this object
                     already_connected = session.run("""

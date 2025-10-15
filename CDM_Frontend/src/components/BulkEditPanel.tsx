@@ -243,8 +243,66 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     setRelationships(prev => [...prev, ...uploadedRelationships]);
   };
 
-  const handleVariantCsvUpload = (uploadedVariants: Variant[]) => {
-    setVariants(prev => [...prev, ...uploadedVariants]);
+  const handleVariantCsvUpload = async (data: any[] | File) => {
+    // Check if it's a File (new API-based upload) or array (old client-side parsing)
+    if (data instanceof File) {
+      try {
+        // For bulk edit, we need to handle the file upload differently
+        // We'll parse the CSV client-side and add to the variants list
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          let csv = e.target?.result as string;
+          if (!csv) return;
+          
+          // Parse CSV
+          const lines = csv.split('\n').filter(line => line.trim());
+          if (lines.length < 2) {
+            alert('CSV file must have at least a header and one data row');
+            return;
+          }
+          
+          const header = lines[0].toLowerCase();
+          if (!header.includes('variant')) {
+            alert('CSV file must have a "Variant" column');
+            return;
+          }
+          
+          const variantIndex = lines[0].split(',').findIndex(col => 
+            col.toLowerCase().trim().replace(/"/g, '') === 'variant'
+          );
+          
+          if (variantIndex === -1) {
+            alert('Could not find "Variant" column in CSV');
+            return;
+          }
+          
+          const newVariants: Variant[] = [];
+          for (let i = 1; i < lines.length; i++) {
+            const values = lines[i].split(',').map(val => val.trim().replace(/"/g, ''));
+            if (values[variantIndex] && values[variantIndex].trim()) {
+              newVariants.push({
+                id: Date.now().toString() + i,
+                name: values[variantIndex].trim()
+              });
+            }
+          }
+          
+          if (newVariants.length > 0) {
+            setVariants(prev => [...prev, ...newVariants]);
+            alert(`Successfully added ${newVariants.length} variants from CSV`);
+          } else {
+            alert('No valid variants found in CSV');
+          }
+        };
+        reader.readAsText(data);
+      } catch (error) {
+        console.error('CSV variants upload failed:', error);
+        alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Handle array of variants (fallback)
+      setVariants(prev => [...prev, ...data]);
+    }
   };
 
   const handleSaveBulkEdit = () => {
@@ -289,6 +347,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       relationshipsList: uniqueRelationships,
       variantsList: variants
     };
+    
+    console.log('🔄 BulkEditPanel - saveData:', saveData);
+    console.log('🔄 BulkEditPanel - variants array:', variants);
+    console.log('🔄 BulkEditPanel - variantsList field:', saveData.variantsList);
+    
     onSave(saveData);
     onClose();
   };

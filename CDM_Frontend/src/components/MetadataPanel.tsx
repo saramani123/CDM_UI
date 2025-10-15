@@ -361,6 +361,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   const handleVariantChange = useCallback((id: string, name: string) => {
     console.log(`DEBUG: handleVariantChange called with id=${id}, name="${name}"`);
+    
+    // Allow typing without real-time validation - only check duplicates on save
     setVariants(prev => prev.map(variant => 
       variant.id === id ? { ...variant, name } : variant
     ));
@@ -451,6 +453,30 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
     console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
     
+    // Remove duplicate variants based on name (case-insensitive)
+    const uniqueVariants = variants.reduce((acc, variant) => {
+      if (!acc.some(existing => 
+        existing.name.toLowerCase() === variant.name.toLowerCase()
+      )) {
+        acc.push(variant);
+      }
+      return acc;
+    }, [] as Variant[]);
+    
+    console.log('DEBUG: Original variants count:', variants.length);
+    console.log('DEBUG: Unique variants count:', uniqueVariants.length);
+    console.log('DEBUG: Duplicate variants removed:', variants.length - uniqueVariants.length);
+    
+    // Check for duplicate variant names and show error if found
+    if (variants.length !== uniqueVariants.length) {
+      const duplicateNames = variants.filter((variant, index) => 
+        variants.findIndex(v => v.name.toLowerCase() === variant.name.toLowerCase()) !== index
+      ).map(v => v.name);
+      
+      alert(`Cannot save: Duplicate variant names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+    
     const saveData = {
       ...formData,
       // Use the form data object value (user input)
@@ -461,7 +487,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         compositeKeys: compositeKeys.filter(key => key.part || key.group)
       },
       relationshipsList: uniqueRelationships,
-      variantsList: variants
+      variantsList: uniqueVariants
     };
     console.log('🔴 MetadataPanel saving data:', saveData);
     console.log('🔴 Relationships:', uniqueRelationships);

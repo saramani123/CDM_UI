@@ -151,9 +151,8 @@ async def delete_driver(driver_type: DriverType, name: str):
     Delete a driver value and handle relationship cleanup.
     Returns information about affected Objects and Variables.
     """
-    # Countries cannot be deleted (pre-defined)
-    if driver_type == "countries":
-        raise HTTPException(status_code=403, detail="Countries cannot be deleted - they are pre-defined")
+    # Note: All driver types (sectors, domains, countries, objectClarifiers) can now be deleted
+    # The deletion logic below handles all types consistently
     
     # ALL values cannot be deleted (UI convenience only)
     if name == "ALL":

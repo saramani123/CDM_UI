@@ -486,11 +486,50 @@ function App() {
         console.log('🔄 Bulk edit - selectedIds:', selectedIds);
         console.log('🔄 Bulk edit - updatedData:', updatedData);
         
+        // Check for variant duplicates if variants are being added
+        if (updatedData.variantsList && updatedData.variantsList.length > 0) {
+          console.log('🔄 Checking for variant duplicates across selected objects...');
+          
+          const newVariantNames = updatedData.variantsList
+            .filter((v: any) => v.name && v.name.trim())
+            .map((v: any) => v.name.toLowerCase());
+          
+          console.log('🔄 New variant names to add:', newVariantNames);
+          
+          // Check each selected object for existing variants
+          for (const objectId of selectedIds) {
+            const selectedObject = data.find(obj => obj.id === objectId);
+            if (selectedObject && selectedObject.variantsList) {
+              const existingVariantNames = selectedObject.variantsList
+                .map((v: any) => v.name.toLowerCase());
+              
+              console.log(`🔄 Object ${objectId} existing variants:`, existingVariantNames);
+              
+              // Check for duplicates
+              const duplicates = newVariantNames.filter(newName => 
+                existingVariantNames.includes(newName)
+              );
+              
+              if (duplicates.length > 0) {
+                const duplicateNames = updatedData.variantsList
+                  .filter((v: any) => duplicates.includes(v.name.toLowerCase()))
+                  .map((v: any) => v.name);
+                
+                alert(`Cannot save: The following variant names conflict with existing variants in the selected objects: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+                return;
+              }
+            }
+          }
+          
+          console.log('✅ No variant duplicates found, proceeding with bulk edit...');
+        }
+        
         // Update each selected object via API
         for (const objectId of selectedIds) {
           // Prepare the update data for this object
           const objectUpdateData = { ...updatedData };
           console.log(`🔄 Bulk edit - updating object ${objectId} with data:`, objectUpdateData);
+          console.log(`🔄 Bulk edit - variantsList field:`, objectUpdateData.variantsList);
           
           // Call the updateObject API for each object
           await updateObject(objectId, objectUpdateData);
