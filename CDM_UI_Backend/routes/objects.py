@@ -227,14 +227,14 @@ async def create_object(object_data: ObjectCreateRequest):
             clarifier_str = objectClarifier or "None"
             driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
             
-            # Check for duplicate objects (same being, avatar, object combination)
+            # Check for duplicate objects (same being, avatar, object, AND driver combination)
             existing = session.run("""
-                MATCH (o:Object {being: $being, avatar: $avatar, object: $object})
+                MATCH (o:Object {being: $being, avatar: $avatar, object: $object, driver: $driver})
                 RETURN o.id as id
-            """, being=object_data.being, avatar=object_data.avatar, object=object_data.object)
+            """, being=object_data.being, avatar=object_data.avatar, object=object_data.object, driver=driver_string)
             
             if existing.single():
-                raise HTTPException(status_code=409, detail="Object with this Being/Avatar/Object combination already exists")
+                raise HTTPException(status_code=409, detail="Object with this Being/Avatar/Object/Driver combination already exists")
             
             # Create the Object node
             session.run("""
@@ -1371,22 +1371,26 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
     
     try:
         with driver.session() as session:
-            # Check if variant already exists globally
+            # First check if variant already exists for this specific object (case-insensitive)
+            existing_variant_for_object = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                WHERE toLower(v.name) = toLower($variant_name)
+                RETURN v.id as id, v.name as name
+            """, object_id=object_id, variant_name=request.variant_name).single()
+            
+            if existing_variant_for_object:
+                raise HTTPException(status_code=409, detail="Variant already exists for this object")
+            
+            # Check if variant already exists globally (case-insensitive)
             existing_variant = session.run("""
-                MATCH (v:Variant {name: $variant_name})
-                RETURN v.id as id
+                MATCH (v:Variant)
+                WHERE toLower(v.name) = toLower($variant_name)
+                RETURN v.id as id, v.name as name
             """, variant_name=request.variant_name).single()
             
             if existing_variant:
-                # Variant exists globally, check if already connected to this object
+                # Variant exists globally, connect it to this object
                 variant_id = existing_variant["id"]
-                already_connected = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
-                    RETURN v.id as id
-                """, object_id=object_id, variant_id=variant_id).single()
-                
-                if already_connected:
-                    raise HTTPException(status_code=409, detail="Variant already exists for this object")
                 
                 # Connect existing variant to object
                 session.run("""
@@ -1560,10 +1564,11 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                     print(f"Skipping duplicate variant for this object: {variant_name}")
                     continue
                 
-                # Check if variant exists globally by querying it directly
+                # Check if variant exists globally by querying it directly (case-insensitive)
                 existing_variant = session.run("""
-                    MATCH (v:Variant {name: $variant_name})
-                    RETURN v.id as id
+                    MATCH (v:Variant)
+                    WHERE toLower(v.name) = toLower($variant_name)
+                    RETURN v.id as id, v.name as name
                 """, variant_name=variant_name).single()
                 
                 if existing_variant:
