@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Upload, Edit2 } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -25,6 +25,7 @@ import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
+import { CustomSortModal } from './components/CustomSortModal';
 
 function App() {
   const [activeTab, setActiveTab] = useState('objects');
@@ -54,6 +55,17 @@ function App() {
   const [listData, setListData] = useState(mockListData);
   const [isBulkListUploadOpen, setIsBulkListUploadOpen] = useState(false);
   const [isAddListOpen, setIsAddListOpen] = useState(false);
+  
+  // Custom Sort state
+  const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
+  const [customSortRules, setCustomSortRules] = useState<Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>>([]);
+  const [isCustomSortActive, setIsCustomSortActive] = useState(false);
+  const [isColumnSortActive, setIsColumnSortActive] = useState(false);
 
   // Drivers tab state - use API data with fallback to mock data
   const [driversState, setDriversState] = useState(driversData);
@@ -1009,6 +1021,38 @@ function App() {
     setDriverToDelete(null);
   };
 
+  const handleCustomSortApply = (sortRules: Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>) => {
+    setCustomSortRules(sortRules);
+    setIsCustomSortActive(sortRules.length > 0);
+    setIsColumnSortActive(false); // Clear column sort when grid sort is applied
+    console.log('Custom sort applied:', sortRules);
+  };
+
+  const handleClearCustomSort = () => {
+    setCustomSortRules([]);
+    setIsCustomSortActive(false);
+  };
+
+  const handleClearAllSorts = () => {
+    setCustomSortRules([]);
+    setIsCustomSortActive(false);
+    setIsColumnSortActive(false);
+  };
+
+  const handleColumnSort = () => {
+    // When a column sort is applied, clear grid-level sort
+    if (isCustomSortActive) {
+      setCustomSortRules([]);
+      setIsCustomSortActive(false);
+    }
+    setIsColumnSortActive(true);
+  };
+
   const exportToCsv = () => {
     const currentData = activeTab === 'variables' ? variableData : data;
     const currentColumns = activeTab === 'variables' ? variableColumns : objectColumns;
@@ -1167,6 +1211,32 @@ function App() {
               </div>
               
               <div className="flex items-center gap-3">
+                {/* Custom Sort Button - only show for Objects tab */}
+                {activeTab === 'objects' && (
+                  <button
+                    onClick={() => setIsCustomSortOpen(true)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
+                      isCustomSortActive 
+                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                    }`}
+                    title="Sort the grid by multiple columns"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                    Custom Sort
+                    {isCustomSortActive && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        Grid Sort Active
+                      </span>
+                    )}
+                    {isColumnSortActive && !isCustomSortActive && (
+                      <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
+                        Column Sort Active
+                      </span>
+                    )}
+                  </button>
+                )}
+                
                 <button
                   onClick={() => {
                     if (activeTab === 'lists') {
@@ -1240,6 +1310,11 @@ function App() {
               onReorder={activeTab === 'lists' ? setListData : activeTab === 'variables' ? setVariableData : setData}
               affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
               deletedDriverType={deletedDriverType}
+              customSortRules={activeTab === 'objects' ? customSortRules : []}
+              onClearCustomSort={activeTab === 'objects' ? handleClearAllSorts : undefined}
+              onColumnSort={activeTab === 'objects' ? handleColumnSort : undefined}
+              isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : false}
+              isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : false}
             />
           </div>
 
@@ -1374,6 +1449,15 @@ function App() {
         onConfirm={handleDriverDeleteConfirm}
         driverName={driverToDelete?.name || ''}
         driverType={driverToDelete ? columnLabels[driverToDelete.type] : ''}
+      />
+
+      {/* Custom Sort Modal */}
+      <CustomSortModal
+        isOpen={isCustomSortOpen}
+        onClose={() => setIsCustomSortOpen(false)}
+        onApplySort={handleCustomSortApply}
+        columns={objectColumns}
+        currentSortRules={customSortRules}
       />
 
     </div>

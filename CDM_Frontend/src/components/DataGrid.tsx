@@ -20,6 +20,16 @@ interface DataGridProps {
   onReorder?: (newData: Record<string, any>[]) => void;
   affectedIds?: Set<string>;
   deletedDriverType?: string | null;
+  customSortRules?: Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>;
+  onClearCustomSort?: () => void;
+  onColumnSort?: () => void;
+  isCustomSortActive?: boolean;
+  isColumnSortActive?: boolean;
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -31,7 +41,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   selectedRows = [],
   onReorder,
   affectedIds = new Set(),
-  deletedDriverType = null
+  deletedDriverType = null,
+  customSortRules = [],
+  onClearCustomSort,
+  onColumnSort,
+  isCustomSortActive = false,
+  isColumnSortActive = false
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
@@ -60,6 +75,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
       left: rect.left + window.scrollX
     });
     setOpenDropdown(column.key);
+    
+    // Trigger column sort callback if provided
+    if (onColumnSort) {
+      onColumnSort();
+    }
   };
 
   const handleColumnFilter = (columnKey: string, filterValues: string[]) => {
@@ -121,12 +141,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
     setFilters({});
     setColumnFilters({});
     setSortConfig(null);
+    onClearCustomSort?.();
+    // Note: Column sort state is managed by parent component
   };
 
-  const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null;
+  const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
 
   const filteredAndSortedData = useMemo(() => {
-    console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length, affectedIds: affectedIds.size, affectedIdsArray: Array.from(affectedIds) });
+    console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length, affectedIds: affectedIds.size, affectedIdsArray: Array.from(affectedIds), customSortRules: customSortRules.length });
     
     let processedData = [...data];
 
@@ -161,8 +183,47 @@ export const DataGrid: React.FC<DataGridProps> = ({
       console.log('🔍 DataGrid - affected items:', affectedItems.map(item => ({ id: item.id, object: item.object, driver: item.driver })));
     }
 
-    // Apply sorting
-    if (sortConfig) {
+    // Apply custom sort rules (grid-level sort) - this takes priority over individual column sorts
+    if (customSortRules.length > 0) {
+      console.log('🎯 APPLYING CUSTOM SORT RULES:', customSortRules);
+      
+      processedData.sort((a, b) => {
+        for (const rule of customSortRules) {
+          if (!rule.column) continue;
+          
+          const aValue = String(a[rule.column] || '');
+          const bValue = String(b[rule.column] || '');
+          
+          let comparison = 0;
+          
+          // Handle numeric columns
+          if (['relationships', 'variants', 'variables'].includes(rule.column)) {
+            const aNum = Number(aValue) || 0;
+            const bNum = Number(bValue) || 0;
+            comparison = aNum - bNum;
+          } else {
+            // Handle text columns
+            comparison = aValue.localeCompare(bValue);
+          }
+          
+          // Apply order (asc/desc)
+          if (rule.order === 'desc') {
+            comparison = -comparison;
+          }
+          
+          // If this rule doesn't determine the order, continue to next rule
+          if (comparison !== 0) {
+            return comparison;
+          }
+        }
+        
+        return 0; // All rules are equal
+      });
+      
+      console.log('✅ CUSTOM SORT APPLIED');
+    }
+    // Apply individual column sorting only if no custom sort rules
+    else if (sortConfig) {
       console.log('🎯 SORT CONFIG EXISTS:', sortConfig);
       if (sortConfig.type === 'custom' && sortConfig.customOrder) {
         console.log('🔄 APPLYING CUSTOM SORT TO DATA:', {
@@ -204,7 +265,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
 
     return processedData;
-  }, [data, filters, columnFilters, sortConfig, affectedIds]);
+  }, [data, filters, columnFilters, sortConfig, affectedIds, customSortRules]);
 
   // Calculate available filter options for each column based on current filters
   const getAvailableFilterOptions = useMemo(() => {
