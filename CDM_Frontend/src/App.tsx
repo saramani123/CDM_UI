@@ -1391,7 +1391,6 @@ function App() {
                 />
               ) : (
                 <MetadataPanel
-                  title="Object Metadata"
                   fields={currentMetadataFields}
                   onSave={handleMetadataSave}
                   selectedObject={selectedRowForMetadata}

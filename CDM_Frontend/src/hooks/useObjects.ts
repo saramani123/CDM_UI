@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
-import { ObjectData } from '../data/mockData';
+import { ObjectData, parseDriverField } from '../data/mockData';
 
 export const useObjects = () => {
   const [objects, setObjects] = useState<ObjectData[]>([]);
@@ -17,7 +17,20 @@ export const useObjects = () => {
       setError(null);
       const data = await apiService.getObjects();
       console.log('🔄 fetchObjects - API response:', data.slice(0, 3).map(obj => ({ id: obj.id, driver: obj.driver })));
-      setObjects(data);
+      
+      // Parse driver strings and add parsed fields to each object
+      const parsedData = data.map(obj => {
+        const parsed = parseDriverField(obj.driver);
+        return {
+          ...obj,
+          sector: parsed.sector,
+          domain: parsed.domain,
+          country: parsed.country,
+          classifier: parsed.classifier
+        };
+      });
+      
+      setObjects(parsedData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch objects');
       console.error('Error fetching objects:', err);
@@ -34,8 +47,19 @@ export const useObjects = () => {
   const createObject = async (objectData: any) => {
     try {
       const newObject = await apiService.createObject(objectData);
-      setObjects(prev => [...prev, newObject]);
-      return newObject;
+      
+      // Parse driver string and add parsed fields
+      const parsed = parseDriverField(newObject.driver);
+      const parsedObject = {
+        ...newObject,
+        sector: parsed.sector,
+        domain: parsed.domain,
+        country: parsed.country,
+        classifier: parsed.classifier
+      };
+      
+      setObjects(prev => [...prev, parsedObject]);
+      return parsedObject;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create object');
       throw err;
@@ -48,15 +72,26 @@ export const useObjects = () => {
       console.log('🔄 Current objects before update:', objects.find(obj => obj.id === id));
       const updatedObject = await apiService.updateObject(id, objectData);
       console.log('✅ updateObject response:', updatedObject);
+      
+      // Parse driver string and add parsed fields
+      const parsed = parseDriverField(updatedObject.driver);
+      const parsedObject = {
+        ...updatedObject,
+        sector: parsed.sector,
+        domain: parsed.domain,
+        country: parsed.country,
+        classifier: parsed.classifier
+      };
+      
       setObjects(prev => {
         console.log('🔄 Previous objects state before update:', prev.find(obj => obj.id === id));
-        const newObjects = prev.map(obj => obj.id === id ? updatedObject : obj);
+        const newObjects = prev.map(obj => obj.id === id ? parsedObject : obj);
         console.log('🔄 Updated objects state:', newObjects.find(obj => obj.id === id));
         console.log('🔄 Full updated objects array length:', newObjects.length);
-        console.log('🔄 Updated object being set:', updatedObject);
+        console.log('🔄 Updated object being set:', parsedObject);
         return newObjects;
       });
-      return updatedObject;
+      return parsedObject;
     } catch (err) {
       console.error('❌ updateObject error:', err);
       setError(err instanceof Error ? err.message : 'Failed to update object');

@@ -540,7 +540,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
-          <h3 className="text-lg font-semibold text-ag-dark-text">Add New Object</h3>
+          <h3 className="text-lg font-semibold text-ag-dark-text">Add</h3>
         </div>
         <button
           onClick={onClose}
@@ -550,7 +550,21 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         </button>
       </div>
 
-      {/* Basic Fields */}
+      {/* Object Name Field - Moved out of collapsible section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Object Name <span className="text-ag-dark-error">*</span>
+        </label>
+        <input
+          type="text"
+          value={formData.objectName}
+          onChange={(e) => handleChange('objectName', e.target.value)}
+          placeholder="Enter object name..."
+          onClick={(e) => e.stopPropagation()}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+        />
+      </div>
+
       {/* Drivers Section */}
       <CollapsibleSection 
         title="Drivers" 
@@ -679,19 +693,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Name <span className="text-ag-dark-error">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.objectName}
-              onChange={(e) => handleChange('objectName', e.target.value)}
-              placeholder="Enter object name..."
-              onClick={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
         </div>
       </CollapsibleSection>
 

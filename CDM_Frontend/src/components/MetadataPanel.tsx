@@ -34,7 +34,6 @@ interface Relationship {
 }
 
 interface MetadataPanelProps {
-  title: string;
   fields: MetadataField[];
   onSave?: (data: Record<string, any>) => void;
   onClose?: () => void;
@@ -46,7 +45,6 @@ interface MetadataPanelProps {
 }
 
 export const MetadataPanel: React.FC<MetadataPanelProps> = ({
-  title,
   fields,
   onSave,
   onClose,
@@ -652,7 +650,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
-          <h3 className="text-lg font-semibold text-ag-dark-text">{title}</h3>
+          <h3 className="text-lg font-semibold text-ag-dark-text">Metadata</h3>
         </div>
         {onClose && (
           <button
@@ -662,6 +660,23 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             <X className="w-5 h-5" />
           </button>
         )}
+      </div>
+
+      {/* Object Name Field - Moved out of collapsible section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Object Name
+        </label>
+        <input
+          type="text"
+          value={formData.object}
+          onChange={(e) => handleChange('object', e.target.value)}
+          disabled={!isPanelEnabled}
+          onClick={(e) => e.stopPropagation()}
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
       </div>
 
       {/* Drivers Section */}
@@ -838,21 +853,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Name
-            </label>
-            <input
-              type="text"
-              value={formData.object}
-              onChange={(e) => handleChange('object', e.target.value)}
-              disabled={!isPanelEnabled}
-              onClick={(e) => e.stopPropagation()}
-              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            />
-          </div>
         </div>
       </CollapsibleSection>
 

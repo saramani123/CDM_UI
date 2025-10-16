@@ -1,14 +1,14 @@
 // Real data structure based on your sample data
 export interface ObjectData {
   id: string;
-  driver: string;
+  driver: string; // Keep for backend compatibility
   being: string;
   avatar: string;
   object: string;
   relationships: number;
   variants: number;
   variables: number;
-  // Parsed metadata fields
+  // Parsed metadata fields for display
   sector?: string;
   domain?: string;
   country?: string;
@@ -37,7 +37,9 @@ export interface Variant {
 export const mockObjectData: ObjectData[] = [];
 
 export const objectColumns = [
-  { key: 'driver', title: 'Driver', sortable: true, filterable: true, width: '200px' },
+  { key: 'sector', title: 'Sector', sortable: true, filterable: true, width: '140px' },
+  { key: 'domain', title: 'Domain', sortable: true, filterable: true, width: '140px' },
+  { key: 'country', title: 'Country', sortable: true, filterable: true, width: '140px' },
   { key: 'being', title: 'Being', sortable: true, filterable: true, width: '120px' },
   { key: 'avatar', title: 'Avatar', sortable: true, filterable: true, width: '180px' },
   { key: 'object', title: 'Object', sortable: true, filterable: true, width: '140px' },
@@ -48,12 +50,21 @@ export const objectColumns = [
 
 // Helper function to parse driver field into metadata components
 export const parseDriverField = (driver: string) => {
+  if (!driver) {
+    return {
+      sector: '',
+      domain: '',
+      country: '',
+      classifier: ''
+    };
+  }
+  
   const parts = driver.split(',').map(part => part.trim());
   return {
-    sector: parts[0] !== '***' ? parts[0] : '',
-    domain: parts[1] !== '***' ? parts[1] : '',
-    country: parts[2] !== '***' ? parts[2] : '',
-    classifier: parts[3] !== '***' ? parts[3] : ''
+    sector: parts[0] && parts[0] !== '***' && parts[0] !== 'ALL' ? parts[0] : (parts[0] === 'ALL' ? 'ALL' : ''),
+    domain: parts[1] && parts[1] !== '***' && parts[1] !== 'ALL' ? parts[1] : (parts[1] === 'ALL' ? 'ALL' : ''),
+    country: parts[2] && parts[2] !== '***' && parts[2] !== 'ALL' ? parts[2] : (parts[2] === 'ALL' ? 'ALL' : ''),
+    classifier: parts[3] && parts[3] !== '***' && parts[3] !== 'None' ? parts[3] : ''
   };
 };
 

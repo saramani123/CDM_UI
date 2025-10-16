@@ -502,7 +502,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
-          <h3 className="text-lg font-semibold text-ag-dark-text">Edit Selected Objects</h3>
+          <h3 className="text-lg font-semibold text-ag-dark-text">Edit Selected</h3>
         </div>
         <button
           onClick={onClose}
@@ -517,6 +517,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         <div className="text-sm text-ag-dark-text">
           <span className="font-semibold text-ag-dark-accent">Bulk Edit Mode:</span> Changes will be applied to all {selectedCount} selected objects. New relationships and variants will be appended to existing ones.
         </div>
+      </div>
+
+      {/* Object Name Field - Moved out of collapsible section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Object Name
+        </label>
+        <input
+          type="text"
+          value={formData.objectName}
+          onChange={(e) => handleChange('objectName', e.target.value)}
+          placeholder="Keep current object names"
+          onClick={(e) => e.stopPropagation()}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+        />
       </div>
 
       {/* Drivers Section */}
@@ -634,19 +649,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Name
-            </label>
-            <input
-              type="text"
-              value={formData.objectName}
-              onChange={(e) => handleChange('objectName', e.target.value)}
-              placeholder="Keep current object names"
-              onClick={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
         </div>
       </CollapsibleSection>
 

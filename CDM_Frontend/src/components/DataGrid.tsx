@@ -164,9 +164,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
     // Apply column filters
     Object.entries(columnFilters).forEach(([key, filterValues]) => {
       if (filterValues.length > 0) {
-        processedData = processedData.filter(item =>
-          filterValues.includes(String(item[key] || ''))
-        );
+        // Special handling for Sector, Domain, Country columns
+        if (['sector', 'domain', 'country'].includes(key)) {
+          processedData = processedData.filter(item => {
+            const itemValue = String(item[key] || '');
+            
+            // If "ALL" is selected, only show items with "ALL" value
+            if (filterValues.includes('ALL')) {
+              return itemValue === 'ALL';
+            }
+            
+            // If specific values are selected, show items with those values OR "ALL"
+            return filterValues.includes(itemValue) || itemValue === 'ALL';
+          });
+        } else {
+          // Standard filtering for other columns
+          processedData = processedData.filter(item =>
+            filterValues.includes(String(item[key] || ''))
+          );
+        }
       }
     });
 
@@ -417,24 +433,19 @@ export const DataGrid: React.FC<DataGridProps> = ({
     return isAffected;
   }
 
-  function formatDriverWithDeletedSector(driverString: string, deletedDriverType: string | null) {
-    if (!driverString) return driverString;
+  function formatDriverWithDeletedSector(value: string, deletedDriverType: string | null) {
+    if (!value) return value;
     
-    const parts = driverString.split(', ');
-    if (parts.length >= 4) {
-      // Handle specific deleted driver type
-      if (deletedDriverType === 'sectors' && parts[0] !== 'ALL') {
-        parts[0] = '-';
-      } else if (deletedDriverType === 'domains' && parts[1] !== 'ALL') {
-        parts[1] = '-';
-      } else if (deletedDriverType === 'countries' && parts[2] !== 'ALL') {
-        parts[2] = '-';
-      } else if (deletedDriverType === 'objectClarifiers' && parts[3] !== 'None') {
-        parts[3] = '-';
-      }
+    // For the new column structure, we need to check if this specific field is deleted
+    if (deletedDriverType === 'sectors' && value !== 'ALL') {
+      return '-';
+    } else if (deletedDriverType === 'domains' && value !== 'ALL') {
+      return '-';
+    } else if (deletedDriverType === 'countries' && value !== 'ALL') {
+      return '-';
     }
     
-    return parts.join(', ');
+    return value;
   }
 
   function hasDeletedDriver(driverString: string) {
@@ -550,13 +561,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     style={{ width: column.width }}
                   >
                     <span className={`whitespace-nowrap overflow-hidden text-ellipsis ${
-                      (column.key === 'object' || column.key === 'variable' || column.key === 'list') 
-                        ? 'font-semibold' 
-                        : ''
+                      column.key === 'object' 
+                        ? 'font-bold text-teal-600' 
+                        : (column.key === 'variable' || column.key === 'list') 
+                          ? 'font-semibold' 
+                          : ''
                     } ${
-                      column.key === 'driver' && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 'text-red-400' : ''
+                      (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 'text-red-400' : ''
                     }`}>
-                      {column.key === 'driver' && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 
+                      {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 
                         formatDriverWithDeletedSector(row[column.key], deletedDriverType) : 
                         (row[column.key] || '-')
                       }

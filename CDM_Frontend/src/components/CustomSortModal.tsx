@@ -70,9 +70,9 @@ export const CustomSortModal: React.FC<CustomSortModalProps> = ({
     onClose();
   };
 
-  // Get available columns (only Being, Avatar, Object for custom sort)
+  // Get available columns (Being, Avatar, Object, Sector, Domain, Country for custom sort)
   const availableColumns = columns.filter(col => 
-    col.sortable && ['being', 'avatar', 'object'].includes(col.key)
+    col.sortable && ['being', 'avatar', 'object', 'sector', 'domain', 'country'].includes(col.key)
   );
 
   if (!isOpen) return null;
