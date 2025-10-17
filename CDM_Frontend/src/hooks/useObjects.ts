@@ -101,9 +101,13 @@ export const useObjects = () => {
 
   const deleteObject = async (id: string) => {
     try {
+      console.log('🔴 deleteObject called with id:', id);
       await apiService.deleteObject(id);
+      console.log('🔴 deleteObject API call successful');
       setObjects(prev => prev.filter(obj => obj.id !== id));
+      console.log('🔴 deleteObject local state updated');
     } catch (err) {
+      console.error('🔴 deleteObject error:', err);
       setError(err instanceof Error ? err.message : 'Failed to delete object');
       throw err;
     }

@@ -1348,6 +1348,21 @@ async def create_relationship(
             # Create relationships to ALL matching objects
             for i, target_result in enumerate(target_results):
                 target_id = target_result["target_id"]
+                
+                # Check for existing relationship to prevent duplicates
+                existing_relationship = session.run("""
+                    MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object {id: $target_id})
+                    WHERE r.role = $role
+                    RETURN r.id as relationship_id
+                """, source_id=object_id, target_id=target_id, role=request.role).single()
+                
+                if existing_relationship:
+                    print(f"DEBUG: Skipping duplicate relationship with role '{request.role}' to {target_result['object']}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Duplicate relationship detected. A relationship with role '{request.role}' to {target_result['object']} already exists."
+                    )
+                
                 # Generate unique relationship ID
                 relationship_id = str(uuid.uuid4())
                 print(f"DEBUG: Creating relationship {i+1}/{len(target_results)} from {object_id} to {target_id} ({target_result['being']}, {target_result['avatar']}, {target_result['object']}) with ID {relationship_id}")
@@ -1733,6 +1748,319 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
         success=True,
         message=f"Successfully created {len(created_variants)} variants. Skipped {skipped_count} duplicates.",
         created_count=len(created_variants),
+        error_count=len(errors),
+        errors=errors
+    )
+
+@router.post("/objects/{object_id}/relationships/upload", response_model=CSVUploadResponse)
+async def bulk_upload_relationships(object_id: str, file: UploadFile = File(...)):
+    """Bulk upload relationships for an object from CSV file"""
+    print(f"DEBUG: bulk_upload_relationships called with object_id={object_id}, file={file.filename}")
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        # Read CSV content and parse it robustly
+        content = await file.read()
+        print(f"CSV content length: {len(content)}")
+        
+        # Decode content and handle BOM
+        try:
+            text_content = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text_content = content.decode('utf-8')
+        
+        # Parse CSV manually to handle unquoted fields with spaces
+        # Normalize line endings first to handle Windows-style (\r\n) and Unix-style (\n) newlines
+        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        lines = text_content.strip().split('\n')
+        if not lines:
+            raise HTTPException(status_code=400, detail="Empty CSV file")
+        
+        # Get headers from first line
+        headers = [h.strip() for h in lines[0].split(',')]
+        print(f"DEBUG: CSV headers: {headers}")
+        
+        # Validate required columns
+        required_columns = ['Type', 'Role', 'to Being', 'to Avatar', 'to Object']
+        missing_columns = [col for col in required_columns if col not in headers]
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV must contain columns: {', '.join(required_columns)}. Missing: {', '.join(missing_columns)}"
+            )
+        
+        # Parse data rows
+        rows = []
+        for i, line in enumerate(lines[1:], start=2):
+            if not line.strip():
+                continue
+            
+            # Simple split by comma - this handles unquoted fields with spaces
+            values = [v.strip() for v in line.split(',')]
+            
+            # Create row dictionary
+            row = {}
+            for j, header in enumerate(headers):
+                row[header] = values[j] if j < len(values) else ""
+            rows.append(row)
+                    
+        print(f"DEBUG: Parsed {len(rows)} relationship rows from CSV")
+        
+    except Exception as e:
+        print(f"Error in CSV parsing: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+    
+    # Database operations
+    created_relationships = []
+    errors = []
+    skipped_count = 0
+    
+    try:
+        with driver.session() as session:
+            print(f"DEBUG: Starting session for object {object_id}")
+            
+            # Verify the source object exists
+            source_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object
+            """, object_id=object_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Object with ID {object_id} not found")
+            
+            print(f"DEBUG: Source object: {source_check['being']}, {source_check['avatar']}, {source_check['object']}")
+            
+            # First, deduplicate CSV rows to prevent processing identical relationships multiple times
+            unique_rows = []
+            seen_relationships = set()
+            duplicate_csv_rows = 0
+            
+            for row_num, row in enumerate(rows, start=2):
+                # Create a unique key for this relationship
+                relationship_key = (
+                    row.get('Type', '').strip(),
+                    row.get('Role', '').strip(),
+                    row.get('to Being', '').strip(),
+                    row.get('to Avatar', '').strip(),
+                    row.get('to Object', '').strip()
+                )
+                
+                if relationship_key not in seen_relationships:
+                    seen_relationships.add(relationship_key)
+                    unique_rows.append((row_num, row))
+                else:
+                    duplicate_csv_rows += 1
+                    print(f"DEBUG: Row {row_num}: Skipping duplicate CSV row")
+            
+            if duplicate_csv_rows > 0:
+                print(f"DEBUG: Found {duplicate_csv_rows} duplicate CSV rows, processing {len(unique_rows)} unique rows")
+            
+            # Process each unique relationship row
+            for row_num, row in unique_rows:
+                try:
+                    # Validate required fields
+                    relationship_type = row.get('Type', '').strip()
+                    role = row.get('Role', '').strip()
+                    to_being = row.get('to Being', '').strip()
+                    to_avatar = row.get('to Avatar', '').strip()
+                    to_object = row.get('to Object', '').strip()
+                    
+                    # Basic field validation
+                    print(f"DEBUG: Row {row_num}: Processing relationship - Type: '{relationship_type}', Role: '{role}', To Being: '{to_being}', To Avatar: '{to_avatar}', To Object: '{to_object}'")
+                    
+                    if relationship_type not in ['Blood', 'Inter-Table', 'Intra-Table']:
+                        errors.append(f"Row {row_num}: Type must be 'Blood', 'Inter-Table', or 'Intra-Table'. Got: '{relationship_type}'")
+                        continue
+                    
+                    if not role:
+                        errors.append(f"Row {row_num}: Role cannot be empty")
+                        continue
+                    
+                    if not to_being or not to_avatar or not to_object:
+                        errors.append(f"Row {row_num}: To Being, To Avatar, and To Object cannot be empty")
+                        continue
+                    
+                    # ✅ 1. Type-Specific Validation Rules
+                    if relationship_type == 'Intra-Table':
+                        print(f"DEBUG: Row {row_num}: Intra-Table validation - Source: {source_check['being']}, {source_check['avatar']}, {source_check['object']}")
+                        print(f"DEBUG: Row {row_num}: Intra-Table validation - Target: {to_being}, {to_avatar}, {to_object}")
+                        
+                        # Intra-Table: Must match the current object's own details
+                        if (to_being != source_check['being'] or 
+                            to_avatar != source_check['avatar'] or 
+                            to_object != source_check['object']):
+                            error_msg = f"Row {row_num}: Invalid Intra-Table relationship: self-references must match the object's own Being, Avatar, and Object. Expected: {source_check['being']}, {source_check['avatar']}, {source_check['object']}. Got: {to_being}, {to_avatar}, {to_object}"
+                            print(f"DEBUG: {error_msg}")
+                            errors.append(error_msg)
+                            continue
+                        
+                        # For Intra-Table, target is the source object itself
+                        target_id = object_id
+                        target_being = source_check['being']
+                        target_avatar = source_check['avatar']
+                        target_object = source_check['object']
+                        
+                    elif relationship_type == 'Inter-Table':
+                        # Inter-Table: Must NOT match the current object's own values
+                        if (to_being == source_check['being'] and 
+                            to_avatar == source_check['avatar'] and 
+                            to_object == source_check['object']):
+                            errors.append(f"Row {row_num}: Invalid Inter-Table relationship: relationship points to itself. Use Intra-Table instead.")
+                            continue
+                        
+                        # Find target objects that match the criteria
+                        target_results = session.run("""
+                            MATCH (target:Object)
+                            WHERE target.being = $to_being 
+                            AND target.avatar = $to_avatar 
+                            AND target.object = $to_object
+                            RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
+                        """, to_being=to_being, to_avatar=to_avatar, to_object=to_object).data()
+                        
+                        if not target_results:
+                            errors.append(f"Row {row_num}: Target object '{to_object}' (Being = {to_being}, Avatar = {to_avatar}) not found in graph.")
+                            continue
+                        
+                        # Use first match and ensure it's not the same object
+                        target_result = target_results[0]
+                        if target_result['target_id'] == object_id:
+                            errors.append(f"Row {row_num}: Invalid Inter-Table relationship: cannot create relationship to itself. Use Intra-Table instead.")
+                            continue
+                        
+                        target_id = target_result['target_id']
+                        target_being = target_result['being']
+                        target_avatar = target_result['avatar']
+                        target_object = target_result['object']
+                        
+                    elif relationship_type == 'Blood':
+                        # Blood: Must correspond to existing, distinct nodes (not itself)
+                        target_results = session.run("""
+                            MATCH (target:Object)
+                            WHERE target.being = $to_being 
+                            AND target.avatar = $to_avatar 
+                            AND target.object = $to_object
+                            RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
+                        """, to_being=to_being, to_avatar=to_avatar, to_object=to_object).data()
+                        
+                        if not target_results:
+                            errors.append(f"Row {row_num}: Target object '{to_object}' (Being = {to_being}, Avatar = {to_avatar}) not found in graph.")
+                            continue
+                        
+                        # Use first match and ensure it's not the same object
+                        target_result = target_results[0]
+                        if target_result['target_id'] == object_id:
+                            errors.append(f"Row {row_num}: Invalid Blood relationship: cannot create relationship to itself.")
+                            continue
+                        
+                        target_id = target_result['target_id']
+                        target_being = target_result['being']
+                        target_avatar = target_result['avatar']
+                        target_object = target_result['object']
+                    
+                    # ✅ 2. General Relationship Integrity Rules
+                    # Check for existing relationship to prevent duplicates
+                    existing_relationship = session.run("""
+                        MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object {id: $target_id})
+                        WHERE r.role = $role
+                        RETURN r.id as relationship_id
+                    """, source_id=object_id, target_id=target_id, role=role).single()
+                    
+                    if existing_relationship:
+                        print(f"DEBUG: Row {row_num}: Skipping duplicate relationship with role '{role}' to {target_object}")
+                        errors.append(f"Row {row_num}: Duplicate relationship detected. A relationship with role '{role}' to {target_object} already exists.")
+                        skipped_count += 1
+                        continue
+                    
+                    # Create the relationship
+                    relationship_id = str(uuid.uuid4())
+                    print(f"DEBUG: Row {row_num}: Creating {relationship_type} relationship from {source_check['object']} to {target_object} with role '{role}'")
+                    
+                    session.run("""
+                        MATCH (source:Object {id: $source_id})
+                        MATCH (target:Object {id: $target_id})
+                        CREATE (source)-[:RELATES_TO {
+                            id: $relationship_id,
+                            type: $relationship_type,
+                            role: $role,
+                            toBeing: $to_being,
+                            toAvatar: $to_avatar,
+                            toObject: $to_object
+                        }]->(target)
+                    """, source_id=object_id, target_id=target_id, relationship_id=relationship_id,
+                        relationship_type=relationship_type, role=role, to_being=to_being, 
+                        to_avatar=to_avatar, to_object=to_object)
+                    
+                    created_relationships.append({
+                        "id": relationship_id,
+                        "type": relationship_type,
+                        "role": role,
+                        "toBeing": target_being,
+                        "toAvatar": target_avatar,
+                        "toObject": target_object
+                    })
+                    
+                    print(f"DEBUG: Row {row_num}: Successfully created relationship")
+                    
+                except Exception as row_error:
+                    print(f"DEBUG: Row {row_num}: Error processing row: {row_error}")
+                    errors.append(f"Row {row_num}: Error processing relationship - {str(row_error)}")
+                    continue
+            
+            # Update relationship count for the source object
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
+            """, object_id=object_id).single()
+            
+            rel_count = count_result["rel_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=object_id, rel_count=rel_count)
+            
+            print(f"DEBUG: Updated relationship count to {rel_count}")
+            
+    except Exception as session_error:
+        print(f"Error in database session: {session_error}")
+        import traceback
+        traceback.print_exc()
+        errors.append(f"Database session error: {str(session_error)}")
+
+    # Build success message with all relevant information
+    message_parts = [f"Successfully created {len(created_relationships)} relationships"]
+    
+    if skipped_count > 0:
+        message_parts.append(f"Skipped {skipped_count} existing duplicates")
+    
+    if duplicate_csv_rows > 0:
+        message_parts.append(f"Removed {duplicate_csv_rows} duplicate CSV rows")
+    
+    success_message = ". ".join(message_parts) + "."
+    
+    # If there are errors (including duplicates), we should still return success=False
+    # to ensure the frontend shows the error messages
+    if errors:
+        return CSVUploadResponse(
+            success=False,
+            message=success_message + f" However, {len(errors)} issues were encountered.",
+            created_count=len(created_relationships),
+            error_count=len(errors),
+            errors=errors
+        )
+    
+    return CSVUploadResponse(
+        success=True,
+        message=success_message,
+        created_count=len(created_relationships),
         error_count=len(errors),
         errors=errors
     )

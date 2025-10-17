@@ -370,8 +370,39 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setVariants(prev => prev.filter(variant => variant.id !== id));
   };
 
-  const handleRelationshipCsvUpload = (data: any[] | File) => {
-    if (Array.isArray(data)) {
+  const handleRelationshipCsvUpload = async (data: any[] | File) => {
+    if (!selectedObject?.id) {
+      alert('No object selected for relationship upload');
+      return;
+    }
+
+    // Check if it's a File (new API-based upload) or array (old client-side parsing)
+    if (data instanceof File) {
+      try {
+        const result = await apiService.bulkUploadRelationships(selectedObject.id, data);
+        console.log('Bulk relationships upload result:', result);
+        
+        const response = result as any;
+        
+        // Check if there were errors (including duplicates)
+        if (!response.success || (response.errors && response.errors.length > 0)) {
+          // Show detailed error message with all issues
+          const errorMessages = response.errors ? response.errors.join('\n') : 'Unknown errors occurred';
+          alert(`Relationships upload completed with issues:\n\n${response.message}\n\nErrors:\n${errorMessages}`);
+        } else {
+          // Show success message
+          alert(response.message || `Successfully uploaded ${response.created_count} relationships`);
+        }
+        
+        // Refresh the relationships list by fetching the updated object data
+        // This will trigger a re-render with the new relationships
+        window.location.reload(); // Simple refresh for now
+      } catch (error) {
+        console.error('Bulk relationships upload failed:', error);
+        alert(`Relationships upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Old client-side parsing logic (for backward compatibility)
       setRelationships(prev => [...prev, ...data]);
     }
   };

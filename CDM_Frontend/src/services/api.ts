@@ -72,9 +72,12 @@ class ApiService {
   }
 
   async deleteObject(id: string) {
-    return this.request(`/objects/${id}`, {
+    console.log('🔴 API deleteObject called with id:', id);
+    const result = await this.request(`/objects/${id}`, {
       method: 'DELETE',
     });
+    console.log('🔴 API deleteObject result:', result);
+    return result;
   }
 
   // Relationship API
@@ -97,6 +100,16 @@ class ApiService {
   async deleteRelationship(objectId: string, relationshipId: string) {
     return this.request(`/objects/${objectId}/relationships/${relationshipId}`, {
       method: 'DELETE',
+    });
+  }
+
+  async bulkUploadRelationships(objectId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request(`/objects/${objectId}/relationships/upload`, {
+      method: 'POST',
+      body: formData,
     });
   }
 

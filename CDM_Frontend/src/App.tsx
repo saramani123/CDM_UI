@@ -388,10 +388,15 @@ function App() {
   };
 
   const handleDelete = async (row: ObjectData | VariableData) => {
+    console.log('🔴 handleDelete called with row:', row);
+    console.log('🔴 activeTab:', activeTab);
+    
     if (confirm('Are you sure you want to delete this row?')) {
       try {
         if (activeTab === 'objects') {
+          console.log('🔴 Deleting object with id:', row.id);
           await deleteObject(row.id);
+          console.log('🔴 Object deleted successfully');
         } else if (activeTab === 'lists') {
           setListData(prev => prev.filter(item => item.id !== row.id));
         } else if (activeTab === 'variables') {
@@ -402,7 +407,7 @@ function App() {
           setSelectedRowForMetadata(null);
         }
       } catch (error) {
-        console.error('Failed to delete object:', error);
+        console.error('🔴 Failed to delete object:', error);
         // Fallback to local state update
         if (activeTab === 'objects') {
           setData(prev => prev.filter(item => item.id !== row.id));
