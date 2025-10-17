@@ -460,7 +460,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   function hasDeletedDriver(driverString: string) {
     if (!driverString) return false;
-    const parts = driverString.split(', ');
+    const parts = driverString.split(',').map(part => part.trim());
     if (parts.length >= 4) {
       // Check if any part is exactly "-" (indicating deleted driver)
       // Don't flag hyphens within names like "E-commerce"
@@ -471,7 +471,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   function hasSpecificDeletedDriver(driverString: string, columnKey: string) {
     if (!driverString) return false;
-    const parts = driverString.split(', ');
+    const parts = driverString.split(',').map(part => part.trim());
     if (parts.length >= 4) {
       // Check if the specific field is deleted
       if (columnKey === 'sector' && parts[0] === '-') return true;

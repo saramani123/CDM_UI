@@ -14,7 +14,7 @@ import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
 import { BulkEditVariablesPanel } from './components/BulkEditVariablesPanel';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
-import { mockObjectData, objectColumns, metadataFields, getAvatarOptions, type ObjectData } from './data/mockData';
+import { mockObjectData, objectColumns, metadataFields, getAvatarOptions, parseDriverField, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
@@ -873,8 +873,20 @@ function App() {
   };
 
   const handleBulkObjectUpload = (objects: ObjectData[]) => {
+    // Parse driver fields for each object before adding to state
+    const parsedObjects = objects.map(obj => {
+      const parsed = parseDriverField(obj.driver);
+      return {
+        ...obj,
+        sector: parsed.sector,
+        domain: parsed.domain,
+        country: parsed.country,
+        classifier: parsed.classifier
+      };
+    });
+    
     // Add objects to local state to refresh the UI
-    setData(prev => [...prev, ...objects]);
+    setData(prev => [...prev, ...parsedObjects]);
     setIsBulkObjectUploadOpen(false);
   };
 
