@@ -3,5 +3,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "framework": "vite"
+  "framework": "vite",
+  "env": {
+    "VITE_API_BASE_URL": "https://cdm-backend.onrender.com/api/v1"
+  }
 }
