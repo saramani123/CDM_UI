@@ -61,10 +61,10 @@ export const parseDriverField = (driver: string) => {
   
   const parts = driver.split(',').map(part => part.trim());
   return {
-    sector: parts[0] && parts[0] !== '***' && parts[0] !== 'ALL' ? parts[0] : (parts[0] === 'ALL' ? 'ALL' : ''),
-    domain: parts[1] && parts[1] !== '***' && parts[1] !== 'ALL' ? parts[1] : (parts[1] === 'ALL' ? 'ALL' : ''),
-    country: parts[2] && parts[2] !== '***' && parts[2] !== 'ALL' ? parts[2] : (parts[2] === 'ALL' ? 'ALL' : ''),
-    classifier: parts[3] && parts[3] !== '***' && parts[3] !== 'None' ? parts[3] : ''
+    sector: parts[0] && parts[0] !== '***' ? parts[0] : '',
+    domain: parts[1] && parts[1] !== '***' ? parts[1] : '',
+    country: parts[2] && parts[2] !== '***' ? parts[2] : '',
+    classifier: parts[3] && parts[3] !== '***' ? parts[3] : ''
   };
 };
 
