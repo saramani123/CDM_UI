@@ -433,15 +433,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
     return isAffected;
   }
 
-  function formatDriverWithDeletedSector(value: string, deletedDriverType: string | null) {
+  function isColumnAffected(row: Record<string, any>, columnKey: string) {
+    // Check if row is in affectedIds (from driver deletion)
+    const isAffectedByIds = affectedIds.has(row.id);
+    
+    // Check if the specific column has a deleted driver
+    const hasSpecificDeleted = row.driver && hasSpecificDeletedDriver(row.driver, columnKey);
+    
+    return isAffectedByIds || hasSpecificDeleted;
+  }
+
+  function formatDriverWithDeletedSector(value: string, deletedDriverType: string | null, columnKey: string) {
     if (!value) return value;
     
-    // For the new column structure, we need to check if this specific field is deleted
-    if (deletedDriverType === 'sectors' && value !== 'ALL') {
+    // Only show '-' for the specific field that was deleted
+    if (deletedDriverType === 'sectors' && columnKey === 'sector' && value !== 'ALL') {
       return '-';
-    } else if (deletedDriverType === 'domains' && value !== 'ALL') {
+    } else if (deletedDriverType === 'domains' && columnKey === 'domain' && value !== 'ALL') {
       return '-';
-    } else if (deletedDriverType === 'countries' && value !== 'ALL') {
+    } else if (deletedDriverType === 'countries' && columnKey === 'country' && value !== 'ALL') {
       return '-';
     }
     
@@ -455,6 +465,18 @@ export const DataGrid: React.FC<DataGridProps> = ({
       // Check if any part is exactly "-" (indicating deleted driver)
       // Don't flag hyphens within names like "E-commerce"
       return parts[0] === '-' || parts[1] === '-' || parts[2] === '-' || parts[3] === '-';
+    }
+    return false;
+  }
+
+  function hasSpecificDeletedDriver(driverString: string, columnKey: string) {
+    if (!driverString) return false;
+    const parts = driverString.split(', ');
+    if (parts.length >= 4) {
+      // Check if the specific field is deleted
+      if (columnKey === 'sector' && parts[0] === '-') return true;
+      if (columnKey === 'domain' && parts[1] === '-') return true;
+      if (columnKey === 'country' && parts[2] === '-') return true;
     }
     return false;
   }
@@ -567,10 +589,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
                           ? 'font-semibold' 
                           : ''
                     } ${
-                      (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 'text-red-400' : ''
+                      (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 'text-red-400' : ''
                     }`}>
-                      {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && (isRowAffected(row) || hasDeletedDriver(row.driver)) ? 
-                        formatDriverWithDeletedSector(row[column.key], deletedDriverType) : 
+                      {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
+                        formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 
                         (row[column.key] || '-')
                       }
                     </span>
