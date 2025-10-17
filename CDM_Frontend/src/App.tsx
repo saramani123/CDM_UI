@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye } from 'lucide-react';
 import { Trash2 } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -26,6 +26,7 @@ import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
+import { ViewsModal } from './components/ViewsModal';
 
 function App() {
   const [activeTab, setActiveTab] = useState('objects');
@@ -66,6 +67,27 @@ function App() {
   }>>([]);
   const [isCustomSortActive, setIsCustomSortActive] = useState(false);
   const [isColumnSortActive, setIsColumnSortActive] = useState(false);
+
+  // Views state
+  const [isViewsOpen, setIsViewsOpen] = useState(false);
+  const [activeView, setActiveView] = useState<string>('All');
+
+  // Apply view filtering to data
+  const filteredData = useMemo(() => {
+    if (activeView === 'All' || activeTab !== 'objects') {
+      return data;
+    }
+    
+    if (activeView === 'Generic') {
+      return data.filter(item => 
+        item.sector === 'ALL' && 
+        item.domain === 'ALL' && 
+        item.country === 'ALL'
+      );
+    }
+    
+    return data;
+  }, [data, activeView, activeTab]);
 
   // Drivers tab state - use API data with fallback to mock data
   const [driversState, setDriversState] = useState(driversData);
@@ -1033,6 +1055,11 @@ function App() {
     console.log('Custom sort applied:', sortRules);
   };
 
+  const handleViewsApply = (viewName: string) => {
+    console.log('🎯 APPLYING VIEW:', viewName);
+    setActiveView(viewName);
+  };
+
   const handleClearCustomSort = () => {
     setCustomSortRules([]);
     setIsCustomSortActive(false);
@@ -1205,12 +1232,33 @@ function App() {
                   ) : selectedRows.length > 0 ? (
                     `${selectedRows.length} of ${activeTab === 'lists' ? listData.length : activeTab === 'variables' ? variableData.length : data.length} rows selected`
                   ) : (
-                    `${activeTab === 'lists' ? listData.length : activeTab === 'variables' ? variableData.length : data.length} total rows`
+                    `${activeTab === 'lists' ? listData.length : activeTab === 'variables' ? variableData.length : filteredData.length} total rows`
                   )}
                 </p>
               </div>
               
               <div className="flex items-center gap-3">
+                {/* Views Button - only show for Objects tab */}
+                {activeTab === 'objects' && (
+                  <button
+                    onClick={() => setIsViewsOpen(true)}
+                    className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
+                      activeView && activeView !== 'All'
+                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                    }`}
+                    title="Filter data by predefined views"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Views
+                    {activeView && activeView !== 'All' && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        {activeView} View
+                      </span>
+                    )}
+                  </button>
+                )}
+
                 {/* Custom Sort Button - only show for Objects tab */}
                 {activeTab === 'objects' && (
                   <button
@@ -1292,7 +1340,7 @@ function App() {
             {/* Filter Panel */}
             <FilterPanel
               columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
-              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
+              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
               filters={filters}
               onFilterChange={handleFilterChange}
               isOpen={false}
@@ -1302,7 +1350,7 @@ function App() {
             {/* Data Grid */}
             <DataGrid
               columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
-              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
+              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
               onRowSelect={handleRowSelect}
               onEdit={handleEdit}
               onDelete={handleDelete}
@@ -1457,6 +1505,14 @@ function App() {
         onApplySort={handleCustomSortApply}
         columns={objectColumns}
         currentSortRules={customSortRules}
+      />
+
+      {/* Views Modal */}
+      <ViewsModal
+        isOpen={isViewsOpen}
+        onClose={() => setIsViewsOpen(false)}
+        onApplyView={handleViewsApply}
+        activeView={activeView}
       />
 
     </div>
