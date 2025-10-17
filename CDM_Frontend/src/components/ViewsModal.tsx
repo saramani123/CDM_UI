@@ -18,13 +18,13 @@ export const ViewsModal: React.FC<ViewsModalProps> = ({
 
   const views = [
     {
-      name: 'All',
-      description: 'Show all objects without any filtering',
+      name: 'None',
+      description: '',
       filter: null
     },
     {
       name: 'Generic',
-      description: 'Show objects with Sector=ALL, Domain=ALL, Country=ALL',
+      description: '',
       filter: {
         sector: 'ALL',
         domain: 'ALL',
@@ -75,9 +75,11 @@ export const ViewsModal: React.FC<ViewsModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-medium text-ag-dark-text">{view.name}</h4>
-                  <p className="text-sm text-ag-dark-text-secondary mt-1">
-                    {view.description}
-                  </p>
+                  {view.description && (
+                    <p className="text-sm text-ag-dark-text-secondary mt-1">
+                      {view.description}
+                    </p>
+                  )}
                 </div>
                 {selectedView === view.name && (
                   <Check className="w-5 h-5 text-ag-dark-accent" />

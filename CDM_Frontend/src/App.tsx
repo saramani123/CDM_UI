@@ -70,11 +70,11 @@ function App() {
 
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
-  const [activeView, setActiveView] = useState<string>('All');
+  const [activeView, setActiveView] = useState<string>('None');
 
   // Apply view filtering to data
   const filteredData = useMemo(() => {
-    if (activeView === 'All' || activeTab !== 'objects') {
+    if (activeView === 'None' || activeTab !== 'objects') {
       return data;
     }
     
@@ -1243,7 +1243,7 @@ function App() {
                   <button
                     onClick={() => setIsViewsOpen(true)}
                     className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      activeView && activeView !== 'All'
+                      activeView && activeView !== 'None'
                         ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                         : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                     }`}
@@ -1251,7 +1251,7 @@ function App() {
                   >
                     <Eye className="w-4 h-4" />
                     Views
-                    {activeView && activeView !== 'All' && (
+                    {activeView && activeView !== 'None' && (
                       <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                         {activeView} View
                       </span>
