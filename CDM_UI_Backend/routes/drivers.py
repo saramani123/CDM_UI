@@ -45,9 +45,7 @@ async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
     """
     Create a new driver value.
     """
-    # Countries cannot be added (pre-defined)
-    if driver_type == "countries":
-        raise HTTPException(status_code=403, detail="Countries cannot be added - they are pre-defined")
+    # Countries can now be added (matching Sector and Domain behavior)
     
     driver = get_driver()
     if not driver:
@@ -444,9 +442,7 @@ async def bulk_create_drivers(driver_type: DriverType, drivers_data: Dict[str, A
     Bulk create driver values (for CSV upload).
     Skips duplicates and only creates new nodes.
     """
-    # Countries cannot be added (pre-defined)
-    if driver_type == "countries":
-        raise HTTPException(status_code=403, detail="Countries cannot be added - they are pre-defined")
+    # Countries can now be added (matching Sector and Domain behavior)
     
     driver = get_driver()
     if not driver:
