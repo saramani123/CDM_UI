@@ -3,7 +3,7 @@
 ## 📋 **Manager Access**
 
 ### **Stable Production URL for Manager:**
-**`https://cdm-platform.vercel.app`**
+**`https://cdm-frontend-8zl4.onrender.com`**
 
 This URL will **NEVER change** - it's your manager's permanent access point to the production CDM platform.
 
@@ -12,7 +12,7 @@ This URL will **NEVER change** - it's your manager's permanent access point to t
 ## 🔄 **Development Workflow**
 
 ### **Branch Strategy:**
-- **`main`** → Production (auto-deploys to `cdm-platform.vercel.app`)
+- **`main`** → Production (auto-deploys to `cdm-frontend-8zl4.onrender.com`)
 - **`dev`** → Development (local testing only)
 
 ### **Development Process:**
@@ -44,12 +44,8 @@ git checkout main
 # Merge dev changes
 git merge dev
 
-# Deploy to production
-cd CDM_Frontend
-vercel --prod --yes
-
-cd ../CDM_UI_Backend
-vercel --prod --yes
+# Push to main (auto-deploys to Render)
+git push origin main
 ```
 
 ---
@@ -85,8 +81,8 @@ vercel --prod --yes
 - **Environment**: Development
 
 ### **Production Environment:**
-- **Frontend**: `https://cdm-platform.vercel.app`
-- **Backend**: `https://cdm-backend-jf594ohd5-saras-projects-4c70d85d.vercel.app`
+- **Frontend**: `https://cdm-frontend-8zl4.onrender.com`
+- **Backend**: `https://cdm-backend.onrender.com`
 - **Database**: CDM_Prod (Neo4j Aura)
 - **Environment**: Production
 

@@ -2,18 +2,20 @@
 
 ## ✅ Deployment Complete
 
-The CDM platform has been successfully configured with a split deployment architecture:
+The CDM platform has been successfully configured with a unified Render deployment architecture:
 
-### Frontend (Vercel)
-- **URL**: https://cdm-platform.vercel.app
+### Frontend (Render)
+- **URL**: https://cdm-frontend-8zl4.onrender.com
 - **Status**: ✅ Live and accessible
 - **Auto-deploy**: ✅ Enabled from `main` branch
+- **Type**: Static Site
 - **Environment**: Production with Render backend URL
 
 ### Backend (Render)
 - **URL**: https://cdm-backend.onrender.com
 - **Status**: ✅ Live and accessible
 - **Auto-deploy**: ✅ Enabled from `main` branch
+- **Type**: Web Service
 - **Health Check**: ✅ `/health` endpoint working
 - **API Base**: https://cdm-backend.onrender.com/api/v1
 
@@ -22,15 +24,21 @@ The CDM platform has been successfully configured with a split deployment archit
 ### Frontend Configuration
 - **Environment Variable**: `VITE_API_BASE_URL=https://cdm-backend.onrender.com/api/v1`
 - **Framework**: Vite + React + TypeScript
-- **Deployment**: Vercel Hobby Plan (Free)
+- **Deployment**: Render Static Site (Free)
 - **Build**: Automatic on push to `main`
+- **Root Directory**: `CDM_Frontend`
+- **Build Command**: `npm install && npm run build`
+- **Publish Directory**: `dist`
 
 ### Backend Configuration
 - **Framework**: FastAPI + Python 3
 - **Database**: Neo4j Aura (existing credentials preserved)
-- **Deployment**: Render Starter Plan (Free)
+- **Deployment**: Render Web Service (Free)
 - **Environment**: Production with existing Neo4j connection
 - **CORS**: Configured for all origins
+- **Root Directory**: `CDM_UI_Backend`
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `uvicorn main:app --host 0.0.0.0 --port 10000`
 
 ## 🧪 Test Results
 
@@ -42,7 +50,7 @@ The CDM platform has been successfully configured with a split deployment archit
 
 ### Auto-Deploy Verification
 - ✅ Render backend: Connected to `saramani123/CDM_UI` repository
-- ✅ Vercel frontend: Connected to same repository
+- ✅ Render frontend: Connected to same repository
 - ✅ Both services: Auto-deploy enabled from `main` branch
 
 ## 🚀 Deployment Flow
@@ -55,9 +63,9 @@ The CDM platform has been successfully configured with a split deployment archit
 
 ### Frontend Changes
 1. Push code to `main` branch
-2. Vercel detects changes automatically
+2. Render detects changes automatically
 3. Builds and deploys frontend
-4. Available at: https://cdm-platform.vercel.app
+4. Available at: https://cdm-frontend-8zl4.onrender.com
 
 ## 💰 Cost Optimization
 

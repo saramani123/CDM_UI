@@ -27,6 +27,7 @@ import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
 import { ViewsModal } from './components/ViewsModal';
+import LoadingModal from './components/LoadingModal';
 
 function App() {
   const [activeTab, setActiveTab] = useState('objects');
@@ -97,6 +98,10 @@ function App() {
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('None');
+
+  // Loading state
+  const [isLoading, setIsLoading] = useState(false);
+  const [loadingType, setLoadingType] = useState<'drivers' | 'objects' | 'variables' | 'lists' | 'general'>('general');
 
   // Apply view filtering to data
   const filteredData = useMemo(() => {
@@ -170,6 +175,14 @@ function App() {
     console.log('App - apiObjects first item:', apiObjects?.[0]);
     console.log('App - affectedObjectIds:', affectedObjectIds);
     
+    // Show loading when objects are loading
+    if (objectsLoading && activeTab === 'objects') {
+      setIsLoading(true);
+      setLoadingType('objects');
+    } else {
+      setIsLoading(false);
+    }
+    
     if (!objectsLoading) {
       if (objectsError) {
         // Fallback to mock data if API fails
@@ -190,7 +203,7 @@ function App() {
         console.log('App - Data updated, affected object IDs should still be:', Array.from(affectedObjectIds));
       }
     }
-  }, [apiObjects, objectsError, objectsLoading]);
+  }, [apiObjects, objectsError, objectsLoading, activeTab]);
 
   // Function to apply saved order from localStorage
   const applySavedOrder = (driversData: any) => {
@@ -245,6 +258,14 @@ function App() {
 
   // Sync API drivers data with local state
   React.useEffect(() => {
+    // Show loading when drivers are loading
+    if (driversLoading && activeTab === 'drivers') {
+      setIsLoading(true);
+      setLoadingType('drivers');
+    } else if (activeTab === 'drivers') {
+      setIsLoading(false);
+    }
+    
     if (!driversLoading) {
       if (driversError) {
         // Keep mock data if API fails
@@ -256,7 +277,7 @@ function App() {
         setDriversState(orderedDrivers);
       }
     }
-  }, [apiDrivers, driversError, driversLoading]);
+  }, [apiDrivers, driversError, driversLoading, activeTab]);
 
   // Apply saved order when switching to drivers tab
   React.useEffect(() => {
@@ -265,6 +286,29 @@ function App() {
       setDriversState(orderedDrivers);
     }
   }, [activeTab, apiDrivers, driversLoading]);
+
+  // Handle variables loading
+  React.useEffect(() => {
+    if (variablesLoading && activeTab === 'variables') {
+      setIsLoading(true);
+      setLoadingType('variables');
+    } else if (activeTab === 'variables') {
+      setIsLoading(false);
+    }
+  }, [variablesLoading, activeTab]);
+
+  // Handle lists loading (mock data, so minimal loading)
+  React.useEffect(() => {
+    if (activeTab === 'lists') {
+      // Lists use mock data, so just a brief loading state
+      setIsLoading(true);
+      setLoadingType('lists');
+      const timer = setTimeout(() => {
+        setIsLoading(false);
+      }, 500); // Brief loading for UX
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab]);
 
   // Sync selectedRowForMetadata with updated data
   React.useEffect(() => {
@@ -1613,6 +1657,12 @@ function App() {
         onClose={() => setIsViewsOpen(false)}
         onApplyView={handleViewsApply}
         activeView={activeView}
+      />
+
+      {/* Loading Modal */}
+      <LoadingModal
+        isOpen={isLoading}
+        loadingType={loadingType}
       />
 
     </div>

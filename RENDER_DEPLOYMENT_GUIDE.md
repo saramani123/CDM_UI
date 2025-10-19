@@ -41,8 +41,8 @@ NEO4J_PASSWORD=your_aura_password_here
 
 ## Frontend Configuration
 
-### Vercel Environment Variables
-Set in Vercel dashboard for `cdm-frontend`:
+### Frontend Environment Variables
+Set in Render dashboard for `cdm-frontend`:
 
 ```
 VITE_API_BASE_URL=https://cdm-backend.onrender.com/api/v1
@@ -56,7 +56,7 @@ python test_render_deployment.py
 ```
 
 ### 2. Test Frontend Connection
-- Visit: https://cdm-platform.vercel.app
+- Visit: https://cdm-frontend-8zl4.onrender.com
 - Check browser console for API calls
 - Verify data loads from Render backend
 
@@ -70,9 +70,9 @@ python test_render_deployment.py
 
 ### Frontend Changes
 1. Push to `main` branch
-2. Vercel auto-detects changes
+2. Render auto-detects changes
 3. Builds and deploys automatically
-4. Available at: https://cdm-platform.vercel.app
+4. Available at: https://cdm-frontend-8zl4.onrender.com
 
 ## Health Checks
 

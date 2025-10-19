@@ -1,7 +1,7 @@
 # CDM Platform Deployment Guide
 
 ## Overview
-This guide covers deploying the Canonical Data Model (CDM) platform to Vercel with proper environment separation.
+This guide covers deploying the Canonical Data Model (CDM) platform to Render with proper environment separation.
 
 ## Environment Configuration
 
@@ -15,44 +15,49 @@ ENVIRONMENT=development
 NEO4J_INSTANCE_NAME=cdm-dev
 ```
 
-### Production Environment (Vercel Environment Variables)
-Set these in your Vercel dashboard:
+### Production Environment (Render Environment Variables)
+Set these in your Render dashboard for both services:
+
+**Backend Service:**
 ```bash
 NEO4J_URI=neo4j+s://your-prod-instance-id.databases.neo4j.io
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=your_prod_password_here
 ENVIRONMENT=production
 NEO4J_INSTANCE_NAME=vulqan-cdm-prod
-VITE_API_BASE_URL=https://your-backend-url.vercel.app/api/v1
+```
+
+**Frontend Service:**
+```bash
+VITE_API_BASE_URL=https://cdm-backend.onrender.com/api/v1
 ```
 
 ## Deployment Steps
 
-### 1. Backend Deployment
-1. Deploy the backend to Vercel:
-   ```bash
-   cd CDM_UI_Backend
-   vercel --prod
-   ```
+### 1. Backend Deployment (Render)
+1. Create a new Web Service in Render:
+   - Connect to `saramani123/CDM_UI` repository
+   - Set Root Directory to `CDM_UI_Backend`
+   - Build Command: `pip install -r requirements.txt`
+   - Start Command: `uvicorn main:app --host 0.0.0.0 --port 10000`
 
-2. Set environment variables in Vercel dashboard:
-   - Go to your project settings
+2. Set environment variables in Render dashboard:
    - Add the production Neo4j credentials
    - Set `ENVIRONMENT=production`
    - Set `NEO4J_INSTANCE_NAME=vulqan-cdm-prod`
 
-### 2. Frontend Deployment
-1. Deploy the frontend to Vercel:
-   ```bash
-   cd CDM_Frontend
-   vercel --prod
-   ```
+### 2. Frontend Deployment (Render)
+1. Create a new Static Site in Render:
+   - Connect to `saramani123/CDM_UI` repository
+   - Set Root Directory to `CDM_Frontend`
+   - Build Command: `npm install && npm run build`
+   - Publish Directory: `dist`
 
 2. Set environment variables:
    - `VITE_API_BASE_URL` = your backend URL from step 1
 
 ### 3. Branch Configuration
-- `main` branch → Production deployment (auto-deploys to Vercel)
+- `main` branch → Production deployment (auto-deploys to Render)
 - `dev` branch → Development (local only)
 
 ## Testing Checklist
