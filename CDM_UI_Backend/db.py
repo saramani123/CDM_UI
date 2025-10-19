@@ -4,12 +4,12 @@ from neo4j import GraphDatabase
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-# In production, Vercel will inject environment variables
+# In production, Render will inject environment variables
 # In development, load from .env.dev
-if os.getenv("VERCEL") is None:  # Not in Vercel (local development)
+if os.getenv("RENDER") is None:  # Not in Render (local development)
     load_dotenv(".env.dev")
-else:  # In Vercel (production)
-    # Environment variables are automatically injected by Vercel
+else:  # In Render (production)
+    # Environment variables are automatically injected by Render
     pass
 
 class Neo4jConnection:
@@ -38,10 +38,10 @@ class Neo4jConnection:
             self.driver = GraphDatabase.driver(
                 working_uri, 
                 auth=(self.username, self.password),
-                max_connection_lifetime=30 * 60,  # 30 minutes
-                max_connection_pool_size=50,
-                connection_acquisition_timeout=60,  # 1 minute
-                connection_timeout=30,  # 30 seconds
+                max_connection_lifetime=15 * 60,  # 15 minutes (reduced for free tier)
+                max_connection_pool_size=10,  # Reduced for free tier
+                connection_acquisition_timeout=30,  # 30 seconds (reduced)
+                connection_timeout=15,  # 15 seconds (reduced)
                 keep_alive=True
             )
             
