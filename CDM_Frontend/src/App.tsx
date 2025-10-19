@@ -33,7 +33,33 @@ function App() {
   const [selectedRows, setSelectedRows] = useState<ObjectData[]>([]);
   const [selectedRowForMetadata, setSelectedRowForMetadata] = useState<ObjectData | null>(null);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  // Load persisted state from localStorage
+  const loadPersistedState = () => {
+    try {
+      const savedFilters = localStorage.getItem('cdm_objects_filters');
+      const savedCustomSortRules = localStorage.getItem('cdm_objects_custom_sort_rules');
+      const savedCustomSortActive = localStorage.getItem('cdm_objects_custom_sort_active');
+      const savedColumnSortActive = localStorage.getItem('cdm_objects_column_sort_active');
+      
+      return {
+        filters: savedFilters ? JSON.parse(savedFilters) : {},
+        customSortRules: savedCustomSortRules ? JSON.parse(savedCustomSortRules) : [],
+        isCustomSortActive: savedCustomSortActive === 'true',
+        isColumnSortActive: savedColumnSortActive === 'true'
+      };
+    } catch (error) {
+      console.error('Error loading persisted state:', error);
+      return {
+        filters: {},
+        customSortRules: [],
+        isCustomSortActive: false,
+        isColumnSortActive: false
+      };
+    }
+  };
+
+  const persistedState = loadPersistedState();
+  const [filters, setFilters] = useState<Record<string, string>>(persistedState.filters);
   
   // Use API hook for objects data
   const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, createRelationship, createVariant, fetchObjects } = useObjects();
@@ -64,9 +90,9 @@ function App() {
     column: string;
     sortOn: string;
     order: 'asc' | 'desc';
-  }>>([]);
-  const [isCustomSortActive, setIsCustomSortActive] = useState(false);
-  const [isColumnSortActive, setIsColumnSortActive] = useState(false);
+  }>>(persistedState.customSortRules);
+  const [isCustomSortActive, setIsCustomSortActive] = useState(persistedState.isCustomSortActive);
+  const [isColumnSortActive, setIsColumnSortActive] = useState(persistedState.isColumnSortActive);
 
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
@@ -166,6 +192,57 @@ function App() {
     }
   }, [apiObjects, objectsError, objectsLoading]);
 
+  // Function to apply saved order from localStorage
+  const applySavedOrder = (driversData: any) => {
+    const orderedDrivers = { ...driversData };
+    
+    // Check for saved order for each column type
+    Object.keys(driversData).forEach(columnType => {
+      const storageKey = `cdm_drivers_order_${columnType}`;
+      const savedOrder = localStorage.getItem(storageKey);
+      const currentItems = driversData[columnType as keyof typeof driversData] || [];
+      
+      if (savedOrder && currentItems.length > 0) {
+        try {
+          const parsedOrder = JSON.parse(savedOrder);
+          
+          if (Array.isArray(parsedOrder)) {
+            // Filter out items that no longer exist (deleted items)
+            const validSavedItems = parsedOrder.filter((item: string) => currentItems.includes(item));
+            
+            // Find new items that weren't in the saved order
+            const newItems = currentItems.filter((item: string) => !parsedOrder.includes(item));
+            
+            // Combine: valid saved items in their saved order + new items at the end
+            const finalOrder = [...validSavedItems, ...newItems];
+            
+            // Only update if the order is different from current API order
+            if (JSON.stringify(finalOrder) !== JSON.stringify(currentItems)) {
+              orderedDrivers[columnType as keyof typeof orderedDrivers] = finalOrder;
+              
+              // Update localStorage with the new order (including new items)
+              localStorage.setItem(storageKey, JSON.stringify(finalOrder));
+              
+              console.log(`Applied saved order for ${columnType}:`, finalOrder);
+              console.log(`  - Valid saved items: ${validSavedItems.length}`);
+              console.log(`  - New items: ${newItems.length}`);
+            } else {
+              console.log(`Saved order for ${columnType} matches API order, no change needed`);
+            }
+          }
+        } catch (error) {
+          console.error(`Error parsing saved order for ${columnType}:`, error);
+        }
+      } else if (currentItems.length > 0) {
+        // No saved order, save the current API order
+        localStorage.setItem(storageKey, JSON.stringify(currentItems));
+        console.log(`Saved initial order for ${columnType}:`, currentItems);
+      }
+    });
+    
+    return orderedDrivers;
+  };
+
   // Sync API drivers data with local state
   React.useEffect(() => {
     if (!driversLoading) {
@@ -175,37 +252,19 @@ function App() {
       } else if (apiDrivers) {
         // Always use API data, even if empty
         // Apply saved order from localStorage if available
-        const orderedDrivers = { ...apiDrivers };
-        
-        // Check for saved order for each column type
-        Object.keys(apiDrivers).forEach(columnType => {
-          const storageKey = `cdm_drivers_order_${columnType}`;
-          const savedOrder = localStorage.getItem(storageKey);
-          
-          if (savedOrder) {
-            try {
-              const parsedOrder = JSON.parse(savedOrder);
-              const currentItems = apiDrivers[columnType as keyof typeof apiDrivers] || [];
-              
-              // Only apply saved order if it contains the same items (no additions/removals)
-              if (Array.isArray(parsedOrder) && 
-                  parsedOrder.length === currentItems.length &&
-                  parsedOrder.every(item => currentItems.includes(item))) {
-                orderedDrivers[columnType as keyof typeof orderedDrivers] = parsedOrder;
-                console.log(`Applied saved order for ${columnType}:`, parsedOrder);
-              } else {
-                console.log(`Saved order for ${columnType} is outdated, using API order`);
-              }
-            } catch (error) {
-              console.error(`Failed to parse saved order for ${columnType}:`, error);
-            }
-          }
-        });
-        
+        const orderedDrivers = applySavedOrder(apiDrivers);
         setDriversState(orderedDrivers);
       }
     }
   }, [apiDrivers, driversError, driversLoading]);
+
+  // Apply saved order when switching to drivers tab
+  React.useEffect(() => {
+    if (activeTab === 'drivers' && apiDrivers && !driversLoading) {
+      const orderedDrivers = applySavedOrder(apiDrivers);
+      setDriversState(orderedDrivers);
+    }
+  }, [activeTab, apiDrivers, driversLoading]);
 
   // Sync selectedRowForMetadata with updated data
   React.useEffect(() => {
@@ -922,6 +981,26 @@ function App() {
     }));
   };
 
+  // Persist filters to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_filters', JSON.stringify(filters));
+  }, [filters]);
+
+  // Persist custom sort rules to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_custom_sort_rules', JSON.stringify(customSortRules));
+  }, [customSortRules]);
+
+  // Persist custom sort active state to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_custom_sort_active', isCustomSortActive.toString());
+  }, [isCustomSortActive]);
+
+  // Persist column sort active state to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_column_sort_active', isColumnSortActive.toString());
+  }, [isColumnSortActive]);
+
   const handleColumnHeaderClick = (columnType: ColumnType) => {
     setSelectedColumn(columnType);
     setSelectedItem(undefined);
@@ -937,6 +1016,7 @@ function App() {
       try {
         await updateDriver(selectedColumn, selectedItem, newValue);
         setSelectedItem(newValue);
+        // The API call will trigger a refresh, which will handle the ordering
       } catch (error) {
         console.error('Failed to update driver:', error);
         // Fallback to local state update
@@ -947,6 +1027,14 @@ function App() {
           )
         }));
         setSelectedItem(newValue);
+        
+        // Update localStorage to reflect the name change
+        const storageKey = `cdm_drivers_order_${selectedColumn}`;
+        const currentOrder = driversState[selectedColumn] || [];
+        const updatedOrder = currentOrder.map(item => 
+          item === selectedItem ? newValue : item
+        );
+        localStorage.setItem(storageKey, JSON.stringify(updatedOrder));
       }
     }
   };
@@ -955,6 +1043,7 @@ function App() {
     if (selectedColumn) {
       try {
         await createDriver(selectedColumn, newValue);
+        // The API call will trigger a refresh, which will handle the ordering
       } catch (error) {
         console.error('Failed to create driver:', error);
         // Fallback to local state update
@@ -962,6 +1051,11 @@ function App() {
           ...prev,
           [selectedColumn]: [...prev[selectedColumn], newValue]
         }));
+        
+        // Update localStorage to include the new item
+        const storageKey = `cdm_drivers_order_${selectedColumn}`;
+        const currentOrder = [...driversState[selectedColumn], newValue];
+        localStorage.setItem(storageKey, JSON.stringify(currentOrder));
       }
     }
   };
@@ -1040,6 +1134,12 @@ function App() {
         }
       }
       
+      // Update localStorage to remove the deleted item
+      const storageKey = `cdm_drivers_order_${driverToDelete.type}`;
+      const currentOrder = driversState[driverToDelete.type] || [];
+      const updatedOrder = currentOrder.filter(item => item !== driverToDelete.name);
+      localStorage.setItem(storageKey, JSON.stringify(updatedOrder));
+      
       // Close modal and clear selection
       setIsDeleteModalOpen(false);
       setDriverToDelete(null);
@@ -1069,6 +1169,9 @@ function App() {
     setCustomSortRules(sortRules);
     setIsCustomSortActive(sortRules.length > 0);
     setIsColumnSortActive(false); // Clear column sort when grid sort is applied
+    // Clear localStorage for column sort
+    localStorage.removeItem('cdm_objects_column_sort_active');
+    localStorage.removeItem('cdm_objects_sort_config');
     console.log('Custom sort applied:', sortRules);
   };
 
@@ -1080,12 +1183,19 @@ function App() {
   const handleClearCustomSort = () => {
     setCustomSortRules([]);
     setIsCustomSortActive(false);
+    // Clear localStorage
+    localStorage.removeItem('cdm_objects_custom_sort_rules');
+    localStorage.removeItem('cdm_objects_custom_sort_active');
   };
 
   const handleClearAllSorts = () => {
     setCustomSortRules([]);
     setIsCustomSortActive(false);
     setIsColumnSortActive(false);
+    // Clear localStorage
+    localStorage.removeItem('cdm_objects_custom_sort_rules');
+    localStorage.removeItem('cdm_objects_custom_sort_active');
+    localStorage.removeItem('cdm_objects_column_sort_active');
   };
 
   const handleColumnSort = () => {
@@ -1093,6 +1203,9 @@ function App() {
     if (isCustomSortActive) {
       setCustomSortRules([]);
       setIsCustomSortActive(false);
+      // Clear localStorage for custom sort
+      localStorage.removeItem('cdm_objects_custom_sort_rules');
+      localStorage.removeItem('cdm_objects_custom_sort_active');
     }
     setIsColumnSortActive(true);
   };
@@ -1152,21 +1265,6 @@ function App() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
             {/* Drivers Columns */}
             <div className="lg:col-span-3 flex flex-col h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-              <div className="flex items-center justify-between mb-4 flex-shrink-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-                <div>
-                  <h2 className="text-lg font-semibold text-ag-dark-text">Drivers</h2>
-                  <p className="text-sm text-ag-dark-text-secondary">
-                    {driversLoading ? (
-                      'Loading drivers...'
-                    ) : driversError ? (
-                      `Error: ${driversError} (using fallback data)`
-                    ) : (
-                      'Click on column headers to add new items, or click on items to edit them'
-                    )}
-                  </p>
-                </div>
-              </div>
-              
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
                 <DriversColumn
                   title="Sector"
@@ -1238,22 +1336,7 @@ function App() {
           {/* Data Grid */}
           <div className="lg:col-span-2">
             {/* Grid Header with Actions */}
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-ag-dark-text capitalize">{activeTab}</h2>
-                <p className="text-sm text-ag-dark-text-secondary">
-                  {activeTab === 'objects' && objectsLoading ? (
-                    'Loading objects...'
-                  ) : activeTab === 'objects' && objectsError ? (
-                    `Error: ${objectsError} (using fallback data)`
-                  ) : selectedRows.length > 0 ? (
-                    `${selectedRows.length} of ${activeTab === 'lists' ? listData.length : activeTab === 'variables' ? variableData.length : data.length} rows selected`
-                  ) : (
-                    `${activeTab === 'lists' ? listData.length : activeTab === 'variables' ? variableData.length : filteredData.length} total rows`
-                  )}
-                </p>
-              </div>
-              
+            <div className="flex items-center justify-end mb-4">
               <div className="flex items-center gap-3">
                 {/* Views Button - only show for Objects tab */}
                 {activeTab === 'objects' && (

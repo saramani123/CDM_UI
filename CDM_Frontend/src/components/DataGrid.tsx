@@ -50,13 +50,33 @@ export const DataGrid: React.FC<DataGridProps> = ({
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
+  // Load persisted state from localStorage
+  const loadPersistedDataGridState = () => {
+    try {
+      const savedColumnFilters = localStorage.getItem('cdm_objects_column_filters');
+      const savedSortConfig = localStorage.getItem('cdm_objects_sort_config');
+      
+      return {
+        columnFilters: savedColumnFilters ? JSON.parse(savedColumnFilters) : {},
+        sortConfig: savedSortConfig ? JSON.parse(savedSortConfig) : null
+      };
+    } catch (error) {
+      console.error('Error loading persisted DataGrid state:', error);
+      return {
+        columnFilters: {},
+        sortConfig: null
+      };
+    }
+  };
+
+  const persistedDataGridState = loadPersistedDataGridState();
   const [sortConfig, setSortConfig] = useState<{
     key: string; 
     type: 'custom' | 'none';
     customOrder?: string[];
-  } | null>(null);
+  } | null>(persistedDataGridState.sortConfig);
   const [filters, setFilters] = useState<Record<string, string>>({});
-  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, string[]>>(persistedDataGridState.columnFilters);
   const [localSelectedRows, setLocalSelectedRows] = useState<Record<string, any>[]>(selectedRows);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -67,6 +87,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
   React.useEffect(() => {
     setLocalSelectedRows(selectedRows);
   }, [selectedRows]);
+
+  // Persist column filters to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_column_filters', JSON.stringify(columnFilters));
+  }, [columnFilters]);
+
+  // Persist sort config to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_objects_sort_config', JSON.stringify(sortConfig));
+  }, [sortConfig]);
 
   const handleColumnHeaderClick = (column: Column, event: React.MouseEvent) => {
     const rect = (event.target as HTMLElement).getBoundingClientRect();
@@ -142,6 +172,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
     setColumnFilters({});
     setSortConfig(null);
     onClearCustomSort?.();
+    // Clear localStorage
+    localStorage.removeItem('cdm_objects_column_filters');
+    localStorage.removeItem('cdm_objects_sort_config');
     // Note: Column sort state is managed by parent component
   };
 

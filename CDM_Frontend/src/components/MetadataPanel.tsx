@@ -145,42 +145,32 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   ]);
 
   // Initialize relationships state
-  const [relationships, setRelationships] = useState<Relationship[]>(() => {
-    return selectedObject?.relationshipsList || [];
-  });
-
-  // Update relationships when selectedObject changes
-  React.useEffect(() => {
-    const newRelationships = selectedObject?.relationshipsList || [];
-    setRelationships(prev => {
-      // Only update if the relationships actually changed and we're not in the middle of editing
-      if (JSON.stringify(prev) !== JSON.stringify(newRelationships)) {
-        return newRelationships;
-      }
-      return prev;
-    });
-  }, [selectedObject?.id]); // Only depend on the object ID, not the entire selectedObject
+  const [relationships, setRelationships] = useState<Relationship[]>([]);
 
   // Initialize variants state
-  const [variants, setVariants] = useState<Variant[]>(() => {
-    return selectedObject?.variantsList || [];
-  });
+  const [variants, setVariants] = useState<Variant[]>([]);
 
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
 
-  // Update variants when selectedObject changes
+  // Update relationships and variants when selectedObject changes (only when not typing)
   React.useEffect(() => {
-    const newVariants = selectedObject?.variantsList || [];
-    setVariants(prev => {
-      // Only update if the variants actually changed and we're not in the middle of editing
-      if (JSON.stringify(prev) !== JSON.stringify(newVariants)) {
-        return newVariants;
-      }
-      return prev;
-    });
-  }, [selectedObject?.id]); // Only depend on the object ID, not the entire selectedObject
+    const currentObjectId = selectedObject?.id;
+    
+    // Only update when the selected object actually changes AND we have a valid object AND user is not typing
+    if (currentObjectId && currentObjectId !== prevSelectedObjectId.current && !isUserTyping.current) {
+      console.log('MetadataPanel: updating relationships and variants for new object', currentObjectId);
+      
+      // Update relationships
+      const newRelationships = selectedObject?.relationshipsList || [];
+      setRelationships(newRelationships);
+      
+      // Update variants
+      const newVariants = selectedObject?.variantsList || [];
+      setVariants(newVariants);
+    }
+  }, [selectedObject?.id, selectedObject?.relationshipsList, selectedObject?.variantsList]);
 
   // Get distinct values from data
   const getDistinctBeings = () => {
@@ -294,6 +284,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   const handleRelationshipChange = useCallback((id: string, field: keyof Relationship, value: string) => {
     console.log(`DEBUG: handleRelationshipChange called with id=${id}, field=${field}, value="${value}"`);
+    
     setRelationships(prev => prev.map(rel => {
       if (rel.id === id) {
         const updated = { ...rel, [field]: value };

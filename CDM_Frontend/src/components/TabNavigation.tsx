@@ -25,7 +25,7 @@ export const TabNavigation: React.FC<TabNavigationProps> = ({
             key={tab.id}
             onClick={() => onTabChange(tab.id)}
             className={`
-              py-4 px-1 border-b-2 font-medium text-base whitespace-nowrap transition-colors
+              py-4 px-1 border-b-2 font-medium text-lg whitespace-nowrap transition-colors
               ${activeTab === tab.id
                 ? 'border-ag-dark-accent text-ag-dark-accent'
                 : 'border-transparent text-ag-dark-text-secondary hover:text-ag-dark-text hover:border-ag-dark-border'
