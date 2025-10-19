@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
+import { ResizableColumn } from './ResizableColumn';
 
 interface Column {
   key: string;
@@ -82,6 +83,32 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [draggedRow, setDraggedRow] = useState<Record<string, any> | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    // Load persisted column widths from localStorage
+    const loadPersistedColumnWidths = () => {
+      try {
+        const savedWidths = localStorage.getItem('cdm_column_widths');
+        if (savedWidths) {
+          return JSON.parse(savedWidths);
+        }
+      } catch (error) {
+        console.error('Error loading persisted column widths:', error);
+      }
+      return null;
+    };
+
+    const persistedWidths = loadPersistedColumnWidths();
+    if (persistedWidths) {
+      return persistedWidths;
+    }
+
+    // Initialize column widths from column definitions
+    const initialWidths: Record<string, number> = {};
+    columns.forEach(col => {
+      initialWidths[col.key] = parseInt(col.width) || 140;
+    });
+    return initialWidths;
+  });
 
   // Sync local selection state with prop changes
   React.useEffect(() => {
@@ -176,6 +203,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
     localStorage.removeItem('cdm_objects_column_filters');
     localStorage.removeItem('cdm_objects_sort_config');
     // Note: Column sort state is managed by parent component
+  };
+
+
+  const handleColumnResize = (columnKey: string, newWidth: number) => {
+    setColumnWidths(prev => {
+      const newWidths = {
+        ...prev,
+        [columnKey]: newWidth
+      };
+      
+      // Persist column widths to localStorage
+      try {
+        localStorage.setItem('cdm_column_widths', JSON.stringify(newWidths));
+      } catch (error) {
+        console.error('Error persisting column widths:', error);
+      }
+      
+      return newWidths;
+    });
   };
 
   const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
@@ -543,10 +589,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 />
               </div>
               {columns.map((column) => (
-                <div
+                <ResizableColumn
                   key={column.key}
+                  initialWidth={`${columnWidths[column.key] || 140}px`}
+                  minWidth={80}
+                  maxWidth={1000}
+                  onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
                   className={`flex items-center justify-between px-4 py-3 border-r border-ag-dark-border whitespace-nowrap ${getColumnHeaderClass(column)}`}
-                  style={{ width: column.width }}
                 >
                   <span className="text-ag-dark-text font-medium text-sm truncate pr-2">
                     {column.title}
@@ -564,7 +613,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       {getColumnIcon(column)}
                     </button>
                   )}
-                </div>
+                </ResizableColumn>
               ))}
               <div className="w-24 text-center text-ag-dark-text px-4 py-3">
                 <span className="text-ag-dark-text font-medium text-sm">Actions</span>
@@ -613,11 +662,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
                         ? 'justify-end' 
                         : 'justify-start'
                     }`}
-                    style={{ width: column.width }}
+                    style={{ width: `${columnWidths[column.key] || 140}px` }}
                   >
                     <span className={`whitespace-nowrap overflow-hidden text-ellipsis ${
                       column.key === 'object' 
-                        ? 'font-bold text-teal-600' 
+                        ? 'font-bold text-yellow-400' 
                         : (column.key === 'variable' || column.key === 'list') 
                           ? 'font-semibold' 
                           : ''

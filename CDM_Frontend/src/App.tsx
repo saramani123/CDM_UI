@@ -1276,12 +1276,9 @@ function App() {
   return (
     <div className="h-screen bg-ag-dark-bg flex flex-col">
       {/* Header */}
-      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-6 flex-shrink-0">
+      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-4 flex-shrink-0">
         <div>
           <h1 className="text-2xl font-bold text-ag-dark-text">Canonical Data Model</h1>
-          <p className="text-sm text-ag-dark-text-secondary mt-1">
-            CDM Management Interface
-          </p>
         </div>
       </div>
 
