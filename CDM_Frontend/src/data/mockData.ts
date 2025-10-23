@@ -69,7 +69,7 @@ export const parseDriverField = (driver: string) => {
 };
 
 // Dropdown options based on actual data from objects
-export const getAvatarOptions = (being: string, driver: string, allData: any[] = []): string[] => {
+export const getAvatarOptions = (being: string, _driver: string, allData: any[] = []): string[] => {
   // If we have actual data, use it to get distinct avatars for the selected being
   if (allData && allData.length > 0 && being) {
     const distinctAvatars = [...new Set(

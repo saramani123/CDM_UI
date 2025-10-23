@@ -42,6 +42,7 @@ interface MetadataPanelProps {
   selectedCount?: number;
   affectedObjectIds?: Set<string>;
   deletedDriverType?: string | null;
+  onEnterRelationshipView?: () => void;
 }
 
 export const MetadataPanel: React.FC<MetadataPanelProps> = ({
@@ -52,7 +53,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   allData = [],
   selectedCount = 0,
   affectedObjectIds = new Set(),
-  deletedDriverType = null
+  deletedDriverType = null,
+  onEnterRelationshipView
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     // Initialize form data from selected object if available
@@ -438,6 +440,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       });
     }
   };
+
 
   const handleSave = () => {
     console.log('🔴 MetadataPanel handleSave called');
@@ -995,44 +998,19 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
-            <button
-              onClick={() => setIsRelationshipUploadOpen(true)}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Upload Relationships CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
-              onClick={addRelationship}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Add Relationship"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </>
+          <button
+            onClick={onEnterRelationshipView}
+            disabled={!isPanelEnabled}
+            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title="View and manage relationships"
+          >
+            View Relationships
+          </button>
         }
       >
-        {relationships.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No relationships defined</div>
-            <button
-              onClick={addRelationship}
-              disabled={!isPanelEnabled}
-              className={`mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              Add your first relationship
-            </button>
-          </div>
-        ) : (
+        {relationships.length > 0 && (
           <div className="space-y-4">
             {relationships.map((relationship, index) => (
               <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
@@ -1306,6 +1284,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         type="variants"
         onUpload={handleVariantCsvUpload}
       />
+
     </div>
   );
 };

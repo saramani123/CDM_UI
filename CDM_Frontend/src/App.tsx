@@ -1,11 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown, Eye } from 'lucide-react';
-import { Trash2 } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2 } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
 import { MetadataPanel } from './components/MetadataPanel';
 import { AddObjectPanel } from './components/AddObjectPanel';
-import { BulkEditModal } from './components/BulkEditModal';
 import { BulkEditPanel } from './components/BulkEditPanel';
 import { BulkObjectUploadModal } from './components/BulkObjectUploadModal';
 import { VariableMetadataPanel } from './components/VariableMetadataPanel';
@@ -14,7 +12,7 @@ import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
 import { BulkEditVariablesPanel } from './components/BulkEditVariablesPanel';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
-import { mockObjectData, objectColumns, metadataFields, getAvatarOptions, parseDriverField, type ObjectData } from './data/mockData';
+import { mockObjectData, objectColumns, metadataFields, parseDriverField, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
@@ -27,6 +25,7 @@ import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
 import { ViewsModal } from './components/ViewsModal';
+import { RelationshipModal } from './components/RelationshipModal';
 import LoadingModal from './components/LoadingModal';
 
 function App() {
@@ -34,6 +33,9 @@ function App() {
   const [selectedRows, setSelectedRows] = useState<ObjectData[]>([]);
   const [selectedRowForMetadata, setSelectedRowForMetadata] = useState<ObjectData | null>(null);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  
+  // Relationship modal state
+  const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
   // Load persisted state from localStorage
   const loadPersistedState = () => {
     try {
@@ -63,13 +65,13 @@ function App() {
   const [filters, setFilters] = useState<Record<string, string>>(persistedState.filters);
   
   // Use API hook for objects data
-  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, createRelationship, createVariant, fetchObjects } = useObjects();
+  const { objects: apiObjects, loading: objectsLoading, error: objectsError, createObject, updateObject, deleteObject, updateObjectWithRelationshipsAndVariants, fetchObjects } = useObjects();
   
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
   
   // Use API hook for variables data
-  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, deleteObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
+  const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
   
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
@@ -377,27 +379,27 @@ function App() {
             case 'driver':
               return selectedRowForMetadata.driver;
             case 'objectType':
-              return selectedRowForMetadata.objectType;
+              return selectedRowForMetadata.classifier || '';
             case 'clarifier':
-              return selectedRowForMetadata.clarifier;
+              return selectedRowForMetadata.classifier || '';
             case 'format':
-              return selectedRowForMetadata.format;
+              return selectedRowForMetadata.classifier || '';
             case 'variable':
-              return selectedRowForMetadata.variable;
+              return selectedRowForMetadata.variables || 0;
             case 'set':
-              return selectedRowForMetadata.set;
+              return selectedRowForMetadata.variants || 0;
             case 'grouping':
-              return selectedRowForMetadata.grouping;
+              return selectedRowForMetadata.classifier || '';
             case 'list':
-              return selectedRowForMetadata.list;
+              return selectedRowForMetadata.variants || 0;
             case 'source':
-              return selectedRowForMetadata.source;
+              return selectedRowForMetadata.classifier || '';
             case 'upkeep':
-              return selectedRowForMetadata.upkeep;
+              return selectedRowForMetadata.classifier || '';
             case 'graph':
-              return selectedRowForMetadata.graph;
+              return selectedRowForMetadata.classifier || '';
             case 'origin':
-              return selectedRowForMetadata.origin;
+              return selectedRowForMetadata.classifier || '';
             default:
               return '';
           }
@@ -415,27 +417,27 @@ function App() {
             case 'driver':
               return selectedRowForMetadata.driver;
             case 'clarifier':
-              return selectedRowForMetadata.clarifier;
+              return selectedRowForMetadata.classifier || '';
             case 'part':
-              return selectedRowForMetadata.part;
+              return selectedRowForMetadata.classifier || '';
             case 'section':
-              return selectedRowForMetadata.section;
+              return selectedRowForMetadata.classifier || '';
             case 'group':
-              return selectedRowForMetadata.group;
+              return selectedRowForMetadata.classifier || '';
             case 'variable':
-              return selectedRowForMetadata.variable;
+              return selectedRowForMetadata.variables || 0;
             case 'formatI':
-              return selectedRowForMetadata.formatI;
+              return selectedRowForMetadata.classifier || '';
             case 'formatII':
-              return selectedRowForMetadata.formatII;
+              return selectedRowForMetadata.classifier || '';
             case 'gType':
-              return selectedRowForMetadata.gType;
+              return selectedRowForMetadata.classifier || '';
             case 'validation':
-              return selectedRowForMetadata.validation;
+              return selectedRowForMetadata.classifier || '';
             case 'default':
-              return selectedRowForMetadata.default;
+              return selectedRowForMetadata.classifier || '';
             case 'graph':
-              return selectedRowForMetadata.graph;
+              return selectedRowForMetadata.classifier || '';
             default:
               return '';
           }
@@ -477,20 +479,17 @@ function App() {
     }));
   }, [selectedRowForMetadata, activeTab]);
 
-  const handleRowSelect = (rows: ObjectData[] | VariableData[]) => {
-    setSelectedRows(rows);
+  const handleRowSelect = (rows: Record<string, any>[]) => {
+    setSelectedRows(rows as ObjectData[]);
     if (rows.length === 1) {
-      setSelectedRowForMetadata(rows[0]);
+      setSelectedRowForMetadata(rows[0] as ObjectData);
     } else {
       setSelectedRowForMetadata(null);
     }
   };
 
-  const handleEdit = (row: ObjectData | VariableData) => {
-    // Edit functionality removed - only delete remains
-  };
 
-  const handleDelete = async (row: ObjectData | VariableData) => {
+  const handleDelete = async (row: Record<string, any>) => {
     console.log('🔴 handleDelete called with row:', row);
     console.log('🔴 activeTab:', activeTab);
     
@@ -676,7 +675,7 @@ function App() {
               console.log(`🔄 Object ${objectId} existing variants:`, existingVariantNames);
               
               // Check for duplicates
-              const duplicates = newVariantNames.filter(newName => 
+              const duplicates = newVariantNames.filter((newName: string) => 
                 existingVariantNames.includes(newName)
               );
               
@@ -894,11 +893,11 @@ function App() {
             });
             
             // Filter out empty relationships and variants
-            const validRelationships = (updatedData.relationshipsList || []).filter(rel => 
+            const validRelationships = (updatedData.relationshipsList || []).filter((rel: any) => 
               rel.role && rel.toBeing && rel.toAvatar && rel.toObject
             );
             
-            const validVariants = (updatedData.variantsList || []).filter(variant => 
+            const validVariants = (updatedData.variantsList || []).filter((variant: any) => 
               variant.name && variant.name.trim()
             );
             
@@ -946,39 +945,6 @@ function App() {
     }
   };
 
-  const handleBulkAction = (action: string, value?: any) => {
-    console.log('Bulk action:', action, 'Value:', value, 'Selected rows:', selectedRows.length);
-    
-    const currentData = activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data;
-    const setCurrentData = activeTab === 'lists' ? setListData : activeTab === 'variables' ? setVariableData : setData;
-    
-    // Here you would implement the actual bulk operations
-    switch (action) {
-      case 'updateStatus':
-        setCurrentData(prev => prev.map(item => 
-          selectedRows.some(selected => selected.id === item.id)
-            ? { ...item, status: value }
-            : item
-        ));
-        break;
-      case 'delete':
-        if (confirm(`Are you sure you want to delete ${selectedRows.length} rows?`)) {
-          const selectedIds = selectedRows.map(row => row.id);
-          setCurrentData(prev => prev.filter(item => !selectedIds.includes(item.id)));
-          setSelectedRows([]);
-        }
-        break;
-      default:
-        break;
-    }
-  };
-
-  const handleCsvUpload = (file: File) => {
-    console.log('CSV upload:', file.name);
-    // Here you would implement CSV parsing and data import
-    // For now, just show a confirmation
-    alert(`CSV file "${file.name}" would be processed and imported here.`);
-  };
 
   const handleBulkObjectUpload = (objects: ObjectData[]) => {
     // Parse driver fields for each object before adding to state
@@ -1141,8 +1107,8 @@ function App() {
         console.log('🔍 AFFECTED VARIABLES:', affectedVariables);
         
         // Update affected IDs for highlighting
-        const affectedObjectIds = new Set(affectedObjects.map((obj: any) => String(obj.id)));
-        const affectedVariableIds = new Set(affectedVariables.map((var_: any) => String(var_.id)));
+        const affectedObjectIds = new Set<string>(affectedObjects.map((obj: any) => String(obj.id)));
+        const affectedVariableIds = new Set<string>(affectedVariables.map((var_: any) => String(var_.id)));
         
         console.log('🔍 AFFECTED OBJECT IDS:', Array.from(affectedObjectIds));
         console.log('🔍 AFFECTED VARIABLE IDS:', Array.from(affectedVariableIds));
@@ -1224,13 +1190,6 @@ function App() {
     setActiveView(viewName);
   };
 
-  const handleClearCustomSort = () => {
-    setCustomSortRules([]);
-    setIsCustomSortActive(false);
-    // Clear localStorage
-    localStorage.removeItem('cdm_objects_custom_sort_rules');
-    localStorage.removeItem('cdm_objects_custom_sort_active');
-  };
 
   const handleClearAllSorts = () => {
     setCustomSortRules([]);
@@ -1241,6 +1200,16 @@ function App() {
     localStorage.removeItem('cdm_objects_custom_sort_active');
     localStorage.removeItem('cdm_objects_column_sort_active');
   };
+
+  // Relationship modal handlers
+  const handleEnterRelationshipView = () => {
+    if (!selectedRowForMetadata) {
+      alert('Please select an object first');
+      return;
+    }
+    setIsRelationshipModalOpen(true);
+  };
+
 
   const handleColumnSort = () => {
     // When a column sort is applied, clear grid-level sort
@@ -1254,24 +1223,6 @@ function App() {
     setIsColumnSortActive(true);
   };
 
-  const exportToCsv = () => {
-    const currentData = activeTab === 'variables' ? variableData : data;
-    const currentColumns = activeTab === 'variables' ? variableColumns : objectColumns;
-    
-    // Simple CSV export implementation
-    const csvContent = [
-      currentColumns.map(col => col.title).join(','),
-      ...currentData.map(row => currentColumns.map(col => row[col.key as keyof any]).join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.setAttribute('href', url);
-    a.setAttribute('download', `${activeTab}-data.csv`);
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
 
   return (
     <div className="h-screen bg-ag-dark-bg flex flex-col">
@@ -1334,7 +1285,7 @@ function App() {
                   onItemClick={(item) => handleItemClick('countries', item)}
                   onReorder={(newOrder) => handleDriversReorder('countries', newOrder)}
                   selectedItem={selectedColumn === 'countries' ? selectedItem : undefined}
-                  canAddNew={false}
+                  canAddNew={true}
                   onDeleteItem={(item) => handleDriverDeleteClick(item, 'countries')}
                 />
                 <DriversColumn
@@ -1368,7 +1319,7 @@ function App() {
                 selectedItem={selectedItem}
                 onSave={handleDriversSave}
                 onAddNew={handleDriversAddNew}
-                canAddNew={selectedColumn !== 'countries'}
+                canAddNew={true}
               />
             </div>
           </div>
@@ -1493,10 +1444,9 @@ function App() {
               columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
               data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
               onRowSelect={handleRowSelect}
-              onEdit={handleEdit}
               onDelete={handleDelete}
               selectedRows={selectedRows}
-              onReorder={activeTab === 'lists' ? setListData : activeTab === 'variables' ? setVariableData : setData}
+              onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
               affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
               deletedDriverType={deletedDriverType}
               customSortRules={activeTab === 'objects' ? customSortRules : []}
@@ -1587,6 +1537,7 @@ function App() {
                   selectedCount={selectedRows.length}
                   affectedObjectIds={affectedObjectIds}
                   deletedDriverType={deletedDriverType}
+                  onEnterRelationshipView={handleEnterRelationshipView}
                 />
               )}
             </div>
@@ -1660,6 +1611,14 @@ function App() {
       <LoadingModal
         isOpen={isLoading}
         loadingType={loadingType}
+      />
+
+      {/* Relationship Modal */}
+      <RelationshipModal
+        isOpen={isRelationshipModalOpen}
+        onClose={() => setIsRelationshipModalOpen(false)}
+        selectedObject={selectedRowForMetadata}
+        allObjects={data}
       />
 
     </div>

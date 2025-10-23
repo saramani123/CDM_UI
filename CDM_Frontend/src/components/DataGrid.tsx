@@ -9,6 +9,7 @@ interface Column {
   sortable?: boolean;
   filterable?: boolean;
   width: string;
+  render?: (row: any) => React.ReactNode;
 }
 
 interface DataGridProps {
@@ -31,6 +32,10 @@ interface DataGridProps {
   onColumnSort?: () => void;
   isCustomSortActive?: boolean;
   isColumnSortActive?: boolean;
+  highlightCurrentObject?: boolean;
+  showActionsColumn?: boolean;
+  relationshipData?: Record<string, any>;
+  onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -47,7 +52,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onClearCustomSort,
   onColumnSort,
   isCustomSortActive = false,
-  isColumnSortActive = false
+  isColumnSortActive = false,
+  highlightCurrentObject = false,
+  showActionsColumn = true,
+  relationshipData,
+  onRelationshipCheckboxChange
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
@@ -512,6 +521,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
     return isAffected;
   }
 
+  function isCurrentObject(row: Record<string, any>) {
+    return highlightCurrentObject && row.isCurrentObject === true;
+  }
+
   function isColumnAffected(row: Record<string, any>, columnKey: string) {
     // Check if row is in affectedIds (from driver deletion)
     const isAffectedByIds = affectedIds.has(row.id);
@@ -580,24 +593,43 @@ export const DataGrid: React.FC<DataGridProps> = ({
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
             <div className="flex text-sm font-medium text-ag-dark-text">
-              <div className="w-12 flex items-center justify-center p-4">
+              <div className="w-10 flex items-center justify-center p-2">
                 <input
                   type="checkbox"
-                  checked={localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
-                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  checked={relationshipData ? 
+                    (Object.values(relationshipData).every((rel: any) => rel.isSelected) && Object.keys(relationshipData).length > 0) :
+                    (localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0)
+                  }
+                  onChange={(e) => {
+                    if (relationshipData && onRelationshipCheckboxChange) {
+                      // Handle relationship modal select all
+                      Object.keys(relationshipData).forEach(id => {
+                        onRelationshipCheckboxChange(id, e.target.checked);
+                      });
+                    } else {
+                      handleSelectAll(e.target.checked);
+                    }
+                  }}
                   className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
                 />
               </div>
-              {columns.map((column) => (
+              {columns.map((column, colIndex) => (
                 <ResizableColumn
                   key={column.key}
                   initialWidth={`${columnWidths[column.key] || 140}px`}
                   minWidth={80}
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
-                  className={`flex items-center justify-between px-4 py-3 border-r border-ag-dark-border whitespace-nowrap ${getColumnHeaderClass(column)}`}
+                  className={`flex items-center justify-between px-4 py-2 ${
+                    colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                  } whitespace-nowrap ${getColumnHeaderClass(column)}`}
                 >
-                  <span className="text-ag-dark-text font-medium text-sm truncate pr-2">
+                  <span className="text-ag-dark-text font-medium text-xs pr-2 flex-1" style={{
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    minWidth: 0
+                  }}>
                     {column.title}
                     {columnFilters[column.key]?.length > 0 && (
                       <span className="ml-1 text-xs text-ag-dark-accent">
@@ -608,16 +640,18 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   {(column.sortable || column.filterable) && (
                     <button
                       onClick={(e) => handleColumnHeaderClick(column, e)}
-                      className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0 ml-1"
+                      className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0 ml-2 mr-1"
                     >
                       {getColumnIcon(column)}
                     </button>
                   )}
                 </ResizableColumn>
               ))}
-              <div className="w-24 text-center text-ag-dark-text px-4 py-3">
-                <span className="text-ag-dark-text font-medium text-sm">Actions</span>
-              </div>
+              {showActionsColumn && (
+                <div className="w-20 text-center text-ag-dark-text px-4 py-2">
+                  <span className="text-ag-dark-text font-medium text-xs">Actions</span>
+                </div>
+              )}
               {onReorder && (
                 <div className="w-12 text-center text-ag-dark-text px-4 py-3">
                   <GripVertical className="w-4 h-4 mx-auto text-ag-dark-text-secondary" />
@@ -641,54 +675,76 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 } ${
                   isRowAffected(row) ? 'bg-red-900 bg-opacity-30 border-red-500 border-opacity-50' : ''
                 } ${
+                  isCurrentObject(row) ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
+                } ${
                   dragOverIndex === index ? 'border-t-2 border-t-ag-dark-accent' : ''
                 } ${
                   draggedRow?.id === row.id ? 'opacity-50' : ''
                 }`}
               >
-                <div className="w-12 flex items-center justify-center p-2">
+                <div className="w-10 flex items-center justify-center p-1.5">
                   <input
                     type="checkbox"
-                    checked={isRowSelected(row)}
-                    onChange={(e) => handleRowSelection(row, e.target.checked)}
+                    checked={relationshipData ? (relationshipData[row.id]?.isSelected || false) : isRowSelected(row)}
+                    onChange={(e) => {
+                      if (relationshipData && onRelationshipCheckboxChange) {
+                        onRelationshipCheckboxChange(row.id, e.target.checked);
+                      } else {
+                        handleRowSelection(row, e.target.checked);
+                      }
+                    }}
                     className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
                   />
                 </div>
-                {columns.map((column) => (
+                {columns.map((column, colIndex) => (
                   <div
                     key={`${row.id || index}-${column.key}`}
-                    className={`flex items-center text-sm text-ag-dark-text px-4 py-2 border-r border-ag-dark-border ${
+                    className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 ${
+                      colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                    } ${
                       ['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
                         ? 'justify-end' 
                         : 'justify-start'
                     }`}
                     style={{ width: `${columnWidths[column.key] || 140}px` }}
                   >
-                    <span className={`whitespace-nowrap overflow-hidden text-ellipsis ${
-                      column.key === 'object' 
-                        ? 'font-bold text-yellow-400' 
-                        : (column.key === 'variable' || column.key === 'list') 
-                          ? 'font-semibold' 
-                          : ''
-                    } ${
-                      (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 'text-red-400' : ''
-                    }`}>
-                      {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
-                        formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 
-                        (row[column.key] || '-')
-                      }
-                    </span>
+                    {column.render ? (
+                      column.render(row)
+                    ) : (
+                      <span className={`flex-1 ${
+                        column.key === 'object' 
+                          ? 'font-bold text-yellow-400' 
+                          : (column.key === 'variable' || column.key === 'list') 
+                            ? 'font-semibold' 
+                            : ''
+                      } ${
+                        (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 'text-red-400' : ''
+                      }`}
+                      style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0
+                      }}>
+                        {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
+                          formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 
+                          (row[column.key] || '-')
+                        }
+                      </span>
+                    )}
                   </div>
                 ))}
-                <div className="w-16 flex items-center justify-center gap-1 px-2 py-2">
-                  <button
-                    onClick={() => onDelete?.(row)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+                {showActionsColumn && (
+                  <div className="w-20 flex items-center justify-center gap-1 px-2 py-1.5">
+                    <button
+                      onClick={() => onDelete?.(row)}
+                      className="text-ag-dark-error hover:text-red-400 transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
                 {onReorder && (
                   <div className="w-12 flex items-center justify-center px-4 py-2">
                     <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
