@@ -166,6 +166,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       
       // Update relationships
       const newRelationships = selectedObject?.relationshipsList || [];
+      console.log('MetadataPanel: loading relationships for object', selectedObject?.object, 'relationships:', newRelationships);
       setRelationships(newRelationships);
       
       // Update variants
@@ -1011,6 +1012,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         }
       >
         {/* Relationship Summary */}
+        {console.log('MetadataPanel: rendering relationships summary, relationships.length:', relationships.length, 'relationships:', relationships)}
         {relationships.length > 0 && (
           <div className="mb-6">
             <h5 className="text-sm font-medium text-ag-dark-text mb-3">Current Relationships</h5>
