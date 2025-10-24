@@ -1010,6 +1010,29 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           </button>
         }
       >
+        {/* Relationship Summary */}
+        {relationships.length > 0 && (
+          <div className="mb-6">
+            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Current Relationships</h5>
+            <div className="space-y-2">
+              {relationships.map((relationship, index) => (
+                <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-3 border border-ag-dark-border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="text-sm text-ag-dark-text">
+                        <span className="font-medium">{relationship.toBeing} - {relationship.toAvatar} - {relationship.toObject}</span>
+                      </div>
+                      <div className="text-xs text-ag-dark-text-secondary mt-1">
+                        <span className="font-medium">Type:</span> {relationship.type} | <span className="font-medium">Role:</span> {relationship.role}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {relationships.length > 0 && (
           <div className="space-y-4">
             {relationships.map((relationship, index) => (
