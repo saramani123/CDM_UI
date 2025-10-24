@@ -137,6 +137,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setSaving(true);
     try {
+      console.log('Starting validation...', relationshipData);
+      
       // Validation 1: Check for roles entered without checkbox selected
       for (const [objectId, relData] of Object.entries(relationshipData)) {
         const targetObject = allObjects.find(obj => obj.id === objectId);
@@ -146,8 +148,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const hasRoles = relData.roles && relData.roles.trim().length > 0;
         const isSelected = relData.isSelected;
 
+        console.log(`Checking ${targetObject.object}: hasRoles=${hasRoles}, isSelected=${isSelected}, roles="${relData.roles}"`);
+
         // Check if user entered roles but didn't check the box
         if (hasRoles && !isSelected) {
+          console.log('Validation 1 triggered: roles without checkbox');
           alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
           setSaving(false);
           return;
@@ -161,7 +166,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
         if (relData.roles && relData.roles.trim().length > 0) {
           const validRoles = validateRoles(relData.roles);
+          console.log(`Validation 2 for ${targetObject.object}: roles="${relData.roles}", validRoles=`, validRoles);
           if (validRoles.length === 0) {
+            console.log('Validation 2 triggered: improper role format');
             alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
             setSaving(false);
             return;
@@ -178,7 +185,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         if (isSelf && relData.roles && relData.roles.trim().length > 0) {
           const validRoles = validateRoles(relData.roles);
           const objectName = selectedObject.object;
+          console.log(`Validation 3 for self (${objectName}): roles="${relData.roles}", validRoles=`, validRoles, `includes ${objectName}?`, validRoles.includes(objectName));
           if (!validRoles.includes(objectName)) {
+            console.log('Validation 3 triggered: auto-created role deleted');
             alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
             setSaving(false);
             return;
@@ -195,6 +204,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const validRoles = validateRoles(relData.roles);
 
         if (relData.isSelected && validRoles.length > 0) {
+          console.log(`Processing relationship for ${targetObject.object}: type=${relData.relationshipType}, roles=`, validRoles);
+          
           // First, delete existing relationships for this object to handle type changes
           try {
             const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
@@ -204,6 +215,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               rel.toObject === targetObject.object
             );
 
+            console.log(`Found ${relationshipsToDelete.length} existing relationships to delete for ${targetObject.object}`);
             for (const rel of relationshipsToDelete) {
               await apiService.deleteRelationship(selectedObject.id, rel.id);
             }
@@ -214,6 +226,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Create new relationships with updated type
           for (const role of validRoles) {
             try {
+              console.log(`Creating relationship: ${selectedObject.object} -> ${targetObject.object} (${relData.relationshipType}, ${role})`);
               await apiService.createRelationship(selectedObject.id, {
                 type: relData.relationshipType,
                 role: role,
