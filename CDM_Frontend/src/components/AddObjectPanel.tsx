@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Settings, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { RelationshipModal } from './RelationshipModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useObjects } from '../hooks/useObjects';
 
@@ -279,13 +280,15 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     { id: '5', part: '', group: '' }
   ]);
 
-  // Relationships and variants
-  const [relationships, setRelationships] = useState<Relationship[]>([]);
+  // Variants
   const [variants, setVariants] = useState<Variant[]>([]);
 
   // CSV upload modal states
-  const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
+  
+  // Relationship modal state
+  const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
+  const [pendingRelationships, setPendingRelationships] = useState<any[]>([]);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -371,58 +374,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     ));
   };
 
-  const handleRelationshipChange = (id: string, field: keyof Relationship, value: string) => {
-    setRelationships(prev => prev.map(rel => {
-      if (rel.id === id) {
-        const updated = { ...rel, [field]: value };
-        
-        // Handle Intra-Table logic
-        if (field === 'type' && value === 'Intra-Table') {
-          // Auto-populate with current form data
-          updated.toBeing = formData.being;
-          updated.toAvatar = formData.avatar;
-          updated.toObject = formData.objectName;
-        } else if (field === 'type' && value !== 'Intra-Table') {
-          // Reset fields when switching away from Intra-Table
-          updated.toBeing = '';
-          updated.toAvatar = '';
-          updated.toObject = '';
-        } else if (updated.type !== 'Intra-Table') {
-          // Handle cascading updates for non-Intra-Table types
-          if (field === 'toBeing' && value === 'ALL') {
-            updated.toAvatar = 'ALL';
-            updated.toObject = 'ALL';
-          } else if (field === 'toAvatar' && value === 'ALL') {
-            updated.toObject = 'ALL';
-          } else if (field === 'toBeing' && value !== 'ALL') {
-            updated.toAvatar = '';
-            updated.toObject = '';
-          } else if (field === 'toAvatar' && value !== 'ALL') {
-            updated.toObject = '';
-          }
-        }
-        
-        return updated;
-      }
-      return rel;
-    }));
-  };
-
-  const addRelationship = () => {
-    const newRelationship: Relationship = {
-      id: Date.now().toString(),
-      type: 'Inter-Table',
-      role: '',
-      toBeing: '',
-      toAvatar: '',
-      toObject: ''
-    };
-    setRelationships(prev => [...prev, newRelationship]);
-  };
-
-  const deleteRelationship = (id: string) => {
-    setRelationships(prev => prev.filter(rel => rel.id !== id));
-  };
 
   const addVariant = () => {
     const newVariant: Variant = {
@@ -442,9 +393,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     setVariants(prev => prev.filter(variant => variant.id !== id));
   };
 
-  const handleRelationshipCsvUpload = (uploadedRelationships: Relationship[]) => {
-    setRelationships(prev => [...prev, ...uploadedRelationships]);
-  };
 
   const handleVariantCsvUpload = (uploadedVariants: Variant[]) => {
     setVariants(prev => [...prev, ...uploadedVariants]);
@@ -473,35 +421,17 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       driverSelections.objectClarifier
     );
 
-    // Remove duplicate relationships based on unique combination of properties
-    const uniqueRelationships = relationships.reduce((acc, rel) => {
-      if (!acc.some(existing => 
-        existing.role === rel.role && 
-        existing.toBeing === rel.toBeing && 
-        existing.toAvatar === rel.toAvatar && 
-        existing.toObject === rel.toObject && 
-        existing.type === rel.type
-      )) {
-        acc.push(rel);
-      }
-      return acc;
-    }, [] as Relationship[]);
-    
-    console.log('DEBUG: Original relationships count:', relationships.length);
-    console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
-    console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
-
     const newObject = {
       id: Date.now().toString(),
       driver: driverString,
       being: formData.being,
       avatar: formData.avatar,
       object: formData.objectName,
-      relationships: uniqueRelationships.length,
+      relationships: 0, // Will be updated when relationships are created
       variants: variants.length,
       variables: 54, // Fixed value as requested
       status: 'Active',
-      relationshipsList: uniqueRelationships,
+      relationshipsList: [], // Will be populated when relationships are created
       variantsList: variants,
       identifier: {
         discreteId,
@@ -527,8 +457,8 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       { id: '4', part: '', group: '' },
       { id: '5', part: '', group: '' }
     ]);
-    setRelationships([]);
     setVariants([]);
+    setPendingRelationships([]);
     
     onClose();
   };
@@ -807,171 +737,18 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         isExpanded={expandedSections.relationships}
         onToggle={toggleSection}
         actions={
-          <>
-            <button
-              onClick={() => setIsRelationshipUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Relationships CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
-              onClick={addRelationship}
-              className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-              title="Add Relationship"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </>
+          <button
+            onClick={() => setIsRelationshipModalOpen(true)}
+            className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+            title="View and manage relationships"
+          >
+            Add Relationships
+          </button>
         }
       >
-        {relationships.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No relationships defined</div>
-            <button
-              onClick={addRelationship}
-              className="mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm"
-            >
-              Add your first relationship
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {relationships.map((relationship, index) => (
-              <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Relationship #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteRelationship(relationship.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete Relationship"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        Type
-                      </label>
-                      <select
-                        value={relationship.type}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'type', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="Blood">Blood</option>
-                        <option value="Intra-Table">Intra-Table</option>
-                        <option value="Inter-Table">Inter-Table</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        Role
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Enter role..."
-                        value={relationship.role}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
-                        className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                        style={{ scrollBehavior: 'auto' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Being
-                      </label>
-                      <select
-                        value={relationship.toBeing}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'toBeing', e.target.value)}
-                        disabled={relationship.type === 'Intra-Table'}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being) => (
-                          <option key={being} value={being}>
-                            {being}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Avatar
-                      </label>
-                      <select
-                        value={relationship.toAvatar}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'toAvatar', e.target.value)}
-                        disabled={relationship.type === 'Intra-Table'}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Avatar</option>
-                        {relationship.toBeing && getDistinctAvatarsForBeing(relationship.toBeing).map((avatar) => (
-                          <option key={avatar} value={avatar}>
-                            {avatar}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      To Object
-                    </label>
-                    <select
-                      value={relationship.toObject}
-                      onChange={(e) => handleRelationshipChange(relationship.id, 'toObject', e.target.value)}
-                      disabled={relationship.type === 'Intra-Table'}
-                      className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select To Object</option>
-                      {relationship.toBeing && relationship.toAvatar && 
-                        getDistinctObjectsForBeingAndAvatar(relationship.toBeing, relationship.toAvatar).map((object) => (
-                        <option key={object} value={object}>
-                          {object}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="text-center py-6 text-ag-dark-text-secondary">
+          <div className="text-sm">No relationships defined</div>
+        </div>
       </CollapsibleSection>
 
       {/* Variants Section */}
@@ -1064,17 +841,31 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
 
       {/* CSV Upload Modals */}
       <CsvUploadModal
-        isOpen={isRelationshipUploadOpen}
-        onClose={() => setIsRelationshipUploadOpen(false)}
-        type="relationships"
-        onUpload={handleRelationshipCsvUpload}
-      />
-      
-      <CsvUploadModal
         isOpen={isVariantUploadOpen}
         onClose={() => setIsVariantUploadOpen(false)}
         type="variants"
         onUpload={handleVariantCsvUpload}
+      />
+
+      {/* Relationship Modal */}
+      <RelationshipModal
+        isOpen={isRelationshipModalOpen}
+        onClose={() => setIsRelationshipModalOpen(false)}
+        selectedObject={{
+          id: 'temp-new-object',
+          being: formData.being,
+          avatar: formData.avatar,
+          object: formData.objectName,
+          sector: driverSelections.sector,
+          domain: driverSelections.domain,
+          country: driverSelections.country,
+          objectClarifier: driverSelections.objectClarifier
+        }}
+        allObjects={allData || []}
+        onSave={() => {
+          // Close the modal - relationships will be handled when object is created
+          setIsRelationshipModalOpen(false);
+        }}
       />
     </div>
   );

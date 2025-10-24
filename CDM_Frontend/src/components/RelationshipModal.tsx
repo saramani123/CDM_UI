@@ -61,7 +61,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         // Get the relationship type from existing relationships, or use default
         const relationshipType = existingRels.length > 0 ? existingRels[0].type : (isSelf ? 'Intra-Table' : 'Inter-Table');
         
-        console.log(`Loading relationship for ${obj.object}: existingRels=${existingRels.length}, type=${relationshipType}, isSelf=${isSelf}`);
         
         initialData[obj.id] = {
           objectId: obj.id,
@@ -142,7 +141,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setSaving(true);
     try {
-      console.log('Starting validation...', relationshipData);
       
       // Validation 1: Check for roles entered without checkbox selected
       for (const [objectId, relData] of Object.entries(relationshipData)) {
@@ -153,11 +151,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const hasRoles = relData.roles && relData.roles.trim().length > 0;
         const isSelected = relData.isSelected;
 
-        console.log(`Checking ${targetObject.object}: hasRoles=${hasRoles}, isSelected=${isSelected}, roles="${relData.roles}"`);
 
         // Check if user entered roles but didn't check the box
         if (hasRoles && !isSelected) {
-          console.log('Validation 1 triggered: roles without checkbox');
           alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
           setSaving(false);
           return;
@@ -165,7 +161,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         
         // Additional check: if roles are entered but checkbox is not selected
         if (relData.roles && relData.roles.trim() !== '' && !relData.isSelected) {
-          console.log('Validation 1 triggered (alternative): roles without checkbox');
           alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
           setSaving(false);
           return;
@@ -184,11 +179,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const hasSemicolon = roleText.includes(';');
           const hasSpace = roleText.includes(' ') && !hasComma;
           
-          console.log(`Validation 2 for ${targetObject.object}: roles="${relData.roles}", hasComma=${hasComma}, hasSemicolon=${hasSemicolon}, hasSpace=${hasSpace}`);
           
           // If it has multiple words but no comma, it's probably wrong format
           if (roleText.split(' ').length > 1 && !hasComma && !hasSemicolon) {
-            console.log('Validation 2 triggered: improper role format - multiple words without comma');
             alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
             setSaving(false);
             return;
@@ -196,7 +189,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           
           // If it has semicolon instead of comma
           if (hasSemicolon && !hasComma) {
-            console.log('Validation 2 triggered: improper role format - semicolon instead of comma');
             alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
             setSaving(false);
             return;
@@ -213,11 +205,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         if (isSelf && relData.roles && relData.roles.trim().length > 0) {
           const validRoles = validateRoles(relData.roles);
           const objectName = selectedObject.object;
-          console.log(`Validation 3 for self (${objectName}): roles="${relData.roles}", validRoles=`, validRoles, `includes ${objectName}?`, validRoles.includes(objectName));
           
           // Check if the object name is missing from the roles
           if (!validRoles.includes(objectName)) {
-            console.log('Validation 3 triggered: auto-created role deleted');
             alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
             setSaving(false);
             return;
@@ -234,7 +224,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const validRoles = validateRoles(relData.roles);
 
         if (relData.isSelected && validRoles.length > 0) {
-          console.log(`Processing relationship for ${targetObject.object}: type=${relData.relationshipType}, roles=`, validRoles);
           
           // First, delete existing relationships for this object to handle type changes
           try {
@@ -245,7 +234,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               rel.toObject === targetObject.object
             );
 
-            console.log(`Found ${relationshipsToDelete.length} existing relationships to delete for ${targetObject.object}`);
             for (const rel of relationshipsToDelete) {
               await apiService.deleteRelationship(selectedObject.id, rel.id);
             }
@@ -256,7 +244,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Create new relationships with updated type
           for (const role of validRoles) {
             try {
-              console.log(`Creating relationship: ${selectedObject.object} -> ${targetObject.object} (${relData.relationshipType}, ${role})`);
               await apiService.createRelationship(selectedObject.id, {
                 type: relData.relationshipType,
                 role: role,

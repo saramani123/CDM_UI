@@ -156,18 +156,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
 
-  // Update relationships and variants when selectedObject changes (only when not typing)
+  // Load relationships when selectedObject changes
   React.useEffect(() => {
-    const currentObjectId = selectedObject?.id;
-    
-    // Only update when the selected object actually changes AND we have a valid object AND user is not typing
-    if (currentObjectId && currentObjectId !== prevSelectedObjectId.current && !isUserTyping.current) {
-      console.log('MetadataPanel: updating relationships and variants for new object', currentObjectId);
+    if (selectedObject?.id) {
+      console.log('MetadataPanel: Loading relationships for object:', selectedObject.object, 'id:', selectedObject.id);
       
-      // Load relationships from API
       const loadRelationships = async () => {
         try {
-          const relationshipData = await apiService.getObjectRelationships(currentObjectId);
+          const relationshipData = await apiService.getObjectRelationships(selectedObject.id);
           console.log('MetadataPanel: API relationship data:', relationshipData);
           const relationshipsList = relationshipData?.relationshipsList || [];
           console.log('MetadataPanel: loaded relationships from API:', relationshipsList);
@@ -179,12 +175,34 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       };
       
       loadRelationships();
-      
-      // Update variants
-      const newVariants = selectedObject?.variantsList || [];
-      setVariants(newVariants);
+    } else {
+      setRelationships([]);
     }
-  }, [selectedObject?.id, selectedObject?.relationshipsList, selectedObject?.variantsList]);
+  }, [selectedObject?.id]);
+
+  // Load variants when selectedObject changes
+  React.useEffect(() => {
+    if (selectedObject?.id) {
+      console.log('MetadataPanel: Loading variants for object:', selectedObject.object, 'id:', selectedObject.id);
+      
+      const loadVariants = async () => {
+        try {
+          const variantData = await apiService.getObjectVariants(selectedObject.id);
+          console.log('MetadataPanel: API variant data:', variantData);
+          const variantsList = variantData?.variantsList || [];
+          console.log('MetadataPanel: loaded variants from API:', variantsList);
+          setVariants(variantsList);
+        } catch (error) {
+          console.error('MetadataPanel: failed to load variants:', error);
+          setVariants([]);
+        }
+      };
+      
+      loadVariants();
+    } else {
+      setVariants([]);
+    }
+  }, [selectedObject?.id]);
 
   // Get distinct values from data
   const getDistinctBeings = () => {
@@ -428,9 +446,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         const response = result as any;
         alert(response.message || `Successfully uploaded ${response.created_count} variants`);
         
-        // Refresh the variants list by fetching the updated object data
-        // This will trigger a re-render with the new variants
-        window.location.reload(); // Simple refresh for now
+        // Refresh the variants list by fetching the updated variants
+        try {
+          const variantData = await apiService.getObjectVariants(selectedObject.id);
+          const variantsList = variantData?.variantsList || [];
+          setVariants(variantsList);
+          console.log('MetadataPanel: refreshed variants after upload:', variantsList);
+        } catch (error) {
+          console.error('MetadataPanel: failed to refresh variants after upload:', error);
+        }
       } catch (error) {
         console.error('Bulk variants upload failed:', error);
         alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -1016,190 +1040,62 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
               !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
             }`}
-            title="View and manage relationships"
+            title={selectedCount > 1 ? "View relationships (bulk edit not yet supported)" : "View and manage relationships"}
           >
             View Relationships
           </button>
         }
       >
-        {/* Relationship Summary */}
+        {/* Relationship Summary - Only show for single object selection */}
         {console.log('MetadataPanel: rendering relationships summary, relationships.length:', relationships.length, 'relationships:', relationships)}
-        {relationships.length > 0 && (
+        {!isPanelEnabled && selectedCount > 1 && (
           <div className="mb-6">
-            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Current Relationships</h5>
-            <div className="space-y-2">
-              {relationships.map((relationship, index) => (
-                <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-3 border border-ag-dark-border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="text-sm text-ag-dark-text">
-                        <span className="font-medium">{relationship.toBeing} - {relationship.toAvatar} - {relationship.toObject}</span>
-                      </div>
-                      <div className="text-xs text-ag-dark-text-secondary mt-1">
-                        <span className="font-medium">Type:</span> {relationship.type} | <span className="font-medium">Role:</span> {relationship.role}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+              <div className="text-sm text-ag-dark-text-secondary">
+                <span className="font-medium">Bulk relationship management</span> is not yet supported. 
+                Please select a single object to view and manage relationships.
+              </div>
             </div>
           </div>
         )}
+        {isPanelEnabled && relationships.length > 0 && (
+          <div className="mb-6">
+            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Current Relationships</h5>
+            <div className="space-y-2">
+              {(() => {
+                // Group relationships by object (toBeing, toAvatar, toObject) and combine roles
+                const groupedRelationships = relationships.reduce((acc, relationship) => {
+                  const key = `${relationship.toBeing}-${relationship.toAvatar}-${relationship.toObject}`;
+                  if (!acc[key]) {
+                    acc[key] = {
+                      toBeing: relationship.toBeing,
+                      toAvatar: relationship.toAvatar,
+                      toObject: relationship.toObject,
+                      type: relationship.type,
+                      roles: []
+                    };
+                  }
+                  acc[key].roles.push(relationship.role);
+                  return acc;
+                }, {} as Record<string, any>);
 
-        {relationships.length > 0 && (
-          <div className="space-y-4">
-            {relationships.map((relationship, index) => (
-              <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Relationship #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteRelationship(relationship.id)}
-                    disabled={!isPanelEnabled}
-                    className={`text-ag-dark-error hover:text-red-400 transition-colors ${
-                      !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title="Delete Relationship"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-3">
-                  {/* Type and Role Row */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        Type
-                      </label>
-                      <select
-                        value={relationship.type}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'type', e.target.value)}
-                        disabled={!isPanelEnabled}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="Blood">Blood</option>
-                        <option value="Intra-Table">Intra-Table</option>
-                        <option value="Inter-Table">Inter-Table</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        Role
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Enter role..."
-                        value={relationship.role}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'role', e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        disabled={!isPanelEnabled}
-                        className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{ scrollBehavior: 'auto' }}
-                      />
+                // Convert to array and sort roles
+                return Object.values(groupedRelationships).map((groupedRel: any, index) => (
+                  <div key={`${groupedRel.toBeing}-${groupedRel.toAvatar}-${groupedRel.toObject}`} className="bg-ag-dark-bg rounded-lg p-3 border border-ag-dark-border">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="text-sm text-ag-dark-text">
+                          <span className="font-medium">{groupedRel.toBeing} - {groupedRel.toAvatar} - {groupedRel.toObject}</span>
+                        </div>
+                        <div className="text-xs text-ag-dark-text-secondary mt-1">
+                          <span className="font-medium">Type:</span> {groupedRel.type} | <span className="font-medium">Roles:</span> {groupedRel.roles.join(', ')}
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  {/* To Being and To Avatar Row */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Being
-                      </label>
-                      <select
-                        value={relationship.toBeing}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'toBeing', e.target.value)}
-                        disabled={!isPanelEnabled || relationship.type === 'Intra-Table'}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being) => (
-                          <option key={being} value={being}>
-                            {being}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Avatar
-                      </label>
-                      <select
-                        value={relationship.toAvatar}
-                        onChange={(e) => handleRelationshipChange(relationship.id, 'toAvatar', e.target.value)}
-                        disabled={!isPanelEnabled || relationship.type === 'Intra-Table'}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Avatar</option>
-                        {relationship.toBeing && getDistinctAvatarsForBeing(relationship.toBeing).map((avatar) => (
-                          <option key={avatar} value={avatar}>
-                            {avatar}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* To Object Row */}
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      To Object
-                    </label>
-                    <select
-                      value={relationship.toObject}
-                      onChange={(e) => handleRelationshipChange(relationship.id, 'toObject', e.target.value)}
-                      disabled={!isPanelEnabled || relationship.type === 'Intra-Table'}
-                      className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none disabled:opacity-50 disabled:cursor-not-allowed ${
-                        !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select To Object</option>
-                      {relationship.toBeing && relationship.toAvatar && 
-                        getDistinctObjectsForBeingAndAvatar(relationship.toBeing, relationship.toAvatar).map((object) => (
-                        <option key={object} value={object}>
-                          {object}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
+                ));
+              })()}
+            </div>
           </div>
         )}
       </CollapsibleSection>

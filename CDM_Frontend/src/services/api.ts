@@ -107,6 +107,10 @@ class ApiService {
     return this.request(`/objects/${objectId}`);
   }
 
+  async getObjectVariants(objectId: string) {
+    return this.request(`/objects/${objectId}`);
+  }
+
   async bulkUploadRelationships(objectId: string, file: File) {
     const formData = new FormData();
     formData.append('file', file);
