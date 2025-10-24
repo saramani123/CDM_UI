@@ -58,10 +58,15 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           rel.toObject === obj.object
         );
 
+        // Get the relationship type from existing relationships, or use default
+        const relationshipType = existingRels.length > 0 ? existingRels[0].type : (isSelf ? 'Intra-Table' : 'Inter-Table');
+        
+        console.log(`Loading relationship for ${obj.object}: existingRels=${existingRels.length}, type=${relationshipType}, isSelf=${isSelf}`);
+        
         initialData[obj.id] = {
           objectId: obj.id,
           isSelected: existingRels.length > 0,
-          relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
+          relationshipType: relationshipType,
           roles: existingRels.map((rel: any) => rel.role).join(', ')
         };
       }
