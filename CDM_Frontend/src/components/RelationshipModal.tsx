@@ -18,6 +18,7 @@ interface RelationshipData {
   isSelected: boolean;
   relationshipType: 'Inter-Table' | 'Blood' | 'Intra-Table';
   roles: string;
+  hasMixedTypes?: boolean; // Flag to indicate mixed relationship types
 }
 
 export const RelationshipModal: React.FC<RelationshipModalProps> = ({
@@ -58,16 +59,55 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           rel.toObject === obj.object
         );
 
-        // Get the relationship type from existing relationships, or use default
-        const relationshipType = existingRels.length > 0 ? existingRels[0].type : (isSelf ? 'Intra-Table' : 'Inter-Table');
-        
-        
-        initialData[obj.id] = {
-          objectId: obj.id,
-          isSelected: existingRels.length > 0,
-          relationshipType: relationshipType,
-          roles: existingRels.map((rel: any) => rel.role).join(', ')
-        };
+        if (existingRels.length > 0) {
+          // Handle legacy relationships with proper role fallbacks
+          const roles = new Set<string>();
+          const relationshipTypes = new Set<string>();
+          
+          for (const rel of existingRels) {
+            // Add explicit role if it exists and is not empty
+            if (rel.role && rel.role.trim() !== '') {
+              roles.add(rel.role.trim());
+            }
+            
+            // For legacy relationships without explicit roles, use target object name as fallback
+            if (!rel.role || rel.role.trim() === '') {
+              roles.add(obj.object);
+            }
+            
+            relationshipTypes.add(rel.type);
+          }
+          
+          // Determine relationship type
+          let relationshipType: 'Inter-Table' | 'Blood' | 'Intra-Table';
+          const hasMixedTypes = relationshipTypes.size > 1;
+          if (relationshipTypes.size === 1) {
+            relationshipType = relationshipTypes.values().next().value;
+          } else {
+            // Mixed types - default to Inter-Table and highlight in UI
+            relationshipType = 'Inter-Table';
+          }
+          
+          // Convert roles set to comma-separated string, deduplicated
+          const rolesArray = Array.from(roles);
+          const rolesString = rolesArray.join(', ');
+          
+          initialData[obj.id] = {
+            objectId: obj.id,
+            isSelected: true,
+            relationshipType: relationshipType,
+            roles: rolesString,
+            hasMixedTypes: hasMixedTypes
+          };
+        } else {
+          // No existing relationships
+          initialData[obj.id] = {
+            objectId: obj.id,
+            isSelected: false,
+            relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
+            roles: ''
+          };
+        }
       }
 
       setRelationshipData(initialData);
@@ -244,13 +284,25 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Create new relationships with updated type
           for (const role of validRoles) {
             try {
-              await apiService.createRelationship(selectedObject.id, {
-                type: relData.relationshipType,
-                role: role,
-                toBeing: targetObject.being,
-                toAvatar: targetObject.avatar,
-                toObject: targetObject.object
-              });
+              // Check if this role already exists in Neo4j
+              const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+              const existingRels = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+                rel.toBeing === targetObject.being && 
+                rel.toAvatar === targetObject.avatar && 
+                rel.toObject === targetObject.object &&
+                rel.role === role
+              );
+              
+              // Only create if it doesn't already exist
+              if (existingRels.length === 0) {
+                await apiService.createRelationship(selectedObject.id, {
+                  type: relData.relationshipType,
+                  role: role,
+                  toBeing: targetObject.being,
+                  toAvatar: targetObject.avatar,
+                  toObject: targetObject.object
+                });
+              }
             } catch (error) {
               console.error(`Failed to create relationship for ${targetObject.object}:`, error);
             }
@@ -323,20 +375,26 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       render: (row: any) => {
         const isSelf = row.id === selectedObject.id;
         const currentType = relationshipData[row.id]?.relationshipType || (isSelf ? 'Intra-Table' : 'Inter-Table');
+        const hasMixedTypes = relationshipData[row.id]?.hasMixedTypes || false;
         
         return (
-          <select
-            value={currentType}
-            onChange={(e) => handleRelationshipTypeChange(row.id, e.target.value as any)}
-            disabled={isSelf}
-            className="w-full px-3 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed pr-8 appearance-none"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-              backgroundPosition: 'right 8px center',
-              backgroundRepeat: 'no-repeat',
-              backgroundSize: '16px'
-            }}
-          >
+          <div className="relative">
+            <select
+              value={currentType}
+              onChange={(e) => handleRelationshipTypeChange(row.id, e.target.value as any)}
+              disabled={isSelf}
+              className={`w-full px-3 py-1.5 text-sm bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed pr-8 appearance-none ${
+                hasMixedTypes 
+                  ? 'border-yellow-500 bg-yellow-900/20' 
+                  : 'border-ag-dark-border'
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 8px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
             {isSelf ? (
               <option value="Intra-Table">Intra-Table</option>
             ) : (
@@ -346,6 +404,12 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               </>
             )}
           </select>
+          {hasMixedTypes && (
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-500 rounded-full" title="Mixed relationship types detected">
+              <div className="w-full h-full bg-yellow-400 rounded-full animate-pulse"></div>
+            </div>
+          )}
+          </div>
         );
       }
     },
