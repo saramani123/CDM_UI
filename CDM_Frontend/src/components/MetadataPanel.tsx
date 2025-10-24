@@ -164,10 +164,21 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     if (currentObjectId && currentObjectId !== prevSelectedObjectId.current && !isUserTyping.current) {
       console.log('MetadataPanel: updating relationships and variants for new object', currentObjectId);
       
-      // Update relationships
-      const newRelationships = selectedObject?.relationshipsList || [];
-      console.log('MetadataPanel: loading relationships for object', selectedObject?.object, 'relationships:', newRelationships);
-      setRelationships(newRelationships);
+      // Load relationships from API
+      const loadRelationships = async () => {
+        try {
+          const relationshipData = await apiService.getObjectRelationships(currentObjectId);
+          console.log('MetadataPanel: API relationship data:', relationshipData);
+          const relationshipsList = relationshipData?.relationshipsList || [];
+          console.log('MetadataPanel: loaded relationships from API:', relationshipsList);
+          setRelationships(relationshipsList);
+        } catch (error) {
+          console.error('MetadataPanel: failed to load relationships:', error);
+          setRelationships([]);
+        }
+      };
+      
+      loadRelationships();
       
       // Update variants
       const newVariants = selectedObject?.variantsList || [];
