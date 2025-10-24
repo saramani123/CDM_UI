@@ -137,6 +137,55 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setSaving(true);
     try {
+      // Validation 1: Check for roles entered without checkbox selected
+      for (const [objectId, relData] of Object.entries(relationshipData)) {
+        const targetObject = allObjects.find(obj => obj.id === objectId);
+        if (!targetObject) continue;
+
+        const isSelf = objectId === selectedObject.id;
+        const hasRoles = relData.roles && relData.roles.trim().length > 0;
+        const isSelected = relData.isSelected;
+
+        // Check if user entered roles but didn't check the box
+        if (hasRoles && !isSelected) {
+          alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Validation 2: Check for improper role format
+      for (const [objectId, relData] of Object.entries(relationshipData)) {
+        const targetObject = allObjects.find(obj => obj.id === objectId);
+        if (!targetObject) continue;
+
+        if (relData.roles && relData.roles.trim().length > 0) {
+          const validRoles = validateRoles(relData.roles);
+          if (validRoles.length === 0) {
+            alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
+      // Validation 3: Check if user deleted the auto-created role (object name)
+      for (const [objectId, relData] of Object.entries(relationshipData)) {
+        const targetObject = allObjects.find(obj => obj.id === objectId);
+        if (!targetObject) continue;
+
+        const isSelf = objectId === selectedObject.id;
+        if (isSelf && relData.roles && relData.roles.trim().length > 0) {
+          const validRoles = validateRoles(relData.roles);
+          const objectName = selectedObject.object;
+          if (!validRoles.includes(objectName)) {
+            alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
       // Process each object's relationship data
       for (const [objectId, relData] of Object.entries(relationshipData)) {
         const targetObject = allObjects.find(obj => obj.id === objectId);
@@ -146,7 +195,23 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const validRoles = validateRoles(relData.roles);
 
         if (relData.isSelected && validRoles.length > 0) {
-          // Create or update relationships
+          // First, delete existing relationships for this object to handle type changes
+          try {
+            const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+            const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+              rel.toBeing === targetObject.being && 
+              rel.toAvatar === targetObject.avatar && 
+              rel.toObject === targetObject.object
+            );
+
+            for (const rel of relationshipsToDelete) {
+              await apiService.deleteRelationship(selectedObject.id, rel.id);
+            }
+          } catch (error) {
+            console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
+          }
+
+          // Create new relationships with updated type
           for (const role of validRoles) {
             try {
               await apiService.createRelationship(selectedObject.id, {
