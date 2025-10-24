@@ -1619,6 +1619,7 @@ function App() {
         onClose={() => setIsRelationshipModalOpen(false)}
         selectedObject={selectedRowForMetadata}
         allObjects={data}
+        onSave={fetchObjects}
       />
 
     </div>

@@ -10,6 +10,7 @@ interface RelationshipModalProps {
   onClose: () => void;
   selectedObject: ObjectData | null;
   allObjects: ObjectData[];
+  onSave?: () => void; // Callback to refresh main data
 }
 
 interface RelationshipData {
@@ -23,7 +24,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   isOpen,
   onClose,
   selectedObject,
-  allObjects
+  allObjects,
+  onSave
 }) => {
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
   const [loading, setLoading] = useState(false);
@@ -177,6 +179,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
 
+      // Refresh the data after saving
+      await initializeRelationshipData();
+      
+      // Call the callback to refresh main grid data
+      if (onSave) {
+        onSave();
+      }
+      
       alert('Relationships updated successfully!');
       onClose();
     } catch (error) {
