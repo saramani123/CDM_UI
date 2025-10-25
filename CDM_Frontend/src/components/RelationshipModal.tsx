@@ -455,13 +455,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 p-6 overflow-hidden">
+        <div className="flex-1 p-6 overflow-y-auto">
           {loading ? (
             <div className="flex items-center justify-center h-full">
               <div className="text-ag-dark-text-secondary">Loading relationships...</div>
             </div>
           ) : (
-            <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-hidden">
+            <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
               <DataGrid
                 columns={relationshipColumns}
                 data={gridData}
