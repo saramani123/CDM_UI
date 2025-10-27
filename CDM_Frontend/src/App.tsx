@@ -1376,7 +1376,7 @@ function App() {
             {/* Drivers Metadata Panel */}
             <div className="lg:col-span-1 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
               <DriversMetadataPanel
-                title={selectedColumn ? `${columnLabels[selectedColumn]} Metadata` : 'Column Metadata'}
+                title={selectedColumn ? `${columnLabels[selectedColumn]} Metadata` : 'Metadata'}
                 selectedColumn={selectedColumn}
                 selectedItem={selectedItem}
                 onSave={handleDriversSave}

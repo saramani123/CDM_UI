@@ -760,7 +760,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     ) : (
                       <span className={`flex-1 ${
                         column.key === 'object' 
-                          ? 'font-bold text-yellow-400' 
+                          ? 'font-bold text-yellow-400 text-base' 
                           : (column.key === 'variable' || column.key === 'list') 
                             ? 'font-semibold' 
                             : ''
