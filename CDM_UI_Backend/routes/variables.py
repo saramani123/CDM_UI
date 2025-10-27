@@ -150,6 +150,9 @@ async def get_variables():
                 var = {
                     "id": record["id"],
                     "driver": driver_string,
+                    "sector": sector_str,
+                    "domain": domain_str,
+                    "country": country_str,
                     "part": record["part"],
                     "group": record["group"],
                     "section": record["section"],

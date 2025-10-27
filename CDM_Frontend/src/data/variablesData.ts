@@ -5,6 +5,10 @@ export interface VariableData {
   id: string;
   // Drivers (concatenated from individual selections)
   driver: string;
+  // Separate driver fields for filtering
+  sector: string;
+  domain: string;
+  country: string;
   // Taxonomy
   part: string;
   group: string;
@@ -20,10 +24,7 @@ export interface VariableData {
   // Relationships
   objectRelationships: number;
   objectRelationshipsList?: ObjectRelationship[];
-  // Parsed driver fields for UI
-  sector?: string[];
-  domain?: string[];
-  country?: string[];
+  // Parsed driver fields for UI (legacy for metadata panel)
   variableClarifier?: string;
   status?: string;
 }
@@ -38,7 +39,9 @@ export interface ObjectRelationship {
 export const mockVariableData: VariableData[] = [];
 
 export const variableColumns = [
-  { key: 'driver', title: 'Drivers', sortable: true, filterable: true, width: '200px' },
+  { key: 'sector', title: 'Sector', sortable: true, filterable: true, width: '140px' },
+  { key: 'domain', title: 'Domain', sortable: true, filterable: true, width: '140px' },
+  { key: 'country', title: 'Country', sortable: true, filterable: true, width: '140px' },
   { key: 'part', title: 'Part', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },

@@ -252,7 +252,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     // Apply column filters
     Object.entries(columnFilters).forEach(([key, filterValues]) => {
       if (filterValues.length > 0) {
-        // Special handling for Sector, Domain, Country columns
+        // Special handling for Sector, Domain, Country columns (which may have comma-separated values)
         if (['sector', 'domain', 'country'].includes(key)) {
           processedData = processedData.filter(item => {
             const itemValue = String(item[key] || '');
@@ -262,8 +262,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
               return itemValue === 'ALL';
             }
             
-            // If specific values are selected, show items with those values OR "ALL"
-            return filterValues.includes(itemValue) || itemValue === 'ALL';
+            // For specific values, check if any of the filter values appear in the item's value
+            // This handles comma-separated values like "Finance, Healthcare, Retail"
+            const itemValues = itemValue.split(',').map(v => v.trim());
+            const hasMatch = filterValues.some(filterValue => itemValues.includes(filterValue));
+            
+            // Show items that match OR have "ALL" value
+            return hasMatch || itemValue === 'ALL';
           });
         } else {
           // Standard filtering for other columns
@@ -345,10 +350,22 @@ export const DataGrid: React.FC<DataGridProps> = ({
         processedData.sort((a, b) => {
           const aValue = String(a[sortConfig.key] || '');
           const bValue = String(b[sortConfig.key] || '');
-          const aIndex = sortConfig.customOrder!.indexOf(aValue);
-          const bIndex = sortConfig.customOrder!.indexOf(bValue);
           
-          console.log(`🔍 COMPARING: "${aValue}" (index ${aIndex}) vs "${bValue}" (index ${bIndex})`);
+          // Special handling for sector, domain, country columns which may have comma-separated values
+          let aSearchValue = aValue;
+          let bSearchValue = bValue;
+          
+          if (['sector', 'domain', 'country'].includes(sortConfig.key)) {
+            // For comma-separated values, use the first value for sorting
+            // This helps when values are like "Finance, Healthcare, Retail"
+            aSearchValue = aValue.split(',')[0].trim();
+            bSearchValue = bValue.split(',')[0].trim();
+          }
+          
+          const aIndex = sortConfig.customOrder!.indexOf(aSearchValue);
+          const bIndex = sortConfig.customOrder!.indexOf(bSearchValue);
+          
+          console.log(`🔍 COMPARING: "${aValue}" (search: "${aSearchValue}", index ${aIndex}) vs "${bValue}" (search: "${bSearchValue}", index ${bIndex})`);
           
           // If a value is not found in custom order, put it at the end
           if (aIndex === -1 && bIndex === -1) {
@@ -395,14 +412,44 @@ export const DataGrid: React.FC<DataGridProps> = ({
         // Apply all column filters except the current one
         Object.entries(columnFilters).forEach(([key, filterValues]) => {
           if (key !== column.key && filterValues.length > 0) {
-            columnData = columnData.filter(item =>
-              filterValues.includes(String(item[key] || ''))
-            );
+            // Special handling for sector, domain, country columns
+            if (['sector', 'domain', 'country'].includes(key)) {
+              columnData = columnData.filter(item => {
+                const itemValue = String(item[key] || '');
+                const itemValues = itemValue.split(',').map(v => v.trim());
+                const hasMatch = filterValues.some(filterValue => itemValues.includes(filterValue));
+                return hasMatch || itemValue === 'ALL';
+              });
+            } else {
+              columnData = columnData.filter(item =>
+                filterValues.includes(String(item[key] || ''))
+              );
+            }
           }
         });
         
-        // Get distinct values for this column, sorted alphabetically
-        const distinctValues = [...new Set(columnData.map(item => String(item[column.key] || '')))].filter(Boolean);
+        // Get distinct values for this column
+        let distinctValues: string[] = [];
+        
+        // Special handling for sector, domain, country columns which may have comma-separated values
+        if (['sector', 'domain', 'country'].includes(column.key)) {
+          const valuesSet = new Set<string>();
+          columnData.forEach(item => {
+            const itemValue = String(item[column.key] || '');
+            if (itemValue === 'ALL') {
+              valuesSet.add('ALL');
+            } else {
+              // Split comma-separated values and add each one
+              const individualValues = itemValue.split(',').map(v => v.trim()).filter(Boolean);
+              individualValues.forEach(v => valuesSet.add(v));
+            }
+          });
+          distinctValues = Array.from(valuesSet);
+        } else {
+          // Standard extraction for other columns
+          distinctValues = [...new Set(columnData.map(item => String(item[column.key] || '')))].filter(Boolean);
+        }
+        
         options[column.key] = distinctValues.sort();
       }
     });

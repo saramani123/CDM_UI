@@ -16,6 +16,11 @@ export const ViewsModal: React.FC<ViewsModalProps> = ({
 }) => {
   const [selectedView, setSelectedView] = useState<string>(activeView);
 
+  // Update selected view when activeView changes
+  React.useEffect(() => {
+    setSelectedView(activeView);
+  }, [activeView]);
+
   const views = [
     {
       name: 'None',

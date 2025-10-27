@@ -24,6 +24,7 @@ import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
+import { VariablesCustomSortModal } from './components/VariablesCustomSortModal';
 import { ViewsModal } from './components/ViewsModal';
 import { RelationshipModal } from './components/RelationshipModal';
 import LoadingModal from './components/LoadingModal';
@@ -97,15 +98,28 @@ function App() {
   const [isCustomSortActive, setIsCustomSortActive] = useState(persistedState.isCustomSortActive);
   const [isColumnSortActive, setIsColumnSortActive] = useState(persistedState.isColumnSortActive);
 
+  // Variables Custom Sort state
+  const [isVariablesCustomSortOpen, setIsVariablesCustomSortOpen] = useState(false);
+  const [variablesCustomSortRules, setVariablesCustomSortRules] = useState<Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>>([]);
+  const [isVariablesCustomSortActive, setIsVariablesCustomSortActive] = useState(false);
+  const [isVariablesColumnSortActive, setIsVariablesColumnSortActive] = useState(false);
+
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
+  const [isVariablesViewsOpen, setIsVariablesViewsOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('None');
+  const [activeVariablesView, setActiveVariablesView] = useState<string>('None');
 
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
   const [loadingType, setLoadingType] = useState<'drivers' | 'objects' | 'variables' | 'lists' | 'general'>('general');
 
-  // Apply view filtering to data
+  // Apply view filtering to data for Objects tab
   const filteredData = useMemo(() => {
     if (activeView === 'None' || activeTab !== 'objects') {
       return data;
@@ -121,6 +135,23 @@ function App() {
     
     return data;
   }, [data, activeView, activeTab]);
+
+  // Apply view filtering to data for Variables tab
+  const filteredVariableData = useMemo(() => {
+    if (activeVariablesView === 'None' || activeTab !== 'variables') {
+      return variableData;
+    }
+    
+    if (activeVariablesView === 'Generic') {
+      return variableData.filter(item => 
+        item.sector === 'ALL' && 
+        item.domain === 'ALL' && 
+        item.country === 'ALL'
+      );
+    }
+    
+    return variableData;
+  }, [variableData, activeVariablesView, activeTab]);
 
   // Drivers tab state - use API data with fallback to mock data
   const [driversState, setDriversState] = useState(driversData);
@@ -1186,8 +1217,12 @@ function App() {
   };
 
   const handleViewsApply = (viewName: string) => {
-    console.log('🎯 APPLYING VIEW:', viewName);
-    setActiveView(viewName);
+    console.log('🎯 APPLYING VIEW:', viewName, 'for tab:', activeTab);
+    if (activeTab === 'objects') {
+      setActiveView(viewName);
+    } else if (activeTab === 'variables') {
+      setActiveVariablesView(viewName);
+    }
   };
 
 
@@ -1221,6 +1256,33 @@ function App() {
       localStorage.removeItem('cdm_objects_custom_sort_active');
     }
     setIsColumnSortActive(true);
+  };
+
+  const handleVariablesCustomSortApply = (sortRules: Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>) => {
+    setVariablesCustomSortRules(sortRules);
+    setIsVariablesCustomSortActive(sortRules.length > 0);
+    setIsVariablesColumnSortActive(false); // Clear column sort when grid sort is applied
+    console.log('Variables custom sort applied:', sortRules);
+  };
+
+  const handleVariablesColumnSort = () => {
+    // When a column sort is applied, clear grid-level sort
+    if (isVariablesCustomSortActive) {
+      setVariablesCustomSortRules([]);
+      setIsVariablesCustomSortActive(false);
+    }
+    setIsVariablesColumnSortActive(true);
+  };
+
+  const handleClearVariablesSorts = () => {
+    setVariablesCustomSortRules([]);
+    setIsVariablesCustomSortActive(false);
+    setIsVariablesColumnSortActive(false);
   };
 
 
@@ -1330,12 +1392,19 @@ function App() {
             {/* Grid Header with Actions */}
             <div className="flex items-center justify-end mb-4">
               <div className="flex items-center gap-3">
-                {/* Views Button - only show for Objects tab */}
-                {activeTab === 'objects' && (
+                {/* Views Button - show for Objects and Variables tabs */}
+                {(activeTab === 'objects' || activeTab === 'variables') && (
                   <button
-                    onClick={() => setIsViewsOpen(true)}
+                    onClick={() => {
+                      if (activeTab === 'objects') {
+                        setIsViewsOpen(true);
+                      } else if (activeTab === 'variables') {
+                        setIsVariablesViewsOpen(true);
+                      }
+                    }}
                     className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      activeView && activeView !== 'None'
+                      ((activeTab === 'objects' && activeView && activeView !== 'None') || 
+                       (activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None'))
                         ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                         : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                     }`}
@@ -1343,20 +1412,31 @@ function App() {
                   >
                     <Eye className="w-4 h-4" />
                     Views
-                    {activeView && activeView !== 'None' && (
+                    {activeTab === 'objects' && activeView && activeView !== 'None' && (
                       <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                         {activeView} View
+                      </span>
+                    )}
+                    {activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None' && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        {activeVariablesView} View
                       </span>
                     )}
                   </button>
                 )}
 
-                {/* Custom Sort Button - only show for Objects tab */}
-                {activeTab === 'objects' && (
+                {/* Custom Sort Button - show for Objects and Variables tabs */}
+                {(activeTab === 'objects' || activeTab === 'variables') && (
                   <button
-                    onClick={() => setIsCustomSortOpen(true)}
+                    onClick={() => {
+                      if (activeTab === 'objects') {
+                        setIsCustomSortOpen(true);
+                      } else if (activeTab === 'variables') {
+                        setIsVariablesCustomSortOpen(true);
+                      }
+                    }}
                     className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      isCustomSortActive 
+                      (activeTab === 'objects' && isCustomSortActive) || (activeTab === 'variables' && isVariablesCustomSortActive)
                         ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                         : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                     }`}
@@ -1364,12 +1444,22 @@ function App() {
                   >
                     <ArrowUpDown className="w-4 h-4" />
                     Custom Sort
-                    {isCustomSortActive && (
+                    {activeTab === 'objects' && isCustomSortActive && (
                       <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                         Grid Sort Active
                       </span>
                     )}
-                    {isColumnSortActive && !isCustomSortActive && (
+                    {activeTab === 'variables' && isVariablesCustomSortActive && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        Grid Sort Active
+                      </span>
+                    )}
+                    {activeTab === 'objects' && isColumnSortActive && !isCustomSortActive && (
+                      <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
+                        Column Sort Active
+                      </span>
+                    )}
+                    {activeTab === 'variables' && isVariablesColumnSortActive && !isVariablesCustomSortActive && (
                       <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
                         Column Sort Active
                       </span>
@@ -1442,18 +1532,18 @@ function App() {
             {/* Data Grid */}
             <DataGrid
               columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
-              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
+              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? filteredVariableData : filteredData}
               onRowSelect={handleRowSelect}
               onDelete={handleDelete}
               selectedRows={selectedRows}
               onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
               affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
               deletedDriverType={deletedDriverType}
-              customSortRules={activeTab === 'objects' ? customSortRules : []}
-              onClearCustomSort={activeTab === 'objects' ? handleClearAllSorts : undefined}
-              onColumnSort={activeTab === 'objects' ? handleColumnSort : undefined}
-              isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : false}
-              isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : false}
+              customSortRules={activeTab === 'objects' ? customSortRules : activeTab === 'variables' ? variablesCustomSortRules : []}
+              onClearCustomSort={activeTab === 'objects' ? handleClearAllSorts : activeTab === 'variables' ? handleClearVariablesSorts : undefined}
+              onColumnSort={activeTab === 'objects' ? handleColumnSort : activeTab === 'variables' ? handleVariablesColumnSort : undefined}
+              isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : false}
+              isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : false}
             />
           </div>
 
@@ -1590,7 +1680,7 @@ function App() {
         driverType={driverToDelete ? columnLabels[driverToDelete.type] : ''}
       />
 
-      {/* Custom Sort Modal */}
+      {/* Custom Sort Modal - Objects */}
       <CustomSortModal
         isOpen={isCustomSortOpen}
         onClose={() => setIsCustomSortOpen(false)}
@@ -1599,12 +1689,29 @@ function App() {
         currentSortRules={customSortRules}
       />
 
-      {/* Views Modal */}
+      {/* Variables Custom Sort Modal */}
+      <VariablesCustomSortModal
+        isOpen={isVariablesCustomSortOpen}
+        onClose={() => setIsVariablesCustomSortOpen(false)}
+        onApplySort={handleVariablesCustomSortApply}
+        columns={variableColumns}
+        currentSortRules={variablesCustomSortRules}
+      />
+
+      {/* Views Modal - Objects */}
       <ViewsModal
         isOpen={isViewsOpen}
         onClose={() => setIsViewsOpen(false)}
         onApplyView={handleViewsApply}
         activeView={activeView}
+      />
+
+      {/* Views Modal - Variables */}
+      <ViewsModal
+        isOpen={isVariablesViewsOpen}
+        onClose={() => setIsVariablesViewsOpen(false)}
+        onApplyView={handleViewsApply}
+        activeView={activeVariablesView}
       />
 
       {/* Loading Modal */}
