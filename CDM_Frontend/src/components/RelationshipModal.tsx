@@ -16,7 +16,7 @@ interface RelationshipModalProps {
 interface RelationshipData {
   objectId: string;
   isSelected: boolean;
-  relationshipType: 'Inter-Table' | 'Blood' | 'Intra-Table';
+  relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
   roles: string;
   hasMixedTypes?: boolean; // Flag to indicate mixed relationship types
 }
@@ -79,7 +79,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           }
           
           // Determine relationship type
-          let relationshipType: 'Inter-Table' | 'Blood' | 'Intra-Table';
+          let relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
           const hasMixedTypes = relationshipTypes.size > 1;
           if (relationshipTypes.size === 1) {
             relationshipType = relationshipTypes.values().next().value;
@@ -141,7 +141,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     }));
   };
 
-  const handleRelationshipTypeChange = (objectId: string, type: 'Inter-Table' | 'Blood' | 'Intra-Table') => {
+  const handleRelationshipTypeChange = (objectId: string, type: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table') => {
     setRelationshipData(prev => ({
       ...prev,
       [objectId]: {
@@ -401,6 +401,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               <>
                 <option value="Inter-Table">Inter-Table</option>
                 <option value="Blood">Blood</option>
+                <option value="Subtype">Subtype</option>
               </>
             )}
           </select>
