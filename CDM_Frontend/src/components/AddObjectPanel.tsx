@@ -3,13 +3,17 @@ import { Settings, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronD
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { RelationshipModal } from './RelationshipModal';
+import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useObjects } from '../hooks/useObjects';
+import { useVariables } from '../hooks/useVariables';
+import { VariableData } from '../data/variablesData';
 
 interface CompositeKey {
   id: string;
   part: string;
   group: string;
+  variables: string[];
 }
 
 interface Variant {
@@ -48,6 +52,8 @@ interface MultiSelectProps {
   options: string[];
   values: string[];
   onChange: (values: string[]) => void;
+  compact?: boolean;
+  disabled?: boolean;
 }
 
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({ 
@@ -90,7 +96,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   );
 };
 
-const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onChange }) => {
+const MultiSelect: React.FC<MultiSelectProps & { compact?: boolean }> = ({ label, options, values, onChange, compact = false, disabled = false }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -145,17 +151,29 @@ const MultiSelect: React.FC<MultiSelectProps> = ({ label, options, values, onCha
         ? values[0] 
         : `${values.length} selected`;
 
+  const buttonClass = compact
+    ? `w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
+        disabled ? 'opacity-50 cursor-not-allowed' : ''
+      }`
+    : `w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
+        disabled ? 'opacity-50 cursor-not-allowed' : ''
+      }`;
+
+  const iconSize = compact ? '12px' : '16px';
+  const iconPosition = compact ? 'right 8px center' : 'right 12px center';
+
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left"
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        disabled={disabled}
+        className={buttonClass}
         style={{
           backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-          backgroundPosition: 'right 12px center',
+          backgroundPosition: iconPosition,
           backgroundRepeat: 'no-repeat',
-          backgroundSize: '16px'
+          backgroundSize: iconSize
         }}
       >
         {displayText}
@@ -199,6 +217,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   // Use API hooks
   const { drivers: apiDrivers } = useDrivers();
   const { getBeings, getAvatars } = useObjects();
+  const { variables: variablesData } = useVariables();
   
   // Basic form data
   const [formData, setFormData] = useState({
@@ -271,13 +290,13 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   }, [formData.being, getAvatars]);
   
   // Identifier data
-  const [discreteId, setDiscreteId] = useState('Public ID');
+  const [discreteIdVariables, setDiscreteIdVariables] = useState<string[]>([]);
   const [compositeKeys, setCompositeKeys] = useState<CompositeKey[]>([
-    { id: '1', part: '', group: '' },
-    { id: '2', part: '', group: '' },
-    { id: '3', part: '', group: '' },
-    { id: '4', part: '', group: '' },
-    { id: '5', part: '', group: '' }
+    { id: '1', part: '', group: '', variables: [] },
+    { id: '2', part: '', group: '', variables: [] },
+    { id: '3', part: '', group: '', variables: [] },
+    { id: '4', part: '', group: '', variables: [] },
+    { id: '5', part: '', group: '', variables: [] }
   ]);
 
   // Variants - using string for multiline input
@@ -306,6 +325,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
+  const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [pendingRelationships, setPendingRelationships] = useState<any[]>([]);
   
   // Collapsible sections state
@@ -349,9 +369,32 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     return ['ALL', ...objects];
   };
 
-  // Mock options for Part and Group
-  const partOptions = ['Name', 'ID', 'Code', 'Reference', 'Key'];
-  const groupOptions = ['Primary', 'Secondary', 'Tertiary', 'System', 'User'];
+  // Helper functions to get filtered data from variables
+  const getAllParts = () => {
+    const parts = [...new Set(variablesData.map(v => v.part))].filter(Boolean).sort();
+    return parts;
+  };
+
+  const getGroupsForPart = (part: string) => {
+    if (!part) return [];
+    const groups = [...new Set(
+      variablesData.filter(v => v.part === part).map(v => v.group)
+    )].filter(Boolean).sort();
+    return groups;
+  };
+
+  const getVariablesForPartAndGroup = (part: string, group: string) => {
+    if (!part || !group) return [];
+    return variablesData
+      .filter(v => v.part === part && v.group === group)
+      .map(v => ({ id: v.id, name: v.variable }));
+  };
+
+  const getDiscreteIdVariables = () => {
+    return variablesData
+      .filter(v => v.part === 'Identifier' && v.group === 'Public ID')
+      .map(v => ({ id: v.id, name: v.variable }));
+  };
   
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
@@ -381,14 +424,30 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     }));
   };
   const handleCompositeKeyChange = (id: string, field: 'part' | 'group', value: string) => {
+    setCompositeKeys(prev => prev.map(key => {
+      if (key.id === id) {
+        const updated = { ...key, [field]: value };
+        if (field === 'part') {
+          updated.group = '';
+          updated.variables = [];
+        } else if (field === 'group') {
+          updated.variables = [];
+        }
+        return updated;
+      }
+      return key;
+    }));
+  };
+
+  const handleCompositeKeyVariablesChange = (id: string, variables: string[]) => {
     setCompositeKeys(prev => prev.map(key => 
-      key.id === id ? { ...key, [field]: value } : key
+      key.id === id ? { ...key, variables } : key
     ));
   };
 
   const handleDeleteCompositeKey = (id: string) => {
     setCompositeKeys(prev => prev.map(key => 
-      key.id === id ? { ...key, part: '', group: '' } : key
+      key.id === id ? { id: key.id, part: '', group: '', variables: [] } : key
     ));
   };
 
@@ -458,11 +517,22 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       variants: variantsList.length,
       variables: 54, // Fixed value as requested
       status: 'Active',
-      relationshipsList: [], // Will be populated when relationships are created
+      relationshipsList: pendingRelationships, // Include relationships from CSV upload or manual selection
       variantsList: variantsList,
       identifier: {
-        discreteId,
-        compositeKeys: compositeKeys.filter(key => key.part || key.group)
+        discreteId: {
+          variables: discreteIdVariables
+        },
+        compositeIds: compositeKeys.reduce((acc, key) => {
+          if (key.part && key.group) {
+            acc[key.id] = {
+              part: key.part,
+              group: key.group,
+              variables: key.variables
+            };
+          }
+          return acc;
+        }, {} as Record<string, { part: string; group: string; variables: string[] }>)
       }
     };
 
@@ -476,13 +546,13 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       country: [],
       objectClarifier: ''
     });
-    setDiscreteId('Public ID');
+    setDiscreteIdVariables([]);
     setCompositeKeys([
-      { id: '1', part: '', group: '' },
-      { id: '2', part: '', group: '' },
-      { id: '3', part: '', group: '' },
-      { id: '4', part: '', group: '' },
-      { id: '5', part: '', group: '' }
+      { id: '1', part: '', group: '', variables: [] },
+      { id: '2', part: '', group: '', variables: [] },
+      { id: '3', part: '', group: '', variables: [] },
+      { id: '4', part: '', group: '', variables: [] },
+      { id: '5', part: '', group: '', variables: [] }
     ]);
     setVariantsText('');
     setVariantsArray([]);
@@ -665,94 +735,143 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         <div className="space-y-6">
           {/* Discrete ID */}
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Discrete ID
-            </label>
-            <select
-              value={discreteId}
-              onChange={(e) => setDiscreteId(e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="Public ID">Public ID</option>
-              <option value="Proprietary ID">Proprietary ID</option>
-            </select>
+            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Discrete ID</h5>
+            <div className="border border-ag-dark-border rounded">
+              {/* Table Header */}
+              <div className="grid grid-cols-3 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
+              </div>
+              {/* Table Row */}
+              <div className="grid grid-cols-3 gap-2 items-center p-2">
+                <input
+                  type="text"
+                  value="Identifier"
+                  disabled
+                  className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
+                />
+                <input
+                  type="text"
+                  value="Public ID"
+                  disabled
+                  className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
+                />
+                <MultiSelect
+                  label="Variable"
+                  options={['ALL', ...getDiscreteIdVariables().map(v => v.name)]}
+                  values={discreteIdVariables.map(id => {
+                    const varData = getDiscreteIdVariables().find(v => v.id === id);
+                    return varData?.name || id;
+                  })}
+                  onChange={(values) => {
+                    const ids = values.map(val => {
+                      if (val === 'ALL') return 'ALL';
+                      const varData = getDiscreteIdVariables().find(v => v.name === val);
+                      return varData?.id || val;
+                    });
+                    setDiscreteIdVariables(ids);
+                  }}
+                  compact={true}
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Composite Keys */}
-          <div className="space-y-4">
-            <h5 className="text-sm font-medium text-ag-dark-text">Composite Keys</h5>
-            {compositeKeys.map((compositeKey) => (
-              <div key={compositeKey.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Composite Key #{compositeKey.id}
-                  </span>
-                  <button
-                    onClick={() => handleDeleteCompositeKey(compositeKey.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Clear Composite Key"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      Part
-                    </label>
-                    <select
-                      value={compositeKey.part}
-                      onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'part', e.target.value)}
-                      className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select Part</option>
-                      {partOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      Group
-                    </label>
-                    <select
-                      value={compositeKey.group}
-                      onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'group', e.target.value)}
-                      className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select Group</option>
-                      {groupOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+          {/* Composite IDs - Matrix Layout */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="text-sm font-medium text-ag-dark-text">Composite IDs</h5>
+            </div>
+            <div className="border border-ag-dark-border rounded">
+              {/* Table Header */}
+              <div className="grid grid-cols-[25px_0.9fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
               </div>
-            ))}
+              {/* Table Rows */}
+              <div className="divide-y divide-ag-dark-border">
+                {compositeKeys.map((compositeKey) => {
+                  const variableOptions = compositeKey.part && compositeKey.group
+                    ? getVariablesForPartAndGroup(compositeKey.part, compositeKey.group)
+                    : [];
+                  
+                  return (
+                    <div key={compositeKey.id} className="grid grid-cols-[25px_0.9fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
+                      {/* Row Label */}
+                      <div className="flex items-center">
+                        <span className="text-[10px] font-medium text-ag-dark-text">{compositeKey.id}</span>
+                      </div>
+                      
+                      {/* Part Dropdown */}
+                      <select
+                        value={compositeKey.part}
+                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'part', e.target.value)}
+                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                        style={{
+                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                          backgroundPosition: 'right 8px center',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundSize: '12px'
+                        }}
+                      >
+                        <option value="">Select Part</option>
+                        {getAllParts().map((part) => (
+                          <option key={part} value={part}>
+                            {part}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Group Dropdown */}
+                      <select
+                        value={compositeKey.group}
+                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'group', e.target.value)}
+                        disabled={!compositeKey.part}
+                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                          !compositeKey.part ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                        style={{
+                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                          backgroundPosition: 'right 8px center',
+                          backgroundRepeat: 'no-repeat',
+                          backgroundSize: '12px'
+                        }}
+                      >
+                        <option value="">Select Group</option>
+                        {getGroupsForPart(compositeKey.part).map((group) => (
+                          <option key={group} value={group}>
+                            {group}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Variable Multi-select */}
+                      <MultiSelect
+                        label="Variable"
+                        options={['ALL', ...variableOptions.map(v => v.name)]}
+                        values={compositeKey.variables.map(id => {
+                          const varData = variableOptions.find(v => v.id === id);
+                          return varData?.name || id;
+                        })}
+                        onChange={(values) => {
+                          const ids = values.map(val => {
+                            if (val === 'ALL') return 'ALL';
+                            const varData = variableOptions.find(v => v.name === val);
+                            return varData?.id || val;
+                          });
+                          handleCompositeKeyVariablesChange(compositeKey.id, ids);
+                        }}
+                        disabled={!compositeKey.part || !compositeKey.group}
+                        compact={true}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </CollapsibleSection>
@@ -765,13 +884,22 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         isExpanded={expandedSections.relationships}
         onToggle={toggleSection}
         actions={
-          <button
-            onClick={() => setIsRelationshipModalOpen(true)}
-            className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-            title="View and manage relationships"
-          >
-            Add Relationships
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsRelationshipUploadOpen(true)}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+              title="Upload Relationships CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsRelationshipModalOpen(true)}
+              className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+              title="View and manage relationships"
+            >
+              Add Relationships
+            </button>
+          </div>
         }
       >
         <div className="text-center py-6 text-ag-dark-text-secondary">
@@ -911,6 +1039,48 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         onClose={() => setIsVariantUploadOpen(false)}
         type="variants"
         onUpload={handleVariantCsvUpload}
+      />
+
+      {/* Relationship CSV Upload Modal */}
+      <RelationshipCsvUploadModal
+        isOpen={isRelationshipUploadOpen}
+        onClose={() => setIsRelationshipUploadOpen(false)}
+        selectedObject={{
+          id: 'temp-new-object',
+          being: formData.being,
+          avatar: formData.avatar,
+          object: formData.objectName,
+          sector: driverSelections.sector,
+          domain: driverSelections.domain,
+          country: driverSelections.country,
+          objectClarifier: driverSelections.objectClarifier,
+          driver: concatenateDrivers(
+            driverSelections.sector,
+            driverSelections.domain,
+            driverSelections.country,
+            driverSelections.objectClarifier
+          ),
+          relationships: 0,
+          variants: 0,
+          variables: 54
+        }}
+        allObjects={allData || []}
+        onProcessed={(processedRelationships: ProcessedRelationship[]) => {
+          // Store processed relationships to be used when creating the object
+          // Convert to the format expected by the object creation
+          const relationshipList = processedRelationships.map(rel => ({
+            id: Date.now().toString() + Math.random(),
+            type: rel.relationshipType,
+            role: rel.role,
+            toBeing: rel.targetObject.being,
+            toAvatar: rel.targetObject.avatar,
+            toObject: rel.targetObject.object
+          }));
+          setPendingRelationships(prev => [...prev, ...relationshipList]);
+          setIsRelationshipUploadOpen(false);
+          // Open relationship modal to show the uploaded relationships
+          setIsRelationshipModalOpen(true);
+        }}
       />
 
       {/* Relationship Modal */}

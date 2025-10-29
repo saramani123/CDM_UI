@@ -186,6 +186,41 @@ async def get_object(object_id: str):
                 })
             obj["variantsList"] = variants
 
+            # Get discrete ID relationships (HAS_DISCRETE_ID)
+            discrete_id_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_DISCRETE_ID]->(v:Variable)
+                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
+            """, object_id=object_id)
+            
+            discrete_ids = []
+            for record in discrete_id_result:
+                discrete_ids.append({
+                    "variableId": record["variableId"],
+                    "variableName": record["variableName"],
+                    "part": record["part"],
+                    "group": record["group"]
+                })
+            obj["discreteIds"] = discrete_ids
+
+            # Get composite ID relationships (HAS_COMPOSITE_ID_1 through HAS_COMPOSITE_ID_5)
+            composite_ids = {str(i): [] for i in range(1, 6)}
+            for i in range(1, 6):
+                composite_result = session.run(f"""
+                    MATCH (o:Object {{id: $object_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
+                """, object_id=object_id)
+                
+                for record in composite_result:
+                    composite_ids[str(i)].append({
+                        "variableId": record["variableId"],
+                        "variableName": record["variableName"],
+                        "part": record["part"],
+                        "group": record["group"]
+                    })
+            obj["compositeIds"] = composite_ids
+
             return obj
 
     except HTTPException:
@@ -419,6 +454,68 @@ async def create_object(object_data: ObjectCreateRequest):
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
             """, object_id=new_id, rel_count=rel_count)
+            
+            # Handle identifier relationships (discrete and composite IDs)
+            # Note: object_data is a Pydantic model, so we access attributes directly
+            identifier_data = getattr(object_data, 'identifier', None)
+            if identifier_data:
+                # Check if it's a dict (from JSON) or an object (from Pydantic)
+                if isinstance(identifier_data, dict):
+                    identifier_dict = identifier_data
+                else:
+                    identifier_dict = identifier_data.dict() if hasattr(identifier_data, 'dict') else {}
+                
+                # Handle discrete ID
+                discrete_id_data = identifier_dict.get('discreteId', {})
+                if isinstance(discrete_id_data, dict):
+                    variable_ids = discrete_id_data.get('variables', [])
+                    if variable_ids:
+                        # If "ALL" is selected, get all variables where Part = "Identifier" and Group = "Public ID"
+                        if 'ALL' in variable_ids:
+                            all_vars_result = session.run("""
+                                MATCH (p:Part {name: 'Identifier'})-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
+                                RETURN v.id as variableId
+                            """, object_id=new_id)
+                            variable_ids = [record['variableId'] for record in all_vars_result]
+                            variable_ids = [v for v in variable_ids if v != 'ALL']
+                        
+                        # Create relationships to selected variables
+                        for var_id in variable_ids:
+                            if var_id:
+                                session.run("""
+                                    MATCH (o:Object {id: $object_id})
+                                    MATCH (v:Variable {id: $var_id})
+                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                """, object_id=new_id, var_id=var_id)
+                
+                # Handle composite IDs (1-5)
+                composite_ids_data = identifier_dict.get('compositeIds', {})
+                if isinstance(composite_ids_data, dict):
+                    for composite_index in range(1, 6):
+                        composite_id_data = composite_ids_data.get(str(composite_index), {})
+                        if isinstance(composite_id_data, dict):
+                            part = composite_id_data.get('part')
+                            group = composite_id_data.get('group')
+                            variable_ids = composite_id_data.get('variables', [])
+                            
+                            if part and group and variable_ids:
+                                # If "ALL" is selected, get all variables for that Part and Group
+                                if 'ALL' in variable_ids:
+                                    all_vars_result = session.run("""
+                                        MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                        RETURN v.id as variableId
+                                    """, part=part, group=group)
+                                    variable_ids = [record['variableId'] for record in all_vars_result]
+                                    variable_ids = [v for v in variable_ids if v != 'ALL']
+                                
+                                # Create relationships to selected variables
+                                for var_id in variable_ids:
+                                    if var_id:
+                                        session.run(f"""
+                                            MATCH (o:Object {{id: $object_id}})
+                                            MATCH (v:Variable {{id: $var_id}})
+                                            MERGE (o)-[:HAS_COMPOSITE_ID_{composite_index}]->(v)
+                                        """, object_id=new_id, var_id=var_id)
             
             return {
                 "id": new_id,
@@ -839,6 +936,78 @@ async def update_object(
                                 CREATE (o)-[:HAS_VARIANT]->(v)
                             """, object_id=object_id, variant_id=variant_id)
                 
+            # Handle identifier relationships (discrete and composite IDs)
+            has_identifier = request_data and 'identifier' in request_data and request_data['identifier']
+            if has_identifier:
+                identifier_data = request_data['identifier']
+                
+                # Handle discrete ID
+                # Clear existing discrete ID relationships
+                session.run("""
+                    MATCH (o:Object {id: $object_id})-[r:HAS_DISCRETE_ID]->(:Variable)
+                    DELETE r
+                """, object_id=object_id)
+                
+                # Get discrete ID variable selections
+                discrete_id_data = identifier_data.get('discreteId', {})
+                if discrete_id_data and 'variables' in discrete_id_data:
+                    variable_ids = discrete_id_data['variables']
+                    if variable_ids:
+                        # If "ALL" is selected, get all variables where Part = "Identifier" and Group = "Public ID"
+                        if 'ALL' in variable_ids:
+                            all_vars_result = session.run("""
+                                MATCH (p:Part {name: 'Identifier'})-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
+                                RETURN v.id as variableId
+                            """, object_id=object_id)
+                            variable_ids = [record['variableId'] for record in all_vars_result]
+                            # Remove 'ALL' from the list
+                            variable_ids = [v for v in variable_ids if v != 'ALL']
+                        
+                        # Create relationships to selected variables
+                        for var_id in variable_ids:
+                            if var_id:  # Skip empty strings
+                                session.run("""
+                                    MATCH (o:Object {id: $object_id})
+                                    MATCH (v:Variable {id: $var_id})
+                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                """, object_id=object_id, var_id=var_id)
+                
+                # Handle composite IDs (1-5)
+                # Clear existing composite ID relationships
+                for i in range(1, 6):
+                    session.run(f"""
+                        MATCH (o:Object {{id: $object_id}})-[r:HAS_COMPOSITE_ID_{i}]->(:Variable)
+                        DELETE r
+                    """, object_id=object_id)
+                
+                # Get composite IDs data
+                composite_ids_data = identifier_data.get('compositeIds', {})
+                for composite_index in range(1, 6):
+                    composite_id_data = composite_ids_data.get(str(composite_index), {})
+                    if composite_id_data and 'part' in composite_id_data and 'group' in composite_id_data and 'variables' in composite_id_data:
+                        part = composite_id_data['part']
+                        group = composite_id_data['group']
+                        variable_ids = composite_id_data['variables']
+                        
+                        if part and group and variable_ids:
+                            # If "ALL" is selected, get all variables for that Part and Group
+                            if 'ALL' in variable_ids:
+                                all_vars_result = session.run("""
+                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                    RETURN v.id as variableId
+                                """, part=part, group=group)
+                                variable_ids = [record['variableId'] for record in all_vars_result]
+                                variable_ids = [v for v in variable_ids if v != 'ALL']
+                            
+                            # Create relationships to selected variables
+                            for var_id in variable_ids:
+                                if var_id:  # Skip empty strings
+                                    session.run(f"""
+                                        MATCH (o:Object {{id: $object_id}})
+                                        MATCH (v:Variable {{id: $var_id}})
+                                        MERGE (o)-[:HAS_COMPOSITE_ID_{composite_index}]->(v)
+                                    """, object_id=object_id, var_id=var_id)
+
                 # Update counts
                 session.run("""
                     MATCH (o:Object {id: $object_id})

@@ -19,6 +19,7 @@ import { driversData, type ColumnType, columnLabels } from './data/driversData';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
+import { apiService } from './services/api';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
@@ -37,6 +38,7 @@ function App() {
   
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
+  const [initialRelationships, setInitialRelationships] = useState<any[]>([]);
   // Load persisted state from localStorage
   const loadPersistedState = () => {
     try {
@@ -566,7 +568,7 @@ function App() {
       const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
       const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
       
-      const apiObjectData = {
+      const apiObjectData: any = {
         sector: sector,
         domain: domain,
         country: country,
@@ -579,6 +581,12 @@ function App() {
         relationships: newObjectData.relationshipsList || [],
         variants: (newObjectData.variantsList || []).map(v => v.name)
       };
+      
+      // Include identifier data if present
+      if (newObjectData.identifier) {
+        apiObjectData.identifier = newObjectData.identifier;
+        console.log('Including identifier data in create:', newObjectData.identifier);
+      }
       
       await createObject(apiObjectData);
       setIsAddObjectOpen(false);
@@ -895,19 +903,29 @@ function App() {
           throw error; // Re-throw the error so the calling function knows it failed
         }
       } else if (activeTab === 'objects') {
-        // Create clean object with only basic fields for the API
-        const basicFields = {
+        // Create clean object with only basic fields for the API, including identifier
+        const basicFields: any = {
           being: updatedData.being,
           avatar: updatedData.avatar,
           object: updatedData.object,
           driver: updatedData.driver
         };
         
+        // Include identifier data if present
+        if (updatedData.identifier) {
+          basicFields.identifier = updatedData.identifier;
+          console.log('Including identifier data in update:', updatedData.identifier);
+        }
+        
         try {
           // Update the object via API
           console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: basicFields });
           await updateObject(selectedRowForMetadata.id, basicFields);
           console.log('Object updated successfully');
+          
+          // Reload the object to refresh identifier data
+          const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
+          setSelectedRowForMetadata(refreshedObject);
         } catch (error) {
           console.error('Error updating object:', error);
           alert('Failed to update object. Please try again.');
@@ -1241,6 +1259,14 @@ function App() {
     if (!selectedRowForMetadata) {
       alert('Please select an object first');
       return;
+    }
+    // Check for pending CSV relationships
+    const pendingRels = (window as any).__pendingCsvRelationships;
+    if (pendingRels) {
+      setInitialRelationships(pendingRels);
+      (window as any).__pendingCsvRelationships = undefined;
+    } else {
+      setInitialRelationships([]);
     }
     setIsRelationshipModalOpen(true);
   };
@@ -1723,10 +1749,17 @@ function App() {
       {/* Relationship Modal */}
       <RelationshipModal
         isOpen={isRelationshipModalOpen}
-        onClose={() => setIsRelationshipModalOpen(false)}
+        onClose={() => {
+          setIsRelationshipModalOpen(false);
+          setInitialRelationships([]); // Clear initial relationships after closing
+        }}
         selectedObject={selectedRowForMetadata}
         allObjects={data}
-        onSave={fetchObjects}
+        onSave={() => {
+          setInitialRelationships([]); // Clear after saving
+          fetchObjects();
+        }}
+        initialRelationships={initialRelationships}
       />
 
     </div>

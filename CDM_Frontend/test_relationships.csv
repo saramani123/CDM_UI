@@ -1,0 +1,6 @@
+Sector,Domain,Country,Being,Avatar,Object,Relationship Type,Role
+Finance,Insurance,Canada,Process,Product,Policy,Inter-Table,Contact
+Finance,Insurance,France,Process,Product,Policy,Blood,Subordinate
+Finance,Banking,USA,Master,Account,Bank Account,Inter-Table,Affiliate
+Finance,Insurance,Canada,Roster,Student,Course Enrollment,Inter-Table,Enrollment
+

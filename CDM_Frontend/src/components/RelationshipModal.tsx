@@ -5,12 +5,19 @@ import { objectColumns } from '../data/mockData';
 import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
 
+interface InitialRelationship {
+  targetObject: ObjectData;
+  relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
+  role: string;
+}
+
 interface RelationshipModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedObject: ObjectData | null;
   allObjects: ObjectData[];
   onSave?: () => void; // Callback to refresh main data
+  initialRelationships?: InitialRelationship[]; // Pre-selected relationships from CSV upload
 }
 
 interface RelationshipData {
@@ -26,7 +33,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   onClose,
   selectedObject,
   allObjects,
-  onSave
+  onSave,
+  initialRelationships = []
 }) => {
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
   const [loading, setLoading] = useState(false);
@@ -42,7 +50,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       setRelationshipData({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, selectedObject?.id, allObjects.length]);
+  }, [isOpen, selectedObject?.id, allObjects.length, initialRelationships.length]);
 
   const initializeRelationshipData = async () => {
     if (!selectedObject) return;
@@ -115,6 +123,40 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
 
+      // Apply initial relationships from CSV upload if any
+      if (initialRelationships.length > 0) {
+        for (const initialRel of initialRelationships) {
+          const targetObjId = initialRel.targetObject.id;
+          if (initialData[targetObjId]) {
+            // If relationship already exists, append roles
+            const existingRoles = initialData[targetObjId].roles;
+            const newRoles = initialRel.role;
+            // Combine roles, avoiding duplicates
+            const roleSet = new Set<string>();
+            existingRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            newRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            const combinedRoles = Array.from(roleSet).join(', ');
+            
+            initialData[targetObjId] = {
+              objectId: targetObjId,
+              isSelected: true,
+              relationshipType: initialRel.relationshipType,
+              roles: combinedRoles,
+              hasMixedTypes: false
+            };
+          } else {
+            // New relationship
+            initialData[targetObjId] = {
+              objectId: targetObjId,
+              isSelected: true,
+              relationshipType: initialRel.relationshipType,
+              roles: initialRel.role,
+              hasMixedTypes: false
+            };
+          }
+        }
+      }
+
       setRelationshipData(initialData);
     } catch (error) {
       console.error('Failed to load existing relationships:', error);
@@ -129,6 +171,23 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           roles: ''
         };
       }
+      
+      // Apply initial relationships from CSV upload if any (fallback path)
+      if (initialRelationships.length > 0) {
+        for (const initialRel of initialRelationships) {
+          const targetObjId = initialRel.targetObject.id;
+          if (initialData[targetObjId]) {
+            initialData[targetObjId] = {
+              objectId: targetObjId,
+              isSelected: true,
+              relationshipType: initialRel.relationshipType,
+              roles: initialRel.role,
+              hasMixedTypes: false
+            };
+          }
+        }
+      }
+      
       setRelationshipData(initialData);
     } finally {
       setLoading(false);
