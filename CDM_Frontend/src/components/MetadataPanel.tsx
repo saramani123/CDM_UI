@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -149,8 +149,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Initialize relationships state
   const [relationships, setRelationships] = useState<Relationship[]>([]);
 
-  // Initialize variants state
-  const [variants, setVariants] = useState<Variant[]>([]);
+  // Initialize variants state - using string for multiline input
+  const [variantsText, setVariantsText] = useState('');
 
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
@@ -191,16 +191,18 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           console.log('MetadataPanel: API variant data:', variantData);
           const variantsList = variantData?.variantsList || [];
           console.log('MetadataPanel: loaded variants from API:', variantsList);
-          setVariants(variantsList);
+          // Convert variants array to multiline text
+          const variantsTextContent = variantsList.map(v => v.name).join('\n');
+          setVariantsText(variantsTextContent);
         } catch (error) {
           console.error('MetadataPanel: failed to load variants:', error);
-          setVariants([]);
+          setVariantsText('');
         }
       };
       
       loadVariants();
     } else {
-      setVariants([]);
+      setVariantsText('');
     }
   }, [selectedObject?.id]);
 
@@ -372,25 +374,22 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setRelationships(prev => prev.filter(rel => rel.id !== id));
   };
 
-  const addVariant = () => {
-    const newVariant: Variant = {
-      id: Date.now().toString(),
-      name: ''
-    };
-    setVariants(prev => [...prev, newVariant]);
-  };
+  const variantsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isTextareaFocusedRef = useRef<boolean>(false);
+  const lastChangeTimeRef = useRef<number>(0);
 
-  const handleVariantChange = useCallback((id: string, name: string) => {
-    console.log(`DEBUG: handleVariantChange called with id=${id}, name="${name}"`);
-    
-    // Allow typing without real-time validation - only check duplicates on save
-    setVariants(prev => prev.map(variant => 
-      variant.id === id ? { ...variant, name } : variant
-    ));
-  }, []);
-
-  const deleteVariant = (id: string) => {
-    setVariants(prev => prev.filter(variant => variant.id !== id));
+  const handleSortVariants = (direction: 'asc' | 'desc') => {
+    const lines = variantsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariantsText(sortedLines.join('\n') + (variantsText.endsWith('\n') ? '\n' : ''));
   };
 
   const handleRelationshipCsvUpload = async (data: any[] | File) => {
@@ -450,7 +449,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         try {
           const variantData = await apiService.getObjectVariants(selectedObject.id);
           const variantsList = variantData?.variantsList || [];
-          setVariants(variantsList);
+          // Convert variants array to multiline text
+          const variantsTextContent = variantsList.map(v => v.name).join('\n');
+          setVariantsText(variantsTextContent);
           console.log('MetadataPanel: refreshed variants after upload:', variantsList);
         } catch (error) {
           console.error('MetadataPanel: failed to refresh variants after upload:', error);
@@ -460,20 +461,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
-      // Old client-side parsing logic (for relationships and object-relationships)
-      setVariants(prev => {
-        const existingNames = new Set(prev.map(v => v.name.toLowerCase()));
-        const newVariants = data.filter(variant => 
-          !existingNames.has(variant.name.toLowerCase())
-        );
-        
-        if (newVariants.length < data.length) {
-          const skippedCount = data.length - newVariants.length;
-          alert(`Uploaded ${newVariants.length} new variants. Skipped ${skippedCount} duplicates.`);
-        }
-        
-        return [...prev, ...newVariants];
-      });
+      // Old client-side parsing logic - append to textarea
+      const existingNames = new Set(variantsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariants = data.filter((variant: any) => 
+        !existingNames.has(variant.name.toLowerCase())
+      );
+      
+      if (newVariants.length < data.length) {
+        const skippedCount = data.length - newVariants.length;
+        alert(`Uploaded ${newVariants.length} new variants. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      // Append new variants to textarea
+      const newLines = newVariants.map((v: any) => v.name).join('\n');
+      setVariantsText(prev => prev ? `${prev}\n${newLines}` : newLines);
     }
   };
 
@@ -512,24 +513,22 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
     console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
     
-    // Remove duplicate variants based on name (case-insensitive)
-    const uniqueVariants = variants.reduce((acc, variant) => {
-      if (!acc.some(existing => 
-        existing.name.toLowerCase() === variant.name.toLowerCase()
-      )) {
-        acc.push(variant);
-      }
-      return acc;
-    }, [] as Variant[]);
+    // Convert multiline text to variants array
+    const variantsList = variantsText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((name, index) => ({
+        id: (Date.now() + index).toString(),
+        name
+      }));
     
-    console.log('DEBUG: Original variants count:', variants.length);
-    console.log('DEBUG: Unique variants count:', uniqueVariants.length);
-    console.log('DEBUG: Duplicate variants removed:', variants.length - uniqueVariants.length);
+    // Check for duplicate variant names (case-insensitive)
+    const uniqueVariantNames = new Set(variantsList.map(v => v.name.toLowerCase()));
     
-    // Check for duplicate variant names and show error if found
-    if (variants.length !== uniqueVariants.length) {
-      const duplicateNames = variants.filter((variant, index) => 
-        variants.findIndex(v => v.name.toLowerCase() === variant.name.toLowerCase()) !== index
+    if (variantsList.length !== uniqueVariantNames.size) {
+      const duplicateNames = variantsList.filter((variant, index) => 
+        variantsList.findIndex(v => v.name.toLowerCase() === variant.name.toLowerCase()) !== index
       ).map(v => v.name);
       
       alert(`Cannot save: Duplicate variant names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
@@ -546,11 +545,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         compositeKeys: compositeKeys.filter(key => key.part || key.group)
       },
       relationshipsList: uniqueRelationships,
-      variantsList: uniqueVariants
+      variantsList: variantsList
     };
     console.log('🔴 MetadataPanel saving data:', saveData);
     console.log('🔴 Relationships:', uniqueRelationships);
-    console.log('🔴 Variants:', variants);
+    console.log('🔴 Variants:', variantsList);
     console.log('🔴 Calling onSave with:', saveData);
     onSave?.(saveData);
   };
@@ -697,7 +696,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         </div>
         
         {isExpanded && (
-          <div className="mt-6 ml-6 pb-6">
+          <div 
+            className="mt-6 ml-6 pb-6"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {children}
           </div>
         )}
@@ -1106,7 +1110,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariants('asc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariants('desc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
             <button
               onClick={() => setIsVariantUploadOpen(true)}
               disabled={!isPanelEnabled}
@@ -1117,73 +1141,80 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             >
               <Upload className="w-4 h-4" />
             </button>
-            <button
-              onClick={addVariant}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Add Variant"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </>
+          </div>
         }
       >
-        {variants.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No variants defined</div>
-            <button
-              onClick={addVariant}
-              disabled={!isPanelEnabled}
-              className={`mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              Add your first variant
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {variants.map((variant, index) => (
-              <div key={variant.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Variant #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteVariant(variant.id)}
-                    disabled={!isPanelEnabled}
-                    className={`text-ag-dark-error hover:text-red-400 transition-colors ${
-                      !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title="Delete Variant"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                    Variant Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter variant name..."
-                    value={variant.name}
-                    onChange={(e) => handleVariantChange(variant.id, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    disabled={!isPanelEnabled}
-                    className={`w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                      !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    style={{ scrollBehavior: 'auto' }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <textarea
+          ref={variantsTextareaRef}
+          value={variantsText}
+          onChange={(e) => {
+            const textarea = e.target as HTMLTextAreaElement;
+            const cursorPosition = textarea.selectionStart;
+            lastChangeTimeRef.current = Date.now();
+            setVariantsText(e.target.value);
+            // Restore cursor position and focus after state update
+            requestAnimationFrame(() => {
+              if (variantsTextareaRef.current && isTextareaFocusedRef.current) {
+                variantsTextareaRef.current.focus();
+                // Try to restore cursor position, but if it's out of bounds, put it at the end
+                const maxPos = variantsTextareaRef.current.value.length;
+                const safePos = Math.min(cursorPosition, maxPos);
+                variantsTextareaRef.current.setSelectionRange(safePos, safePos);
+              }
+            });
+          }}
+          onKeyDown={(e) => {
+            // Prevent Enter key from propagating to parent components
+            e.stopPropagation();
+            // Prevent default only for Escape, not Enter
+            if (e.key === 'Escape') {
+              variantsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            // Only restore focus if blur happened very recently after typing (likely accidental)
+            const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+            
+            // Check if blur was intentional (user clicked on another focusable element)
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            // Only restore focus if it was recent typing and user didn't click on another input
+            if (wasRecentTyping && clickedOutside && variantsTextareaRef.current && isTextareaFocusedRef.current) {
+              // Restore focus after a brief delay to let React finish its render cycle
+              setTimeout(() => {
+                if (variantsTextareaRef.current && document.activeElement !== variantsTextareaRef.current) {
+                  variantsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              // User intentionally blurred, don't restore
+              isTextareaFocusedRef.current = false;
+            }
+          }}
+          disabled={!isPanelEnabled}
+          placeholder="Type one variant per line. Press Enter to add more."
+          rows={8}
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
       </CollapsibleSection>
 
       {/* Actions */}

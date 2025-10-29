@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
@@ -76,9 +76,27 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     { id: '5', part: '', group: '' }
   ]);
 
-  // Relationships and variants
+  // Relationships and variants - using string for multiline input
   const [relationships, setRelationships] = useState<Relationship[]>([]);
-  const [variants, setVariants] = useState<Variant[]>([]);
+  const [variantsText, setVariantsText] = useState('');
+  const [variantsArray, setVariantsArray] = useState<Variant[]>([]);
+  const variantsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isTextareaFocusedRef = useRef<boolean>(false);
+  const lastChangeTimeRef = useRef<number>(0);
+
+  const handleSortVariants = (direction: 'asc' | 'desc') => {
+    const lines = variantsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariantsText(sortedLines.join('\n') + (variantsText.endsWith('\n') ? '\n' : ''));
+  };
 
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
@@ -221,22 +239,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     setRelationships(prev => prev.filter(rel => rel.id !== id));
   };
 
-  const addVariant = () => {
-    const newVariant: Variant = {
-      id: Date.now().toString(),
-      name: ''
-    };
-    setVariants(prev => [...prev, newVariant]);
-  };
-
-  const handleVariantChange = (id: string, name: string) => {
-    setVariants(prev => prev.map(variant => 
-      variant.id === id ? { ...variant, name } : variant
-    ));
-  };
-
-  const deleteVariant = (id: string) => {
-    setVariants(prev => prev.filter(variant => variant.id !== id));
+  const handleVariantsTextChange = (text: string) => {
+    setVariantsText(text);
   };
 
   const handleRelationshipCsvUpload = (uploadedRelationships: Relationship[]) => {
@@ -248,7 +252,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     if (data instanceof File) {
       try {
         // For bulk edit, we need to handle the file upload differently
-        // We'll parse the CSV client-side and add to the variants list
+        // We'll parse the CSV client-side and add to the variants textarea
         const reader = new FileReader();
         reader.onload = (e) => {
           let csv = e.target?.result as string;
@@ -288,7 +292,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           }
           
           if (newVariants.length > 0) {
-            setVariants(prev => [...prev, ...newVariants]);
+            // Append to textarea
+            const newLines = newVariants.map(v => v.name).join('\n');
+            setVariantsText(prev => prev ? `${prev}\n${newLines}` : newLines);
             alert(`Successfully added ${newVariants.length} variants from CSV`);
           } else {
             alert('No valid variants found in CSV');
@@ -300,8 +306,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
-      // Handle array of variants (fallback)
-      setVariants(prev => [...prev, ...data]);
+      // Handle array of variants - append to textarea
+      const newLines = data.map((v: any) => v.name).join('\n');
+      setVariantsText(prev => prev ? `${prev}\n${newLines}` : newLines);
     }
   };
 
@@ -337,6 +344,28 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     console.log('DEBUG: Unique relationships count:', uniqueRelationships.length);
     console.log('DEBUG: Duplicate relationships removed:', relationships.length - uniqueRelationships.length);
 
+    // Convert multiline text to variants array
+    const variantsList = variantsText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((name, index) => ({
+        id: (Date.now() + index).toString(),
+        name
+      }));
+
+    // Check for duplicate variant names (case-insensitive)
+    const uniqueVariantNames = new Set(variantsList.map(v => v.name.toLowerCase()));
+    
+    if (variantsList.length !== uniqueVariantNames.size) {
+      const duplicateNames = variantsList.filter((variant, index) => 
+        variantsList.findIndex(v => v.name.toLowerCase() === variant.name.toLowerCase()) !== index
+      ).map(v => v.name);
+      
+      alert(`Cannot save: Duplicate variant names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+
     const saveData = {
       ...formData,
       ...(driverString && { driver: driverString }),
@@ -345,11 +374,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         compositeKeys: compositeKeys.filter(key => key.part || key.group)
       },
       relationshipsList: uniqueRelationships,
-      variantsList: variants
+      variantsList: variantsList
     };
     
     console.log('🔄 BulkEditPanel - saveData:', saveData);
-    console.log('🔄 BulkEditPanel - variants array:', variants);
+    console.log('🔄 BulkEditPanel - variants array:', variantsList);
     console.log('🔄 BulkEditPanel - variantsList field:', saveData.variantsList);
     
     onSave(saveData);
@@ -781,7 +810,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariants('asc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariants('desc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
             <button
               onClick={() => setIsVariantUploadOpen(true)}
               className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
@@ -789,60 +832,84 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             >
               <Upload className="w-4 h-4" />
             </button>
-            <button
-              onClick={addVariant}
-              className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-              title="Add Variant"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </>
+          </div>
         }
       >
-        {variants.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No new variants to add</div>
-            <button
-              onClick={addVariant}
-              className="mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm"
-            >
-              Add your first new variant
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {variants.map((variant, index) => (
-              <div key={variant.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    New Variant #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteVariant(variant.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete Variant"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                    Variant Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter variant name..."
-                    value={variant.name}
-                    onChange={(e) => handleVariantChange(variant.id, e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <textarea
+            ref={variantsTextareaRef}
+            value={variantsText}
+            onChange={(e) => {
+              const textarea = e.target as HTMLTextAreaElement;
+              const cursorPosition = textarea.selectionStart;
+              lastChangeTimeRef.current = Date.now();
+              handleVariantsTextChange(e.target.value);
+              // Restore cursor position and focus after state update
+              requestAnimationFrame(() => {
+                if (variantsTextareaRef.current && isTextareaFocusedRef.current) {
+                  variantsTextareaRef.current.focus();
+                  // Try to restore cursor position, but if it's out of bounds, put it at the end
+                  const maxPos = variantsTextareaRef.current.value.length;
+                  const safePos = Math.min(cursorPosition, maxPos);
+                  variantsTextareaRef.current.setSelectionRange(safePos, safePos);
+                }
+              });
+            }}
+            onKeyDown={(e) => {
+              // Prevent Enter key from propagating to parent components
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+              // Prevent default only for Escape, not Enter
+              if (e.key === 'Escape') {
+                variantsTextareaRef.current?.blur();
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+            onFocus={(e) => {
+              e.stopPropagation();
+              isTextareaFocusedRef.current = true;
+            }}
+            onBlur={(e) => {
+              // Only restore focus if blur happened very recently after typing (likely accidental)
+              const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
+              const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+              
+              // Check if blur was intentional (user clicked on another focusable element)
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              const clickedOutside = !relatedTarget || 
+                (relatedTarget.tagName !== 'TEXTAREA' && 
+                 relatedTarget.tagName !== 'INPUT' && 
+                 !relatedTarget.isContentEditable);
+              
+              // Only restore focus if it was recent typing and user didn't click on another input
+              if (wasRecentTyping && clickedOutside && variantsTextareaRef.current && isTextareaFocusedRef.current) {
+                // Restore focus after a brief delay to let React finish its render cycle
+                setTimeout(() => {
+                  if (variantsTextareaRef.current && document.activeElement !== variantsTextareaRef.current) {
+                    variantsTextareaRef.current.focus();
+                  }
+                }, 10);
+              } else if (!wasRecentTyping) {
+                // User intentionally blurred, don't restore
+                isTextareaFocusedRef.current = false;
+              }
+            }}
+            placeholder="Type one variant per line. Press Enter to add more."
+            rows={8}
+            className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+          />
+        </div>
       </CollapsibleSection>
 
       {/* Apply Changes Button */}

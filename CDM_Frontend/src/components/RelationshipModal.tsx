@@ -37,7 +37,12 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     if (isOpen && selectedObject && allObjects.length > 0) {
       initializeRelationshipData();
     }
-  }, [isOpen, selectedObject, allObjects]);
+    // Reset relationship data when modal closes
+    if (!isOpen) {
+      setRelationshipData({});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedObject?.id, allObjects.length]);
 
   const initializeRelationshipData = async () => {
     if (!selectedObject) return;
@@ -444,7 +449,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           <div className="flex items-center gap-2">
             <Link className="w-5 h-5 text-ag-dark-text-secondary" />
             <h2 className="text-xl font-semibold text-ag-dark-text">
-              Configuring Relationships for: {selectedObject.sector} - {selectedObject.domain} - {selectedObject.country} - {selectedObject.being} - {selectedObject.avatar} - {selectedObject.object}
+              Configuring Relationships
             </h2>
           </div>
           <button

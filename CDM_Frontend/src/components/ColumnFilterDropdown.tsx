@@ -44,34 +44,49 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   );
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [searchText, setSearchText] = useState<string>('');
 
   // Get distinct values for the column - use availableOptions if provided, otherwise calculate from data
-  const distinctValues = availableOptions && availableOptions.length > 0 
+  const allDistinctValues = availableOptions && availableOptions.length > 0 
     ? availableOptions 
     : [...new Set(data.map(item => String(item[column.key] || '')))].filter(Boolean);
+  
+  // Filter distinct values based on search text
+  const distinctValues = searchText.trim() === ''
+    ? allDistinctValues
+    : allDistinctValues.filter(value => 
+        value.toLowerCase().includes(searchText.toLowerCase())
+      );
   
 
   // Initialize custom sort order if empty
   useEffect(() => {
-    if (customSortOrder.length === 0 && distinctValues.length > 0) {
-      setCustomSortOrder([...distinctValues]);
-      setWorkingSortOrder([...distinctValues]);
+    if (customSortOrder.length === 0 && allDistinctValues.length > 0) {
+      setCustomSortOrder([...allDistinctValues]);
+      setWorkingSortOrder([...allDistinctValues]);
     }
-  }, [distinctValues, customSortOrder.length]);
+  }, [allDistinctValues, customSortOrder.length]);
 
   // Initialize working sort order when dropdown opens (only once per session)
   useEffect(() => {
     if (isOpen && workingSortOrder.length === 0) {
-      const initialOrder = customSortOrder.length > 0 ? customSortOrder : distinctValues;
+      const initialOrder = customSortOrder.length > 0 ? customSortOrder : allDistinctValues;
       console.log('🚀 INITIALIZING WORKING ORDER:', {
         customOrder: customSortOrder,
-        distinctValues: distinctValues,
+        distinctValues: allDistinctValues,
         initialOrder: initialOrder,
         column: column.key
       });
       setWorkingSortOrder([...initialOrder]);
     }
-  }, [isOpen, customSortOrder, distinctValues, workingSortOrder.length]);
+  }, [isOpen, customSortOrder, allDistinctValues, workingSortOrder.length]);
+
+  // Reset search text when dropdown closes
+  useEffect(() => {
+    if (!isOpen) {
+      setSearchText('');
+    }
+  }, [isOpen]);
 
   // Reset temp filters when dropdown opens
   useEffect(() => {
@@ -117,11 +132,11 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   };
 
   const handleSelectAll = () => {
-    setTempFilters([...distinctValues]);
+    setTempFilters([...allDistinctValues]);
   };
 
   const handleToggleSelectAll = () => {
-    if (tempFilters.length === distinctValues.length) {
+    if (tempFilters.length === allDistinctValues.length) {
       handleClearFilters();
     } else {
       handleSelectAll();
@@ -252,16 +267,28 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
         {/* Filter Tab */}
         {!isNumericColumn && activeTab === 'filter' && (
           <div className="space-y-3">
+            {/* Search Input */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search values..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+              />
+              <Filter className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-ag-dark-text-secondary" />
+            </div>
+            
             <div className="flex items-center justify-between">
               <span className="text-sm text-ag-dark-text">
-                Select values to show ({distinctValues.length} available):
+                {searchText.trim() ? `${distinctValues.length} matches` : `${allDistinctValues.length} values`}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={handleToggleSelectAll}
                   className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
                 >
-                  {tempFilters.length === distinctValues.length ? 'Clear All' : 'Select All'}
+                  {tempFilters.length === allDistinctValues.length ? 'Clear All' : 'Select All'}
                 </button>
                 <button
                   onClick={handleClearFilters}
