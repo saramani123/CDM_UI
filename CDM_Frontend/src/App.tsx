@@ -1493,28 +1493,25 @@ function App() {
                   </button>
                 )}
                 
-                <button
-                  onClick={() => {
-                    if (activeTab === 'lists') {
-                      setIsBulkListUploadOpen(true);
-                    } else if (activeTab === 'variables') {
-                      setIsBulkVariableUploadOpen(true);
-                    } else {
-                      setIsBulkObjectUploadOpen(true);
-                    }
-                  }}
-                  className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-                
-                <button
-                  onClick={() => activeTab === 'lists' ? setIsAddListOpen(true) : activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add {activeTab === 'lists' ? 'List' : activeTab === 'variables' ? 'Variable' : 'Object'}
-                </button>
+                {/* Keep add/upload in toolbar only for Lists. For Objects/Variables these move above the metadata panel */}
+                {activeTab === 'lists' && (
+                  <>
+                    <button
+                      onClick={() => setIsBulkListUploadOpen(true)}
+                      className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                    >
+                      <Upload className="w-4 h-4" />
+                    </button>
+                    
+                    <button
+                      onClick={() => setIsAddListOpen(true)}
+                      className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add List
+                    </button>
+                  </>
+                )}
                 
                 {selectedRows.length > 1 && (
                   <>
@@ -1561,6 +1558,7 @@ function App() {
               data={activeTab === 'lists' ? listData : activeTab === 'variables' ? filteredVariableData : filteredData}
               onRowSelect={handleRowSelect}
               onDelete={handleDelete}
+              selectionMode={activeTab === 'objects' || activeTab === 'variables' ? 'row' : 'checkbox'}
               selectedRows={selectedRows}
               onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
               affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
@@ -1625,6 +1623,33 @@ function App() {
             </div>
           ) : (
             <div className="lg:col-span-1">
+              {/* Add/Upload controls above metadata panel for Objects and Variables */}
+              {(activeTab === 'objects' || activeTab === 'variables') && (
+                <div className="mb-3 grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      if (activeTab === 'variables') {
+                        setIsBulkVariableUploadOpen(true);
+                      } else {
+                        setIsBulkObjectUploadOpen(true);
+                      }
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                    title={activeTab === 'variables' ? 'Upload Variables' : 'Upload Objects'}
+                  >
+                    <Upload className="w-4 h-4" />
+                    Upload
+                  </button>
+                  <button
+                    onClick={() => activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
+                    title={activeTab === 'variables' ? 'Add Variable' : 'Add Object'}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add {activeTab === 'variables' ? 'Variable' : 'Object'}
+                  </button>
+                </div>
+              )}
               {activeTab === 'lists' ? (
                 <ListMetadataPanel
                   title="List Metadata"

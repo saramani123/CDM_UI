@@ -1025,13 +1025,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               }}
             >
               <option value="">Select Being</option>
-              {fields.find(f => f.key === 'being')?.options?.map(option => (
-                <option key={option} value={option}>{option}</option>
-              )) || [
-                'Master', 'Mate', 'Process', 'Adjunct', 'Rule', 'Roster'
-              ].map(option => (
-                <option key={option} value={option}>{option}</option>
-              ))}
+              {(() => {
+                // Prefer real beings from data; fall back to fields options or defaults
+                const fallback = ['Master', 'Mate', 'Process', 'Adjunct', 'Rule', 'Roster'];
+                const fromFields = fields.find(f => f.key === 'being')?.options || [];
+                const fromData = getDistinctBeings();
+                const options = (fromData && fromData.length > 0 ? fromData : (fromFields.length > 0 ? fromFields : fallback))
+                  .filter(Boolean);
+                // Ensure current value is present to render correctly
+                const merged = new Set<string>(options as string[]);
+                if (formData.being && !merged.has(formData.being)) merged.add(formData.being);
+                return Array.from(merged).map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ));
+              })()}
             </select>
           </div>
 

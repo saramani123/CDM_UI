@@ -34,6 +34,7 @@ interface DataGridProps {
   isColumnSortActive?: boolean;
   highlightCurrentObject?: boolean;
   showActionsColumn?: boolean;
+  selectionMode?: 'checkbox' | 'row';
   relationshipData?: Record<string, any>;
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
 }
@@ -55,6 +56,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   isColumnSortActive = false,
   highlightCurrentObject = false,
   showActionsColumn = true,
+  selectionMode = 'checkbox',
   relationshipData,
   onRelationshipCheckboxChange
 }) => {
@@ -640,26 +642,28 @@ export const DataGrid: React.FC<DataGridProps> = ({
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
             <div className="flex text-sm font-medium text-ag-dark-text">
-              <div className="w-10 flex items-center justify-center p-2">
-                <input
-                  type="checkbox"
-                  checked={relationshipData ? 
-                    (Object.values(relationshipData).every((rel: any) => rel.isSelected) && Object.keys(relationshipData).length > 0) :
-                    (localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0)
-                  }
-                  onChange={(e) => {
-                    if (relationshipData && onRelationshipCheckboxChange) {
-                      // Handle relationship modal select all
-                      Object.keys(relationshipData).forEach(id => {
-                        onRelationshipCheckboxChange(id, e.target.checked);
-                      });
-                    } else {
-                      handleSelectAll(e.target.checked);
+              {selectionMode === 'checkbox' && (
+                <div className="w-10 flex items-center justify-center p-2">
+                  <input
+                    type="checkbox"
+                    checked={relationshipData ? 
+                      (Object.values(relationshipData).every((rel: any) => rel.isSelected) && Object.keys(relationshipData).length > 0) :
+                      (localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0)
                     }
-                  }}
-                  className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-                />
-              </div>
+                    onChange={(e) => {
+                      if (relationshipData && onRelationshipCheckboxChange) {
+                        // Handle relationship modal select all
+                        Object.keys(relationshipData).forEach(id => {
+                          onRelationshipCheckboxChange(id, e.target.checked);
+                        });
+                      } else {
+                        handleSelectAll(e.target.checked);
+                      }
+                    }}
+                    className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                  />
+                </div>
+              )}
               {columns.map((column, colIndex) => (
                 <ResizableColumn
                   key={column.key}
@@ -717,6 +721,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onDragOver={(e) => onReorder && handleRowDragOver(e, index)}
                 onDrop={(e) => onReorder && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
+                onClick={() => {
+                  if (selectionMode === 'row' && !relationshipData) {
+                    const currentlySelected = isRowSelected(row);
+                    handleRowSelection(row, !currentlySelected);
+                  }
+                }}
                 className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors ${
                   isRowSelected(row) ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
                 } ${
@@ -729,20 +739,22 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   draggedRow?.id === row.id ? 'opacity-50' : ''
                 }`}
               >
-                <div className="w-10 flex items-center justify-center p-1.5">
-                  <input
-                    type="checkbox"
-                    checked={relationshipData ? (relationshipData[row.id]?.isSelected || false) : isRowSelected(row)}
-                    onChange={(e) => {
-                      if (relationshipData && onRelationshipCheckboxChange) {
-                        onRelationshipCheckboxChange(row.id, e.target.checked);
-                      } else {
-                        handleRowSelection(row, e.target.checked);
-                      }
-                    }}
-                    className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-                  />
-                </div>
+                {selectionMode === 'checkbox' && (
+                  <div className="w-10 flex items-center justify-center p-1.5">
+                    <input
+                      type="checkbox"
+                      checked={relationshipData ? (relationshipData[row.id]?.isSelected || false) : isRowSelected(row)}
+                      onChange={(e) => {
+                        if (relationshipData && onRelationshipCheckboxChange) {
+                          onRelationshipCheckboxChange(row.id, e.target.checked);
+                        } else {
+                          handleRowSelection(row, e.target.checked);
+                        }
+                      }}
+                      className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                    />
+                  </div>
+                )}
                 {columns.map((column, colIndex) => (
                   <div
                     key={`${row.id || index}-${column.key}`}
@@ -784,7 +796,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 {showActionsColumn && (
                   <div className="w-20 flex items-center justify-center gap-1 px-2 py-1.5">
                     <button
-                      onClick={() => onDelete?.(row)}
+                      onClick={(e) => { e.stopPropagation(); onDelete?.(row); }}
                       className="text-ag-dark-error hover:text-red-400 transition-colors"
                       title="Delete"
                     >
