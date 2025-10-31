@@ -217,6 +217,20 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
 
+  // Initialize CSS variables for large grids
+  const gridContainerRef = React.useRef<HTMLDivElement>(null);
+  const isLargeGrid = data.length > 500;
+  
+  // Initialize CSS variables on mount and when columnWidths change (for large grids)
+  React.useEffect(() => {
+    if (isLargeGrid && gridContainerRef.current) {
+      columns.forEach(col => {
+        const width = columnWidths[col.key] || parseInt(col.width) || 140;
+        gridContainerRef.current?.style.setProperty(`--column-width-${col.key}`, `${width}px`);
+      });
+    }
+  }, [isLargeGrid, columns, columnWidths]);
+
   const handleColumnResize = (columnKey: string, newWidth: number) => {
     setColumnWidths(prev => {
       const newWidths = {
@@ -224,16 +238,51 @@ export const DataGrid: React.FC<DataGridProps> = ({
         [columnKey]: newWidth
       };
       
+      // Update CSS variable for large grids (for React state sync)
+      if (isLargeGrid && gridContainerRef.current) {
+        gridContainerRef.current.style.setProperty(`--column-width-${columnKey}`, `${newWidth}px`);
+      }
+      
       // Persist column widths to localStorage
-      try {
-        localStorage.setItem('cdm_column_widths', JSON.stringify(newWidths));
-      } catch (error) {
-        console.error('Error persisting column widths:', error);
+      // For large grids, this is throttled by ResizableColumn
+      if (!isLargeGrid) {
+        // Small grids: write immediately
+        try {
+          localStorage.setItem('cdm_column_widths', JSON.stringify(newWidths));
+        } catch (error) {
+          console.error('Error persisting column widths:', error);
+        }
       }
       
       return newWidths;
     });
   };
+
+  // Debounced localStorage write for large grids
+  const throttledLocalStorageWrite = React.useRef<NodeJS.Timeout | null>(null);
+  
+  React.useEffect(() => {
+    if (isLargeGrid) {
+      // For large grids, debounce localStorage writes
+      if (throttledLocalStorageWrite.current) {
+        clearTimeout(throttledLocalStorageWrite.current);
+      }
+      
+      throttledLocalStorageWrite.current = setTimeout(() => {
+        try {
+          localStorage.setItem('cdm_column_widths', JSON.stringify(columnWidths));
+        } catch (error) {
+          console.error('Error persisting column widths:', error);
+        }
+      }, 300); // Write 300ms after last update
+      
+      return () => {
+        if (throttledLocalStorageWrite.current) {
+          clearTimeout(throttledLocalStorageWrite.current);
+        }
+      };
+    }
+  }, [columnWidths, isLargeGrid]);
 
   const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
 
@@ -624,7 +673,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   return (
     <>
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden">
+      <div 
+        ref={gridContainerRef}
+        className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden"
+        data-grid-container
+      >
         {/* Grid Container with Horizontal Scroll */}
         <div className="overflow-x-auto">
           {/* Clear Filters Button */}
@@ -667,10 +720,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
               {columns.map((column, colIndex) => (
                 <ResizableColumn
                   key={column.key}
+                  columnKey={column.key}
                   initialWidth={`${columnWidths[column.key] || 140}px`}
                   minWidth={80}
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
+                  throttleUpdates={isLargeGrid}
                   className={`flex items-center justify-between px-4 py-2 ${
                     colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
                   } whitespace-nowrap ${getColumnHeaderClass(column)}`}
@@ -755,7 +810,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     />
                   </div>
                 )}
-                {columns.map((column, colIndex) => (
+                {columns.map((column, colIndex) => {
+                  const cellWidth = isLargeGrid 
+                    ? `var(--column-width-${column.key}, ${columnWidths[column.key] || 140}px)`
+                    : `${columnWidths[column.key] || 140}px`;
+                  
+                  return (
                   <div
                     key={`${row.id || index}-${column.key}`}
                     className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 ${
@@ -765,7 +825,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                         ? 'justify-end' 
                         : 'justify-start'
                     }`}
-                    style={{ width: `${columnWidths[column.key] || 140}px` }}
+                    style={{ width: cellWidth }}
                   >
                     {column.render ? (
                       column.render(row)
@@ -794,7 +854,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       </span>
                     )}
                   </div>
-                ))}
+                  );
+                })}
                 {showActionsColumn && (
                   <div className="w-20 flex items-center justify-center gap-1 px-2 py-1.5">
                     <button
@@ -869,6 +930,7 @@ export const FilterPanel: React.FC<{
 
   // Get distinct values for dropdown filters
   const getDistinctValues = (columnKey: string) => {
+    if (!data) return [];
     return [...new Set(data.map(item => String(item[columnKey] || '')))].filter(Boolean);
   };
 
