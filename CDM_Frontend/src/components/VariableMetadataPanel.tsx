@@ -109,13 +109,35 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     objectRelationships: false
   });
 
-  // Update form data when fields change (when a new row is selected)
+  // Track previous selected variable ID to detect actual variable changes
+  const prevSelectedVariableId = useRef<string | null>(null);
+
+  // Update form data when a new variable is selected (not on every field change)
   React.useEffect(() => {
-    const newFormData: Record<string, any> = {};
-    fields.forEach(field => {
-      newFormData[field.key] = field.value !== undefined ? field.value : '';
-    });
-    setFormData(newFormData);
+    const currentVariableId = selectedVariable?.id;
+    
+    // Only reset form data when the selected variable actually changes
+    if (currentVariableId && currentVariableId !== prevSelectedVariableId.current) {
+      console.log('VariableMetadataPanel: selected variable changed from', prevSelectedVariableId.current, 'to', currentVariableId);
+      prevSelectedVariableId.current = currentVariableId;
+      
+      // Initialize form data from the selected variable, not from fields
+      const newFormData: Record<string, any> = {
+        part: selectedVariable?.part || '',
+        section: selectedVariable?.section || '',
+        group: selectedVariable?.group || '',
+        variable: selectedVariable?.variable || '',
+        formatI: selectedVariable?.formatI || '',
+        formatII: selectedVariable?.formatII || '',
+        gType: selectedVariable?.gType || '',
+        validation: selectedVariable?.validation || '',
+        default: selectedVariable?.default || '',
+        graph: selectedVariable?.graph || 'Yes',
+        status: selectedVariable?.status || 'Active'
+      };
+      console.log('VariableMetadataPanel: newFormData for new variable', newFormData);
+      setFormData(newFormData);
+    }
     
     // Update driver selections when selected variable changes
     if (selectedVariable?.driver) {
@@ -128,7 +150,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         variableClarifier: ''
       });
     }
-  }, [fields, selectedVariable]);
+  }, [selectedVariable?.id]); // Only reset when variable actually changes
 
   // Initialize object relationships state
   const [objectRelationships, setObjectRelationships] = useState<ObjectRelationship[]>(() => {
@@ -459,7 +481,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
-          <h3 className="text-lg font-semibold text-ag-dark-text">{title}</h3>
+          <h3 className="text-lg font-semibold text-ag-dark-text">Metadata</h3>
         </div>
         {onClose && (
           <button
@@ -469,6 +491,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <X className="w-5 h-5" />
           </button>
         )}
+      </div>
+
+      {/* Variable Name Field - Moved out of collapsible section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Variable Name
+        </label>
+        <input
+          type="text"
+          value={formData.variable}
+          onChange={(e) => handleChange('variable', e.target.value)}
+          disabled={!isPanelEnabled}
+          onClick={(e) => e.stopPropagation()}
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
       </div>
 
       {/* Drivers Section */}
@@ -615,21 +654,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Variable
-            </label>
-            <input
-              type="text"
-              value={formData.variable}
-              onChange={(e) => handleChange('variable', e.target.value)}
-              disabled={!isPanelEnabled}
-              placeholder="Enter variable name..."
-              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            />
-          </div>
         </div>
       </CollapsibleSection>
 

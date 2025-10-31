@@ -448,29 +448,27 @@ function App() {
         value: (() => {
           switch (field.key) {
             case 'driver':
-              return selectedRowForMetadata.driver;
-            case 'clarifier':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.driver || '';
             case 'part':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.part || '';
             case 'section':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.section || '';
             case 'group':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.group || '';
             case 'variable':
-              return selectedRowForMetadata.variables || 0;
+              return selectedRowForMetadata.variable || '';
             case 'formatI':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.formatI || '';
             case 'formatII':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.formatII || '';
             case 'gType':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.gType || '';
             case 'validation':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.validation || '';
             case 'default':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.default || '';
             case 'graph':
-              return selectedRowForMetadata.classifier || '';
+              return selectedRowForMetadata.graph || 'Yes';
             default:
               return '';
           }
