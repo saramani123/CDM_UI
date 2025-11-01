@@ -12,6 +12,24 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// Graph query function
+export const executeGraphQuery = async (query: string): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  const response = await fetch(`${API_BASE_URL}/graph/query`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to execute graph query');
+  }
+
+  return await response.json();
+};
+
 export interface ApiResponse<T> {
   data?: T;
   error?: string;

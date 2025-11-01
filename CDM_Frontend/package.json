@@ -17,8 +17,11 @@
     "@fontsource/ibm-plex-sans": "^5.2.6",
     "@supabase/supabase-js": "^2.57.4",
     "lucide-react": "^0.344.0",
+    "neo4j-driver": "^6.0.1",
+    "neovis.js": "^2.1.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "vis-network": "^10.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",

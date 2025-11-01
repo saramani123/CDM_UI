@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from routes import objects, drivers, variables
+from routes import objects, drivers, variables, graph
 
 app = FastAPI(
     title="CDM_U Backend API",
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(objects.router, prefix="/api/v1")
 app.include_router(drivers.router, prefix="/api/v1")
 app.include_router(variables.router, prefix="/api/v1")
+app.include_router(graph.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

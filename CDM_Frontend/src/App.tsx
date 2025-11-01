@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2 } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
 import { MetadataPanel } from './components/MetadataPanel';
@@ -29,6 +29,7 @@ import { CustomSortModal } from './components/CustomSortModal';
 import { VariablesCustomSortModal } from './components/VariablesCustomSortModal';
 import { ViewsModal } from './components/ViewsModal';
 import { RelationshipModal } from './components/RelationshipModal';
+import { Neo4jGraphModal } from './components/Neo4jGraphModal';
 import LoadingModal from './components/LoadingModal';
 
 function App() {
@@ -82,6 +83,7 @@ function App() {
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkObjectUploadOpen, setIsBulkObjectUploadOpen] = useState(false);
+  const [isNeo4jGraphModalOpen, setIsNeo4jGraphModalOpen] = useState(false);
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
@@ -1679,29 +1681,43 @@ function App() {
             <div className="lg:col-span-1">
               {/* Add/Upload controls above metadata panel for Objects and Variables */}
               {(activeTab === 'objects' || activeTab === 'variables') && (
-                <div className="mb-3 grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => {
-                      if (activeTab === 'variables') {
-                        setIsBulkVariableUploadOpen(true);
-                      } else {
-                        setIsBulkObjectUploadOpen(true);
-                      }
-                    }}
-                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                    title={activeTab === 'variables' ? 'Upload Variables' : 'Upload Objects'}
-                  >
-                    <Upload className="w-4 h-4" />
-                    Upload
-                  </button>
-                  <button
-                    onClick={() => activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
-                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
-                    title={activeTab === 'variables' ? 'Add Variable' : 'Add Object'}
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add {activeTab === 'variables' ? 'Variable' : 'Object'}
-                  </button>
+                <div className="mb-3 space-y-3">
+                  {/* View Neo4j Knowledge Graph button (Objects tab only) */}
+                  {activeTab === 'objects' && (
+                    <button
+                      onClick={() => setIsNeo4jGraphModalOpen(true)}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
+                      title="View Neo4j Knowledge Graph"
+                    >
+                      <Network className="w-4 h-4" />
+                      View Neo4j Knowledge Graph
+                    </button>
+                  )}
+                  {/* Upload and Add buttons */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'variables') {
+                          setIsBulkVariableUploadOpen(true);
+                        } else {
+                          setIsBulkObjectUploadOpen(true);
+                        }
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                      title={activeTab === 'variables' ? 'Upload Variables' : 'Upload Objects'}
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload
+                    </button>
+                    <button
+                      onClick={() => activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
+                      title={activeTab === 'variables' ? 'Add Variable' : 'Add Object'}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add {activeTab === 'variables' ? 'Variable' : 'Object'}
+                    </button>
+                  </div>
                 </div>
               )}
               {activeTab === 'lists' ? (
@@ -1823,6 +1839,12 @@ function App() {
       <LoadingModal
         isOpen={isLoading}
         loadingType={loadingType}
+      />
+
+      {/* Neo4j Knowledge Graph Modal */}
+      <Neo4jGraphModal
+        isOpen={isNeo4jGraphModalOpen}
+        onClose={() => setIsNeo4jGraphModalOpen(false)}
       />
 
       {/* Relationship Modal */}
