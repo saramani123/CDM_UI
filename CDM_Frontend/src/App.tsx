@@ -1573,6 +1573,7 @@ function App() {
               onColumnSort={activeTab === 'objects' ? handleColumnSort : activeTab === 'variables' ? handleVariablesColumnSort : undefined}
               isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : false}
               isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : false}
+              gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
             />
           </div>
 

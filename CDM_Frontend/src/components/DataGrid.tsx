@@ -38,6 +38,7 @@ interface DataGridProps {
   selectionMode?: 'checkbox' | 'row';
   relationshipData?: Record<string, any>;
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
+  gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -59,7 +60,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   showActionsColumn = true,
   selectionMode = 'checkbox',
   relationshipData,
-  onRelationshipCheckboxChange
+  onRelationshipCheckboxChange,
+  gridType = 'objects' // Default to 'objects' for backward compatibility
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
@@ -96,10 +98,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const [draggedRow, setDraggedRow] = useState<Record<string, any> | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
-    // Load persisted column widths from localStorage
+    // Load persisted column widths from localStorage - use grid-specific key
+    const storageKey = `cdm_column_widths_${gridType}`;
     const loadPersistedColumnWidths = () => {
       try {
-        const savedWidths = localStorage.getItem('cdm_column_widths');
+        const savedWidths = localStorage.getItem(storageKey);
         if (savedWidths) {
           return JSON.parse(savedWidths);
         }
@@ -244,12 +247,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
         gridContainerRef.current.style.setProperty(`--column-width-${columnKey}`, `${newWidth}px`);
       }
       
-      // Persist column widths to localStorage
+      // Persist column widths to localStorage - use grid-specific key
+      const storageKey = `cdm_column_widths_${gridType}`;
       // For large grids, this is throttled by ResizableColumn
       if (!isLargeGrid) {
         // Small grids: write immediately
         try {
-          localStorage.setItem('cdm_column_widths', JSON.stringify(newWidths));
+          localStorage.setItem(storageKey, JSON.stringify(newWidths));
         } catch (error) {
           console.error('Error persisting column widths:', error);
         }
@@ -269,9 +273,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
         clearTimeout(throttledLocalStorageWrite.current);
       }
       
+      const storageKey = `cdm_column_widths_${gridType}`;
       throttledLocalStorageWrite.current = setTimeout(() => {
         try {
-          localStorage.setItem('cdm_column_widths', JSON.stringify(columnWidths));
+          localStorage.setItem(storageKey, JSON.stringify(columnWidths));
         } catch (error) {
           console.error('Error persisting column widths:', error);
         }
@@ -718,12 +723,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   />
                 </div>
               )}
-              {columns.map((column, colIndex) => (
+              {columns.map((column, colIndex) => {
+                // Use smaller minWidth for sector, domain, country columns (S, D, C) since they use abbreviations
+                const isShortColumn = ['sector', 'domain', 'country'].includes(column.key);
+                const minWidth = isShortColumn ? 60 : 80;
+                
+                return (
                 <ResizableColumn
                   key={column.key}
                   columnKey={column.key}
                   initialWidth={`${columnWidths[column.key] || 140}px`}
-                  minWidth={80}
+                  minWidth={minWidth}
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
                   throttleUpdates={isLargeGrid}
@@ -753,7 +763,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     </button>
                   )}
                 </ResizableColumn>
-              ))}
+                );
+              })}
               {showActionsColumn && (
                 <div className="w-20 text-center text-ag-dark-text px-4 py-2">
                   <span className="text-ag-dark-text font-medium text-xs">Actions</span>

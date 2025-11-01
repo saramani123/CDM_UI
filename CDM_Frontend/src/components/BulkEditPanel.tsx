@@ -69,8 +69,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     variableClarifiers: []
   };
 
-  // Identifier data
-  const [discreteIdVariables, setDiscreteIdVariables] = useState<string[]>([]);
+  // Identifier data - changed to support multiple unique IDs
+  interface UniqueIdEntry {
+    id: string;
+    variableId: string;
+  }
+  const [uniqueIdEntries, setUniqueIdEntries] = useState<UniqueIdEntry[]>([{ id: 'unique-1', variableId: '' }]);
   const [compositeKeys, setCompositeKeys] = useState<CompositeKey[]>([
     { id: '1', part: '', group: '', variables: [] },
     { id: '2', part: '', group: '', variables: [] },
@@ -166,10 +170,28 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       .map(v => ({ id: v.id, name: v.variable }));
   };
 
-  const getDiscreteIdVariables = () => {
+  const getUniqueIdVariables = () => {
     return variablesData
       .filter(v => v.part === 'Identifier' && v.group === 'Public ID')
       .map(v => ({ id: v.id, name: v.variable }));
+  };
+  
+  // Add a new unique ID entry
+  const handleAddUniqueIdEntry = () => {
+    const newId = `unique-${Date.now()}`;
+    setUniqueIdEntries(prev => [...prev, { id: newId, variableId: '' }]);
+  };
+  
+  // Remove a unique ID entry
+  const handleRemoveUniqueIdEntry = (entryId: string) => {
+    setUniqueIdEntries(prev => prev.filter(entry => entry.id !== entryId));
+  };
+  
+  // Update variable selection for a specific unique ID entry
+  const handleUniqueIdVariableChange = (entryId: string, variableId: string) => {
+    setUniqueIdEntries(prev => prev.map(entry => 
+      entry.id === entryId ? { ...entry, variableId } : entry
+    ));
   };
   
   const toggleSection = (sectionKey: string) => {
@@ -408,11 +430,32 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       return;
     }
 
-    // Prepare identifier data (only if any identifiers are specified)
-    const hasIdentifiers = discreteIdVariables.length > 0 || compositeKeys.some(key => key.part && key.group);
+    // Validate unique IDs - check for duplicates
+    const uniqueIdVariableIds = uniqueIdEntries
+      .map(entry => entry.variableId)
+      .filter(Boolean);
+    const duplicateVariableIds = uniqueIdVariableIds.filter((id, index) => 
+      uniqueIdVariableIds.indexOf(id) !== index
+    );
+    
+    if (duplicateVariableIds.length > 0) {
+      const duplicateNames = duplicateVariableIds.map(id => {
+        const varData = getUniqueIdVariables().find(v => v.id === id);
+        return varData?.name || id;
+      });
+      alert(`Cannot save: You have added duplicate unique IDs. Duplicate variables: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+    
+    // Extract unique ID variable IDs list
+    const uniqueIdVariableIdsList = uniqueIdEntries
+      .map(entry => entry.variableId)
+      .filter(Boolean);
+    
+    const hasIdentifiers = uniqueIdVariableIdsList.length > 0 || compositeKeys.some(key => key.part && key.group);
     const identifierData = hasIdentifiers ? {
       discreteId: {
-        variables: discreteIdVariables
+        variables: uniqueIdVariableIdsList
       },
       compositeIds: compositeKeys.reduce((acc, key) => {
         if (key.part && key.group) {
@@ -755,9 +798,18 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       {/* Identifiers Section */}
       <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-6">
-          {/* Discrete ID */}
+          {/* Unique ID - Multiple entries support */}
           <div>
-            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Discrete ID</h5>
+            <div className="flex items-center justify-between mb-3">
+              <h5 className="text-sm font-medium text-ag-dark-text">Unique ID</h5>
+              <button
+                onClick={handleAddUniqueIdEntry}
+                className="flex items-center justify-center text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
+                title="Add Unique ID"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
             <div className="border border-ag-dark-border rounded">
               {/* Table Header */}
               <div className="grid grid-cols-3 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
@@ -765,37 +817,49 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
               </div>
-              {/* Table Row */}
-              <div className="grid grid-cols-3 gap-2 items-center p-2">
-                <input
-                  type="text"
-                  value="Identifier"
-                  disabled
-                  className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                />
-                <input
-                  type="text"
-                  value="Public ID"
-                  disabled
-                  className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                />
-                <MultiSelect
-                  label="Variable"
-                  options={['ALL', ...getDiscreteIdVariables().map(v => v.name)]}
-                  values={discreteIdVariables.map(id => {
-                    const varData = getDiscreteIdVariables().find(v => v.id === id);
-                    return varData?.name || id;
-                  })}
-                  onChange={(values) => {
-                    const ids = values.map(val => {
-                      if (val === 'ALL') return 'ALL';
-                      const varData = getDiscreteIdVariables().find(v => v.name === val);
-                      return varData?.id || val;
-                    });
-                    setDiscreteIdVariables(ids);
-                  }}
-                  compact={true}
-                />
+              {/* Table Rows - Multiple entries */}
+              <div className="divide-y divide-ag-dark-border">
+                {uniqueIdEntries.map((entry, index) => (
+                  <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-3'}`}>
+                    <input
+                      type="text"
+                      value="Identifier"
+                      disabled
+                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
+                    />
+                    <input
+                      type="text"
+                      value="Public ID"
+                      disabled
+                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
+                    />
+                    <select
+                      value={entry.variableId}
+                      onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
+                      className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                        backgroundPosition: 'right 8px center',
+                        backgroundRepeat: 'no-repeat',
+                        backgroundSize: '16px'
+                      }}
+                    >
+                      <option value="">Select Variable</option>
+                      {getUniqueIdVariables().map(v => (
+                        <option key={v.id} value={v.id}>{v.name}</option>
+                      ))}
+                    </select>
+                    {index > 0 && (
+                      <button
+                        onClick={() => handleRemoveUniqueIdEntry(entry.id)}
+                        className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 transition-colors"
+                        title="Remove Unique ID"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

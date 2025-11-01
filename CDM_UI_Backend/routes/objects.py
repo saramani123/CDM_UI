@@ -186,9 +186,10 @@ async def get_object(object_id: str):
                 })
             obj["variantsList"] = variants
 
-            # Get discrete ID relationships (HAS_DISCRETE_ID)
+            # Get unique ID relationships (HAS_UNIQUE_ID, previously HAS_DISCRETE_ID)
+            # Support both for backward compatibility
             discrete_id_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_DISCRETE_ID]->(v:Variable)
+                MATCH (o:Object {id: $object_id})-[:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(v:Variable)
                 MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
                 RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
             """, object_id=object_id)
@@ -465,7 +466,7 @@ async def create_object(object_data: ObjectCreateRequest):
                 else:
                     identifier_dict = identifier_data.dict() if hasattr(identifier_data, 'dict') else {}
                 
-                # Handle discrete ID
+                # Handle unique ID (previously discrete ID)
                 discrete_id_data = identifier_dict.get('discreteId', {})
                 if isinstance(discrete_id_data, dict):
                     variable_ids = discrete_id_data.get('variables', [])
@@ -479,13 +480,13 @@ async def create_object(object_data: ObjectCreateRequest):
                             variable_ids = [record['variableId'] for record in all_vars_result]
                             variable_ids = [v for v in variable_ids if v != 'ALL']
                         
-                        # Create relationships to selected variables
+                        # Create relationships to selected variables - use HAS_UNIQUE_ID
                         for var_id in variable_ids:
                             if var_id:
                                 session.run("""
                                     MATCH (o:Object {id: $object_id})
                                     MATCH (v:Variable {id: $var_id})
-                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                    MERGE (o)-[:HAS_UNIQUE_ID]->(v)
                                 """, object_id=new_id, var_id=var_id)
                 
                 # Handle composite IDs (1-5)
@@ -941,10 +942,10 @@ async def update_object(
             if has_identifier:
                 identifier_data = request_data['identifier']
                 
-                # Handle discrete ID
-                # Clear existing discrete ID relationships
+                # Handle unique ID (previously discrete ID)
+                # Clear existing unique ID relationships (support both old and new relationship types for migration)
                 session.run("""
-                    MATCH (o:Object {id: $object_id})-[r:HAS_DISCRETE_ID]->(:Variable)
+                    MATCH (o:Object {id: $object_id})-[r:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(:Variable)
                     DELETE r
                 """, object_id=object_id)
                 
@@ -963,13 +964,13 @@ async def update_object(
                             # Remove 'ALL' from the list
                             variable_ids = [v for v in variable_ids if v != 'ALL']
                         
-                        # Create relationships to selected variables
+                        # Create relationships to selected variables - use HAS_UNIQUE_ID
                         for var_id in variable_ids:
                             if var_id:  # Skip empty strings
                                 session.run("""
                                     MATCH (o:Object {id: $object_id})
                                     MATCH (v:Variable {id: $var_id})
-                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                    MERGE (o)-[:HAS_UNIQUE_ID]->(v)
                                 """, object_id=object_id, var_id=var_id)
                 
                 # Handle composite IDs (1-5)
