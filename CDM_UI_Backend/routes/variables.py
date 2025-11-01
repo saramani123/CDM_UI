@@ -5,8 +5,9 @@ import io
 import json
 import csv
 from pydantic import BaseModel, Field
+from neo4j import WRITE_ACCESS
 from db import get_driver
-from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest
+from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest, VariableFieldOptionRequest, VariableFieldOptionsResponse
 
 # Pydantic models for JSON body parameters
 
@@ -15,88 +16,171 @@ router = APIRouter()
 async def create_driver_relationships(session, variable_id: str, driver_string: str):
     """
     Create driver relationships for a variable based on the driver string.
-    Driver string format: "Sector, Domain, Country, VariableClarifier"
+    Driver string format: "Sector, Domain, Country, VariableClarifier" (or 3-part: "Sector, Domain, VariableClarifier")
+    Creates IS_RELEVANT_TO relationships from driver nodes to the variable.
+    
+    This function is idempotent - it deletes existing relationships first, then creates new ones.
+    Safe to call multiple times without duplicating relationships.
     """
     try:
         print(f"Creating driver relationships for variable {variable_id} with driver string: {driver_string}")
+        
+        # First, delete all existing driver relationships for this variable
+        print(f"Deleting existing driver relationships for variable {variable_id}")
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            MATCH (s:Sector)-[r:IS_RELEVANT_TO]->(v)
+            DELETE r
+        """, variable_id=variable_id)
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            MATCH (d:Domain)-[r:IS_RELEVANT_TO]->(v)
+            DELETE r
+        """, variable_id=variable_id)
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            MATCH (c:Country)-[r:IS_RELEVANT_TO]->(v)
+            DELETE r
+        """, variable_id=variable_id)
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            MATCH (vc:VariableClarifier)-[r:IS_RELEVANT_TO]->(v)
+            DELETE r
+        """, variable_id=variable_id)
+        print(f"Deleted existing driver relationships for variable {variable_id}")
+        
         # Parse driver string
         parts = [part.strip() for part in driver_string.split(',')]
-        if len(parts) != 4:
-            print(f"Invalid driver string format: {driver_string}")
-            return
         
-        sector_str, domain_str, country_str, variable_clarifier = parts
+        # Handle both 3-part (old format: Sector, Domain, Clarifier) and 4-part (new format: Sector, Domain, Country, Clarifier)
+        if len(parts) == 3:
+            # Old format: Sector, Domain, Clarifier (missing Country)
+            sector_str, domain_str, variable_clarifier = parts
+            country_str = "ALL"  # Default to ALL if country is missing
+            print(f"Parsed 3-part driver string (missing Country, defaulting to ALL): {driver_string}")
+        elif len(parts) == 4:
+            # New format: Sector, Domain, Country, Clarifier
+            sector_str, domain_str, country_str, variable_clarifier = parts
+            print(f"Parsed 4-part driver string: {driver_string}")
+        else:
+            print(f"Invalid driver string format (expected 3 or 4 parts, got {len(parts)}): {driver_string}")
+            return
         
         # Handle Sector relationships
         if sector_str == "ALL":
             # Create relationships to ALL existing sectors
-            session.run("""
+            result = session.run("""
                 MATCH (s:Sector)
                 MATCH (v:Variable {id: $variable_id})
                 WITH s, v
-                MERGE (s)-[:RELEVANT_TO]->(v)
+                MERGE (s)-[:IS_RELEVANT_TO]->(v)
+                RETURN count(s) as count
             """, variable_id=variable_id)
+            record = result.single()
+            count = record["count"] if record else 0
+            print(f"Created {count} Sector relationships (ALL)")
         else:
             # Create relationships to individual sectors
             sectors = [s.strip() for s in sector_str.split(',')]
             for sector in sectors:
-                session.run("""
-                    MERGE (s:Sector {name: $sector})
-                    WITH s
-                    MATCH (v:Variable {id: $variable_id})
-                    MERGE (s)-[:RELEVANT_TO]->(v)
-                """, sector=sector, variable_id=variable_id)
+                if sector and sector != "None":  # Skip empty or None sectors
+                    result = session.run("""
+                        MERGE (s:Sector {name: $sector})
+                        WITH s
+                        MATCH (v:Variable {id: $variable_id})
+                        MERGE (s)-[:IS_RELEVANT_TO]->(v)
+                        RETURN s.name as sector
+                    """, sector=sector, variable_id=variable_id)
+                    record = result.single()
+                    if record:
+                        print(f"Created IS_RELEVANT_TO relationship: Sector({record['sector']}) -> Variable({variable_id})")
+                    else:
+                        print(f"⚠️  Failed to create relationship for Sector({sector}) -> Variable({variable_id})")
         
         # Handle Domain relationships
         if domain_str == "ALL":
             # Create relationships to ALL existing domains
-            session.run("""
+            result = session.run("""
                 MATCH (d:Domain)
                 MATCH (v:Variable {id: $variable_id})
                 WITH d, v
-                MERGE (d)-[:RELEVANT_TO]->(v)
+                MERGE (d)-[:IS_RELEVANT_TO]->(v)
+                RETURN count(d) as count
             """, variable_id=variable_id)
+            record = result.single()
+            count = record["count"] if record else 0
+            print(f"Created {count} Domain relationships (ALL)")
         else:
             domains = [d.strip() for d in domain_str.split(',')]
             for domain in domains:
-                session.run("""
-                    MERGE (d:Domain {name: $domain})
-                    WITH d
-                    MATCH (v:Variable {id: $variable_id})
-                    MERGE (d)-[:RELEVANT_TO]->(v)
-                """, domain=domain, variable_id=variable_id)
+                if domain and domain != "None":  # Skip empty or None domains
+                    result = session.run("""
+                        MERGE (d:Domain {name: $domain})
+                        WITH d
+                        MATCH (v:Variable {id: $variable_id})
+                        MERGE (d)-[:IS_RELEVANT_TO]->(v)
+                        RETURN d.name as domain
+                    """, domain=domain, variable_id=variable_id)
+                    record = result.single()
+                    if record:
+                        print(f"Created IS_RELEVANT_TO relationship: Domain({record['domain']}) -> Variable({variable_id})")
+                    else:
+                        print(f"⚠️  Failed to create relationship for Domain({domain}) -> Variable({variable_id})")
         
         # Handle Country relationships
         if country_str == "ALL":
             # Create relationships to ALL existing countries
-            session.run("""
+            result = session.run("""
                 MATCH (c:Country)
                 MATCH (v:Variable {id: $variable_id})
                 WITH c, v
-                MERGE (c)-[:RELEVANT_TO]->(v)
+                MERGE (c)-[:IS_RELEVANT_TO]->(v)
+                RETURN count(c) as count
             """, variable_id=variable_id)
+            record = result.single()
+            count = record["count"] if record else 0
+            print(f"Created {count} Country relationships (ALL)")
         else:
             countries = [c.strip() for c in country_str.split(',')]
             for country in countries:
-                session.run("""
-                    MERGE (c:Country {name: $country})
-                    WITH c
-                    MATCH (v:Variable {id: $variable_id})
-                    MERGE (c)-[:RELEVANT_TO]->(v)
-                """, country=country, variable_id=variable_id)
+                if country and country != "None":  # Skip empty or None countries
+                    result = session.run("""
+                        MERGE (c:Country {name: $country})
+                        WITH c
+                        MATCH (v:Variable {id: $variable_id})
+                        MERGE (c)-[:IS_RELEVANT_TO]->(v)
+                        RETURN c.name as country
+                    """, country=country, variable_id=variable_id)
+                    record = result.single()
+                    if record:
+                        print(f"Created IS_RELEVANT_TO relationship: Country({record['country']}) -> Variable({variable_id})")
+                    else:
+                        print(f"⚠️  Failed to create relationship for Country({country}) -> Variable({variable_id})")
         
         # Handle Variable Clarifier relationship (single select)
         # Skip if "None" or empty
         if variable_clarifier and variable_clarifier != "None" and variable_clarifier != "":
-            session.run("""
+            result = session.run("""
                 MERGE (vc:VariableClarifier {name: $clarifier})
                 WITH vc
                 MATCH (v:Variable {id: $variable_id})
-                MERGE (vc)-[:RELEVANT_TO]->(v)
+                MERGE (vc)-[:IS_RELEVANT_TO]->(v)
+                RETURN vc.name as clarifier
             """, clarifier=variable_clarifier, variable_id=variable_id)
+            record = result.single()
+            if record:
+                print(f"Created IS_RELEVANT_TO relationship: VariableClarifier({record['clarifier']}) -> Variable({variable_id})")
+            else:
+                print(f"⚠️  Failed to create relationship for VariableClarifier({variable_clarifier}) -> Variable({variable_id})")
+        else:
+            print(f"Skipping VariableClarifier relationship (value: '{variable_clarifier}')")
+            
+        print(f"✅ Successfully created driver relationships for variable {variable_id}")
             
     except Exception as e:
         print(f"Error creating driver relationships: {e}")
+        import traceback
+        traceback.print_exc()
         raise e
 
 @router.get("/variables", response_model=List[Dict[str, Any]])
@@ -114,10 +198,10 @@ async def get_variables():
             result = session.run("""
                 MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 OPTIONAL MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v)
-                OPTIONAL MATCH (v)<-[:RELEVANT_TO]-(s:Sector)
-                OPTIONAL MATCH (v)<-[:RELEVANT_TO]-(d:Domain)
-                OPTIONAL MATCH (v)<-[:RELEVANT_TO]-(c:Country)
-                OPTIONAL MATCH (v)<-[:RELEVANT_TO]-(vc:VariableClarifier)
+                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(s:Sector)
+                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(d:Domain)
+                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(c:Country)
+                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(vc:VariableClarifier)
                 WITH v, p, g, count(DISTINCT o) as objectRelationships,
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
@@ -200,7 +284,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 // Create relationship Part -> Group
                 MERGE (p)-[:HAS_GROUP]->(g)
                 
-                // Create Variable node with all properties
+                // Create Variable node with all properties (including driver string)
                 CREATE (v:Variable {
                     id: $id,
                     name: $variable,
@@ -211,7 +295,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                     validation: $validation,
                     default: $default,
                     graph: $graph,
-                    status: $status
+                    status: $status,
+                    driver: $driver
                 })
                 
                 // Create relationship Group -> Variable
@@ -234,7 +319,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                 "validation": variable_data.validation or "",
                 "default": variable_data.default or "",
                 "graph": variable_data.graph or "Yes",
-                "status": variable_data.status or "Active"
+                "status": variable_data.status or "Active",
+                "driver": variable_data.driver or "ALL, ALL, ALL, None"
             })
 
             record = result.single()
@@ -338,6 +424,9 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                     if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
                         set_clauses.append("v.status = $status")
                         params["status"] = bulk_data.status
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                        set_clauses.append("v.driver = $driver")
+                        params["driver"] = bulk_data.driver
 
                     # Only update if there are fields to update
                     if set_clauses:
@@ -354,10 +443,35 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
 
                     # Handle object relationships if provided
                     if bulk_data.objectRelationshipsList is not None and len(bulk_data.objectRelationshipsList) > 0:
+                        # If shouldOverrideRelationships is true, delete all existing relationships first
+                        if bulk_data.shouldOverrideRelationships:
+                            print(f"🗑️ Deleting all existing relationships for variable {variable_id} (override mode)")
+                            try:
+                                # Delete all HAS_SPECIFIC_VARIABLE relationships
+                                delete_specific = session.run("""
+                                    MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                                    DELETE r
+                                    RETURN count(r) as deleted_count
+                                """, {"variable_id": variable_id})
+                                specific_count = delete_specific.single()["deleted_count"] if delete_specific.single() else 0
+                                
+                                # Delete all HAS_VARIABLE relationships
+                                delete_all = session.run("""
+                                    MATCH (o:Object)-[r:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                                    DELETE r
+                                    RETURN count(r) as deleted_count
+                                """, {"variable_id": variable_id})
+                                all_count = delete_all.single()["deleted_count"] if delete_all.single() else 0
+                                
+                                print(f"✅ Deleted {specific_count} HAS_SPECIFIC_VARIABLE and {all_count} HAS_VARIABLE relationships")
+                            except Exception as e:
+                                print(f"⚠️ Error deleting existing relationships for variable {variable_id}: {str(e)}")
+                                errors.append(f"Failed to delete existing relationships for variable {variable_id}: {str(e)}")
+                        
                         print(f"Processing {len(bulk_data.objectRelationshipsList)} object relationships")
                         for relationship in bulk_data.objectRelationshipsList:
                             try:
-                                # Create object relationship for this variable (append new relationships with deduplication)
+                                # Create object relationship for this variable
                                 await create_object_relationship_for_variable(session, variable_id, relationship)
                             except Exception as e:
                                 print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
@@ -440,6 +554,9 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             if variable_data.status is not None:
                 set_clauses.append("v.status = $status")
                 params["status"] = variable_data.status
+            if variable_data.driver is not None:
+                set_clauses.append("v.driver = $driver")
+                params["driver"] = variable_data.driver
 
             # Only update if there are fields to update
             if set_clauses:
@@ -519,22 +636,39 @@ async def delete_variable(variable_id: str):
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        with driver.session() as session:
-            # Delete the variable and all its relationships
-            result = session.run("""
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if variable exists first
+            check_result = session.run("""
                 MATCH (v:Variable {id: $id})
-                DETACH DELETE v
                 RETURN v.id as id
             """, {"id": variable_id})
-
-            record = result.single()
+            
+            check_record = check_result.single()
+            if not check_record:
+                raise HTTPException(status_code=404, detail="Variable not found")
+            
+            # Delete the variable and all its relationships using write transaction
+            def delete_tx(tx):
+                result = tx.run("""
+                    MATCH (v:Variable {id: $id})
+                    DETACH DELETE v
+                    RETURN v.id as id
+                """, {"id": variable_id})
+                return result.single()
+            
+            record = session.write_transaction(delete_tx)
             if not record:
                 raise HTTPException(status_code=404, detail="Variable not found")
 
+            print(f"✅ Successfully deleted variable {variable_id}")
             return {"message": "Variable deleted successfully"}
 
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
     except Exception as e:
-        print(f"Error deleting variable: {e}")
+        print(f"Error deleting variable {variable_id}: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to delete variable: {str(e)}")
 
 @router.get("/variables/{variable_id}/object-relationships")
@@ -548,19 +682,62 @@ async def get_object_relationships(variable_id: str):
 
     try:
         with driver.session() as session:
-            # Get all object relationships for this variable
+            relationships = []
+            
+            # Get HAS_SPECIFIC_VARIABLE relationships
+            # Note: sector, domain, country are in the driver string, not as separate properties
             result = session.run("""
                 MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
-                RETURN o.being as being, o.avatar as avatar, o.object as object, r.createdBy as createdBy
+                RETURN o.driver as driver, o.classifier as classifier,
+                       o.being as being, o.avatar as avatar, o.object as object, r.createdBy as createdBy, 
+                       "HAS_SPECIFIC_VARIABLE" as relationshipType
             """, {"variable_id": variable_id})
             
-            relationships = []
             for record in result:
+                # Parse driver string to extract sector, domain, country
+                driver = record.get("driver", "") or ""
+                sector = ""
+                domain = ""
+                country = ""
+                
+                if driver:
+                    parts = [p.strip() for p in driver.split(",")]
+                    if len(parts) >= 1:
+                        sector = parts[0] if parts[0] else ""
+                    if len(parts) >= 2:
+                        domain = parts[1] if parts[1] else ""
+                    if len(parts) >= 3:
+                        country = parts[2] if parts[2] else ""
+                
                 relationships.append({
+                    "relationshipType": record["relationshipType"],
+                    "toSector": sector,
+                    "toDomain": domain,
+                    "toCountry": country,
+                    "toObjectClarifier": record.get("classifier", "") or "",
                     "toBeing": record["being"],
                     "toAvatar": record["avatar"], 
                     "toObject": record["object"],
-                    "createdBy": record["createdBy"]
+                    "createdBy": record.get("createdBy")
+                })
+            
+            # Get HAS_VARIABLE relationships (one relationship that applies to all objects)
+            has_variable_result = session.run("""
+                MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIABLE]-(obj:Object)
+                RETURN DISTINCT "HAS_VARIABLE" as relationshipType
+                LIMIT 1
+            """, {"variable_id": variable_id})
+            
+            if has_variable_result.single():
+                relationships.append({
+                    "relationshipType": "HAS_VARIABLE",
+                    "toSector": "ALL",
+                    "toDomain": "ALL",
+                    "toCountry": "ALL",
+                    "toObjectClarifier": "",
+                    "toBeing": "ALL",
+                    "toAvatar": "ALL",
+                    "toObject": "ALL"
                 })
             
             print(f"Found {len(relationships)} object relationships for variable {variable_id}")
@@ -580,56 +757,106 @@ async def create_object_relationship(variable_id: str, relationship_data: Object
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        print(f"Creating object relationship for variable {variable_id} with data: {relationship_data}")
-        with driver.session() as session:
+        print(f"🔵 Creating object relationship for variable {variable_id} with data: {relationship_data}")
+        # Use explicit write transaction to ensure commits
+        # Neo4j Python driver requires explicit transaction handling for writes
+        def create_relationships_tx(tx):
+            """Transaction function to create relationships"""
             # Find the variable
-            variable_result = session.run("""
+            variable_result = tx.run("""
                 MATCH (v:Variable {id: $id})
-                RETURN v
+                RETURN v.id as id
             """, {"id": variable_id})
 
-            if not variable_result.single():
+            variable_record = variable_result.single()
+            if not variable_record:
                 raise HTTPException(status_code=404, detail="Variable not found")
 
-            # Find matching objects based on the relationship criteria
-            if relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL" and relationship_data.to_object == "ALL":
-                # Connect to all objects
-                objects_result = session.run("MATCH (o:Object) RETURN o")
-            elif relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL":
-                # Connect to all objects with specific object name
-                objects_result = session.run("MATCH (o:Object {object: $object}) RETURN o", {"object": relationship_data.to_object})
-            elif relationship_data.to_being == "ALL":
-                # Connect to all objects with specific avatar and object
-                objects_result = session.run("MATCH (o:Object {avatar: $avatar, object: $object}) RETURN o", 
-                    {"avatar": relationship_data.to_avatar, "object": relationship_data.to_object})
-            elif relationship_data.to_object == "ALL":
-                # Connect to all objects with specific being and avatar (regardless of object name)
-                objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar}) RETURN o", 
-                    {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar})
-            else:
-                # Connect to specific being, avatar, and object
-                objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar, object: $object}) RETURN o", 
-                    {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar, "object": relationship_data.to_object})
-
-            # Create relationships with HAS_SPECIFIC_VARIABLE relationship name
+            relationship_type = relationship_data.relationship_type or "HAS_SPECIFIC_VARIABLE"
+            
+            # For HAS_SPECIFIC_VARIABLE, find matching objects by being, avatar, object
+            params = {
+                "being": relationship_data.to_being,
+                "avatar": relationship_data.to_avatar,
+                "object": relationship_data.to_object
+            }
+            
+            # Match objects by being, avatar, and object
+            print(f"🔵 Matching objects with: being={params['being']}, avatar={params['avatar']}, object={params['object']}")
+            objects_result = tx.run("""
+                MATCH (o:Object {being: $being, avatar: $avatar, object: $object})
+                RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object
+            """, params)
+            
             relationships_created = 0
-            for record in objects_result:
-                print(f"Creating relationship between variable {variable_id} and object {record['o']['id']}")
-                session.run("""
+            records_list = list(objects_result)
+            print(f"🔵 Found {len(records_list)} matching objects")
+            
+            if len(records_list) == 0:
+                error_msg = f"No objects found matching: {params['being']} - {params['avatar']} - {params['object']}"
+                print(f"⚠️ {error_msg}")
+                raise HTTPException(status_code=404, detail=error_msg)
+            
+            for record in records_list:
+                object_id = record["id"]
+                print(f"🔵 Processing object {object_id} ({record['being']} - {record['avatar']} - {record['object']})")
+                
+                # Create the relationship using MERGE
+                result = tx.run("""
                     MATCH (v:Variable {id: $variable_id})
                     MATCH (o:Object {id: $object_id})
-                    MERGE (o)-[:HAS_SPECIFIC_VARIABLE {createdBy: "frontend"}]->(v)
+                    MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                    ON CREATE SET r.createdBy = "frontend"
+                    RETURN r, o.id as object_id, v.id as variable_id, ID(r) as rel_id
                 """, {
                     "variable_id": variable_id, 
-                    "object_id": record["o"]["id"]
+                    "object_id": object_id
                 })
-                relationships_created += 1
-
-            print(f"Successfully created {relationships_created} object relationships")
-            return {"message": f"Created {relationships_created} object relationships"}
+                
+                # Consume ALL results to ensure transaction processes
+                records = list(result)
+                if records:
+                    result_record = records[0]
+                    relationships_created += 1
+                    print(f"✅ Created/verified relationship for object {object_id} -> variable {variable_id}")
+                    print(f"   Relationship ID: {result_record.get('rel_id', 'N/A')}")
+                else:
+                    print(f"⚠️ MERGE returned no result for object {object_id}")
+                    raise HTTPException(status_code=500, detail=f"Failed to create relationship: MERGE returned no result")
+            
+            print(f"✅ Transaction: Created {relationships_created} relationships")
+            
+            # Verify in same transaction
+            final_check = tx.run("""
+                MATCH (v:Variable {id: $variable_id})<-[r:HAS_SPECIFIC_VARIABLE]-(o:Object)
+                RETURN count(r) as count
+            """, {"variable_id": variable_id})
+            
+            final_result = final_check.single()
+            final_count = final_result["count"] if final_result else 0
+            
+            print(f"🔍 Transaction verification: Found {final_count} relationships in transaction")
+            return {"created": relationships_created, "verified": final_count}
+        
+        # Execute transaction with explicit write mode
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            result = session.write_transaction(create_relationships_tx)
+            relationships_created = result["created"]
+            final_count = result["verified"]
+            
+            print(f"✅ Transaction completed: Created {relationships_created}, Verified {final_count}")
+            
+            if relationships_created > 0 and final_count < relationships_created:
+                print(f"⚠️ WARNING: Created {relationships_created} relationships but only {final_count} found!")
+            else:
+                print(f"✅ SUCCESS: All {relationships_created} relationships verified and committed")
+            
+            return {"message": f"Created {relationships_created} object relationships", "created": relationships_created, "verified": final_count}
 
     except Exception as e:
         print(f"Error creating object relationship: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create object relationship: {str(e)}")
 
 @router.delete("/variables/{variable_id}/object-relationships")
@@ -644,36 +871,46 @@ async def delete_object_relationship(variable_id: str, relationship_data: Object
     try:
         print(f"Deleting object relationships for variable {variable_id} with criteria: {relationship_data}")
         with driver.session() as session:
-            # Find matching objects based on the relationship criteria
-            if relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL" and relationship_data.to_object == "ALL":
-                # Delete all relationships for this variable
-                objects_result = session.run("MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id}) RETURN o", {"variable_id": variable_id})
-            elif relationship_data.to_being == "ALL" and relationship_data.to_avatar == "ALL":
-                # Delete relationships to all objects with specific object name
-                objects_result = session.run("MATCH (o:Object {object: $object})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id}) RETURN o", {"object": relationship_data.to_object, "variable_id": variable_id})
-            elif relationship_data.to_being == "ALL":
-                # Delete relationships to all objects with specific avatar and object
-                objects_result = session.run("MATCH (o:Object {avatar: $avatar, object: $object})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id}) RETURN o", 
-                    {"avatar": relationship_data.to_avatar, "object": relationship_data.to_object, "variable_id": variable_id})
-            elif relationship_data.to_object == "ALL":
-                # Delete relationships to all objects with specific being and avatar (regardless of object name)
-                objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id}) RETURN o", 
-                    {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar, "variable_id": variable_id})
-            else:
-                # Delete relationships to specific being, avatar, and object
-                objects_result = session.run("MATCH (o:Object {being: $being, avatar: $avatar, object: $object})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id}) RETURN o", 
-                    {"being": relationship_data.to_being, "avatar": relationship_data.to_avatar, "object": relationship_data.to_object, "variable_id": variable_id})
-
+            relationship_type = relationship_data.relationship_type or "HAS_SPECIFIC_VARIABLE"
+            
+            # If deleting HAS_VARIABLE, delete all HAS_VARIABLE relationships
+            if relationship_type == "HAS_VARIABLE":
+                result = session.run("""
+                    MATCH (o:Object)-[r:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                    DELETE r
+                    RETURN count(r) as deleted_count
+                """, {"variable_id": variable_id})
+                
+                deleted_count = result.single()["deleted_count"]
+                print(f"Successfully deleted {deleted_count} HAS_VARIABLE relationships")
+                return {"message": f"Deleted {deleted_count} HAS_VARIABLE relationships"}
+            
+            # For HAS_SPECIFIC_VARIABLE, find matching objects by being, avatar, object
+            # These are the core identifying fields
+            params = {
+                "variable_id": variable_id,
+                "being": relationship_data.to_being,
+                "avatar": relationship_data.to_avatar,
+                "object": relationship_data.to_object
+            }
+            
+            # Match objects by being, avatar, and object that have relationships to this variable
+            objects_result = session.run("""
+                MATCH (o:Object {being: $being, avatar: $avatar, object: $object})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                RETURN o
+            """, params)
+            
             # Delete relationships
             relationships_deleted = 0
             for record in objects_result:
-                print(f"Deleting relationship between variable {variable_id} and object {record['o']['id']}")
+                object_id = record["o"]["id"]
+                print(f"Deleting relationship between variable {variable_id} and object {object_id}")
                 session.run("""
                     MATCH (o:Object {id: $object_id})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
                     DELETE r
                 """, {
                     "variable_id": variable_id, 
-                    "object_id": record["o"]["id"]
+                    "object_id": object_id
                 })
                 relationships_deleted += 1
 
@@ -804,7 +1041,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                     // Create relationship Part -> Group
                     MERGE (p)-[:HAS_GROUP]->(g)
                     
-                    // Create Variable node with all properties
+                    // Create Variable node with all properties (including driver string)
                     CREATE (v:Variable {
                         id: $id,
                         name: $variable,
@@ -815,7 +1052,8 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                         validation: $validation,
                         default: $default,
                         graph: $graph,
-                        status: $status
+                        status: $status,
+                        driver: $driver
                     })
                     
                     // Create relationship Group -> Variable
@@ -928,6 +1166,9 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                     if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
                         set_clauses.append("v.status = $status")
                         params["status"] = bulk_data.status
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                        set_clauses.append("v.driver = $driver")
+                        params["driver"] = bulk_data.driver
 
                     # Only update if there are fields to update
                     if set_clauses:
@@ -944,10 +1185,35 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
 
                     # Handle object relationships if provided
                     if bulk_data.objectRelationshipsList is not None and len(bulk_data.objectRelationshipsList) > 0:
+                        # If shouldOverrideRelationships is true, delete all existing relationships first
+                        if bulk_data.shouldOverrideRelationships:
+                            print(f"🗑️ Deleting all existing relationships for variable {variable_id} (override mode)")
+                            try:
+                                # Delete all HAS_SPECIFIC_VARIABLE relationships
+                                delete_specific = session.run("""
+                                    MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                                    DELETE r
+                                    RETURN count(r) as deleted_count
+                                """, {"variable_id": variable_id})
+                                specific_count = delete_specific.single()["deleted_count"] if delete_specific.single() else 0
+                                
+                                # Delete all HAS_VARIABLE relationships
+                                delete_all = session.run("""
+                                    MATCH (o:Object)-[r:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                                    DELETE r
+                                    RETURN count(r) as deleted_count
+                                """, {"variable_id": variable_id})
+                                all_count = delete_all.single()["deleted_count"] if delete_all.single() else 0
+                                
+                                print(f"✅ Deleted {specific_count} HAS_SPECIFIC_VARIABLE and {all_count} HAS_VARIABLE relationships")
+                            except Exception as e:
+                                print(f"⚠️ Error deleting existing relationships for variable {variable_id}: {str(e)}")
+                                errors.append(f"Failed to delete existing relationships for variable {variable_id}: {str(e)}")
+                        
                         print(f"Processing {len(bulk_data.objectRelationshipsList)} object relationships")
                         for relationship in bulk_data.objectRelationshipsList:
                             try:
-                                # Create object relationship for this variable (append new relationships with deduplication)
+                                # Create object relationship for this variable
                                 await create_object_relationship_for_variable(session, variable_id, relationship)
                             except Exception as e:
                                 print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
@@ -1026,3 +1292,281 @@ async def create_object_relationship_for_variable(session, variable_id: str, rel
     except Exception as e:
         print(f"Error creating object relationship: {e}")
         raise e
+
+@router.post("/variables/backfill-driver-relationships", response_model=Dict[str, Any])
+async def backfill_driver_relationships():
+    """
+    ONE-TIME backfill endpoint to create IS_RELEVANT_TO relationships for ALL existing variables.
+    
+    This endpoint:
+    - Processes all existing variables in the database
+    - Creates relationships based on each variable's driver string property
+    - Reconstructs driver string from existing relationships if not stored
+    - Uses default "ALL, ALL, ALL, None" if no driver info exists
+    
+    IMPORTANT: This is a ONE-TIME migration endpoint. The create_driver_relationships
+    function is idempotent (deletes existing relationships first), so it's safe to
+    call multiple times, but this endpoint should only be run once per environment.
+    
+    After running this, all new variables created/updated will automatically get
+    driver relationships created via create_driver_relationships in their respective endpoints.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Get all variables
+            result = session.run("""
+                MATCH (v:Variable)
+                RETURN v.id as id, v.name as variable, v.driver as driver
+                ORDER BY v.id
+            """)
+            
+            variables = []
+            for record in result:
+                variables.append({
+                    "id": record["id"],
+                    "variable": record["variable"],
+                    "driver": record.get("driver")
+                })
+            
+            print(f"Found {len(variables)} variables to process")
+            
+            created_count = 0
+            skipped_count = 0
+            error_count = 0
+            errors = []
+            
+            # For each variable, create driver relationships
+            for var in variables:
+                variable_id = var["id"]
+                variable_name = var["variable"]
+                driver_string = var.get("driver")
+                
+                # If no driver string stored, try to reconstruct from existing relationships
+                if not driver_string or driver_string.strip() == "":
+                    # Try to get driver string from existing IS_RELEVANT_TO relationships
+                    rel_result = session.run("""
+                        MATCH (v:Variable {id: $variable_id})
+                        OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(v)
+                        OPTIONAL MATCH (d:Domain)-[:IS_RELEVANT_TO]->(v)
+                        OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(v)
+                        OPTIONAL MATCH (vc:VariableClarifier)-[:IS_RELEVANT_TO]->(v)
+                        WITH v, 
+                             collect(DISTINCT s.name) as sectors,
+                             collect(DISTINCT d.name) as domains,
+                             collect(DISTINCT c.name) as countries,
+                             collect(DISTINCT vc.name) as clarifiers
+                        RETURN sectors, domains, countries, clarifiers
+                    """, variable_id=variable_id)
+                    
+                    rel_record = rel_result.single()
+                    if rel_record:
+                        sectors = rel_record.get("sectors") or []
+                        domains = rel_record.get("domains") or []
+                        countries = rel_record.get("countries") or []
+                        clarifiers = rel_record.get("clarifiers") or []
+                        
+                        # Reconstruct driver string
+                        sector_str = "ALL" if "ALL" in sectors else (", ".join(sectors) if sectors else "ALL")
+                        domain_str = "ALL" if "ALL" in domains else (", ".join(domains) if domains else "ALL")
+                        country_str = "ALL" if "ALL" in countries else (", ".join(countries) if countries else "ALL")
+                        clarifier_str = clarifiers[0] if clarifiers else "None"
+                        
+                        driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+                        
+                        # Store reconstructed driver string on the variable node
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            SET v.driver = $driver
+                        """, variable_id=variable_id, driver=driver_string)
+                        print(f"📝 Reconstructed and stored driver string for variable {variable_id}: {driver_string}")
+                    else:
+                        # No driver string and no existing relationships - use default "ALL, ALL, ALL, None"
+                        driver_string = "ALL, ALL, ALL, None"
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            SET v.driver = $driver
+                        """, variable_id=variable_id, driver=driver_string)
+                        print(f"📝 Using default driver string for variable {variable_id}: {driver_string}")
+                
+                # Create driver relationships
+                if driver_string and driver_string.strip():
+                    try:
+                        await create_driver_relationships(session, variable_id, driver_string)
+                        created_count += 1
+                        print(f"✅ Created driver relationships for variable {variable_id} ({variable_name})")
+                    except Exception as e:
+                        error_count += 1
+                        error_msg = f"Failed to create relationships for variable {variable_id} ({variable_name}): {str(e)}"
+                        errors.append(error_msg)
+                        print(f"❌ {error_msg}")
+                else:
+                    skipped_count += 1
+                    print(f"⚠️ Skipped variable {variable_id} ({variable_name}) - no driver string available")
+            
+            return {
+                "success": True,
+                "message": f"Processed {len(variables)} variables",
+                "total_variables": len(variables),
+                "relationships_created": created_count,
+                "skipped": skipped_count,
+                "errors": error_count,
+                "error_details": errors[:50]  # Limit to first 50 errors
+            }
+    
+    except Exception as e:
+        print(f"Error in backfill: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to backfill driver relationships: {str(e)}")
+
+@router.post("/variables/field-options", response_model=Dict[str, Any])
+async def add_variable_field_option(option_data: VariableFieldOptionRequest):
+    """
+    Add a new option value for a variable field (formatI, formatII, gType, validation, default).
+    Stores the option in Neo4j so it's available for all variables.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    valid_fields = ['formatI', 'formatII', 'gType', 'validation', 'default']
+    if option_data.field_name not in valid_fields:
+        raise HTTPException(status_code=400, detail=f"Invalid field name. Must be one of: {', '.join(valid_fields)}")
+
+    if not option_data.value or not option_data.value.strip():
+        raise HTTPException(status_code=400, detail="Value cannot be empty")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # First, get current values
+            get_result = session.run("""
+                MATCH (vfo:VariableFieldOptions {id: 'variable_field_options'})
+                RETURN vfo[$field_name] AS current_values
+            """, {
+                "field_name": option_data.field_name
+            })
+
+            record = get_result.single()
+            current_values = []
+            
+            if record and record.get("current_values"):
+                values = record["current_values"]
+                if isinstance(values, list):
+                    current_values = [str(v).strip() for v in values if v and str(v).strip()]
+                elif isinstance(values, str):
+                    current_values = [v.strip() for v in values.split(',') if v.strip()]
+
+            # Add new value if not already present
+            new_value = option_data.value.strip()
+            if new_value not in current_values:
+                current_values.append(new_value)
+                current_values.sort()  # Keep sorted
+
+                # Update the node - create it if it doesn't exist
+                session.run("""
+                    MERGE (vfo:VariableFieldOptions {id: 'variable_field_options'})
+                    ON CREATE SET vfo.formatI = $default_array, vfo.formatII = $default_array, 
+                                 vfo.gType = $default_array, vfo.validation = $default_array, 
+                                 vfo.default = $default_array
+                    SET vfo[$field_name] = $values
+                """, {
+                    "field_name": option_data.field_name,
+                    "values": current_values,
+                    "default_array": []
+                })
+
+                return {
+                    "success": True,
+                    "field_name": option_data.field_name,
+                    "value": new_value,
+                    "message": f"Successfully added '{new_value}' to {option_data.field_name} options"
+                }
+            else:
+                return {
+                    "success": True,
+                    "field_name": option_data.field_name,
+                    "value": new_value,
+                    "message": f"'{new_value}' already exists in {option_data.field_name} options"
+                }
+
+    except Exception as e:
+        print(f"Error adding field option: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to add field option: {str(e)}")
+
+@router.get("/variables/field-options", response_model=VariableFieldOptionsResponse)
+async def get_variable_field_options():
+    """
+    Get all custom field options for variables (formatI, formatII, gType, validation, default).
+    Returns merged list of options from existing variables and custom additions.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Get custom options from VariableFieldOptions node
+            result = session.run("""
+                MATCH (vfo:VariableFieldOptions {id: 'variable_field_options'})
+                RETURN vfo.formatI AS formatI, vfo.formatII AS formatII, vfo.gType AS gType, 
+                       vfo.validation AS validation, vfo.default AS default
+            """)
+
+            record = result.single()
+            custom_options = {
+                "formatI": [],
+                "formatII": [],
+                "gType": [],
+                "validation": [],
+                "default": []
+            }
+
+            if record:
+                for field in ["formatI", "formatII", "gType", "validation", "default"]:
+                    values = record.get(field)
+                    if values:
+                        if isinstance(values, list):
+                            custom_options[field] = [v for v in values if v]
+                        elif isinstance(values, str):
+                            custom_options[field] = [v.strip() for v in values.split(',') if v.strip()]
+
+            # Get options from existing variables
+            existing_options = {
+                "formatI": set(),
+                "formatII": set(),
+                "gType": set(),
+                "validation": set(),
+                "default": set()
+            }
+
+            result = session.run("""
+                MATCH (v:Variable)
+                RETURN DISTINCT v.formatI AS formatI, v.formatII AS formatII, v.gType AS gType,
+                       v.validation AS validation, v.default AS default
+            """)
+
+            for record in result:
+                for field in ["formatI", "formatII", "gType", "validation", "default"]:
+                    value = record.get(field)
+                    if value and str(value).strip():
+                        existing_options[field].add(str(value).strip())
+
+            # Merge custom options with existing options
+            merged_options = {}
+            for field in ["formatI", "formatII", "gType", "validation", "default"]:
+                merged = set(custom_options[field]) | existing_options[field]
+                merged_options[field] = sorted(list(merged))
+
+            return VariableFieldOptionsResponse(**merged_options)
+
+    except Exception as e:
+        print(f"Error getting field options: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to get field options: {str(e)}")

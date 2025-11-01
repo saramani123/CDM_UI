@@ -3,6 +3,7 @@ import { Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
+import { parseDriverField } from '../data/mockData';
 
 interface Column {
   key: string;
@@ -38,6 +39,7 @@ interface DataGridProps {
   selectionMode?: 'checkbox' | 'row';
   relationshipData?: Record<string, any>;
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
+  onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
   gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
 }
 
@@ -61,6 +63,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   selectionMode = 'checkbox',
   relationshipData,
   onRelationshipCheckboxChange,
+  onRelationshipRowClick,
   gridType = 'objects' // Default to 'objects' for backward compatibility
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
@@ -701,23 +704,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
             <div className="flex text-sm font-medium text-ag-dark-text">
-              {selectionMode === 'checkbox' && (
+              {selectionMode === 'checkbox' && !relationshipData && (
                 <div className="w-10 flex items-center justify-center p-2">
                   <input
                     type="checkbox"
-                    checked={relationshipData ? 
-                      (Object.values(relationshipData).every((rel: any) => rel.isSelected) && Object.keys(relationshipData).length > 0) :
-                      (localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0)
-                    }
+                    checked={localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
                     onChange={(e) => {
-                      if (relationshipData && onRelationshipCheckboxChange) {
-                        // Handle relationship modal select all
-                        Object.keys(relationshipData).forEach(id => {
-                          onRelationshipCheckboxChange(id, e.target.checked);
-                        });
-                      } else {
-                        handleSelectAll(e.target.checked);
-                      }
+                      handleSelectAll(e.target.checked);
                     }}
                     className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
                   />
@@ -737,7 +730,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
                   throttleUpdates={isLargeGrid}
-                  className={`flex items-center justify-between px-4 py-2 ${
+                  className={`flex items-center justify-between px-4 py-2 box-border ${
                     colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
                   } whitespace-nowrap ${getColumnHeaderClass(column)}`}
                 >
@@ -788,37 +781,47 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onDragOver={(e) => onReorder && handleRowDragOver(e, index)}
                 onDrop={(e) => onReorder && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
-                onClick={() => {
-                  if (selectionMode === 'row' && !relationshipData) {
+                onClick={(e) => {
+                  // Prevent row click when clicking on inputs or selects
+                  const target = e.target as HTMLElement;
+                  if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.closest('input') || target.closest('select')) {
+                    return;
+                  }
+                  
+                  if (relationshipData && onRelationshipRowClick) {
+                    // Click-to-select mode for relationship data
+                    onRelationshipRowClick(row.id);
+                  } else if (selectionMode === 'row' && !relationshipData) {
                     const currentlySelected = isRowSelected(row);
                     handleRowSelection(row, !currentlySelected);
                   }
                 }}
-                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors ${
+                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer ${
                   isRowSelected(row) ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
+                } ${
+                  relationshipData?.[row.id]?.isSelected ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
                 } ${
                   isRowAffected(row) ? 'bg-red-900 bg-opacity-30 border-red-500 border-opacity-50' : ''
                 } ${
                   isCurrentObject(row) ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
+                } ${
+                  isCurrentObject(row) && relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-50 border-blue-500 border-opacity-70' : ''
                 } ${
                   dragOverIndex === index ? 'border-t-2 border-t-ag-dark-accent' : ''
                 } ${
                   draggedRow?.id === row.id ? 'opacity-50' : ''
                 }`}
               >
-                {selectionMode === 'checkbox' && (
+                {selectionMode === 'checkbox' && !relationshipData && (
                   <div className="w-10 flex items-center justify-center p-1.5">
                     <input
                       type="checkbox"
-                      checked={relationshipData ? (relationshipData[row.id]?.isSelected || false) : isRowSelected(row)}
+                      checked={isRowSelected(row)}
                       onChange={(e) => {
-                        if (relationshipData && onRelationshipCheckboxChange) {
-                          onRelationshipCheckboxChange(row.id, e.target.checked);
-                        } else {
-                          handleRowSelection(row, e.target.checked);
-                        }
+                        handleRowSelection(row, e.target.checked);
                       }}
                       className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
                 )}
@@ -830,14 +833,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   return (
                   <div
                     key={`${row.id || index}-${column.key}`}
-                    className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 ${
+                    className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 box-border ${
                       colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
                     } ${
                       ['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
                         ? 'justify-end' 
                         : 'justify-start'
                     }`}
-                    style={{ width: cellWidth }}
+                    style={{ width: cellWidth, boxSizing: 'border-box' }}
                   >
                     {column.render ? (
                       column.render(row)
@@ -862,7 +865,22 @@ export const DataGrid: React.FC<DataGridProps> = ({
                         {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
                           formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 
                           (column.key === 'sector' || column.key === 'domain' || column.key === 'country') ? 
-                            getGridDriverDisplayValue(column.key, row[column.key] || '') : 
+                            (() => {
+                              // Always parse from driver string if available - it's the source of truth
+                              // This ensures values persist even after updates when parsed values might be missing
+                              let value = row[column.key] || '';
+                              if ((!value || value === '-') && row.driver) {
+                                const parsed = parseDriverField(row.driver);
+                                if (column.key === 'sector') {
+                                  value = parsed.sector || '-';
+                                } else if (column.key === 'domain') {
+                                  value = parsed.domain || '-';
+                                } else if (column.key === 'country') {
+                                  value = parsed.country || '-';
+                                }
+                              }
+                              return getGridDriverDisplayValue(column.key, value || '');
+                            })() : 
                             (row[column.key] || '-')
                         }
                       </span>

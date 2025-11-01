@@ -9,6 +9,11 @@ from typing import List, Optional
 
 # ObjectRelationshipCreateRequest class definition
 class ObjectRelationshipCreateRequest(BaseModel):
+    relationship_type: Optional[str] = "HAS_SPECIFIC_VARIABLE"  # HAS_SPECIFIC_VARIABLE or HAS_VARIABLE
+    to_sector: Optional[str] = ""
+    to_domain: Optional[str] = ""
+    to_country: Optional[str] = ""
+    to_object_clarifier: Optional[str] = ""
     to_being: str
     to_avatar: str
     to_object: str
@@ -465,6 +470,7 @@ class BulkVariableUpdateRequest(BaseModel):
     graph: Optional[str] = None
     status: Optional[str] = None
     objectRelationshipsList: Optional[List[ObjectRelationshipCreateRequest]] = None
+    shouldOverrideRelationships: Optional[bool] = False  # If true, delete existing relationships before creating new ones
 
 class BulkVariableUpdateResponse(BaseModel):
     """Schema for bulk variable update response"""
@@ -512,6 +518,19 @@ class VariableCSVRowData(BaseModel):
     class Config:
         allow_population_by_field_name = True
         populate_by_name = True
+
+class VariableFieldOptionRequest(BaseModel):
+    """Schema for adding a new field option"""
+    field_name: str = Field(..., description="Field name (formatI, formatII, gType, validation, default)")
+    value: str = Field(..., description="New value to add")
+
+class VariableFieldOptionsResponse(BaseModel):
+    """Schema for variable field options response"""
+    formatI: List[str]
+    formatII: List[str]
+    gType: List[str]
+    validation: List[str]
+    default: List[str]
 
 class CSVUploadRequest(BaseModel):
     """Schema for CSV upload validation"""

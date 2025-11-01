@@ -3,6 +3,9 @@ import { Settings, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Dat
 import { variableFieldOptions, concatenateVariableDrivers } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { useObjects } from '../hooks/useObjects';
+import { parseDriverField } from '../data/mockData';
 
 interface ObjectRelationship {
   id: string;
@@ -16,12 +19,14 @@ interface AddVariablePanelProps {
   onClose: () => void;
   onAdd: (variableData: any) => void;
   allData?: any[];
+  objectsData?: any[];
 }
 
 export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   isOpen,
   onClose,
-  onAdd
+  onAdd,
+  objectsData = []
 }) => {
   // Basic form data
   const [formData, setFormData] = useState({
@@ -47,11 +52,17 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
 
   const { drivers: driversData } = useDrivers();
 
-  // Object relationships
-  const [objectRelationships, setObjectRelationships] = useState<ObjectRelationship[]>([]);
-
-  // CSV upload modal state
-  const [isObjectRelationshipUploadOpen, setIsObjectRelationshipUploadOpen] = useState(false);
+  // Object relationships - store selected object IDs from modal
+  const [selectedObjectRelationships, setSelectedObjectRelationships] = useState<string[]>([]);
+  
+  // Modal state for object relationships
+  const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
+  const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
+  const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
+  
+  // Get objects data - use hook if not provided as prop
+  const { objects: objectsFromHook } = useObjects();
+  const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -136,41 +147,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     }
   };
 
-  const handleObjectRelationshipChange = (id: string, field: keyof ObjectRelationship, value: string) => {
-    setObjectRelationships(prev => prev.map(rel => {
-      if (rel.id === id) {
-        const updated = { ...rel, [field]: value };
-        
-        // Handle cascading updates
-        if (field === 'toBeing') {
-          updated.toAvatar = '';
-          updated.toObject = '';
-        } else if (field === 'toAvatar') {
-          updated.toObject = '';
-        }
-        
-        return updated;
-      }
-      return rel;
-    }));
-  };
-
-  const addObjectRelationship = () => {
-    const newRelationship: ObjectRelationship = {
-      id: Date.now().toString(),
-      toBeing: '',
-      toAvatar: '',
-      toObject: ''
-    };
-    setObjectRelationships(prev => [...prev, newRelationship]);
-  };
-
-  const deleteObjectRelationship = (id: string) => {
-    setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
-  };
-
-  const handleObjectRelationshipCsvUpload = (uploadedRelationships: ObjectRelationship[]) => {
-    setObjectRelationships(prev => [...prev, ...uploadedRelationships]);
+  // Handler for when relationships are saved in the modal
+  const handleRelationshipSave = (selectedObjectIds: string[]) => {
+    setSelectedObjectRelationships(selectedObjectIds);
   };
 
   // Validation - all required fields must be filled
@@ -193,13 +172,45 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       driverSelections.variableClarifier
     );
 
+    // Convert selected object IDs to relationship format
+    const objectRelationshipsList = selectedObjectRelationships.map(objectId => {
+      const obj = allObjects.find(o => o.id === objectId);
+      if (!obj) return null;
+      
+      // Parse sector, domain, country from driver string
+      let sector = '';
+      let domain = '';
+      let country = '';
+      if (obj.driver && obj.driver.trim()) {
+        try {
+          const parsed = parseDriverField(obj.driver);
+          sector = parsed.sector || '';
+          domain = parsed.domain || '';
+          country = parsed.country || '';
+        } catch (error) {
+          console.error(`Error parsing driver for object ${objectId}:`, error);
+        }
+      }
+      
+      return {
+        id: objectId,
+        toBeing: obj.being || '',
+        toAvatar: obj.avatar || '',
+        toObject: obj.object || '',
+        toSector: sector,
+        toDomain: domain,
+        toCountry: country
+      };
+    }).filter(Boolean) as ObjectRelationship[];
+
     const newVariable = {
       id: Date.now().toString(),
       ...formData,
       driver: driverString,
-      objectRelationships: objectRelationships.length,
+      objectRelationships: objectRelationshipsList.length,
       status: 'Active',
-      objectRelationshipsList: objectRelationships
+      objectRelationshipsList: objectRelationshipsList,
+      selectedObjectIds: selectedObjectRelationships // Store IDs for reference
     };
 
     onAdd(newVariable);
@@ -223,7 +234,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       country: [],
       variableClarifier: ''
     });
-    setObjectRelationships([]);
+    setSelectedObjectRelationships([]);
     
     onClose();
   };
@@ -687,131 +698,35 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         sectionKey="objectRelationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsObjectRelationshipUploadOpen(true)}
+              onClick={() => setIsCsvUploadOpen(true)}
               className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Object Relationships CSV"
+              title="Upload Relationships CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
             <button
-              onClick={addObjectRelationship}
-              className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-              title="Add Object Relationship"
+              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
+              className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+              title="View and manage relationships"
             >
-              <Plus className="w-4 h-4" />
+              View Relationships
             </button>
-          </>
+          </div>
         }
       >
-        {objectRelationships.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No object relationships defined</div>
-            <button
-              onClick={addObjectRelationship}
-              className="mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm"
-            >
-              Add your first object relationship
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {objectRelationships.map((relationship, index) => (
-              <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Object Relationship #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteObjectRelationship(relationship.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete Object Relationship"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Being
-                      </label>
-                      <select
-                        value={relationship.toBeing}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toBeing', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being: string) => (
-                          <option key={being} value={being}>
-                            {being}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Avatar
-                      </label>
-                      <select
-                        value={relationship.toAvatar}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toAvatar', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Avatar</option>
-                        {relationship.toBeing && getDistinctAvatarsForBeing(relationship.toBeing).map((avatar) => (
-                          <option key={avatar} value={avatar}>
-                            {avatar}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      To Object
-                    </label>
-                    <select
-                      value={relationship.toObject}
-                      onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toObject', e.target.value)}
-                      className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select To Object</option>
-                      {relationship.toBeing && relationship.toAvatar && 
-                        getDistinctObjectsForBeingAndAvatar(relationship.toBeing, relationship.toAvatar).map((object) => (
-                        <option key={object} value={object}>
-                          {object}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="py-4">
+          {selectedObjectRelationships.length === 0 ? (
+            <div className="text-center py-6 text-ag-dark-text-secondary">
+              <div className="text-sm">No object relationships defined</div>
+            </div>
+          ) : (
+            <div className="text-sm text-ag-dark-text">
+              {selectedObjectRelationships.length} object{selectedObjectRelationships.length !== 1 ? 's' : ''} selected
+            </div>
+          )}
+        </div>
       </CollapsibleSection>
 
       {/* Add Variable Button */}
@@ -830,12 +745,38 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         </button>
       </div>
 
+      {/* Variable-Object Relationship Modal */}
+      <VariableObjectRelationshipModal
+        isOpen={isVariableObjectRelationshipModalOpen}
+        onClose={() => {
+          setIsVariableObjectRelationshipModalOpen(false);
+          setPendingCsvData(null); // Clear pending CSV data when modal closes
+        }}
+        selectedVariable={{
+          id: 'new-variable-temp-id',
+          variable: formData.variable || 'New Variable'
+        }}
+        allObjects={allObjects}
+        previewMode={true}
+        onSelectionChange={(selectedObjectIds: string[]) => {
+          setSelectedObjectRelationships(selectedObjectIds);
+        }}
+        initialCsvData={pendingCsvData}
+      />
+
       {/* CSV Upload Modal */}
       <CsvUploadModal
-        isOpen={isObjectRelationshipUploadOpen}
-        onClose={() => setIsObjectRelationshipUploadOpen(false)}
-        type="object-relationships"
-        onUpload={handleObjectRelationshipCsvUpload}
+        isOpen={isCsvUploadOpen}
+        onClose={() => setIsCsvUploadOpen(false)}
+        type="variable-object-relationships"
+        onUpload={(data: any[] | File) => {
+          // Store CSV data and open the relationship modal
+          if (Array.isArray(data)) {
+            setPendingCsvData(data);
+            setIsCsvUploadOpen(false);
+            setIsVariableObjectRelationshipModalOpen(true);
+          }
+        }}
       />
     </div>
   );

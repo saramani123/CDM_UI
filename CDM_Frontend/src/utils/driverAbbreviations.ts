@@ -2,6 +2,7 @@
 // Abbreviations are stored in localStorage (frontend-only, not persisted to Neo4j)
 
 import { ColumnType } from '../data/driversData';
+import { getDriversData } from '../data/mockData';
 
 export interface DriverAbbreviations {
   sectors: Record<string, string>; // { "Transportation": "Transp.", ... }
@@ -109,6 +110,7 @@ export const getDriverDisplayValue = (type: ColumnType, fullName: string): strin
 
 // Get display value for grid cells (sector, domain, country columns)
 // Handles comma-separated values like "Finance, Healthcare, Retail"
+// Shows "ALL" if all possible values are selected
 export const getGridDriverDisplayValue = (columnKey: string, fullName: string): string => {
   if (!fullName || fullName === 'ALL' || fullName === '-') {
     return fullName || '-';
@@ -125,10 +127,27 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
   }
   
   if (type) {
+    // Get all possible values for this type from driversData
+    const driversData = getDriversData();
+    const allPossibleValues: string[] = driversData[type] || [];
+    
     // Check if the value contains commas (multiple values)
     if (fullName.includes(',')) {
       // Split by comma and process each value
       const values = fullName.split(',').map(v => v.trim()).filter(Boolean);
+      
+      // Check if all possible values are selected (compare sets)
+      const selectedSet = new Set(values);
+      const allSet = new Set(allPossibleValues);
+      const isAllSelected = allPossibleValues.length > 0 && 
+                           selectedSet.size === allSet.size && 
+                           [...selectedSet].every(val => allSet.has(val));
+      
+      if (isAllSelected) {
+        return 'ALL';
+      }
+      
+      // Not all values selected - show formatted comma-separated string
       const displayValues = values.map(value => {
         const abbreviation = getDriverAbbreviation(type!, value);
         return abbreviation || value;

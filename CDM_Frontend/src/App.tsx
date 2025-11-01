@@ -323,15 +323,26 @@ function App() {
     }
   }, [activeTab, apiDrivers, driversLoading]);
 
-  // Handle variables loading
+  // Handle variables loading - show loading immediately when switching to variables tab
   React.useEffect(() => {
-    if (variablesLoading && activeTab === 'variables') {
-      setIsLoading(true);
-      setLoadingType('variables');
-    } else if (activeTab === 'variables') {
-      setIsLoading(false);
+    if (activeTab === 'variables') {
+      if (variablesLoading) {
+        setIsLoading(true);
+        setLoadingType('variables');
+      } else if (variableData.length === 0 && !variablesError && apiVariables === undefined) {
+        // If no data and no error yet and API hasn't returned, still show loading (initial load)
+        setIsLoading(true);
+        setLoadingType('variables');
+      } else {
+        setIsLoading(false);
+      }
+    } else {
+      // When switching away from variables tab, ensure loading is cleared
+      if (loadingType === 'variables') {
+        setIsLoading(false);
+      }
     }
-  }, [variablesLoading, activeTab]);
+  }, [variablesLoading, activeTab, variableData.length, variablesError, apiVariables, loadingType]);
 
   // Handle lists loading (mock data, so minimal loading)
   React.useEffect(() => {
@@ -638,15 +649,38 @@ function App() {
       const selectedIds = selectedRows.map(row => row.id);
       
       if (activeTab === 'variables') {
-        // Delete variables via API
-        try {
-          for (const id of selectedIds) {
+        // Delete variables via API - track successful deletions
+        const successfulDeletions: string[] = [];
+        const failedDeletions: string[] = [];
+        
+        for (const id of selectedIds) {
+          try {
             await deleteVariable(id);
+            successfulDeletions.push(id);
+          } catch (error) {
+            console.error(`Error deleting variable ${id}:`, error);
+            failedDeletions.push(id);
           }
-          setVariableData(prev => prev.filter(item => !selectedIds.includes(item.id)));
+        }
+        
+        // Only remove successfully deleted variables from state
+        if (successfulDeletions.length > 0) {
+          setVariableData(prev => prev.filter(item => !successfulDeletions.includes(item.id)));
+        }
+        
+        // Show feedback about results
+        if (failedDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} variable(s), but failed to delete ${failedDeletions.length} variable(s). Please try again or check server logs.`);
+        } else if (successfulDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} variable(s).`);
+        }
+        
+        // Refresh variable data from API to ensure UI is in sync
+        try {
+          await fetchVariables();
         } catch (error) {
-          console.error('Error deleting variables:', error);
-          alert('Failed to delete some variables. Please try again.');
+          console.error('Error refreshing variables after deletion:', error);
+          // Don't clear UI if refresh fails - keep what we have
         }
       } else if (activeTab === 'lists') {
         setListData(prev => prev.filter(item => !selectedIds.includes(item.id)));
@@ -654,8 +688,21 @@ function App() {
         setData(prev => prev.filter(item => !selectedIds.includes(item.id)));
       }
       
-      setSelectedRows([]);
-      setSelectedRowForMetadata(null);
+      // Clear selections for successfully deleted items
+      if (activeTab === 'variables') {
+        // For variables, only clear selections for successfully deleted items
+        if (successfulDeletions.length > 0) {
+          setSelectedRows(prev => prev.filter(row => !successfulDeletions.includes(row.id)));
+          // Clear metadata panel if the selected variable was deleted
+          if (selectedRowForMetadata && successfulDeletions.includes(selectedRowForMetadata.id)) {
+            setSelectedRowForMetadata(null);
+          }
+        }
+      } else {
+        // For other tabs, clear all selections
+        setSelectedRows([]);
+        setSelectedRowForMetadata(null);
+      }
       setIsBulkDeleteOpen(false);
     }
   };
@@ -1594,6 +1641,7 @@ function App() {
                 onClose={() => setIsAddVariableOpen(false)}
                 onAdd={handleAddVariable}
                 allData={variableData}
+                objectsData={data}
               />
             </div>
           ) : (isAddListOpen && activeTab === 'lists') ? (

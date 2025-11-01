@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText } from 'lucide-react';
+import { Settings, Save, X, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText, Plus } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { CsvUploadModal } from './CsvUploadModal';
+import { AddFieldValueModal } from './AddFieldValueModal';
 
 interface VariableMetadataField {
   key: string;
@@ -14,12 +16,6 @@ interface VariableMetadataField {
   required?: boolean;
 }
 
-interface ObjectRelationship {
-  id: string;
-  toBeing: string;
-  toAvatar: string;
-  toObject: string;
-}
 
 interface VariableMetadataPanelProps {
   title: string;
@@ -70,36 +66,74 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   console.log('VariableMetadataPanel - objectsData length:', objectsData?.length);
   console.log('VariableMetadataPanel - first object:', objectsData?.[0]);
 
-  // Load existing object relationships when a variable is selected
+  
+  // Get dynamic field options from existing variables data
+  const [dynamicFieldOptions, setDynamicFieldOptions] = useState(getVariableFieldOptions(allData));
+  
+  // State for add field value modal
+  const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
+  const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
+
+  // Fetch field options from API on mount and when allData changes
   useEffect(() => {
-    const loadExistingRelationships = async () => {
-      if (selectedVariable?.id) {
-        try {
-          console.log('Loading existing relationships for variable:', selectedVariable.id);
-          const response = await apiService.getVariableObjectRelationships(selectedVariable.id);
-          console.log('Existing relationships response:', response);
-          
-          if (response.relationships && response.relationships.length > 0) {
-            setObjectRelationships(response.relationships);
-            console.log('Loaded existing relationships:', response.relationships);
-          } else {
-            setObjectRelationships([]);
-            console.log('No existing relationships found');
-          }
-        } catch (error) {
-          console.error('Error loading existing relationships:', error);
-          setObjectRelationships([]);
-        }
-      } else {
-        setObjectRelationships([]);
+    const fetchFieldOptions = async () => {
+      try {
+        const apiOptions = await apiService.getVariableFieldOptions() as {
+          formatI: string[];
+          formatII: string[];
+          gType: string[];
+          validation: string[];
+          default: string[];
+        };
+        
+        // Merge API options with existing variable options
+        const existingOptions = getVariableFieldOptions(allData);
+        setDynamicFieldOptions({
+          ...existingOptions,
+          formatI: [...new Set([...existingOptions.formatI, ...(apiOptions.formatI || [])])].sort(),
+          formatII: [...new Set([...existingOptions.formatII, ...(apiOptions.formatII || [])])].sort(),
+          gType: [...new Set([...existingOptions.gType, ...(apiOptions.gType || [])])].sort(),
+          validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
+          default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
+        });
+      } catch (error) {
+        console.error('Error fetching field options:', error);
+        // Fall back to existing options if API fails
+        setDynamicFieldOptions(getVariableFieldOptions(allData));
       }
     };
 
-    loadExistingRelationships();
-  }, [selectedVariable?.id]);
-  
-  // Get dynamic field options from existing variables data
-  const dynamicFieldOptions = getVariableFieldOptions(allData);
+    fetchFieldOptions();
+  }, [allData]);
+
+  const handleAddFieldValue = async (value: string) => {
+    if (!selectedFieldForAdd) return;
+    
+    try {
+      await apiService.addVariableFieldOption(selectedFieldForAdd.name, value);
+      
+      // Refresh field options
+      const apiOptions = await apiService.getVariableFieldOptions() as {
+        formatI: string[];
+        formatII: string[];
+        gType: string[];
+        validation: string[];
+        default: string[];
+      };
+      
+      const existingOptions = getVariableFieldOptions(allData);
+      setDynamicFieldOptions({
+        ...existingOptions,
+        formatI: [...new Set([...existingOptions.formatI, ...(apiOptions.formatI || [])])].sort(),
+        formatII: [...new Set([...existingOptions.formatII, ...(apiOptions.formatII || [])])].sort(),
+        gType: [...new Set([...existingOptions.gType, ...(apiOptions.gType || [])])].sort(),
+        validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
+        default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
+      });
+    } catch (error) {
+      throw error;
+    }
+  };
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -152,71 +186,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
   }, [selectedVariable?.id]); // Only reset when variable actually changes
 
-  // Initialize object relationships state
-  const [objectRelationships, setObjectRelationships] = useState<ObjectRelationship[]>(() => {
-    return selectedVariable?.objectRelationshipsList || [];
-  });
+  // Variable-object relationship modal state
+  const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
+  const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
+  const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
 
-  // CSV upload modal state
-  const [isObjectRelationshipUploadOpen, setIsObjectRelationshipUploadOpen] = useState(false);
-
-  // Update object relationships when selectedVariable changes
-  React.useEffect(() => {
-    setObjectRelationships(selectedVariable?.objectRelationshipsList || []);
-  }, [selectedVariable]);
-
-  // Get distinct values from data for object relationships
-  const getDistinctBeings = () => {
-    // Get distinct beings from objects data + ALL option
-    const beings = [...new Set(objectsData.map((item: any) => item.being as string))].filter(Boolean) as string[];
-    const result = ['ALL', ...beings];
-    console.log('getDistinctBeings - objectsData length:', objectsData?.length);
-    console.log('getDistinctBeings - beings:', beings);
-    console.log('getDistinctBeings - result:', result);
-    return result;
-  };
-
-  const getDistinctAvatarsForBeing = (being: string) => {
-    // Get distinct avatars for the selected being from objects data + ALL option
-    let avatars: string[] = [];
-    
-    if (being === 'ALL') {
-      avatars = [...new Set(objectsData.map((item: any) => item.avatar as string))].filter(Boolean) as string[];
-    } else {
-      avatars = [...new Set(objectsData
-        .filter((item: any) => item.being === being)
-        .map((item: any) => item.avatar as string)
-      )].filter(Boolean) as string[];
-    }
-    
-    return ['ALL', ...avatars];
-  };
-
-  const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
-    // Get distinct objects for the selected being and avatar from objects data + ALL option
-    let objects: string[] = [];
-    
-    if (being === 'ALL' && avatar === 'ALL') {
-      objects = [...new Set(objectsData.map((item: any) => item.object as string))].filter(Boolean) as string[];
-    } else if (being === 'ALL') {
-      objects = [...new Set(objectsData
-        .filter((item: any) => item.avatar === avatar)
-        .map((item: any) => item.object as string)
-      )].filter(Boolean) as string[];
-    } else if (avatar === 'ALL') {
-      objects = [...new Set(objectsData
-        .filter((item: any) => item.being === being)
-        .map((item: any) => item.object as string)
-      )].filter(Boolean) as string[];
-    } else {
-      objects = [...new Set(objectsData
-        .filter((item: any) => item.being === being && item.avatar === avatar)
-        .map((item: any) => item.object as string)
-      )].filter(Boolean) as string[];
-    }
-    
-    return ['ALL', ...objects];
-  };
 
   // Check if panel should be enabled (exactly 1 variable selected)
   const isPanelEnabled = selectedCount === 1;
@@ -249,64 +223,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
   };
 
-  const handleObjectRelationshipChange = (id: string, field: keyof ObjectRelationship, value: string) => {
-    setObjectRelationships(prev => prev.map(rel => {
-      if (rel.id === id) {
-        const updated = { ...rel, [field]: value };
-        
-        // Handle cascading updates
-        if (field === 'toBeing') {
-          updated.toAvatar = '';
-          updated.toObject = '';
-        } else if (field === 'toAvatar') {
-          updated.toObject = '';
-        }
-        
-        return updated;
-      }
-      return rel;
-    }));
-  };
-
-  const addObjectRelationship = () => {
-    const newRelationship: ObjectRelationship = {
-      id: Date.now().toString(),
-      toBeing: '',
-      toAvatar: '',
-      toObject: ''
-    };
-    setObjectRelationships(prev => [...prev, newRelationship]);
-  };
-
-  const deleteObjectRelationship = async (id: string) => {
-    try {
-      console.log('Deleting object relationship:', id);
-      
-      // Find the relationship to get its details
-      const relationship = objectRelationships.find(rel => rel.id === id);
-      if (!relationship) {
-        console.error('Relationship not found:', id);
-        return;
-      }
-      
-      console.log('Deleting relationship:', relationship);
-      
-      // Call the backend API to delete the relationship
-      await apiService.deleteVariableObjectRelationship(selectedVariable?.id || '', relationship);
-      
-      // Remove from local state
-      setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
-      
-      console.log('Successfully deleted relationship');
-    } catch (error) {
-      console.error('Error deleting object relationship:', error);
-      alert('Failed to delete object relationship. Please try again.');
-    }
-  };
-
-  const handleObjectRelationshipCsvUpload = (uploadedRelationships: ObjectRelationship[]) => {
-    setObjectRelationships(prev => [...prev, ...uploadedRelationships]);
-  };
 
   const handleSave = async () => {
     try {
@@ -320,12 +236,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
       const saveData = {
         ...formData,
-        driver: driverString,
-        objectRelationshipsList: objectRelationships
+        driver: driverString
       };
-
-      console.log('VariableMetadataPanel handleSave - objectRelationships:', objectRelationships);
-      console.log('VariableMetadataPanel handleSave - saveData:', saveData);
 
       // Call the main save operation (which will handle object relationships)
       await onSave?.(saveData);
@@ -661,9 +573,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format I
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Format I
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'formatI', label: 'Format I' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Format I value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.formatI}
               onChange={(e) => handleChange('formatI', e.target.value)}
@@ -688,9 +614,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format II
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Format II
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Format II value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
@@ -715,9 +655,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              G-Type
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                G-Type
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'gType', label: 'G-Type' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new G-Type value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.gType}
               onChange={(e) => handleChange('gType', e.target.value)}
@@ -742,9 +696,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Validation
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Validation
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'validation', label: 'Validation' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Validation value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.validation}
               onChange={(e) => handleChange('validation', e.target.value)}
@@ -769,9 +737,23 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Default
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Default
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'default', label: 'Default' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Default value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.default}
               onChange={(e) => handleChange('default', e.target.value)}
@@ -830,154 +812,31 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         sectionKey="objectRelationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsObjectRelationshipUploadOpen(true)}
+              onClick={() => setIsCsvUploadOpen(true)}
               disabled={!isPanelEnabled}
               className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              title="Upload Object Relationships CSV"
+              title="Upload Relationships CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
             <button
-              onClick={addObjectRelationship}
+              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
               disabled={!isPanelEnabled}
-              className={`text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors ${
+              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              title="Add Object Relationship"
+              title={selectedCount > 1 ? "View relationships (bulk edit not yet supported)" : "View and manage relationships"}
             >
-              <Plus className="w-4 h-4" />
+              View Relationships
             </button>
-          </>
+          </div>
         }
       >
-        {objectRelationships.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No object relationships defined</div>
-            <button
-              onClick={addObjectRelationship}
-              disabled={!isPanelEnabled}
-              className={`mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            >
-              Add your first object relationship
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {objectRelationships.map((relationship, index) => (
-              <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    Object Relationship #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteObjectRelationship(relationship.id)}
-                    disabled={!isPanelEnabled}
-                    className={`text-ag-dark-error hover:text-red-400 transition-colors ${
-                      !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    title="Delete Object Relationship"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-3">
-                  {/* To Being and To Avatar Row */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Being
-                      </label>
-                      <select
-                        value={relationship.toBeing}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toBeing', e.target.value)}
-                        disabled={!isPanelEnabled}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being) => (
-                          <option key={being} value={being}>
-                            {being}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Avatar
-                      </label>
-                      <select
-                        value={relationship.toAvatar}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toAvatar', e.target.value)}
-                        disabled={!isPanelEnabled}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Avatar</option>
-                        {relationship.toBeing && getDistinctAvatarsForBeing(relationship.toBeing).map((avatar) => (
-                          <option key={avatar} value={avatar}>
-                            {avatar}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* To Object Row */}
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      To Object
-                    </label>
-                    <select
-                      value={relationship.toObject}
-                      onChange={(e) => handleObjectRelationshipChange(relationship.id, 'toObject', e.target.value)}
-                      disabled={!isPanelEnabled}
-                      className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                        !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select To Object</option>
-                      {relationship.toBeing && relationship.toAvatar && 
-                        getDistinctObjectsForBeingAndAvatar(relationship.toBeing, relationship.toAvatar).map((object) => (
-                        <option key={object} value={object}>
-                          {object}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div></div>
       </CollapsibleSection>
 
       {/* Actions */}
@@ -996,13 +855,55 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         </div>
       )}
 
+      {/* Variable-Object Relationship Modal */}
+      <VariableObjectRelationshipModal
+        isOpen={isVariableObjectRelationshipModalOpen}
+        onClose={() => {
+          setIsVariableObjectRelationshipModalOpen(false);
+          setPendingCsvData(null); // Clear pending CSV data when modal closes
+        }}
+        selectedVariable={selectedVariable}
+        allObjects={objectsData}
+        onSave={async () => {
+          // Refresh variable data if needed
+          if (onSave) {
+            await onSave({});
+          }
+          // Note: objectsData comes from App.tsx - we don't need to refresh objects
+          // because relationships don't change object properties
+          // However, we ensure gridData always parses from driver string to show correct values
+        }}
+        initialCsvData={pendingCsvData}
+      />
+
       {/* CSV Upload Modal */}
       <CsvUploadModal
-        isOpen={isObjectRelationshipUploadOpen}
-        onClose={() => setIsObjectRelationshipUploadOpen(false)}
-        type="object-relationships"
-        onUpload={handleObjectRelationshipCsvUpload}
+        isOpen={isCsvUploadOpen}
+        onClose={() => setIsCsvUploadOpen(false)}
+        type="variable-object-relationships"
+        onUpload={(data: any[] | File) => {
+          // Store CSV data and open the relationship modal
+          if (Array.isArray(data)) {
+            setPendingCsvData(data);
+            setIsCsvUploadOpen(false);
+            setIsVariableObjectRelationshipModalOpen(true);
+          }
+        }}
       />
+
+      {/* Add Field Value Modal */}
+      {selectedFieldForAdd && (
+        <AddFieldValueModal
+          isOpen={isAddFieldValueModalOpen}
+          onClose={() => {
+            setIsAddFieldValueModalOpen(false);
+            setSelectedFieldForAdd(null);
+          }}
+          fieldName={selectedFieldForAdd.name}
+          fieldLabel={selectedFieldForAdd.label}
+          onSave={handleAddFieldValue}
+        />
+      )}
     </div>
   );
 };

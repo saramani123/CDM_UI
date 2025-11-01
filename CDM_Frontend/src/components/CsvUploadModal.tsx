@@ -4,7 +4,7 @@ import { X, Upload, FileText } from 'lucide-react';
 interface CsvUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  type: 'relationships' | 'variants' | 'object-relationships';
+  type: 'relationships' | 'variants' | 'object-relationships' | 'variable-object-relationships';
   onUpload: (data: any[] | File) => void;
 }
 
@@ -41,6 +41,18 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
         { number: 1, name: 'To Being' },
         { number: 2, name: 'To Avatar' },
         { number: 3, name: 'To Object' }
+      ]
+    },
+    'variable-object-relationships': {
+      title: 'Upload Variable-Object Relationships',
+      columns: [
+        { number: 1, name: 'Sector' },
+        { number: 2, name: 'Domain' },
+        { number: 3, name: 'Country' },
+        { number: 4, name: 'Object Clarifier' },
+        { number: 5, name: 'Being' },
+        { number: 6, name: 'Avatar' },
+        { number: 7, name: 'Object' }
       ]
     }
   };
@@ -103,6 +115,19 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
               toBeing: values[0] || '',
               toAvatar: values[1] || '',
               toObject: values[2] || ''
+            });
+          }
+        } else if (type === 'variable-object-relationships') {
+          if (values.length >= 7) {
+            parsedData.push({
+              id: Date.now().toString() + index,
+              Sector: values[0] || '',
+              Domain: values[1] || '',
+              Country: values[2] || '',
+              'Object Clarifier': values[3] || '',
+              Being: values[4] || '',
+              Avatar: values[5] || '',
+              Object: values[6] || ''
             });
           }
         }
@@ -229,8 +254,12 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p>• First row should contain column headers</p>
-            <p>• Each subsequent row represents one {type === 'relationships' ? 'relationship' : 'variant'}</p>
-            <p>• Each subsequent row represents one {type === 'relationships' ? 'relationship' : type === 'variants' ? 'variant' : 'object relationship'}</p>
+            <p>• Each subsequent row represents one {
+              type === 'relationships' ? 'relationship' : 
+              type === 'variants' ? 'variant' : 
+              type === 'object-relationships' ? 'object relationship' :
+              'variable-object relationship'
+            }</p>
             <p>• Columns must be in the exact order shown above</p>
             {type === 'relationships' && (
               <p>• Type must be: Blood, Intra-Table, or Inter-Table</p>

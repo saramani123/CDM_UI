@@ -94,17 +94,132 @@ export const concatenateVariableDrivers = (sector: string[], domain: string[], c
 };
 
 // Helper function to parse variable driver string back to selections
+// Driver string format: "Sector, Domain, Country, VariableClarifier"
+// Where Sector/Domain/Country can be "ALL" or comma-separated values like "Finance, Healthcare"
 export const parseVariableDriverString = (driverString: string) => {
-  const parts = driverString.split(', ').map(part => part.trim());
+  if (!driverString) {
+    return {
+      sector: [],
+      domain: [],
+      country: [],
+      variableClarifier: ''
+    };
+  }
   
   // Get all available driver options to determine what "ALL" should include
   const driversData = getDriversData();
   
+  // Helper to check if a comma-separated string contains all values
+  const containsAllValues = (value: string, allValues: string[]): boolean => {
+    if (value === 'ALL') return true;
+    if (!value || allValues.length === 0) return false;
+    const selectedValues = value.split(',').map(v => v.trim()).filter(Boolean);
+    const selectedSet = new Set(selectedValues);
+    const allSet = new Set(allValues);
+    return selectedSet.size === allSet.size && [...selectedSet].every(val => allSet.has(val));
+  };
+  
+  // The driver string format is: "Sector, Domain, Country, VariableClarifier"
+  // Where each field can be "ALL" or comma-separated values like "Finance, Healthcare"
+  // Example: "Finance, Healthcare, ALL, ALL, None"
+  // We need to intelligently split by identifying field boundaries
+  
+  const allParts = driverString.split(',').map(p => p.trim()).filter(Boolean);
+  
+  // Helper to extract field values by identifying where the field ends
+  const extractFieldValues = (
+    allParts: string[], 
+    startIndex: number, 
+    currentFieldValues: string[],
+    nextFieldValues: string[],
+    fieldName: string
+  ): { values: string[], nextIndex: number } => {
+    if (startIndex >= allParts.length) {
+      return { values: [], nextIndex: startIndex };
+    }
+    
+    // If the first part is "ALL", this field is ALL
+    if (allParts[startIndex] === 'ALL') {
+      return { values: ['ALL'], nextIndex: startIndex + 1 };
+    }
+    
+    // Collect consecutive parts that match current field values
+    const values: string[] = [];
+    let index = startIndex;
+    
+    while (index < allParts.length) {
+      const part = allParts[index];
+      
+      // Stop if we hit "ALL" - it means we've moved to the next field
+      if (part === 'ALL') {
+        break;
+      }
+      
+      // Check if this part belongs to current field
+      const belongsToCurrentField = currentFieldValues.includes(part);
+      
+      // Check if this part belongs to next field (indicates we've moved to next field)
+      const belongsToNextField = nextFieldValues && nextFieldValues.length > 0 && nextFieldValues.includes(part);
+      
+      // Check if it's "None" (usually indicates clarifier field, only for country->clarifier boundary)
+      const isNone = part === 'None' && fieldName === 'country';
+      
+      if (belongsToCurrentField) {
+        values.push(part);
+        index++;
+      } else if (belongsToNextField || isNone) {
+        // We've hit the next field
+        break;
+      } else if (values.length === 0) {
+        // First value doesn't match - might be invalid data, but include it to avoid losing data
+        // This could happen if a driver value was deleted or renamed
+        values.push(part);
+        index++;
+      } else {
+        // Unknown value after collecting some valid ones - likely moved to next field
+        break;
+      }
+    }
+    
+    return { values, nextIndex: index };
+  };
+  
+  // Extract sector values (next field would be domains)
+  const sectorResult = extractFieldValues(allParts, 0, driversData.sectors, driversData.domains, 'sector');
+  const sectorValues = sectorResult.values;
+  const sectorIndex = sectorResult.nextIndex;
+  
+  // Extract domain values (next field would be countries)
+  const domainResult = extractFieldValues(allParts, sectorIndex, driversData.domains, driversData.countries, 'domain');
+  const domainValues = domainResult.values;
+  const domainIndex = domainResult.nextIndex;
+  
+  // Extract country values (next field would be clarifier, indicated by "None")
+  const countryResult = extractFieldValues(allParts, domainIndex, driversData.countries, [], 'country');
+  const countryValues = countryResult.values;
+  const countryIndex = countryResult.nextIndex;
+  
+  // The remaining part should be VariableClarifier (could be multiple parts if clarifier has commas, but typically just one)
+  const clarifier = countryIndex < allParts.length ? allParts[countryIndex] : '';
+  
+  // Process each field to check if all values are selected, then format for multi-select
+  const processField = (values: string[], allValues: string[]): string[] => {
+    if (values.length === 0) return [];
+    
+    // If "ALL" is in values, or if all possible values are selected, return ALL + all values
+    if (values[0] === 'ALL' || containsAllValues(values.join(', '), allValues)) {
+      return ['ALL', ...allValues];
+    }
+    
+    // Otherwise return the actual selected values
+    return values;
+  };
+  
   return {
-    sector: parts[0] === 'ALL' ? ['ALL', ...driversData.sectors] : parts[0] ? [parts[0]] : [],
-    domain: parts[1] === 'ALL' ? ['ALL', ...driversData.domains] : parts[1] ? [parts[1]] : [],
-    country: parts[2] === 'ALL' ? ['ALL', ...driversData.countries] : parts[2] ? [parts[2]] : [],
-    variableClarifier: parts[3] === 'None' ? '' : parts[3] || ''
+    sector: processField(sectorValues, driversData.sectors),
+    domain: processField(domainValues, driversData.domains),
+    country: processField(countryValues, driversData.countries),
+    variableClarifier: clarifier === 'None' || !clarifier ? '' : clarifier
   };
 };
 

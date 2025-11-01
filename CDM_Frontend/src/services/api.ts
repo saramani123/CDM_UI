@@ -39,13 +39,30 @@ class ApiService {
       headers,
     };
 
-    const response = await fetch(url, mergedOptions);
+    // Add timeout to prevent hanging requests (30 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(url, {
+        ...mergedOptions,
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: The server took too long to respond. Please try again.');
+      }
+      throw error;
     }
-    
-    return response.json();
   }
 
   // Objects API
@@ -304,9 +321,14 @@ class ApiService {
   async createVariableObjectRelationship(variableId: string, relationshipData: any) {
     // Convert frontend field names to backend field names
     const backendData = {
-      to_being: relationshipData.toBeing,
-      to_avatar: relationshipData.toAvatar,
-      to_object: relationshipData.toObject
+      relationship_type: relationshipData.relationshipType || 'HAS_SPECIFIC_VARIABLE',
+      to_sector: relationshipData.toSector || '',
+      to_domain: relationshipData.toDomain || '',
+      to_country: relationshipData.toCountry || '',
+      to_object_clarifier: relationshipData.toObjectClarifier || '',
+      to_being: relationshipData.toBeing || '',
+      to_avatar: relationshipData.toAvatar || '',
+      to_object: relationshipData.toObject || ''
     };
     
     return this.request(`/variables/${variableId}/object-relationships`, {
@@ -318,9 +340,14 @@ class ApiService {
   async deleteVariableObjectRelationship(variableId: string, relationshipData: any) {
     // Convert frontend field names to backend field names
     const backendData = {
-      to_being: relationshipData.toBeing,
-      to_avatar: relationshipData.toAvatar,
-      to_object: relationshipData.toObject
+      relationship_type: relationshipData.relationshipType || 'HAS_SPECIFIC_VARIABLE',
+      to_sector: relationshipData.toSector || '',
+      to_domain: relationshipData.toDomain || '',
+      to_country: relationshipData.toCountry || '',
+      to_object_clarifier: relationshipData.toObjectClarifier || '',
+      to_being: relationshipData.toBeing || '',
+      to_avatar: relationshipData.toAvatar || '',
+      to_object: relationshipData.toObject || ''
     };
     
     return this.request(`/variables/${variableId}/object-relationships`, {
@@ -352,6 +379,21 @@ class ApiService {
   // Health check
   async healthCheck() {
     return this.request('/health', { method: 'GET' });
+  }
+
+  // Variable field options
+  async addVariableFieldOption(fieldName: string, value: string) {
+    return this.request('/variables/field-options', {
+      method: 'POST',
+      body: JSON.stringify({
+        field_name: fieldName,
+        value: value
+      }),
+    });
+  }
+
+  async getVariableFieldOptions() {
+    return this.request('/variables/field-options', { method: 'GET' });
   }
 }
 

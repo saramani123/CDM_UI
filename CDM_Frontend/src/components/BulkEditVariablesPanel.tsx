@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
-import { getDriversData, concatenateDrivers } from '../data/mockData';
+import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { useObjects } from '../hooks/useObjects';
 
 interface ObjectRelationship {
   id: string;
@@ -55,11 +57,21 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
   const driversData = getDriversData();
 
-  // Object relationships
-  const [objectRelationships, setObjectRelationships] = useState<ObjectRelationship[]>([]);
-
-  // CSV upload modal states
-  const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
+  // Object relationships - store selected object IDs from modal
+  const [selectedObjectRelationships, setSelectedObjectRelationships] = useState<string[]>([]);
+  
+  // Modal state for object relationships
+  const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
+  const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
+  const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
+  
+  // Confirmation dialog state
+  const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
+  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
+  
+  // Get objects data - use hook if not provided as prop
+  const { objects: objectsFromHook } = useObjects();
+  const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -206,8 +218,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
   };
 
-  const handleObjectRelationshipCsvUpload = (uploadedRelationships: ObjectRelationship[]) => {
-    setObjectRelationships(prev => [...prev, ...uploadedRelationships]);
+  // Handler for when relationships are saved in the modal
+  const handleRelationshipSave = (selectedObjectIds: string[]) => {
+    setSelectedObjectRelationships(selectedObjectIds);
   };
 
   const handleSaveBulkEdit = () => {
@@ -224,26 +237,69 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       driverSelections.variableClarifier
     ) : '';
     
-    // Remove duplicate relationships based on unique combination of properties
-    const uniqueRelationships = objectRelationships.reduce((acc, rel) => {
-      if (!acc.some(existing => 
-        existing.to_being === rel.to_being && 
-        existing.to_avatar === rel.to_avatar && 
-        existing.to_object === rel.to_object
-      )) {
-        acc.push(rel);
+    // Convert selected object IDs to relationship format
+    const objectRelationshipsList = selectedObjectRelationships.map(objectId => {
+      const obj = allObjects.find(o => o.id === objectId);
+      if (!obj) return null;
+      
+      // Parse sector, domain, country from driver string
+      let sector = '';
+      let domain = '';
+      let country = '';
+      if (obj.driver && obj.driver.trim()) {
+        try {
+          const parsed = parseDriverField(obj.driver);
+          sector = parsed.sector || '';
+          domain = parsed.domain || '';
+          country = parsed.country || '';
+        } catch (error) {
+          console.error(`Error parsing driver for object ${objectId}:`, error);
+        }
       }
-      return acc;
-    }, [] as ObjectRelationship[]);
+      
+      return {
+        id: objectId,
+        to_being: obj.being || '',
+        to_avatar: obj.avatar || '',
+        to_object: obj.object || '',
+        to_sector: sector,
+        to_domain: domain,
+        to_country: country
+      };
+    }).filter(Boolean) as any[];
 
     const saveData = {
       ...formData,
       ...(driverString && { driver: driverString }),
       ...metadata,
-      objectRelationshipsList: uniqueRelationships
+      objectRelationshipsList: objectRelationshipsList,
+      selectedObjectIds: selectedObjectRelationships, // Store IDs for reference
+      shouldOverrideRelationships: true // Flag to indicate we should delete existing relationships
     };
-    onSave(saveData);
-    onClose();
+    
+    // If relationships are being changed, show confirmation
+    if (selectedObjectRelationships.length > 0) {
+      setPendingSaveData(saveData);
+      setShowOverrideConfirmation(true);
+    } else {
+      // No relationships to change, save directly
+      onSave(saveData);
+      onClose();
+    }
+  };
+
+  const handleConfirmOverride = () => {
+    setShowOverrideConfirmation(false);
+    if (pendingSaveData) {
+      onSave(pendingSaveData);
+      onClose();
+    }
+    setPendingSaveData(null);
+  };
+
+  const handleCancelOverride = () => {
+    setShowOverrideConfirmation(false);
+    setPendingSaveData(null);
   };
 
   // Multi-select component
@@ -699,135 +755,45 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
       {/* Object Relationships Section */}
       <CollapsibleSection 
-        title="New Relationships" 
+        title="Object Relationships" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsRelationshipUploadOpen(true)}
+              onClick={() => setIsCsvUploadOpen(true)}
               className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
               title="Upload Relationships CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
             <button
-              onClick={addObjectRelationship}
-              className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-              title="Add Relationship"
+              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
+              className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+              title="View and manage relationships"
             >
-              <Plus className="w-4 h-4" />
+              View Relationships
             </button>
-          </>
+          </div>
         }
       >
-        {objectRelationships.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No new relationships to add</div>
-            <button
-              onClick={addObjectRelationship}
-              className="mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm"
-            >
-              Add your first new relationship
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {objectRelationships.map((relationship, index) => (
-              <div key={relationship.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    New Relationship #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteObjectRelationship(relationship.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete Relationship"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Being
-                      </label>
-                      <select
-                        value={relationship.to_being}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'to_being', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Being</option>
-                        {getDistinctBeings().map((being) => (
-                          <option key={being} value={being}>
-                            {being}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                        To Avatar
-                      </label>
-                      <select
-                        value={relationship.to_avatar}
-                        onChange={(e) => handleObjectRelationshipChange(relationship.id, 'to_avatar', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select To Avatar</option>
-                        {relationship.to_being && getDistinctAvatarsForBeing(relationship.to_being).map((avatar) => (
-                          <option key={avatar} value={avatar}>
-                            {avatar}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                      To Object
-                    </label>
-                    <select
-                      value={relationship.to_object}
-                      onChange={(e) => handleObjectRelationshipChange(relationship.id, 'to_object', e.target.value)}
-                      className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select To Object</option>
-                      {relationship.to_being && relationship.to_avatar && 
-                        getDistinctObjectsForBeingAndAvatar(relationship.to_being, relationship.to_avatar).map((object) => (
-                        <option key={object} value={object}>
-                          {object}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
+        <div className="py-4">
+          {selectedObjectRelationships.length === 0 ? (
+            <div className="text-center py-6 text-ag-dark-text-secondary">
+              <div className="text-sm">No object relationships defined</div>
+              <div className="text-xs mt-2 text-ag-dark-text-secondary">
+                Relationships will be applied to all {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''}
               </div>
-            ))}
-          </div>
-        )}
+            </div>
+          ) : (
+            <div className="text-sm text-ag-dark-text">
+              {selectedObjectRelationships.length} object{selectedObjectRelationships.length !== 1 ? 's' : ''} selected
+              <div className="text-xs mt-2 text-ag-dark-text-secondary">
+                Will override existing relationships for {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''}
+              </div>
+            </div>
+          )}
+        </div>
       </CollapsibleSection>
 
       {/* Apply Changes Button */}
@@ -841,13 +807,69 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </button>
       </div>
 
+      {/* Variable-Object Relationship Modal */}
+      <VariableObjectRelationshipModal
+        isOpen={isVariableObjectRelationshipModalOpen}
+        onClose={() => {
+          setIsVariableObjectRelationshipModalOpen(false);
+          setPendingCsvData(null); // Clear pending CSV data when modal closes
+        }}
+        selectedVariable={{
+          id: 'bulk-edit-temp-id',
+          variable: `Bulk Edit (${selectedCount} variables)`
+        }}
+        allObjects={allObjects}
+        previewMode={true}
+        onSelectionChange={(selectedObjectIds: string[]) => {
+          setSelectedObjectRelationships(selectedObjectIds);
+        }}
+        initialCsvData={pendingCsvData}
+      />
+
       {/* CSV Upload Modal */}
       <CsvUploadModal
-        isOpen={isRelationshipUploadOpen}
-        onClose={() => setIsRelationshipUploadOpen(false)}
-        type="relationships"
-        onUpload={handleObjectRelationshipCsvUpload}
+        isOpen={isCsvUploadOpen}
+        onClose={() => setIsCsvUploadOpen(false)}
+        type="variable-object-relationships"
+        onUpload={(data: any[] | File) => {
+          // Store CSV data and open the relationship modal
+          if (Array.isArray(data)) {
+            setPendingCsvData(data);
+            setIsCsvUploadOpen(false);
+            setIsVariableObjectRelationshipModalOpen(true);
+          }
+        }}
       />
+
+      {/* Confirmation Dialog */}
+      {showOverrideConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+          <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-ag-dark-text mb-4">
+              Override Existing Relationships?
+            </h3>
+            <p className="text-ag-dark-text-secondary mb-6">
+              This will delete all existing object relationships for the {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''} and replace them with the new relationship{selectedObjectRelationships.length !== 1 ? 's' : ''} you've selected.
+              <br /><br />
+              This action cannot be undone. Are you sure?
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={handleCancelOverride}
+                className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmOverride}
+                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
+              >
+                Yes, Override
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

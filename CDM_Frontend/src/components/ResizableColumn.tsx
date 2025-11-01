@@ -129,8 +129,8 @@ export const ResizableColumn: React.FC<ResizableColumnProps> = ({
   return (
     <div
       ref={columnRef}
-      className={`relative ${className}`}
-      style={headerWidthStyle}
+      className={`relative box-border ${className}`}
+      style={{ ...headerWidthStyle, boxSizing: 'border-box' }}
     >
       {children}
       {/* Resize handle - positioned at the right edge */}

@@ -12,7 +12,17 @@ export const useVariables = () => {
       setLoading(true);
       setError(null);
       console.log('Fetching variables from API...');
-      const data = await apiService.getVariables() as VariableData[];
+      
+      // Add timeout wrapper for extra safety (in addition to API service timeout)
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Request timeout: Variables fetch took too long')), 35000);
+      });
+      
+      const data = await Promise.race([
+        apiService.getVariables() as Promise<VariableData[]>,
+        timeoutPromise
+      ]);
+      
       console.log('Variables API response:', data);
       console.log('Variables count:', data?.length || 0);
       console.log('First variable:', data?.[0]);
@@ -20,8 +30,11 @@ export const useVariables = () => {
       console.log('Is array:', Array.isArray(data));
       setVariables(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch variables');
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch variables';
+      setError(errorMessage);
       console.error('Error fetching variables:', err);
+      // Set empty array on error to prevent infinite loading state
+      setVariables([]);
     } finally {
       setLoading(false);
     }
@@ -108,8 +121,9 @@ export const useVariables = () => {
   };
 
   useEffect(() => {
+    // Fetch variables on mount
     fetchVariables();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     variables,

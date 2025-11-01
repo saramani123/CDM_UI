@@ -194,15 +194,20 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     }
   };
 
-  const handleCheckboxChange = (objectId: string, checked: boolean) => {
-    setRelationshipData(prev => ({
-      ...prev,
-      [objectId]: {
-        ...prev[objectId],
-        isSelected: checked,
-        roles: checked ? (prev[objectId]?.roles || selectedObject?.object || '') : prev[objectId]?.roles || ''
-      }
-    }));
+  const handleRowClick = (objectId: string) => {
+    setRelationshipData(prev => {
+      const currentData = prev[objectId];
+      const currentlySelected = currentData?.isSelected || false;
+      
+      return {
+        ...prev,
+        [objectId]: {
+          ...prev[objectId],
+          isSelected: !currentlySelected,
+          roles: !currentlySelected ? (prev[objectId]?.roles || selectedObject?.object || '') : prev[objectId]?.roles || ''
+        }
+      };
+    });
   };
 
   const handleRelationshipTypeChange = (objectId: string, type: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table') => {
@@ -542,7 +547,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 highlightCurrentObject={true}
                 showActionsColumn={false}
                 relationshipData={relationshipData}
-                onRelationshipCheckboxChange={handleCheckboxChange}
+                onRelationshipRowClick={handleRowClick}
+                selectionMode="row"
               />
             </div>
           )}
