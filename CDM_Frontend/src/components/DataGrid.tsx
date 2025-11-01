@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
+import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
 
 interface Column {
   key: string;
@@ -849,7 +850,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       }}>
                         {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
                           formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 
-                          (row[column.key] || '-')
+                          (column.key === 'sector' || column.key === 'domain' || column.key === 'country') ? 
+                            getGridDriverDisplayValue(column.key, row[column.key] || '') : 
+                            (row[column.key] || '-')
                         }
                       </span>
                     )}

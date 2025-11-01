@@ -37,9 +37,9 @@ export interface Variant {
 export const mockObjectData: ObjectData[] = [];
 
 export const objectColumns = [
-  { key: 'sector', title: 'Sector', sortable: true, filterable: true, width: '140px' },
-  { key: 'domain', title: 'Domain', sortable: true, filterable: true, width: '140px' },
-  { key: 'country', title: 'Country', sortable: true, filterable: true, width: '140px' },
+  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '140px' },
+  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '140px' },
+  { key: 'country', title: 'C', sortable: true, filterable: true, width: '140px' },
   { key: 'being', title: 'Being', sortable: true, filterable: true, width: '120px' },
   { key: 'avatar', title: 'Avatar', sortable: true, filterable: true, width: '180px' },
   { key: 'object', title: 'Object', sortable: true, filterable: true, width: '140px' },

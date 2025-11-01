@@ -39,9 +39,9 @@ export interface ObjectRelationship {
 export const mockVariableData: VariableData[] = [];
 
 export const variableColumns = [
-  { key: 'sector', title: 'Sector', sortable: true, filterable: true, width: '140px' },
-  { key: 'domain', title: 'Domain', sortable: true, filterable: true, width: '140px' },
-  { key: 'country', title: 'Country', sortable: true, filterable: true, width: '140px' },
+  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '140px' },
+  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '140px' },
+  { key: 'country', title: 'C', sortable: true, filterable: true, width: '140px' },
   { key: 'part', title: 'Part', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },

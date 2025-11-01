@@ -16,6 +16,7 @@ import { mockObjectData, objectColumns, metadataFields, parseDriverField, type O
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
+import { removeDriverAbbreviation } from './utils/driverAbbreviations';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
@@ -1139,6 +1140,12 @@ function App() {
     
     try {
       console.log(`Deleting driver: ${driverToDelete.name} of type: ${driverToDelete.type}`);
+      
+      // Remove abbreviation if it exists (only for sectors, domains, countries)
+      if (['sectors', 'domains', 'countries'].includes(driverToDelete.type)) {
+        removeDriverAbbreviation(driverToDelete.type, driverToDelete.name);
+      }
+      
       const response = await deleteDriver(driverToDelete.type, driverToDelete.name);
       
       console.log('🔍 DELETE RESPONSE:', response);
