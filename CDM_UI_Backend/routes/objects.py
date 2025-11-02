@@ -32,51 +32,63 @@ async def get_objects():
 
     try:
         with driver.session() as session:
-            # Get all objects first
-            objects_result = session.run("""
+            # Optimized single query to get all objects with relationships and variants
+            # This avoids N+1 query problem by fetching everything in one query
+            result = session.run("""
                 MATCH (o:Object)
-                RETURN o.id as id, o.driver as driver, o.being as being,
-                       o.avatar as avatar, o.object as object, o.status as status
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                WITH o, 
+                     collect(DISTINCT {
+                         id: r.id,
+                         type: r.type,
+                         role: r.role,
+                         toBeing: other.being,
+                         toAvatar: other.avatar,
+                         toObject: other.object
+                     }) as relationships,
+                     collect(DISTINCT v.name) as variant_names
+                RETURN o.id as id, 
+                       o.driver as driver, 
+                       o.being as being,
+                       o.avatar as avatar, 
+                       o.object as object, 
+                       o.status as status,
+                       relationships,
+                       variant_names
                 ORDER BY o.id
             """)
             
             objects = []
-            for record in objects_result:
-                obj_id = record["id"]
-                
-                # Get relationships for this object
-                relationships_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                    RETURN r.id as id, r.type as type, r.role as role,
-                           other.being as toBeing, other.avatar as toAvatar, other.object as toObject
-                """, object_id=obj_id)
-                
+            for record in result:
+                # Filter out null relationships (from OPTIONAL MATCH when no relationships exist)
+                # The collect() may include entries with all None values when no relationships exist
+                relationships_raw = record["relationships"] if record["relationships"] else []
                 relationships = []
-                for rel_record in relationships_result:
-                    relationships.append({
-                        "id": rel_record["id"] or str(uuid.uuid4()),
-                        "type": rel_record["type"],
-                        "role": rel_record["role"],
-                        "toBeing": rel_record["toBeing"],
-                        "toAvatar": rel_record["toAvatar"],
-                        "toObject": rel_record["toObject"]
-                    })
+                for rel in relationships_raw:
+                    # Skip entries where type is None (meaning no relationship was matched)
+                    if rel.get("type") is not None:
+                        relationships.append({
+                            "id": rel.get("id") or str(uuid.uuid4()),
+                            "type": rel.get("type"),
+                            "role": rel.get("role"),
+                            "toBeing": rel.get("toBeing"),
+                            "toAvatar": rel.get("toAvatar"),
+                            "toObject": rel.get("toObject")
+                        })
                 
-                # Get variants for this object
-                variants_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
-                    RETURN v.name as name
-                """, object_id=obj_id)
-                
-                variants = []
-                for var_record in variants_result:
-                    variants.append({
+                # Filter out null variant names
+                variant_names = [name for name in record["variant_names"] if name is not None]
+                variants = [
+                    {
                         "id": str(uuid.uuid4()),
-                        "name": var_record["name"]
-                    })
+                        "name": name
+                    }
+                    for name in variant_names
+                ]
                 
                 obj = {
-                    "id": obj_id,
+                    "id": record["id"],
                     "driver": record["driver"],
                     "being": record["being"],
                     "avatar": record["avatar"],
@@ -90,7 +102,7 @@ async def get_objects():
                 }
                 objects.append(obj)
 
-            print(f"Retrieved {len(objects)} objects from Neo4j")
+            print(f"Retrieved {len(objects)} objects from Neo4j (optimized query)")
             return objects
 
     except Exception as e:

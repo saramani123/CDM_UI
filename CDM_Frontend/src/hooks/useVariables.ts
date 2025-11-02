@@ -96,96 +96,12 @@ export const useVariables = () => {
     }
   };
 
-  const bulkUploadVariables = async (file: File, onProgress?: (progress: { chunk: number; total: number; progress: number }) => void) => {
+  const bulkUploadVariables = async (file: File) => {
     try {
-      // Read the CSV file and chunk it into batches of 500 rows
-      const text = await file.text();
-      const lines = text.split('\n').filter(line => line.trim());
-      
-      if (lines.length <= 1) {
-        throw new Error('CSV file must contain at least a header row and one data row');
-      }
-      
-      const header = lines[0];
-      const dataRows = lines.slice(1);
-      const CHUNK_SIZE = 500; // Chunk size to stay under 60-second timeout
-      const chunks: string[] = [];
-      
-      // Split into chunks
-      for (let i = 0; i < dataRows.length; i += CHUNK_SIZE) {
-        const chunk = [header, ...dataRows.slice(i, i + CHUNK_SIZE)].join('\n');
-        chunks.push(chunk);
-      }
-      
-      console.log(`Uploading ${dataRows.length} rows in ${chunks.length} chunk(s)`);
-      
-      // Upload chunks sequentially
-      let totalCreated = 0;
-      let totalErrors = 0;
-      const allErrors: string[] = [];
-      
-      for (let i = 0; i < chunks.length; i++) {
-        const chunkNum = i + 1;
-        const chunkBlob = new Blob([chunks[i]], { type: 'text/csv' });
-        const chunkFile = new File([chunkBlob], file.name, { type: 'text/csv' });
-        
-        console.log(`Uploading chunk ${chunkNum}/${chunks.length} (${dataRows.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, dataRows.length)).length} rows)`);
-        
-        try {
-          const result = await apiService.bulkUploadVariables(chunkFile, 120000); // 2 minute timeout per chunk
-          
-          if (result.created_count) {
-            totalCreated += result.created_count;
-          }
-          if (result.error_count) {
-            totalErrors += result.error_count;
-          }
-          if (result.errors && Array.isArray(result.errors)) {
-            allErrors.push(...result.errors.map((e: string) => `Chunk ${chunkNum}: ${e}`));
-          }
-          
-          console.log(`Chunk ${chunkNum}/${chunks.length} completed: ${result.created_count || 0} created, ${result.error_count || 0} errors`);
-          
-          // Update progress after chunk completes
-          if (onProgress) {
-            onProgress({
-              chunk: chunkNum,
-              total: chunks.length,
-              progress: Math.round(((i + 1) / chunks.length) * 100)
-            });
-          }
-        } catch (chunkError) {
-          const errorMsg = chunkError instanceof Error ? chunkError.message : 'Unknown error';
-          console.error(`Chunk ${chunkNum} failed:`, errorMsg);
-          allErrors.push(`Chunk ${chunkNum} failed: ${errorMsg}`);
-          
-          // Update progress even on error
-          if (onProgress) {
-            onProgress({
-              chunk: chunkNum,
-              total: chunks.length,
-              progress: Math.round(((i + 1) / chunks.length) * 100)
-            });
-          }
-          // Continue with next chunk even if one fails
-        }
-        
-        // Small delay between chunks to avoid overwhelming the server
-        if (i < chunks.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-      
+      const result = await apiService.bulkUploadVariables(file);
       // Refresh variables after bulk upload
       await fetchVariables();
-      
-      return {
-        success: totalCreated > 0,
-        message: `Uploaded ${chunks.length} chunk(s): ${totalCreated} variables created, ${totalErrors} errors`,
-        created_count: totalCreated,
-        error_count: totalErrors,
-        errors: allErrors.slice(0, 50) // Limit to first 50 errors
-      };
+      return result;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to bulk upload variables');
       throw err;
