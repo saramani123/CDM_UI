@@ -13,13 +13,13 @@ setenv VIRTUAL_ENV "/Users/romikapoor/CDM Screens/CDM_UI_Backend/venv_neo4j"
 
 set _OLD_VIRTUAL_PATH="$PATH"
 setenv PATH "$VIRTUAL_ENV/bin:$PATH"
+setenv VIRTUAL_ENV_PROMPT "venv_neo4j"
 
 
 set _OLD_VIRTUAL_PROMPT="$prompt"
 
 if (! "$?VIRTUAL_ENV_DISABLE_PROMPT") then
     set prompt = "(venv_neo4j) $prompt"
-    setenv VIRTUAL_ENV_PROMPT "(venv_neo4j) "
 endif
 
 alias pydoc python -m pydoc

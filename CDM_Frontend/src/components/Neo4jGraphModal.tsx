@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Info, Network, RefreshCw, ExternalLink, AlertTriangle } from 'lucide-react';
+import { X, Info, Network, RefreshCw, ExternalLink, AlertTriangle, Plus, Minus, ChevronDown, ChevronUp } from 'lucide-react';
 // @ts-ignore - vis-network doesn't have complete TypeScript definitions
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
@@ -23,6 +23,7 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [nodeCount, setNodeCount] = useState<number | null>(null);
   const [showFallback, setShowFallback] = useState(false);
+  const [showCypherQuery, setShowCypherQuery] = useState(false);
   const networkRef = useRef<VisNetwork | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   
@@ -181,6 +182,61 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       // Create and render the network
       networkRef.current = new VisNetwork(container, data, options);
       
+      // Force network to resize to fill container
+      setTimeout(() => {
+        if (networkRef.current && container) {
+          networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
+          networkRef.current.redraw();
+        }
+      }, 100);
+      
+      // Store network reference for zoom controls and set default zoom/center
+      if (networkRef.current) {
+        // Wait for graph to stabilize, then zoom and center
+        networkRef.current.on('stabilizationEnd', () => {
+          console.log('Graph stabilized, zooming and centering...');
+          
+          // Force another resize to ensure canvas is correct size
+          if (networkRef.current && container) {
+            networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
+          }
+          
+          // Use fit() to center and fit the graph to the viewport
+          networkRef.current?.fit({
+            padding: 10, // Very minimal padding for tight fit
+            animation: {
+              duration: 600,
+              easingFunction: 'easeInOutQuad'
+            }
+          });
+          
+          // Then aggressively zoom in after a short delay
+          setTimeout(() => {
+            if (networkRef.current) {
+              const currentScale = networkRef.current.getScale() || 1;
+              const targetScale = Math.min(currentScale * 4, 6); // Very aggressive zoom (up to 6x)
+              
+              console.log('Zooming in from', currentScale, 'to', targetScale);
+              
+              networkRef.current.moveTo({
+                scale: targetScale,
+                animation: {
+                  duration: 400,
+                  easingFunction: 'easeInOutQuad'
+                }
+              });
+              
+              // Final resize check
+              setTimeout(() => {
+                if (networkRef.current && container) {
+                  networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
+                }
+              }, 500);
+            }
+          }, 700);
+        });
+      }
+      
       setNodeCount(graphData.nodeCount);
       if (graphData.nodeCount > 300) {
         setError(`Large graph detected: ${graphData.nodeCount} nodes. Performance may be affected.`);
@@ -208,6 +264,20 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       }
     }
   };
+
+  // Handle window resize to keep graph sized correctly
+  useEffect(() => {
+    const handleResize = () => {
+      if (networkRef.current && containerRef.current) {
+        const container = containerRef.current;
+        networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
+        networkRef.current.redraw();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Render graph when view changes or modal opens
   useEffect(() => {
@@ -271,18 +341,32 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
     });
   };
 
-  const handleOpenInNeo4jBrowser = (view: GraphView) => {
-    const query = cypherQueries[view];
-    copyQueryToClipboard(query);
-    // Open Neo4j Console in a new tab
+  const handleOpenInNeo4jConsole = () => {
+    // Open Neo4j Console - user can connect to CDM_Dev instance manually
+    // Note: Direct linking to a specific Neo4j instance requires the neo4j:// protocol
+    // which only works when Neo4j Browser is installed. For web, we'll open the console.
     window.open('https://console.neo4j.io', '_blank');
+  };
+
+  const handleZoomIn = () => {
+    if (networkRef.current) {
+      const scale = networkRef.current.getScale();
+      networkRef.current.moveTo({ scale: scale * 1.2 });
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (networkRef.current) {
+      const scale = networkRef.current.getScale();
+      networkRef.current.moveTo({ scale: scale * 0.8 });
+    }
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col">
+      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[95vw] h-[90vh] max-w-[95vw] max-h-[90vh] flex flex-col">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
           <div className="flex items-center gap-3">
@@ -334,21 +418,6 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           </div>
         )}
 
-        {/* Info Banner */}
-        {!error && (
-          <div className="px-6 pt-4 pb-2">
-            <div className="flex items-start gap-2 p-3 bg-ag-dark-bg border border-ag-dark-border rounded-lg">
-              <Info className="w-4 h-4 text-ag-dark-accent mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-ag-dark-text-secondary">
-                Explore Object relationships and taxonomy directly from Neo4j. 
-                {nodeCount && (
-                  <span className="ml-1 font-medium">Graph contains {nodeCount} nodes.</span>
-                )}
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* Tabs */}
         <div className="flex border-b border-ag-dark-border px-6">
           <button
@@ -373,171 +442,123 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           </button>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {activeView === 'taxonomy' ? (
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-ag-dark-text mb-2">
-                  Object Taxonomy View
-                </h4>
-                <p className="text-sm text-ag-dark-text-secondary mb-4">
-                  Displays the hierarchical structure: <strong>Being → Avatar → Object → Variant</strong>
-                </p>
+        {/* Content Area - Graph takes full height, query scrollable below */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Graph Visualization Area - Takes remaining space */}
+          <div className="flex-1 bg-ag-dark-bg border-x border-ag-dark-border relative min-h-0 overflow-hidden" style={{ flex: '1 1 auto', minHeight: 'calc(90vh - 180px)' }}>
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg/80 z-10">
+                <div className="text-center space-y-3">
+                  <RefreshCw className="w-8 h-8 text-ag-dark-accent mx-auto animate-spin" />
+                  <p className="text-sm text-ag-dark-text-secondary">Loading graph...</p>
+                </div>
               </div>
-
-              {/* Graph Visualization Area */}
-              <div className="bg-ag-dark-bg border border-ag-dark-border rounded-lg relative min-h-[500px]">
-                {isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg/80 z-10 rounded-lg">
-                    <div className="text-center space-y-3">
-                      <RefreshCw className="w-8 h-8 text-ag-dark-accent mx-auto animate-spin" />
-                      <p className="text-sm text-ag-dark-text-secondary">Loading graph...</p>
-                    </div>
+            )}
+            {showFallback && error && (
+              <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg z-10">
+                <div className="text-center space-y-4 p-8">
+                  <Network className="w-16 h-16 text-ag-dark-text-secondary mx-auto opacity-50" />
+                  <div>
+                    <p className="text-sm text-ag-dark-text-secondary mb-2">
+                      {error}
+                    </p>
+                    <button
+                      onClick={handleOpenInNeo4jConsole}
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-ag-dark-accent text-ag-dark-accent rounded hover:bg-ag-dark-accent hover:text-white transition-colors text-sm"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                      View in Neo4j Console
+                    </button>
                   </div>
-                )}
-                {showFallback && error && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg z-10 rounded-lg">
-                    <div className="text-center space-y-4 p-8">
-                      <Network className="w-16 h-16 text-ag-dark-text-secondary mx-auto opacity-50" />
-                      <div>
-                        <p className="text-sm text-ag-dark-text-secondary mb-2">
-                          {error}
-                        </p>
-                        <button
-                          onClick={() => handleOpenInNeo4jBrowser('taxonomy')}
-                          className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-ag-dark-accent text-ag-dark-accent rounded hover:bg-ag-dark-accent hover:text-white transition-colors text-sm"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Open in Neo4j Browser
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div 
-                  id={getContainerId()} 
-                  ref={containerRef}
-                  style={{ height: '500px', width: '100%', backgroundColor: '#0e1621' }} 
-                />
+                </div>
               </div>
+            )}
+            <div 
+              id={getContainerId()} 
+              ref={containerRef}
+              className="w-full h-full"
+              style={{ 
+                backgroundColor: '#0e1621',
+                position: 'relative',
+                width: '100%',
+                height: '100%',
+                minHeight: 0 // Remove minHeight to let flexbox control sizing
+              }} 
+            />
+            
+            {/* Zoom Controls - Positioned in bottom-right corner */}
+            <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
+              <button
+                onClick={handleZoomIn}
+                className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
+                title="Zoom In"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleZoomOut}
+                className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
+                title="Zoom Out"
+              >
+                <Minus className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
 
-              {/* Cypher Query Display */}
-              <div className="bg-ag-dark-bg border border-ag-dark-border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
+          {/* Scrollable Content Below Graph - Fixed position at bottom */}
+          <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface">
+            {/* Action Buttons - Side by side */}
+            <div className="px-6 py-3 flex gap-3">
+              <button
+                onClick={() => setShowCypherQuery(!showCypherQuery)}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
+              >
+                {showCypherQuery ? (
+                  <>
+                    <ChevronUp className="w-4 h-4" />
+                    Hide Cypher Query
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4" />
+                    View Cypher Query
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={handleOpenInNeo4jConsole}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-accent text-ag-dark-accent rounded text-sm font-medium hover:bg-ag-dark-accent hover:text-white transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View in Neo4j Console
+              </button>
+            </div>
+
+            {/* Cypher Query - Expandable below buttons */}
+            {showCypherQuery && (
+              <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg">
+                <div className="flex items-center justify-between mb-2 pt-4">
                   <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
                     Cypher Query
                   </label>
                   <button
-                    onClick={() => copyQueryToClipboard(cypherQueries.taxonomy)}
-                    className={`text-xs transition-colors ${
-                      copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover'
+                    onClick={() => copyQueryToClipboard(activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model)}
+                    className={`text-xs transition-colors px-2 py-1 rounded ${
+                      copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-surface'
                     }`}
                   >
                     {copySuccess ? 'Copied!' : 'Copy Query'}
                   </button>
                 </div>
-                <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto">
-                  {cypherQueries.taxonomy}
+                <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto border border-ag-dark-border">
+                  {activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model}
                 </pre>
               </div>
-
-              {/* Action Button */}
-              <button
-                onClick={() => handleOpenInNeo4jBrowser('taxonomy')}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 border border-ag-dark-accent text-ag-dark-accent rounded hover:bg-ag-dark-accent hover:text-white transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open Object Taxonomy in Neo4j Browser
-                <span className="text-xs opacity-75">(Query will be copied to clipboard)</span>
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-sm font-medium text-ag-dark-text mb-2">
-                  Object Model View
-                </h4>
-                <p className="text-sm text-ag-dark-text-secondary mb-4">
-                  Expands the Taxonomy to include <strong>Object-to-Object relationships</strong> with role properties.
-                </p>
-              </div>
-
-              {/* Graph Visualization Area */}
-              <div className="bg-ag-dark-bg border border-ag-dark-border rounded-lg relative min-h-[500px]">
-                {isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg/80 z-10 rounded-lg">
-                    <div className="text-center space-y-3">
-                      <RefreshCw className="w-8 h-8 text-ag-dark-accent mx-auto animate-spin" />
-                      <p className="text-sm text-ag-dark-text-secondary">Loading graph...</p>
-                    </div>
-                  </div>
-                )}
-                {showFallback && error && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg z-10 rounded-lg">
-                    <div className="text-center space-y-4 p-8">
-                      <Network className="w-16 h-16 text-ag-dark-text-secondary mx-auto opacity-50" />
-                      <div>
-                        <p className="text-sm text-ag-dark-text-secondary mb-2">
-                          {error}
-                        </p>
-                        <button
-                          onClick={() => handleOpenInNeo4jBrowser('model')}
-                          className="inline-flex items-center justify-center gap-2 px-4 py-2 border border-ag-dark-accent text-ag-dark-accent rounded hover:bg-ag-dark-accent hover:text-white transition-colors text-sm"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                          Open in Neo4j Browser
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div 
-                  id={getContainerId()} 
-                  ref={containerRef}
-                  style={{ height: '500px', width: '100%', backgroundColor: '#0e1621' }} 
-                />
-              </div>
-
-              {/* Cypher Query Display */}
-              <div className="bg-ag-dark-bg border border-ag-dark-border rounded-lg p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
-                    Cypher Query
-                  </label>
-                  <button
-                    onClick={() => copyQueryToClipboard(cypherQueries.model)}
-                    className={`text-xs transition-colors ${
-                      copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover'
-                    }`}
-                  >
-                    {copySuccess ? 'Copied!' : 'Copy Query'}
-                  </button>
-                </div>
-                <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto">
-                  {cypherQueries.model}
-                </pre>
-              </div>
-
-              {/* Action Button */}
-              <button
-                onClick={() => handleOpenInNeo4jBrowser('model')}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 border border-ag-dark-accent text-ag-dark-accent rounded hover:bg-ag-dark-accent hover:text-white transition-colors"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open Object Model in Neo4j Browser
-                <span className="text-xs opacity-75">(Query will be copied to clipboard)</span>
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-ag-dark-border bg-ag-dark-bg rounded-b-lg">
-          <p className="text-xs text-ag-dark-text-secondary text-center">
-            Graph visualization limited to ~300 nodes for performance. Use Neo4j Browser for full view.
-          </p>
-        </div>
       </div>
     </div>
   );
