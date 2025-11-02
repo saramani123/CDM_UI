@@ -550,7 +550,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         {/* Content Area - Graph takes full height, query scrollable below */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
           {/* Graph Visualization Area - Takes remaining space */}
-          <div className="flex-1 bg-ag-dark-bg border-x border-ag-dark-border relative min-h-0 overflow-hidden" style={{ flex: '1 1 auto', minHeight: 'calc(90vh - 180px)' }}>
+          <div className="flex-1 bg-ag-dark-bg border-x border-ag-dark-border relative min-h-0 overflow-hidden" style={{ minHeight: 0, flex: '1 1 0%' }}>
             {isLoading && (
               <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg/80 z-10">
                 <div className="text-center space-y-3">
@@ -760,9 +760,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           )}
 
           {/* Scrollable Content Below Graph - Fixed position at bottom */}
-          <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface">
+          <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface flex flex-col min-h-0" style={{ maxHeight: showCypherQuery ? '40vh' : 'auto' }}>
             {/* Action Buttons - Side by side */}
-            <div className="px-6 py-3 flex gap-3">
+            <div className="px-6 py-3 flex gap-3 flex-shrink-0">
               <button
                 onClick={() => setShowCypherQuery(!showCypherQuery)}
                 className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
@@ -789,9 +789,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
               </button>
             </div>
 
-            {/* Cypher Query - Expandable below buttons */}
+            {/* Cypher Query - Expandable below buttons with scrolling */}
             {showCypherQuery && (
-              <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg">
+              <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto flex-1 min-h-0">
                 <div className="flex items-center justify-between mb-2 pt-4">
                   <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
                     Cypher Query
@@ -805,7 +805,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                     {copySuccess ? 'Copied!' : 'Copy Query'}
                   </button>
                 </div>
-                <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto border border-ag-dark-border">
+                <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto overflow-y-auto border border-ag-dark-border whitespace-pre-wrap break-words">
                   {activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model}
                 </pre>
               </div>

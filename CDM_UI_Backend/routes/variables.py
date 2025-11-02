@@ -656,7 +656,7 @@ async def delete_variable(variable_id: str):
                 """, {"id": variable_id})
                 return result.single()
             
-            record = session.write_transaction(delete_tx)
+            record = session.execute_write(delete_tx)
             if not record:
                 raise HTTPException(status_code=404, detail="Variable not found")
 
@@ -840,7 +840,7 @@ async def create_object_relationship(variable_id: str, relationship_data: Object
         
         # Execute transaction with explicit write mode
         with driver.session(default_access_mode=WRITE_ACCESS) as session:
-            result = session.write_transaction(create_relationships_tx)
+            result = session.execute_write(create_relationships_tx)
             relationships_created = result["created"]
             final_count = result["verified"]
             
@@ -952,23 +952,34 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         if not lines:
             raise HTTPException(status_code=400, detail="Empty CSV file")
         
-        # Get headers from first line
-        headers = [h.strip() for h in lines[0].split(',')]
+        # Get headers from first line - use csv module to handle quoted fields
+        import csv as csv_module
+        header_reader = csv_module.reader([lines[0]])
+        headers = next(header_reader)
+        headers = [h.strip() for h in headers]
         
-        # Parse data rows
+        # Parse data rows using csv module to properly handle quoted fields with commas
         rows = []
         for i, line in enumerate(lines[1:], start=2):
             if not line.strip():
                 continue
             
-            # Simple split by comma - this handles unquoted fields with spaces
-            values = [v.strip() for v in line.split(',')]
-            
-            # Create row dictionary
-            row = {}
-            for j, header in enumerate(headers):
-                row[header] = values[j] if j < len(values) else ""
-            rows.append(row)
+            try:
+                # Use csv module to parse line (handles quoted fields correctly)
+                line_reader = csv_module.reader([line])
+                values = next(line_reader)
+                values = [v.strip() for v in values]
+                
+                # Create row dictionary
+                row = {}
+                for j, header in enumerate(headers):
+                    row[header] = values[j] if j < len(values) else ""
+                rows.append(row)
+            except Exception as e:
+                print(f"⚠️  Error parsing row {i}: {str(e)}")
+                print(f"   Line content: {line[:100]}...")  # First 100 chars
+                errors.append(f"Row {i}: CSV parsing error - {str(e)}")
+                continue
                     
         print(f"Successfully parsed {len(rows)} rows from CSV")
     except Exception as e:
@@ -980,6 +991,9 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
     variables = []
     errors = []
     
+    print(f"CSV Headers found: {headers}")
+    print(f"First few rows sample: {rows[:3] if len(rows) >= 3 else rows}")
+    
     for row_num, row in enumerate(rows, start=2):  # Start at 2 because of header
         try:
             # Validate required fields
@@ -987,7 +1001,10 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
             
             if missing_fields:
-                errors.append(f"Row {row_num}: Missing required fields: {', '.join(missing_fields)}")
+                error_msg = f"Row {row_num}: Missing required fields: {', '.join(missing_fields)}"
+                print(f"❌ {error_msg}")
+                print(f"   Row data: {row}")
+                errors.append(error_msg)
                 continue
 
             # Parse driver selections
@@ -1092,8 +1109,8 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 return {"created": batch_created, "errors": batch_errors}
             
             try:
-                # Execute batch transaction
-                batch_result = session.write_transaction(process_batch_tx)
+                # Execute batch transaction (using execute_write for Neo4j driver 5.0+)
+                batch_result = session.execute_write(process_batch_tx)
                 created_vars = batch_result["created"]
                 created_count += len(created_vars)
                 errors.extend(batch_result["errors"])

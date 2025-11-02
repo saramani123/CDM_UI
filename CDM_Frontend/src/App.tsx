@@ -1068,39 +1068,8 @@ function App() {
 
   const handleBulkVariableUpload = async (file: File) => {
     try {
-      console.log('Starting bulk upload...');
-      
-      // Show progress modal
-      let progressMessage = 'Preparing upload...';
-      const progressAlert = document.createElement('div');
-      progressAlert.className = 'fixed top-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50';
-      progressAlert.innerHTML = `<div class="font-semibold">${progressMessage}</div>`;
-      document.body.appendChild(progressAlert);
-      
-      const updateProgress = (progress: { chunk: number; total: number; progress: number }) => {
-        progressMessage = `Uploading chunk ${progress.chunk}/${progress.total}... (${progress.progress}%)`;
-        progressAlert.innerHTML = `<div class="font-semibold">${progressMessage}</div>`;
-      };
-      
-      let result;
-      try {
-        result = await bulkUploadVariables(file, updateProgress);
-      } finally {
-        // Remove progress alert (even if error occurs)
-        if (document.body.contains(progressAlert)) {
-          document.body.removeChild(progressAlert);
-        }
-      }
-      
+      const result = await bulkUploadVariables(file);
       console.log('Bulk upload result:', result);
-      
-      // Show result alert
-      if (result.success) {
-        alert(`Upload completed!\n\n${result.message}\n\nCreated: ${result.created_count}\nErrors: ${result.error_count}`);
-      } else {
-        alert(`Upload completed with errors:\n\n${result.message}\n\nCreated: ${result.created_count}\nErrors: ${result.error_count}`);
-      }
-      
       setIsBulkVariableUploadOpen(false);
     } catch (error) {
       console.error('Bulk upload failed:', error);
@@ -1506,84 +1475,80 @@ function App() {
           {/* Data Grid */}
           <div className="lg:col-span-2">
             {/* Grid Header with Actions */}
-            <div className="flex items-center justify-end mb-4">
+            <div className="flex items-center justify-between mb-4">
+              {/* Left side: Add, Upload, Custom Sort (for Objects and Variables tabs) */}
               <div className="flex items-center gap-3">
-                {/* Views Button - show for Objects and Variables tabs */}
                 {(activeTab === 'objects' || activeTab === 'variables') && (
-                  <button
-                    onClick={() => {
-                      if (activeTab === 'objects') {
-                        setIsViewsOpen(true);
-                      } else if (activeTab === 'variables') {
-                        setIsVariablesViewsOpen(true);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      ((activeTab === 'objects' && activeView && activeView !== 'None') || 
-                       (activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None'))
-                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
-                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                    }`}
-                    title="Filter data by predefined views"
-                  >
-                    <Eye className="w-4 h-4" />
-                    Views
-                    {activeTab === 'objects' && activeView && activeView !== 'None' && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        {activeView} View
-                      </span>
-                    )}
-                    {activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None' && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        {activeVariablesView} View
-                      </span>
-                    )}
-                  </button>
-                )}
-
-                {/* Custom Sort Button - show for Objects and Variables tabs */}
-                {(activeTab === 'objects' || activeTab === 'variables') && (
-                  <button
-                    onClick={() => {
-                      if (activeTab === 'objects') {
-                        setIsCustomSortOpen(true);
-                      } else if (activeTab === 'variables') {
-                        setIsVariablesCustomSortOpen(true);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      (activeTab === 'objects' && isCustomSortActive) || (activeTab === 'variables' && isVariablesCustomSortActive)
-                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
-                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                    }`}
-                    title="Sort the grid by multiple columns"
-                  >
-                    <ArrowUpDown className="w-4 h-4" />
-                    Custom Sort
-                    {activeTab === 'objects' && isCustomSortActive && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        Grid Sort Active
-                      </span>
-                    )}
-                    {activeTab === 'variables' && isVariablesCustomSortActive && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        Grid Sort Active
-                      </span>
-                    )}
-                    {activeTab === 'objects' && isColumnSortActive && !isCustomSortActive && (
-                      <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
-                        Column Sort Active
-                      </span>
-                    )}
-                    {activeTab === 'variables' && isVariablesColumnSortActive && !isVariablesCustomSortActive && (
-                      <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
-                        Column Sort Active
-                      </span>
-                    )}
-                  </button>
+                  <>
+                    {/* Add Object/Variable Button */}
+                    <button
+                      onClick={() => activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
+                      title={activeTab === 'variables' ? 'Add Variable' : 'Add Object'}
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add {activeTab === 'variables' ? 'Variable' : 'Object'}
+                    </button>
+                    
+                    {/* Upload Button */}
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'variables') {
+                          setIsBulkVariableUploadOpen(true);
+                        } else {
+                          setIsBulkObjectUploadOpen(true);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[140px]"
+                      title={activeTab === 'variables' ? 'Upload Variables' : 'Upload Objects'}
+                    >
+                      <Upload className="w-4 h-4" />
+                      Upload
+                    </button>
+                    
+                    {/* Custom Sort Button */}
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'objects') {
+                          setIsCustomSortOpen(true);
+                        } else if (activeTab === 'variables') {
+                          setIsVariablesCustomSortOpen(true);
+                        }
+                      }}
+                      className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                        (activeTab === 'objects' && isCustomSortActive) || (activeTab === 'variables' && isVariablesCustomSortActive)
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
+                      title="Sort the grid by multiple columns"
+                    >
+                      <ArrowUpDown className="w-4 h-4" />
+                      Custom Sort
+                      {activeTab === 'objects' && isCustomSortActive && (
+                        <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                          Grid Sort Active
+                        </span>
+                      )}
+                      {activeTab === 'variables' && isVariablesCustomSortActive && (
+                        <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                          Grid Sort Active
+                        </span>
+                      )}
+                      {activeTab === 'objects' && isColumnSortActive && !isCustomSortActive && (
+                        <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
+                          Column Sort Active
+                        </span>
+                      )}
+                      {activeTab === 'variables' && isVariablesColumnSortActive && !isVariablesCustomSortActive && (
+                        <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
+                          Column Sort Active
+                        </span>
+                      )}
+                    </button>
+                  </>
                 )}
                 
-                {/* Keep add/upload in toolbar only for Lists. For Objects/Variables these move above the metadata panel */}
+                {/* Keep add/upload in toolbar only for Lists */}
                 {activeTab === 'lists' && (
                   <>
                     <button
@@ -1628,7 +1593,41 @@ function App() {
                     </button>
                   </>
                 )}
-                
+              </div>
+              
+              {/* Right side: Views button (for Objects and Variables tabs) */}
+              <div className="flex items-center gap-3">
+                {(activeTab === 'objects' || activeTab === 'variables') && (
+                  <button
+                    onClick={() => {
+                      if (activeTab === 'objects') {
+                        setIsViewsOpen(true);
+                      } else if (activeTab === 'variables') {
+                        setIsVariablesViewsOpen(true);
+                      }
+                    }}
+                    className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                      ((activeTab === 'objects' && activeView && activeView !== 'None') || 
+                       (activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None'))
+                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                    }`}
+                    title="Filter data by predefined views"
+                  >
+                    <Eye className="w-4 h-4" />
+                    Views
+                    {activeTab === 'objects' && activeView && activeView !== 'None' && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        {activeView} View
+                      </span>
+                    )}
+                    {activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None' && (
+                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                        {activeVariablesView} View
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
             
@@ -1716,51 +1715,23 @@ function App() {
             </div>
           ) : (
             <div className="lg:col-span-1">
-              {/* Add/Upload controls above metadata panel for Objects and Variables */}
+              {/* View Neo4j Knowledge Graph button (for Objects and Variables tabs) */}
               {(activeTab === 'objects' || activeTab === 'variables') && (
-                <div className="mb-3 space-y-3">
-                  {/* View Neo4j Knowledge Graph button */}
-                  {(activeTab === 'objects' || activeTab === 'variables') && (
-                    <button
-                      onClick={() => {
-                        if (activeTab === 'objects') {
-                          setIsNeo4jGraphModalOpen(true);
-                        } else {
-                          setIsNeo4jVariablesGraphModalOpen(true);
-                        }
-                      }}
-                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
-                      title="View Neo4j Knowledge Graph"
-                    >
-                      <Network className="w-4 h-4" />
-                      View Neo4j Knowledge Graph
-                    </button>
-                  )}
-                  {/* Upload and Add buttons */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      onClick={() => {
-                        if (activeTab === 'variables') {
-                          setIsBulkVariableUploadOpen(true);
-                        } else {
-                          setIsBulkObjectUploadOpen(true);
-                        }
-                      }}
-                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                      title={activeTab === 'variables' ? 'Upload Variables' : 'Upload Objects'}
-                    >
-                      <Upload className="w-4 h-4" />
-                      Upload
-                    </button>
-                    <button
-                      onClick={() => activeTab === 'variables' ? setIsAddVariableOpen(true) : setIsAddObjectOpen(true)}
-                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors"
-                      title={activeTab === 'variables' ? 'Add Variable' : 'Add Object'}
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add {activeTab === 'variables' ? 'Variable' : 'Object'}
-                    </button>
-                  </div>
+                <div className="mb-3">
+                  <button
+                    onClick={() => {
+                      if (activeTab === 'objects') {
+                        setIsNeo4jGraphModalOpen(true);
+                      } else {
+                        setIsNeo4jVariablesGraphModalOpen(true);
+                      }
+                    }}
+                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
+                    title="View Knowledge Graph"
+                  >
+                    <Network className="w-4 h-4" />
+                    View Knowledge Graph
+                  </button>
                 </div>
               )}
               {activeTab === 'lists' ? (
