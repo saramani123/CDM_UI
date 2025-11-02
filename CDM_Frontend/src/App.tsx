@@ -88,6 +88,7 @@ function App() {
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
+  const [isBulkVariableUploading, setIsBulkVariableUploading] = useState(false);
   const [isBulkEditVariablesOpen, setIsBulkEditVariablesOpen] = useState(false);
   const [listData, setListData] = useState(mockListData);
   const [isBulkListUploadOpen, setIsBulkListUploadOpen] = useState(false);
@@ -1067,13 +1068,30 @@ function App() {
   };
 
   const handleBulkVariableUpload = async (file: File) => {
+    setIsBulkVariableUploading(true);
     try {
       const result = await bulkUploadVariables(file);
       console.log('Bulk upload result:', result);
+      
+      // Show success message
+      const successMsg = result.message || `Successfully uploaded ${result.created_count || 0} variables`;
+      if (result.error_count > 0) {
+        alert(`${successMsg}. ${result.error_count} errors occurred. Check console for details.`);
+        console.log('Upload errors:', result.errors);
+      } else {
+        alert(successMsg);
+      }
+      
+      // Refresh variables to show newly uploaded ones
+      await fetchVariables();
+      
       setIsBulkVariableUploadOpen(false);
     } catch (error) {
       console.error('Bulk upload failed:', error);
-      alert(`Bulk upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Bulk upload failed: ${errorMsg}`);
+    } finally {
+      setIsBulkVariableUploading(false);
     }
   };
 
@@ -1795,9 +1813,19 @@ function App() {
       {/* Bulk Variable Upload Modal */}
       <BulkVariableUploadModal
         isOpen={isBulkVariableUploadOpen}
-        onClose={() => setIsBulkVariableUploadOpen(false)}
+        onClose={() => !isBulkVariableUploading && setIsBulkVariableUploadOpen(false)}
         onUpload={handleBulkVariableUpload}
+        isLoading={isBulkVariableUploading}
       />
+
+      {/* Loading Modal for Bulk Variable Upload */}
+      {isBulkVariableUploading && (
+        <LoadingModal
+          isOpen={true}
+          loadingType="variables"
+          message="Uploading variables from CSV... This may take a few minutes for large files."
+        />
+      )}
 
       {/* Bulk List Upload Modal */}
       <BulkListUploadModal

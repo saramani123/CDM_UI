@@ -5,12 +5,14 @@ interface BulkVariableUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpload: (file: File) => void;
+  isLoading?: boolean;
 }
 
 export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = ({
   isOpen,
   onClose,
-  onUpload
+  onUpload,
+  isLoading = false
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -43,9 +45,14 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
       return;
     }
 
+    // Don't allow upload if already uploading
+    if (isLoading) {
+      return;
+    }
+
     // Pass the file directly to the parent component
     onUpload(file);
-    onClose();
+    // Don't close modal here - parent will close it after upload completes
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -145,14 +152,31 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
                     or click to browse
                   </p>
                 </div>
-                <label className="inline-flex items-center gap-2 px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  UPLOAD CSV
+                <label className={`inline-flex items-center gap-2 px-4 py-2 rounded transition-colors ${
+                  isLoading 
+                    ? 'bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed' 
+                    : 'bg-ag-dark-accent text-white hover:bg-ag-dark-accent-hover cursor-pointer'
+                }`}>
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      UPLOADING...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      UPLOAD CSV
+                    </>
+                  )}
                   <input
                     type="file"
                     accept=".csv"
                     onChange={handleFileSelect}
                     className="hidden"
+                    disabled={isLoading}
                   />
                 </label>
               </div>

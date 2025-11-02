@@ -378,13 +378,37 @@ class ApiService {
     const formData = new FormData();
     formData.append('file', file);
     
-    return this.request('/variables/bulk-upload', {
-      method: 'POST',
-      body: formData,
-      headers: {
-        // Don't set Content-Type, let browser set it with boundary for FormData
-      },
-    });
+    // Use longer timeout for bulk uploads (300 seconds = 5 minutes)
+    // This prevents timeout for large CSV files (e.g., 230+ variables)
+    const url = `${API_BASE_URL}/variables/bulk-upload`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for bulk uploads
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+        headers: {
+          // Don't set Content-Type, let browser set it with boundary for FormData
+        },
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `API request failed: ${response.status} ${response.statusText}` }));
+        throw new Error(errorData.detail || `API request failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: The server took too long to respond. This may happen with large CSV files. Please try again or upload a smaller batch.');
+      }
+      throw error;
+    }
   }
 
   async bulkUpdateVariables(bulkData: any) {
