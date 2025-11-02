@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Info, Network, RefreshCw, ExternalLink, AlertTriangle, Plus, Minus, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, Info, Network, RefreshCw, ExternalLink, AlertTriangle, Plus, Minus, ChevronDown, ChevronUp, Copy, Eye } from 'lucide-react';
 // @ts-ignore - vis-network doesn't have complete TypeScript definitions
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
@@ -24,8 +24,13 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   const [nodeCount, setNodeCount] = useState<number | null>(null);
   const [showFallback, setShowFallback] = useState(false);
   const [showCypherQuery, setShowCypherQuery] = useState(false);
+  const [selectedNode, setSelectedNode] = useState<any>(null);
+  const [selectedEdge, setSelectedEdge] = useState<any>(null);
+  const [showDetailsPanel, setShowDetailsPanel] = useState(false);
   const networkRef = useRef<VisNetwork | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const allNodesData = useRef<any[]>([]);
+  const allEdgesData = useRef<any[]>([]);
   
   // Use a unique container ID that changes with the active view
   const getContainerId = () => `graph-container-${activeView}`;
@@ -126,7 +131,11 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         };
       });
 
-      // Map edges - ensure IDs are strings
+      // Store original data for details panel
+      allNodesData.current = graphData.nodes;
+      allEdgesData.current = graphData.edges;
+
+      // Map edges - ensure IDs are strings, make labels smaller and navy blue
       const edges: Edge[] = graphData.edges.map((edge: any) => ({
         id: String(edge.id),
         from: String(edge.from),
@@ -138,7 +147,12 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         },
         arrows: { to: { enabled: true } },
         smooth: false,
-        font: { color: '#9CA3AF', size: 12 },
+        font: { 
+          color: '#1E3A8A', // Navy blue for better visibility
+          size: 10, // Smaller font size
+          strokeWidth: 0, // No stroke/border
+          strokeColor: 'transparent' // Ensure no border
+        },
         width: 2
       }));
 
@@ -155,7 +169,12 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         edges: {
           arrows: { to: { enabled: true } },
           smooth: false,
-          font: { size: 12, color: '#9CA3AF' },
+          font: { 
+            size: 10, // Smaller font
+            color: '#1E3A8A', // Navy blue for better visibility
+            strokeWidth: 0, // No white border
+            strokeColor: 'transparent' // No stroke
+          },
         },
         physics: {
           stabilization: {
@@ -189,6 +208,48 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           networkRef.current.redraw();
         }
       }, 100);
+      
+      // Add click handlers for nodes and edges
+      if (networkRef.current) {
+        // Handle node clicks
+        networkRef.current.on('click', (params: any) => {
+          if (params.nodes.length > 0) {
+            // Node clicked - select but don't auto-open panel
+            const nodeId = params.nodes[0];
+            const node = allNodesData.current.find(n => String(n.id) === String(nodeId));
+            if (node) {
+              // Also get the vis-network node data for label
+              const visNode = nodes.find(n => String(n.id) === String(nodeId));
+              setSelectedNode({
+                ...node,
+                label: visNode?.label || node.label || node.group || 'Node',
+                group: visNode?.group || node.group || 'Unknown'
+              });
+              setSelectedEdge(null);
+              // Don't auto-open panel - user will click eye icon
+            }
+          } else if (params.edges.length > 0) {
+            // Edge clicked - select but don't auto-open panel
+            const edgeId = params.edges[0];
+            const edge = allEdgesData.current.find(e => String(e.id) === String(edgeId));
+            if (edge) {
+              // Also get the vis-network edge data for label
+              const visEdge = edges.find(e => String(e.id) === String(edgeId));
+              setSelectedEdge({
+                ...edge,
+                label: visEdge?.label || edge.label || edge.type || 'Relationship'
+              });
+              setSelectedNode(null);
+              // Don't auto-open panel - user will click eye icon
+            }
+          } else {
+            // Clicked on empty space - deselect and close panel
+            setSelectedNode(null);
+            setSelectedEdge(null);
+            setShowDetailsPanel(false);
+          }
+        });
+      }
       
       // Store network reference for zoom controls and set default zoom/center
       if (networkRef.current) {
@@ -362,6 +423,23 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
     }
   };
 
+  const handleCopyProperty = (value: string) => {
+    navigator.clipboard.writeText(String(value)).then(() => {
+      // Could show a toast notification here
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+    });
+  };
+
+  const formatPropertyKey = (key: string): string => {
+    // Convert camelCase or snake_case to Title Case
+    return key
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/_/g, ' ')
+      .replace(/^./, str => str.toUpperCase())
+      .trim();
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -419,31 +497,43 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         )}
 
         {/* Tabs */}
-        <div className="flex border-b border-ag-dark-border px-6">
-          <button
-            onClick={() => setActiveView('taxonomy')}
-            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeView === 'taxonomy'
-                ? 'text-ag-dark-accent border-ag-dark-accent'
-                : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
-            }`}
-          >
-            Object Taxonomy
-          </button>
-          <button
-            onClick={() => setActiveView('model')}
-            className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-              activeView === 'model'
-                ? 'text-ag-dark-accent border-ag-dark-accent'
-                : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
-            }`}
-          >
-            Object Model
-          </button>
+        <div className="flex items-center justify-between border-b border-ag-dark-border px-6">
+          <div className="flex">
+            <button
+              onClick={() => setActiveView('taxonomy')}
+              className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+                activeView === 'taxonomy'
+                  ? 'text-ag-dark-accent border-ag-dark-accent'
+                  : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
+              }`}
+            >
+              Object Taxonomy
+            </button>
+            <button
+              onClick={() => setActiveView('model')}
+              className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+                activeView === 'model'
+                  ? 'text-ag-dark-accent border-ag-dark-accent'
+                  : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
+              }`}
+            >
+              Object Model
+            </button>
+          </div>
+          {/* Eye Icon - Show details panel (far right of tabs bar) */}
+          {(selectedNode || selectedEdge) && (
+            <button
+              onClick={() => setShowDetailsPanel(true)}
+              className="p-2 text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-bg rounded transition-colors"
+              title={selectedNode ? 'View node details' : 'View relationship details'}
+            >
+              <Eye className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Content Area - Graph takes full height, query scrollable below */}
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
           {/* Graph Visualization Area - Takes remaining space */}
           <div className="flex-1 bg-ag-dark-bg border-x border-ag-dark-border relative min-h-0 overflow-hidden" style={{ flex: '1 1 auto', minHeight: 'calc(90vh - 180px)' }}>
             {isLoading && (
@@ -486,6 +576,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
               }} 
             />
             
+
             {/* Zoom Controls - Positioned in bottom-right corner */}
             <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
               <button
@@ -504,6 +595,154 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
               </button>
             </div>
           </div>
+
+          {/* Details Side Panel */}
+          {showDetailsPanel && (
+            <div className="absolute top-0 right-0 w-80 h-full bg-ag-dark-surface border-l border-ag-dark-border shadow-xl z-30 flex flex-col">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between p-4 border-b border-ag-dark-border">
+                <h3 className="text-sm font-semibold text-ag-dark-text">
+                  {selectedNode ? 'Node details' : 'Relationship details'}
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowDetailsPanel(false);
+                    // Don't clear selectedNode/selectedEdge - keep them selected so eye icon stays
+                  }}
+                  className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-text hover:bg-ag-dark-bg rounded transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Panel Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {selectedNode && (
+                  <div className="space-y-4">
+                    {/* Node Type/Label */}
+                    {selectedNode.group && (
+                      <div className="mb-4">
+                        <span className="inline-block px-3 py-1 rounded text-xs font-medium bg-ag-dark-accent/20 text-ag-dark-accent border border-ag-dark-accent/30">
+                          {selectedNode.group}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Node Properties */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-ag-dark-text-secondary uppercase mb-3 block">
+                        Properties
+                      </label>
+                      {selectedNode.properties && Object.entries(selectedNode.properties).map(([key, value]) => (
+                        <div key={key} className="border-b border-ag-dark-border pb-2 last:border-b-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">
+                                {formatPropertyKey(key)}
+                              </div>
+                              <div className="text-sm text-ag-dark-text break-words">
+                                {String(value)}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyProperty(String(value))}
+                              className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent hover:bg-ag-dark-bg rounded transition-colors flex-shrink-0"
+                              title="Copy value"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {selectedNode.label && !selectedNode.properties?.label && (
+                        <div className="border-b border-ag-dark-border pb-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">
+                                Label
+                              </div>
+                              <div className="text-sm text-ag-dark-text break-words">
+                                {selectedNode.label}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyProperty(selectedNode.label)}
+                              className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent hover:bg-ag-dark-bg rounded transition-colors flex-shrink-0"
+                              title="Copy value"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedEdge && (
+                  <div className="space-y-4">
+                    {/* Relationship Type */}
+                    {selectedEdge.label && (
+                      <div className="mb-4">
+                        <span className="inline-block px-3 py-1 rounded text-xs font-medium bg-ag-dark-accent/20 text-ag-dark-accent border border-ag-dark-accent/30">
+                          {selectedEdge.label}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Relationship Properties */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-ag-dark-text-secondary uppercase mb-3 block">
+                        Properties
+                      </label>
+                      {selectedEdge.properties && Object.entries(selectedEdge.properties).map(([key, value]) => (
+                        <div key={key} className="border-b border-ag-dark-border pb-2 last:border-b-0">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">
+                                {formatPropertyKey(key)}
+                              </div>
+                              <div className="text-sm text-ag-dark-text break-words">
+                                {String(value)}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyProperty(String(value))}
+                              className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent hover:bg-ag-dark-bg rounded transition-colors flex-shrink-0"
+                              title="Copy value"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {selectedEdge.label && (!selectedEdge.properties || !selectedEdge.properties.type) && (
+                        <div className="border-b border-ag-dark-border pb-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">
+                                Type
+                              </div>
+                              <div className="text-sm text-ag-dark-text break-words">
+                                {selectedEdge.label}
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleCopyProperty(selectedEdge.label)}
+                              className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent hover:bg-ag-dark-bg rounded transition-colors flex-shrink-0"
+                              title="Copy value"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Scrollable Content Below Graph - Fixed position at bottom */}
           <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface">
