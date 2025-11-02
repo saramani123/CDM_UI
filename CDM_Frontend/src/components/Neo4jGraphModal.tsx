@@ -195,9 +195,19 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           hoverWidth: 1.5 // Slightly thicker on hover
         },
         physics: {
+          enabled: true,
           stabilization: {
             enabled: true,
             iterations: 100
+          },
+          // Help separate multiple edges between same nodes
+          barnesHut: {
+            gravitationalConstant: -2000,
+            centralGravity: 0.3,
+            springLength: 95,
+            springConstant: 0.04,
+            damping: 0.09,
+            avoidOverlap: 0.1
           }
         },
         interaction: {

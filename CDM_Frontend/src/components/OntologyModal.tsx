@@ -224,6 +224,15 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           stabilization: {
             enabled: true,
             iterations: 200
+          },
+          // Help separate multiple edges between same nodes
+          barnesHut: {
+            gravitationalConstant: -2000,
+            centralGravity: 0.3,
+            springLength: 95,
+            springConstant: 0.04,
+            damping: 0.09,
+            avoidOverlap: 0.1
           }
         },
         interaction: {
