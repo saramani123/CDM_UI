@@ -41,4 +41,12 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=10000)
+    # Increased timeout for bulk uploads (600 seconds = 10 minutes)
+    # This allows enough time for 1,400+ variable uploads with batching
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=10000,
+        timeout_keep_alive=600,
+        timeout_graceful_shutdown=600
+    )

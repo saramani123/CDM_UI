@@ -1025,46 +1025,100 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             errors.append(f"Row {row_num}: {str(e)}")
             continue
 
-    # Insert variables into database
+    # Insert variables into database in batches
+    # Batch size: 250 rows per transaction (safe for Neo4j, prevents memory issues)
+    BATCH_SIZE = 250
     created_count = 0
-    with driver.session() as session:
-        for var_data in variables:
-            try:
-                # Create taxonomy structure: Part -> Group -> Variable
-                session.run("""
-                    // MERGE Part node (avoid duplicates)
-                    MERGE (p:Part {name: $part})
-                    
-                    // MERGE Group node (avoid duplicates)
-                    MERGE (g:Group {name: $group})
-                    
-                    // Create relationship Part -> Group
-                    MERGE (p)-[:HAS_GROUP]->(g)
-                    
-                    // Create Variable node with all properties (including driver string)
-                    CREATE (v:Variable {
-                        id: $id,
-                        name: $variable,
-                        section: $section,
-                        formatI: $formatI,
-                        formatII: $formatII,
-                        gType: $gType,
-                        validation: $validation,
-                        default: $default,
-                        graph: $graph,
-                        status: $status,
-                        driver: $driver
-                    })
-                    
-                    // Create relationship Group -> Variable
-                    MERGE (g)-[:HAS_VARIABLE]->(v)
-                """, var_data)
+    
+    # Process variables in batches
+    total_batches = (len(variables) + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"Processing {len(variables)} variables in {total_batches} batches of {BATCH_SIZE}")
+    
+    with driver.session(default_access_mode=WRITE_ACCESS) as session:
+        for batch_idx in range(0, len(variables), BATCH_SIZE):
+            batch = variables[batch_idx:batch_idx + BATCH_SIZE]
+            batch_num = (batch_idx // BATCH_SIZE) + 1
+            print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} variables)")
+            
+            # Use a single transaction for each batch
+            def process_batch_tx(tx):
+                batch_created = []
+                batch_errors = []
                 
-                # Create driver relationships
-                await create_driver_relationships(session, var_data['id'], var_data['driver'])
-                created_count += 1
+                for var_data in batch:
+                    try:
+                        # Create taxonomy structure: Part -> Group -> Variable
+                        result = tx.run("""
+                            // MERGE Part node (avoid duplicates)
+                            MERGE (p:Part {name: $part})
+                            
+                            // MERGE Group node (avoid duplicates)
+                            MERGE (g:Group {name: $group})
+                            
+                            // Create relationship Part -> Group
+                            MERGE (p)-[:HAS_GROUP]->(g)
+                            
+                            // Create Variable node with all properties (including driver string)
+                            CREATE (v:Variable {
+                                id: $id,
+                                name: $variable,
+                                section: $section,
+                                formatI: $formatI,
+                                formatII: $formatII,
+                                gType: $gType,
+                                validation: $validation,
+                                default: $default,
+                                graph: $graph,
+                                status: $status,
+                                driver: $driver
+                            })
+                            
+                            // Create relationship Group -> Variable
+                            MERGE (g)-[:HAS_VARIABLE]->(v)
+                            
+                            // Return variable ID to verify creation
+                            RETURN v.id as id
+                        """, var_data)
+                        
+                        # Verify variable was created
+                        record = result.single()
+                        if record and record["id"]:
+                            batch_created.append(var_data)
+                        else:
+                            batch_errors.append(f"Variable {var_data['variable']} creation returned no result")
+                    except Exception as e:
+                        batch_errors.append(f"Failed to create variable {var_data['variable']}: {str(e)}")
+                
+                return {"created": batch_created, "errors": batch_errors}
+            
+            try:
+                # Execute batch transaction
+                batch_result = session.write_transaction(process_batch_tx)
+                created_vars = batch_result["created"]
+                created_count += len(created_vars)
+                errors.extend(batch_result["errors"])
+                
+                # Create driver relationships only for successfully created variables
+                # Process in smaller sub-batches to avoid overwhelming Neo4j
+                driver_batch_size = 50
+                for driver_batch_idx in range(0, len(created_vars), driver_batch_size):
+                    driver_batch = created_vars[driver_batch_idx:driver_batch_idx + driver_batch_size]
+                    
+                    for var_data in driver_batch:
+                        try:
+                            await create_driver_relationships(session, var_data['id'], var_data['driver'])
+                        except Exception as e:
+                            # If driver relationships fail, still count as created but log error
+                            errors.append(f"Variable {var_data['variable']} created but driver relationships failed: {str(e)}")
+                            print(f"⚠️ Driver relationships failed for variable {var_data['variable']}: {str(e)}")
+                
+                print(f"✅ Batch {batch_num}/{total_batches} completed: {len(created_vars)} variables created")
             except Exception as e:
-                errors.append(f"Failed to create variable {var_data['variable']}: {str(e)}")
+                # If entire batch fails, add all variables to errors
+                print(f"❌ Batch {batch_num}/{total_batches} failed: {str(e)}")
+                for var_data in batch:
+                    errors.append(f"Batch {batch_num} failed for variable {var_data['variable']}: {str(e)}")
+                continue
 
     return CSVUploadResponse(
         success=True,

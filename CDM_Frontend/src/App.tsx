@@ -1068,8 +1068,39 @@ function App() {
 
   const handleBulkVariableUpload = async (file: File) => {
     try {
-      const result = await bulkUploadVariables(file);
+      console.log('Starting bulk upload...');
+      
+      // Show progress modal
+      let progressMessage = 'Preparing upload...';
+      const progressAlert = document.createElement('div');
+      progressAlert.className = 'fixed top-4 right-4 bg-blue-600 text-white p-4 rounded-lg shadow-lg z-50';
+      progressAlert.innerHTML = `<div class="font-semibold">${progressMessage}</div>`;
+      document.body.appendChild(progressAlert);
+      
+      const updateProgress = (progress: { chunk: number; total: number; progress: number }) => {
+        progressMessage = `Uploading chunk ${progress.chunk}/${progress.total}... (${progress.progress}%)`;
+        progressAlert.innerHTML = `<div class="font-semibold">${progressMessage}</div>`;
+      };
+      
+      let result;
+      try {
+        result = await bulkUploadVariables(file, updateProgress);
+      } finally {
+        // Remove progress alert (even if error occurs)
+        if (document.body.contains(progressAlert)) {
+          document.body.removeChild(progressAlert);
+        }
+      }
+      
       console.log('Bulk upload result:', result);
+      
+      // Show result alert
+      if (result.success) {
+        alert(`Upload completed!\n\n${result.message}\n\nCreated: ${result.created_count}\nErrors: ${result.error_count}`);
+      } else {
+        alert(`Upload completed with errors:\n\n${result.message}\n\nCreated: ${result.created_count}\nErrors: ${result.error_count}`);
+      }
+      
       setIsBulkVariableUploadOpen(false);
     } catch (error) {
       console.error('Bulk upload failed:', error);

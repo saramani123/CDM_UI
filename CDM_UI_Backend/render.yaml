@@ -4,7 +4,7 @@ services:
     env: python
     plan: starter
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000 --timeout-keep-alive 600 --timeout-graceful-shutdown 600
     healthCheckPath: /health
     envVars:
       - key: ENVIRONMENT

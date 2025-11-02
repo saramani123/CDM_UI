@@ -374,17 +374,38 @@ class ApiService {
     });
   }
 
-  async bulkUploadVariables(file: File) {
+  async bulkUploadVariables(file: File, timeout: number = 300000) {
+    // Special handling for bulk uploads with extended timeout (5 minutes)
     const formData = new FormData();
     formData.append('file', file);
     
-    return this.request('/variables/bulk-upload', {
-      method: 'POST',
-      body: formData,
-      headers: {
+    const url = `${API_BASE_URL}/variables/bulk-upload`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
         // Don't set Content-Type, let browser set it with boundary for FormData
-      },
-    });
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: `HTTP ${response.status}: ${response.statusText}` }));
+        throw new Error(error.detail || `API request failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: The server took too long to respond. Please try uploading in smaller batches (500 rows or less).');
+      }
+      throw error;
+    }
   }
 
   async bulkUpdateVariables(bulkData: any) {
