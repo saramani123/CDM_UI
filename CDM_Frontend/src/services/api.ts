@@ -30,6 +30,47 @@ export const executeGraphQuery = async (query: string): Promise<{ nodes: any[], 
   return await response.json();
 };
 
+// Ontology view function
+export const getOntologyView = async (objectName: string, view: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants'): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  const response = await fetch(`${API_BASE_URL}/ontology/view?object_name=${encodeURIComponent(objectName)}&view=${view}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get ontology view');
+  }
+
+  return await response.json();
+};
+
+// Bulk ontology view function
+export const getBulkOntologyView = async (
+  objectNames: string[], 
+  viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  const response = await fetch(`${API_BASE_URL}/ontology/view/bulk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      object_names: objectNames,
+      view: viewType
+    })
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `Failed to fetch bulk ontology view: ${response.statusText}` }));
+    throw new Error(error.detail || `Failed to fetch bulk ontology view: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
 export interface ApiResponse<T> {
   data?: T;
   error?: string;

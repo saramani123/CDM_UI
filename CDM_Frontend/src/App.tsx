@@ -1718,6 +1718,7 @@ function App() {
                 selectedCount={selectedRows.length}
                 allData={activeTab === 'variables' ? variableData : data}
                 activeTab={activeTab}
+                selectedObjects={selectedRows}
               />
             </div>
           ) : (isBulkEditVariablesOpen && activeTab === 'variables') ? (
@@ -1770,6 +1771,7 @@ function App() {
                   allData={variableData}
                   objectsData={data}
                   selectedCount={selectedRows.length}
+                  onObjectsRefresh={fetchObjects}
                 />
               ) : (
                 <MetadataPanel

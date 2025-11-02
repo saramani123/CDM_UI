@@ -4,23 +4,31 @@ import { X, Network, Eye, Copy, Plus, Minus } from 'lucide-react';
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
 import type { Data, Options, Node, Edge } from 'vis-network';
-import { getOntologyView } from '../services/api';
+import { getOntologyView, getBulkOntologyView } from '../services/api';
 
 interface OntologyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  objectName: string;
+  objectName?: string; // Optional - for single object mode
+  objectNames?: string[]; // Optional - for bulk mode
   sectionName: string;
   viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants';
+  isBulkMode?: boolean; // New flag to indicate bulk mode
 }
 
 export const OntologyModal: React.FC<OntologyModalProps> = ({
   isOpen,
   onClose,
   objectName,
+  objectNames,
   sectionName,
-  viewType
+  viewType,
+  isBulkMode = false
 }) => {
+  // Detect mode (single vs bulk)
+  const isBulk = isBulkMode && objectNames && objectNames.length > 0;
+  const displayObjects = isBulk ? objectNames! : [objectName!];
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
@@ -93,9 +101,11 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
   const loadGraph = async () => {
     // Prevent concurrent loads
     if (isLoadingRef.current) {
+      console.log('loadGraph: Already loading, skipping...');
       return;
     }
     
+    console.log('loadGraph: Starting load', { isBulk, objectName, objectNames: objectNames?.length, viewType });
     isLoadingRef.current = true;
     setIsLoading(true);
     setError(null);
@@ -125,12 +135,18 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       // Don't clear innerHTML - vis-network's destroy() handles cleanup
       // If there's leftover content, vis-network will replace it anyway
 
-      // Fetch ontology view data
-      const graphData = await getOntologyView(objectName, viewType);
+      // Fetch ontology view data (bulk or single)
+      let graphData;
+      if (isBulk) {
+        graphData = await getBulkOntologyView(displayObjects, viewType);
+      } else {
+        graphData = await getOntologyView(displayObjects[0], viewType);
+      }
 
       if (graphData.nodeCount === 0) {
         setError('No nodes found. This object may not have relationships in this view.');
         setIsLoading(false);
+        isLoadingRef.current = false;
         return;
       }
 
@@ -149,8 +165,10 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           highlight: { background: '#9CA3AF', border: '#6B7280' } 
         };
         
-        // Highlight the selected object node
-        const isSelectedObject = node.label === objectName || node.properties?.object === objectName;
+        // Highlight all selected objects in bulk mode, or single object in single mode
+        const isSelectedObject = isBulk 
+          ? displayObjects.includes(node.label) || displayObjects.some(obj => node.properties?.object === obj)
+          : node.label === displayObjects[0] || node.properties?.object === displayObjects[0];
         const nodeColor = isSelectedObject && viewType === 'drivers' 
           ? { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } }
           : colorConfigForNode;
@@ -434,18 +452,24 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           enabled: true,
           stabilization: {
             enabled: true,
-            iterations: 200
+            iterations: isBulk ? 300 : 200, // More iterations for bulk views to ensure stabilization
+            updateInterval: 25, // Update every 25ms for smoother stabilization
+            onlyDynamicEdges: false,
+            fit: true // Fit the network to container after stabilization
           },
           // Help separate multiple edges between same nodes
           // Use even stronger forces to push nodes apart, which helps separate parallel edges
           barnesHut: {
-            gravitationalConstant: -8000, // Much stronger repulsion to spread nodes further apart
-            centralGravity: 0.05, // Minimal central gravity to allow maximum spread
-            springLength: 300, // Even longer springs for better separation between nodes
-            springConstant: 0.15, // Stronger springs to maintain separation
-            damping: 0.15, // Higher damping for stability
+            gravitationalConstant: isBulk ? -5000 : -8000, // Less aggressive for bulk to prevent continuous movement
+            centralGravity: isBulk ? 0.1 : 0.05, // Slightly more central gravity for bulk to help stabilization
+            springLength: isBulk ? 200 : 300, // Shorter springs for bulk views for faster stabilization
+            springConstant: isBulk ? 0.08 : 0.15, // Less strong springs for bulk to prevent oscillation
+            damping: isBulk ? 0.25 : 0.15, // Higher damping for bulk views to reduce movement
             avoidOverlap: 1.0 // Maximum overlap avoidance
-          }
+          },
+          solver: 'barnesHut', // Explicitly use barnesHut solver
+          maxVelocity: isBulk ? 5 : 10, // Limit velocity for bulk views to prevent excessive movement
+          timestep: isBulk ? 0.25 : 0.35 // Smaller timestep for more stable simulation
         },
         interaction: {
           hover: true,
@@ -462,15 +486,39 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         return;
       }
 
-      try {
+        try {
         // Ensure container is still available
         if (!containerRef.current) {
           setError('Graph container not available.');
           setIsLoading(false);
+          isLoadingRef.current = false;
           return;
         }
 
         networkRef.current = new VisNetwork(containerRef.current, data, options);
+
+        // Fallback: Disable physics after a timeout if stabilization doesn't complete
+        // This prevents infinite movement in cases where stabilization fails
+        const stabilizationTimeout = setTimeout(() => {
+          console.log('loadGraph: Stabilization timeout, disabling physics');
+          if (networkRef.current) {
+            networkRef.current.setOptions({ physics: { enabled: false } });
+            setIsLoading(false);
+            isLoadingRef.current = false;
+          }
+        }, 10000); // 10 second timeout
+
+        // Disable physics after stabilization to prevent continuous movement
+        // This is critical for bulk views with many nodes
+        networkRef.current.once('stabilizationEnd', () => {
+          console.log('loadGraph: Stabilization complete, disabling physics');
+          clearTimeout(stabilizationTimeout); // Clear timeout since stabilization completed
+          if (networkRef.current) {
+            networkRef.current.setOptions({ physics: { enabled: false } });
+            setIsLoading(false);
+            isLoadingRef.current = false;
+          }
+        });
 
         // Add click handlers for nodes and edges
         networkRef.current.on('click', (params: any) => {
@@ -511,8 +559,9 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           }
         });
 
-        setIsLoading(false);
-        isLoadingRef.current = false;
+        // Don't set loading false here - wait for stabilization
+        // setIsLoading(false);
+        // isLoadingRef.current = false;
       } catch (networkError) {
         console.error('Error creating network:', networkError);
         setError('Failed to initialize graph visualization. Please try again.');
@@ -576,17 +625,32 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
   useEffect(() => {
     if (!isOpen) {
       // Cleanup immediately when modal closes
+      console.log('OntologyModal: Modal closed, cleaning up');
       cleanupNetwork();
+      setError(null);
+      setIsLoading(false);
+      setSelectedNode(null);
+      setSelectedEdge(null);
+      setShowDetailsPanel(false);
+      isLoadingRef.current = false;
       return;
     }
 
-    if (isOpen && objectName) {
+    // Determine if we should load based on current mode
+    const shouldLoad = isBulkMode && objectNames && objectNames.length > 0
+      ? true
+      : objectName ? true : false;
+
+    if (isOpen && shouldLoad) {
+      console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, objectName, objectNames: objectNames?.length, viewType });
+      
       // Reset state when modal opens
       setError(null);
       setIsLoading(true);
       setSelectedNode(null);
       setSelectedEdge(null);
       setShowDetailsPanel(false);
+      isLoadingRef.current = false; // Reset loading ref before starting new load
       
       // Small delay to ensure DOM is ready
       const timer = setTimeout(() => {
@@ -594,14 +658,12 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       }, 50);
 
       return () => {
+        console.log('OntologyModal: Effect cleanup - clearing timer');
         clearTimeout(timer);
-        // Only cleanup if modal closes while loading
-        if (isLoadingRef.current) {
-          cleanupNetwork();
-        }
+        // Don't cleanup network here - let the close handler do it
       };
     }
-  }, [isOpen, objectName, viewType]);
+  }, [isOpen, objectName, objectNames, viewType, isBulkMode]);
 
   // Separate effect for cleanup on unmount
   useEffect(() => {
@@ -624,7 +686,10 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
                 Ontology View – {sectionName}
               </h2>
               <p className="text-sm text-ag-dark-text-secondary mt-1">
-                Object: {objectName} | Instance: {envInfo.instanceName}
+                {isBulk 
+                  ? `Objects: ${displayObjects.length} selected | Instance: ${envInfo.instanceName}`
+                  : `Object: ${displayObjects[0]} | Instance: ${envInfo.instanceName}`
+                }
               </p>
             </div>
           </div>
