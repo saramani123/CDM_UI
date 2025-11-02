@@ -79,16 +79,10 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
     }
   };
 
-  // Edge color configurations for relationships view
+  // All edges in ontology modals are grey - color coding removed per user request
   const getEdgeColor = (edge: any) => {
-    if (viewType === 'relationships') {
-      const type = edge.properties?.type || '';
-      if (type === 'Intra-Table') return '#6B7280'; // gray
-      if (type === 'Inter-Table') return '#3B82F6'; // blue
-      if (type === 'Blood') return '#EF4444'; // red
-      if (type === 'Subtype') return '#A78BFA'; // purple
-    }
-    return '#6B7280'; // default gray
+    // All edges are grey in ontology modals
+    return '#6B7280'; // Grey for all
   };
 
   const loadGraph = async () => {
@@ -163,34 +157,54 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         };
       });
 
-      // Map edges with colors and labels - navy font, no border, thinner arrows
-      const edges: Edge[] = graphData.edges.map((edge: any) => ({
-        id: String(edge.id),
-        from: String(edge.from),
-        to: String(edge.to),
-        label: edge.label || '',
-        color: {
-          color: getEdgeColor(edge),
-          highlight: getEdgeColor(edge),
-          hover: getEdgeColor(edge)
-        },
-        font: { 
-          color: '#1E3A8A', // Navy blue
-          size: 10, // Smaller font
-          align: 'middle',
-          strokeWidth: 0, // No border
-          strokeColor: 'transparent' // No stroke
-        },
-        width: 1, // Thinner arrows
-        arrows: {
-          to: {
-            enabled: true,
-            scaleFactor: 1.0
-          }
-        },
-        smooth: false, // Straight edges - helps show multiple relationships separately
-        properties: edge.properties || {}
-      }));
+      // Map edges with colors and labels - dark purple font, grey arrows, thinner for better separation
+      // Group edges by from/to to identify parallel edges
+      const edgeGroups = new Map<string, number>();
+      const getEdgeKey = (from: string, to: string) => `${from}->${to}`;
+      
+      const edges: Edge[] = graphData.edges.map((edge: any) => {
+        const from = String(edge.from);
+        const to = String(edge.to);
+        const key = getEdgeKey(from, to);
+        
+        // Count how many edges share the same from/to (for parallel edge separation)
+        const parallelIndex = edgeGroups.get(key) || 0;
+        edgeGroups.set(key, parallelIndex + 1);
+        
+        // Calculate offset for parallel edges (alternate above/below center line)
+        const offset = parallelIndex % 2 === 0 
+          ? parallelIndex * 0.5  // Above center
+          : -(Math.floor(parallelIndex / 2) + 1) * 0.5; // Below center
+        
+        return {
+          id: String(edge.id),
+          from: from,
+          to: to,
+          label: edge.label || '',
+          color: {
+            color: '#6B7280', // Grey for all edges in ontology modals
+            highlight: '#FF6347',
+            hover: '#9CA3AF'
+          },
+          font: { 
+            color: '#7C3AED', // Dark purple for better visibility
+            size: 10, // Smaller font
+            align: 'middle',
+            strokeWidth: 0, // No border
+            strokeColor: 'transparent' // No stroke
+          },
+          width: 1, // Thinner arrows
+          arrows: {
+            to: {
+              enabled: true,
+              scaleFactor: 1.0
+            }
+          },
+          smooth: false, // Straight edges - vis-network automatically offsets parallel edges
+          // Note: vis-network automatically separates parallel edges when smooth is false
+          properties: edge.properties || {}
+        };
+      });
 
       const data: Data = { nodes, edges };
 
@@ -210,14 +224,23 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           width: 1, // Thinner edges to show multiple relationships separately
           font: {
             size: 10,
-            color: '#1E3A8A', // Navy blue
+            color: '#7C3AED', // Dark purple for better visibility
             align: 'middle',
             strokeWidth: 0, // No white border
             strokeColor: 'transparent' // No stroke
           },
-          smooth: false, // Straight edges - helps separate multiple relationships
+          smooth: {
+            type: 'continuous',
+            roundness: 0.1 // Minimal curvature to help separate parallel edges
+          },
           selectionWidth: 2, // Slightly thicker on selection for better visibility
-          hoverWidth: 1.5 // Slightly thicker on hover
+          hoverWidth: 1.5, // Slightly thicker on hover
+          // Configuration for better parallel edge separation
+          arrows: {
+            to: {
+              enabled: true
+            }
+          }
         },
         physics: {
           enabled: true,
@@ -227,12 +250,12 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           },
           // Help separate multiple edges between same nodes
           barnesHut: {
-            gravitationalConstant: -2000,
-            centralGravity: 0.3,
-            springLength: 95,
-            springConstant: 0.04,
-            damping: 0.09,
-            avoidOverlap: 0.1
+            gravitationalConstant: -3000, // Stronger repulsion
+            centralGravity: 0.2,
+            springLength: 150, // Longer springs for better separation
+            springConstant: 0.06, // Stronger springs
+            damping: 0.08,
+            avoidOverlap: 0.5 // More overlap avoidance
           }
         },
         interaction: {
