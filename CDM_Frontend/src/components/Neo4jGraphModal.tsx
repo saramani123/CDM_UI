@@ -9,13 +9,15 @@ import { executeGraphQuery } from '../services/api';
 interface Neo4jGraphModalProps {
   isOpen: boolean;
   onClose: () => void;
+  graphType?: 'objects' | 'variables'; // Default to 'objects' for backward compatibility
 }
 
 type GraphView = 'taxonomy' | 'model';
 
 export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   isOpen,
-  onClose
+  onClose,
+  graphType = 'objects'
 }) => {
   const [activeView, setActiveView] = useState<GraphView>('taxonomy');
   const [isLoading, setIsLoading] = useState(false);
@@ -32,8 +34,8 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   const allNodesData = useRef<any[]>([]);
   const allEdgesData = useRef<any[]>([]);
   
-  // Use a unique container ID that changes with the active view
-  const getContainerId = () => `graph-container-${activeView}`;
+  // Use a unique container ID that changes with the active view and graph type
+  const getContainerId = () => `graph-container-${graphType}-${activeView}`;
 
   // Detect environment and get Neo4j instance name
   const getEnvironmentInfo = () => {
@@ -50,10 +52,16 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
 
   const envInfo = getEnvironmentInfo();
 
-  // Cypher queries for each view
-  // neovis.js works best when we return paths or all nodes/relationships
-  // Returning individual nodes and relationships works well
-  const cypherQueries = {
+  // Cypher queries for each view - different for objects vs variables
+  const cypherQueries = graphType === 'variables' ? {
+    taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
+RETURN p, r1, g, r2, v`,
+    model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
+MATCH (a)-[r2:HAS_OBJECT]->(o:Object)
+OPTIONAL MATCH (o)-[r3:HAS_SPECIFIC_VARIABLE]->(v:Variable)
+OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(g:Group)<-[r5:HAS_GROUP]-(p:Part)
+RETURN b, r1, a, r2, o, r3, v, r4, g, r5, p`
+  } : {
     taxonomy: `MATCH (b:Being)-[ha:HAS_AVATAR]->(a:Avatar)-[ho:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[hv:HAS_VARIANT]->(v:Variant)
 RETURN b, ha, a, ho, o, hv, v`,
@@ -104,8 +112,15 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         return;
       }
 
-      // Map nodes with colors based on labels
-      const labelColors: Record<string, { background: string; border: string; highlight: { background: string; border: string } }> = {
+      // Map nodes with colors based on labels - different colors for objects vs variables
+      const labelColors: Record<string, { background: string; border: string; highlight: { background: string; border: string } }> = graphType === 'variables' ? {
+        Part: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+        Group: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
+        Variable: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+        Being: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } },
+        Avatar: { background: '#F59E0B', border: '#D97706', highlight: { background: '#FBBF24', border: '#F59E0B' } },
+        Object: { background: '#14B8A6', border: '#0D9488', highlight: { background: '#5EEAD4', border: '#14B8A6' } }
+      } : {
         Being: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
         Avatar: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
         Object: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
@@ -507,7 +522,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
               }`}
             >
-              Object Taxonomy
+              {graphType === 'variables' ? 'Variable Taxonomy' : 'Object Taxonomy'}
             </button>
             <button
               onClick={() => setActiveView('model')}
@@ -517,7 +532,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
               }`}
             >
-              Object Model
+              {graphType === 'variables' ? 'Variable-Object Model' : 'Object Model'}
             </button>
           </div>
           {/* Eye Icon - Show details panel (far right of tabs bar) */}

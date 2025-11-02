@@ -229,14 +229,23 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const isLargeGrid = data.length > 500;
   
   // Initialize CSS variables on mount and when columnWidths change (for large grids)
+  // Also reset when gridType changes to prevent CSS bleeding between tabs
   React.useEffect(() => {
-    if (isLargeGrid && gridContainerRef.current) {
+    if (gridContainerRef.current) {
+      // Clear all existing CSS variables for this grid type
       columns.forEach(col => {
-        const width = columnWidths[col.key] || parseInt(col.width) || 140;
-        gridContainerRef.current?.style.setProperty(`--column-width-${col.key}`, `${width}px`);
+        gridContainerRef.current?.style.removeProperty(`--column-width-${col.key}`);
       });
+      
+      // Set new CSS variables
+      if (isLargeGrid) {
+        columns.forEach(col => {
+          const width = columnWidths[col.key] || parseInt(col.width) || 140;
+          gridContainerRef.current?.style.setProperty(`--column-width-${col.key}`, `${width}px`);
+        });
+      }
     }
-  }, [isLargeGrid, columns, columnWidths]);
+  }, [isLargeGrid, columns, columnWidths, gridType]);
 
   const handleColumnResize = (columnKey: string, newWidth: number) => {
     setColumnWidths(prev => {
@@ -721,11 +730,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 const isShortColumn = ['sector', 'domain', 'country'].includes(column.key);
                 const minWidth = isShortColumn ? 60 : 80;
                 
+                // Calculate column width - use same calculation as data cells for consistency
+                const columnWidth = columnWidths[column.key] || parseInt(column.width) || 140;
+                
                 return (
                 <ResizableColumn
-                  key={column.key}
+                  key={`${gridType}-${column.key}`} // Add gridType to force remount when switching tabs
                   columnKey={column.key}
-                  initialWidth={`${columnWidths[column.key] || 140}px`}
+                  initialWidth={`${columnWidth}px`}
                   minWidth={minWidth}
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
@@ -826,9 +838,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   </div>
                 )}
                 {columns.map((column, colIndex) => {
+                  // Calculate cell width - use same calculation as header for consistency
+                  const columnWidth = columnWidths[column.key] || parseInt(column.width) || 140;
                   const cellWidth = isLargeGrid 
-                    ? `var(--column-width-${column.key}, ${columnWidths[column.key] || 140}px)`
-                    : `${columnWidths[column.key] || 140}px`;
+                    ? `var(--column-width-${column.key}, ${columnWidth}px)`
+                    : `${columnWidth}px`;
                   
                   return (
                   <div

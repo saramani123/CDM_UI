@@ -84,6 +84,7 @@ function App() {
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkObjectUploadOpen, setIsBulkObjectUploadOpen] = useState(false);
   const [isNeo4jGraphModalOpen, setIsNeo4jGraphModalOpen] = useState(false);
+  const [isNeo4jVariablesGraphModalOpen, setIsNeo4jVariablesGraphModalOpen] = useState(false);
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
@@ -228,16 +229,18 @@ function App() {
         setData(mockObjectData);
       } else {
         // Always use API data, even if empty
-        console.log('App - Setting data to apiObjects:', apiObjects);
+        // Ensure apiObjects is an array before setting
+        const objectsArray = Array.isArray(apiObjects) ? apiObjects : (apiObjects ? [apiObjects] : []);
+        console.log('App - Setting data to apiObjects:', objectsArray);
         console.log('App - Affected object IDs before data update:', Array.from(affectedObjectIds));
         
         // Check if any of the affected objects are in the new data
         if (affectedObjectIds.size > 0) {
-          const affectedObjectsInNewData = apiObjects?.filter(obj => affectedObjectIds.has(obj.id)) || [];
+          const affectedObjectsInNewData = objectsArray.filter(obj => affectedObjectIds.has(obj.id));
           console.log('App - Affected objects in new data:', affectedObjectsInNewData.map(obj => ({ id: obj.id, driver: obj.driver })));
         }
         
-        setData(apiObjects);
+        setData(objectsArray);
         console.log('App - Data updated, affected object IDs should still be:', Array.from(affectedObjectIds));
       }
     }
@@ -386,9 +389,11 @@ function App() {
         setVariableData(mockVariableData);
       } else {
         // Always use API data, even if empty
-        console.log('Using API variables data:', apiVariables);
-        console.log('Setting variableData to:', apiVariables);
-        setVariableData(apiVariables);
+        // Ensure apiVariables is an array before setting
+        const variablesArray = Array.isArray(apiVariables) ? apiVariables : (apiVariables ? [apiVariables] : []);
+        console.log('Using API variables data:', variablesArray);
+        console.log('Setting variableData to:', variablesArray);
+        setVariableData(variablesArray);
       }
     }
   }, [apiVariables, variablesError, variablesLoading]);
@@ -1608,6 +1613,7 @@ function App() {
             
             {/* Data Grid */}
             <DataGrid
+              key={activeTab} // Force remount when switching tabs to prevent state bleeding
               columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
               data={activeTab === 'lists' ? listData : activeTab === 'variables' ? filteredVariableData : filteredData}
               onRowSelect={handleRowSelect}
@@ -1682,10 +1688,16 @@ function App() {
               {/* Add/Upload controls above metadata panel for Objects and Variables */}
               {(activeTab === 'objects' || activeTab === 'variables') && (
                 <div className="mb-3 space-y-3">
-                  {/* View Neo4j Knowledge Graph button (Objects tab only) */}
-                  {activeTab === 'objects' && (
+                  {/* View Neo4j Knowledge Graph button */}
+                  {(activeTab === 'objects' || activeTab === 'variables') && (
                     <button
-                      onClick={() => setIsNeo4jGraphModalOpen(true)}
+                      onClick={() => {
+                        if (activeTab === 'objects') {
+                          setIsNeo4jGraphModalOpen(true);
+                        } else {
+                          setIsNeo4jVariablesGraphModalOpen(true);
+                        }
+                      }}
                       className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
                       title="View Neo4j Knowledge Graph"
                     >
@@ -1841,10 +1853,18 @@ function App() {
         loadingType={loadingType}
       />
 
-      {/* Neo4j Knowledge Graph Modal */}
+      {/* Neo4j Knowledge Graph Modal - Objects */}
       <Neo4jGraphModal
         isOpen={isNeo4jGraphModalOpen}
         onClose={() => setIsNeo4jGraphModalOpen(false)}
+        graphType="objects"
+      />
+
+      {/* Neo4j Knowledge Graph Modal - Variables */}
+      <Neo4jGraphModal
+        isOpen={isNeo4jVariablesGraphModalOpen}
+        onClose={() => setIsNeo4jVariablesGraphModalOpen(false)}
+        graphType="variables"
       />
 
       {/* Relationship Modal */}

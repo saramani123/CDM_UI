@@ -32,49 +32,29 @@ async def get_objects():
 
     try:
         with driver.session() as session:
-            # Get all objects with their relationships and variants counts
-            result = session.run("""
+            # Get all objects first
+            objects_result = session.run("""
                 MATCH (o:Object)
-                OPTIONAL MATCH (o)-[:RELATES_TO]->(other:Object)
-                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
                 RETURN o.id as id, o.driver as driver, o.being as being,
-                       o.avatar as avatar, o.object as object, o.status as status,
-                       count(DISTINCT other) as relationships,
-                       count(DISTINCT v) as variants,
-                       0 as variables
+                       o.avatar as avatar, o.object as object, o.status as status
                 ORDER BY o.id
             """)
-
+            
             objects = []
-            for record in result:
-                obj = {
-                    "id": record["id"],
-                    "driver": record["driver"],
-                    "being": record["being"],
-                    "avatar": record["avatar"],
-                    "object": record["object"],
-                    "relationships": record["relationships"] or 0,
-                    "variants": record["variants"] or 0,
-                    "variables": record["variables"] or 0,
-                    "status": record["status"] or "Active",
-                    "relationshipsList": [],  # Will be populated separately
-                    "variantsList": []        # Will be populated separately
-                }
-                objects.append(obj)
-
-            # Get relationships for each object
-            for obj in objects:
-                # Get direct RELATES_TO relationships
+            for record in objects_result:
+                obj_id = record["id"]
+                
+                # Get relationships for this object
                 relationships_result = session.run("""
                     MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
                     RETURN r.id as id, r.type as type, r.role as role,
                            other.being as toBeing, other.avatar as toAvatar, other.object as toObject
-                """, object_id=obj["id"])
-
+                """, object_id=obj_id)
+                
                 relationships = []
                 for rel_record in relationships_result:
                     relationships.append({
-                        "id": rel_record["id"] or str(uuid.uuid4()),  # Use existing ID or generate new one
+                        "id": rel_record["id"] or str(uuid.uuid4()),
                         "type": rel_record["type"],
                         "role": rel_record["role"],
                         "toBeing": rel_record["toBeing"],
@@ -82,21 +62,33 @@ async def get_objects():
                         "toObject": rel_record["toObject"]
                     })
                 
-                obj["relationshipsList"] = relationships
-
-                # Get variants for each object
+                # Get variants for this object
                 variants_result = session.run("""
                     MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
                     RETURN v.name as name
-                """, object_id=obj["id"])
-
+                """, object_id=obj_id)
+                
                 variants = []
                 for var_record in variants_result:
                     variants.append({
                         "id": str(uuid.uuid4()),
                         "name": var_record["name"]
                     })
-                obj["variantsList"] = variants
+                
+                obj = {
+                    "id": obj_id,
+                    "driver": record["driver"],
+                    "being": record["being"],
+                    "avatar": record["avatar"],
+                    "object": record["object"],
+                    "relationships": len(relationships),
+                    "variants": len(variants),
+                    "variables": 0,
+                    "status": record["status"] or "Active",
+                    "relationshipsList": relationships,
+                    "variantsList": variants
+                }
+                objects.append(obj)
 
             print(f"Retrieved {len(objects)} objects from Neo4j")
             return objects
