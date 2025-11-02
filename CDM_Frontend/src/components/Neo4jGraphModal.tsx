@@ -150,7 +150,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       allNodesData.current = graphData.nodes;
       allEdgesData.current = graphData.edges;
 
-      // Map edges - ensure IDs are strings, make labels smaller and navy blue
+      // Map edges - ensure IDs are strings, make labels smaller and navy blue, thinner arrows
       const edges: Edge[] = graphData.edges.map((edge: any) => ({
         id: String(edge.id),
         from: String(edge.from),
@@ -161,14 +161,14 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
           highlight: '#FF6347'
         },
         arrows: { to: { enabled: true } },
-        smooth: false,
+        smooth: false, // Straight edges - helps show multiple relationships separately
         font: { 
           color: '#1E3A8A', // Navy blue for better visibility
           size: 10, // Smaller font size
           strokeWidth: 0, // No stroke/border
           strokeColor: 'transparent' // Ensure no border
         },
-        width: 2
+        width: 1 // Thinner arrows to show multiple relationships separately
       }));
 
       // Create vis-network data
@@ -183,13 +183,16 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         },
         edges: {
           arrows: { to: { enabled: true } },
-          smooth: false,
+          smooth: false, // Straight edges - helps separate multiple relationships
           font: { 
             size: 10, // Smaller font
             color: '#1E3A8A', // Navy blue for better visibility
             strokeWidth: 0, // No white border
             strokeColor: 'transparent' // No stroke
           },
+          width: 1, // Thinner edges to show multiple relationships separately
+          selectionWidth: 2, // Slightly thicker on selection
+          hoverWidth: 1.5 // Slightly thicker on hover
         },
         physics: {
           stabilization: {
