@@ -158,25 +158,62 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       });
 
       // Map edges with colors and labels - dark purple font, grey arrows, thinner for better separation
-      // Group edges by from/to to identify parallel edges
+      // Group edges by from/to to identify parallel edges and alternate their properties
       const edgeGroups = new Map<string, number>();
       const getEdgeKey = (from: string, to: string) => `${from}->${to}`;
       
+      // First pass: count parallel edges
+      graphData.edges.forEach((edge: any) => {
+        const from = String(edge.from);
+        const to = String(edge.to);
+        const key = getEdgeKey(from, to);
+        edgeGroups.set(key, (edgeGroups.get(key) || 0) + 1);
+      });
+      
+      // Second pass: create edges with alternating properties for parallel edges
+      const edgeIndices = new Map<string, number>();
       const edges: Edge[] = graphData.edges.map((edge: any) => {
         const from = String(edge.from);
         const to = String(edge.to);
         const key = getEdgeKey(from, to);
         
-        // Count how many edges share the same from/to (for parallel edge separation)
-        const parallelIndex = edgeGroups.get(key) || 0;
-        edgeGroups.set(key, parallelIndex + 1);
+        // Get index of this edge among parallel edges
+        const parallelIndex = edgeIndices.get(key) || 0;
+        edgeIndices.set(key, parallelIndex + 1);
         
-        // Calculate offset for parallel edges (alternate above/below center line)
-        const offset = parallelIndex % 2 === 0 
-          ? parallelIndex * 0.5  // Above center
-          : -(Math.floor(parallelIndex / 2) + 1) * 0.5; // Below center
+        // Get total number of parallel edges for this pair
+        const totalParallel = edgeGroups.get(key) || 1;
         
-        return {
+        // Calculate offset for spreading parallel edges
+        // Center the edges around the middle, spreading them out
+        const offsetIndex = parallelIndex - Math.floor((totalParallel - 1) / 2);
+        
+        // For parallel edges, alternate between curvedCW and curvedCCW with varying roundness
+        // This creates clear separation similar to Neo4j
+        let smoothConfig: any = false;
+        const isSelfLoop = from === to;
+        
+        if (totalParallel > 1) {
+          // Alternate curve direction: even indices = clockwise, odd indices = counter-clockwise
+          const isClockwise = parallelIndex % 2 === 0;
+          const curveType = isClockwise ? 'curvedCW' : 'curvedCCW';
+          
+          // Vary roundness based on position - edges further from center have more curve
+          // This creates a fan effect that separates parallel edges
+          // Use more pronounced curves for better separation
+          // For self-loops, use even more separation
+          const baseRoundness = isSelfLoop ? 0.4 : 0.3;
+          const roundnessIncrement = isSelfLoop ? 0.25 : 0.2;
+          const roundness = baseRoundness + Math.abs(offsetIndex) * roundnessIncrement;
+          
+          smoothConfig = {
+            type: curveType,
+            roundness: Math.min(0.8, roundness) // Even higher cap for more visible separation
+          };
+        }
+        
+        // Build base edge object
+        const baseEdge: Edge = {
           id: String(edge.id),
           from: from,
           to: to,
@@ -200,10 +237,16 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
               scaleFactor: 1.0
             }
           },
-          smooth: false, // Straight edges - vis-network automatically offsets parallel edges
-          // Note: vis-network automatically separates parallel edges when smooth is false
+          smooth: smoothConfig,
           properties: edge.properties || {}
         };
+        
+        // For self-loops with multiple relationships, add self-reference size offset
+        if (isSelfLoop && totalParallel > 1) {
+          baseEdge.selfReferenceSize = 20 + Math.abs(offsetIndex) * 15;
+        }
+        
+        return baseEdge;
       });
 
       const data: Data = { nodes, edges };
@@ -229,10 +272,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
             strokeWidth: 0, // No white border
             strokeColor: 'transparent' // No stroke
           },
-          smooth: {
-            type: 'continuous',
-            roundness: 0.1 // Minimal curvature to help separate parallel edges
-          },
+          smooth: false, // Default to straight edges, individual edges override if needed
           selectionWidth: 2, // Slightly thicker on selection for better visibility
           hoverWidth: 1.5, // Slightly thicker on hover
           // Configuration for better parallel edge separation
@@ -250,12 +290,12 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           },
           // Help separate multiple edges between same nodes
           barnesHut: {
-            gravitationalConstant: -3000, // Stronger repulsion
-            centralGravity: 0.2,
-            springLength: 150, // Longer springs for better separation
-            springConstant: 0.06, // Stronger springs
-            damping: 0.08,
-            avoidOverlap: 0.5 // More overlap avoidance
+            gravitationalConstant: -4000, // Stronger repulsion to spread nodes
+            centralGravity: 0.15,
+            springLength: 200, // Longer springs for better separation
+            springConstant: 0.08, // Stronger springs
+            damping: 0.09,
+            avoidOverlap: 0.8 // Maximum overlap avoidance
           }
         },
         interaction: {
