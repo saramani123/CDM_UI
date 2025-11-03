@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { CsvUploadModal } from './CsvUploadModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
+import { OntologyModal } from './OntologyModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
 
@@ -100,6 +101,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     relationships: false,
     variants: false
   });
+
+  // Ontology modal state
+  const [ontologyModalOpen, setOntologyModalOpen] = useState<{
+    isOpen: boolean;
+    viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | null;
+  }>({ isOpen: false, viewType: null });
+
+  const openOntologyModal = (viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants') => {
+    setOntologyModalOpen({ isOpen: true, viewType });
+  };
+
+  const closeOntologyModal = () => {
+    setOntologyModalOpen({ isOpen: false, viewType: null });
+  };
 
   // Track the previous selected object ID to detect actual object changes
   const prevSelectedObjectId = useRef<string | null>(null);
@@ -873,8 +888,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     icon?: React.ReactNode;
     actions?: React.ReactNode;
     children: React.ReactNode;
-  }> = ({ title, sectionKey, icon, actions, children }) => {
+    ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants';
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType }) => {
     const isExpanded = expandedSections[sectionKey];
+    const isObjectSelected = !!selectedObject?.object;
     
     return (
       <div className="border-t border-ag-dark-border pt-8">
@@ -891,11 +908,28 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             {icon}
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
-          {isExpanded && actions && (
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {actions}
-            </div>
-          )}
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {isExpanded && actions && <>{actions}</>}
+            {ontologyViewType && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isObjectSelected) {
+                    openOntologyModal(ontologyViewType);
+                  }
+                }}
+                disabled={!isObjectSelected}
+                className={`p-1 transition-colors ${
+                  isObjectSelected 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={isObjectSelected ? "View Neo4j Ontology" : "Select an object to view ontology"}
+              >
+                <Network className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
         
         {isExpanded && (
@@ -948,7 +982,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       </div>
 
       {/* Drivers Section */}
-      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="drivers">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1063,7 +1097,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       </CollapsibleSection>
 
       {/* Ontology Section */}
-      <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1132,7 +1166,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       </CollapsibleSection>
 
       {/* Identifiers Section */}
-      <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="identifiers">
         <div className="space-y-6">
           {/* Unique ID - Multiple entries support */}
           <div>
@@ -1330,6 +1364,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         title="Relationships" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="relationships"
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -1414,6 +1449,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         title="Variants" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="variants"
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -1573,6 +1609,23 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         type="variants"
         onUpload={handleVariantCsvUpload}
       />
+
+      {/* Ontology Modal */}
+      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedObject?.object && (
+        <OntologyModal
+          isOpen={ontologyModalOpen.isOpen}
+          onClose={closeOntologyModal}
+          objectName={selectedObject.object}
+          sectionName={
+            ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
+            ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
+            ontologyModalOpen.viewType === 'identifiers' ? 'Identifiers' :
+            ontologyModalOpen.viewType === 'relationships' ? 'Relationships' :
+            'Variants'
+          }
+          viewType={ontologyModalOpen.viewType}
+        />
+      )}
 
     </div>
   );
