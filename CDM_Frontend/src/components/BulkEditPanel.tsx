@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network } from 'lucide-react';
+import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
@@ -29,7 +29,7 @@ interface Relationship {
 
 interface BulkEditPanelProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: () => void; // Still needed for internal cleanup, but not exposed to user
   onSave: (data: Record<string, any>) => void;
   selectedCount: number;
   allData?: any[];
@@ -505,7 +505,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     console.log('🔄 BulkEditPanel - variantsList field:', saveData.variantsList);
     
     onSave(saveData);
-    onClose();
+    // Note: onClose() is called automatically when selection changes via useEffect in App.tsx
+    // No need to call it here explicitly as the panel closes when selection becomes single
   };
 
   // Multi-select component
@@ -689,12 +690,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
           <h3 className="text-lg font-semibold text-ag-dark-text">Edit Selected</h3>
         </div>
-        <button
-          onClick={onClose}
-          className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Close button removed - panel closes automatically when selection becomes single */}
       </div>
 
       {/* Bulk Edit Mode Notice - Always Visible */}

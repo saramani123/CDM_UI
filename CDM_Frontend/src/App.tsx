@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -349,6 +349,25 @@ function App() {
       }
     }
   }, [variablesLoading, activeTab, variableData.length, variablesError, apiVariables, loadingType]);
+
+  // Auto-open bulk edit panel when 2+ objects are selected
+  useEffect(() => {
+    if (selectedRows.length >= 2) {
+      if (activeTab === 'variables') {
+        setIsBulkEditVariablesOpen(true);
+      } else if (activeTab === 'objects' || activeTab === 'lists') {
+        setIsBulkEditOpen(true);
+      }
+    } else if (selectedRows.length === 1) {
+      // Close bulk edit panel when selection becomes single
+      setIsBulkEditOpen(false);
+      setIsBulkEditVariablesOpen(false);
+    } else if (selectedRows.length === 0) {
+      // Close bulk edit panel when no selection
+      setIsBulkEditOpen(false);
+      setIsBulkEditVariablesOpen(false);
+    }
+  }, [selectedRows.length, activeTab]);
 
   // Handle lists loading (mock data, so minimal loading)
   React.useEffect(() => {
@@ -1587,29 +1606,13 @@ function App() {
                 )}
                 
                 {selectedRows.length > 1 && (
-                  <>
-                    <button
-                      onClick={() => setIsBulkDeleteOpen(true)}
-                      className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-error text-white rounded text-sm font-medium hover:bg-red-600 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete Selected ({selectedRows.length})
-                    </button>
-                    
-                    <button
-                     onClick={() => {
-                       if (activeTab === 'variables') {
-                         setIsBulkEditVariablesOpen(true);
-                       } else {
-                         setIsBulkEditOpen(true);
-                       }
-                     }}
-                      className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-warning text-white rounded text-sm font-medium hover:bg-orange-600 transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      Edit Selected ({selectedRows.length})
-                    </button>
-                  </>
+                  <button
+                    onClick={() => setIsBulkDeleteOpen(true)}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-ag-dark-error text-white rounded text-sm font-medium hover:bg-red-600 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Delete Selected ({selectedRows.length})
+                  </button>
                 )}
               </div>
               
@@ -1713,7 +1716,7 @@ function App() {
             <div className="lg:col-span-1">
               <BulkEditPanel
                 isOpen={isBulkEditOpen}
-                onClose={() => setIsBulkEditOpen(false)}
+                onClose={() => {}} // Not used - panel closes automatically when selection changes
                 onSave={handleBulkEdit}
                 selectedCount={selectedRows.length}
                 allData={activeTab === 'variables' ? variableData : data}
