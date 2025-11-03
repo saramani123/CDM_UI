@@ -452,23 +452,23 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           enabled: true,
           stabilization: {
             enabled: true,
-            iterations: 100, // Reduced from 200-300 for faster loading - same as generic graph modal
-            updateInterval: 50, // Increased from 25ms to reduce computation overhead
+            iterations: 50, // Further reduced for much faster loading
+            updateInterval: 100, // Increased to reduce computation overhead
             onlyDynamicEdges: false,
             fit: true // Fit the network to container after stabilization
           },
-          // Optimized physics settings for faster stabilization
+          // Optimized physics settings for fastest stabilization
           barnesHut: {
-            gravitationalConstant: -2000, // Reduced from -5000/-8000 for faster convergence
-            centralGravity: 0.3, // Increased for faster stabilization
-            springLength: 95, // Reduced for faster stabilization (same as generic graph modal)
-            springConstant: 0.04, // Reduced from 0.08-0.15 for faster convergence
-            damping: 0.09, // Reduced from 0.15-0.25 for faster stabilization (same as generic graph modal)
-            avoidOverlap: 0.1 // Reduced from 1.0 to speed up calculation
+            gravitationalConstant: -1500, // Reduced for faster convergence
+            centralGravity: 0.35, // Increased for faster stabilization
+            springLength: 80, // Reduced for faster stabilization
+            springConstant: 0.03, // Reduced for faster convergence
+            damping: 0.1, // Optimized for fast stabilization
+            avoidOverlap: 0.05 // Minimized to speed up calculation
           },
           solver: 'barnesHut',
-          maxVelocity: 10, // Increased from 5 for faster movement
-          timestep: 0.35 // Increased for faster simulation
+          maxVelocity: 15, // Increased for faster movement
+          timestep: 0.4 // Increased for faster simulation
         },
         interaction: {
           hover: true,
@@ -496,16 +496,16 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
 
         networkRef.current = new VisNetwork(containerRef.current, data, options);
 
-        // Fallback: Disable physics after a timeout if stabilization doesn't complete
-        // This prevents infinite movement in cases where stabilization fails
+        // For faster loading, disable physics immediately after short stabilization
+        // Use a much shorter timeout for faster user experience
         const stabilizationTimeout = setTimeout(() => {
-          console.log('loadGraph: Stabilization timeout, disabling physics');
+          console.log('loadGraph: Fast stabilization timeout, disabling physics');
           if (networkRef.current) {
             networkRef.current.setOptions({ physics: { enabled: false } });
             setIsLoading(false);
             isLoadingRef.current = false;
           }
-        }, 10000); // 10 second timeout
+        }, 2000); // 2 second timeout for faster loading
 
         // Disable physics after stabilization to prevent continuous movement
         // This is critical for bulk views with many nodes
@@ -518,6 +518,21 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
             isLoadingRef.current = false;
           }
         });
+
+        // Force stop physics after initial render for even faster loading
+        // This gives immediate visual feedback while physics finishes in background
+        setTimeout(() => {
+          if (networkRef.current && isLoadingRef.current) {
+            // Check if graph is already reasonably laid out
+            const scale = networkRef.current.getScale();
+            if (scale > 0.1) { // If graph has some layout, disable physics immediately
+              networkRef.current.setOptions({ physics: { enabled: false } });
+              setIsLoading(false);
+              isLoadingRef.current = false;
+              clearTimeout(stabilizationTimeout);
+            }
+          }
+        }, 500); // After 500ms, disable physics if graph looks reasonable
 
         // Add click handlers for nodes and edges
         networkRef.current.on('click', (params: any) => {
@@ -723,7 +738,16 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           {/* Overlay loading/error states */}
           {isLoading && (
             <div className="absolute inset-6 flex items-center justify-center bg-ag-dark-bg/90 z-10 rounded border border-ag-dark-border">
-              <div className="text-ag-dark-text-secondary">Loading ontology view...</div>
+              <div className="flex flex-col items-center gap-4">
+                {/* Cute loading animation */}
+                <div className="relative w-16 h-16">
+                  <div className="absolute inset-0 border-4 border-ag-dark-border rounded-full"></div>
+                  <div className="absolute inset-0 border-4 border-transparent border-t-ag-dark-accent rounded-full animate-spin"></div>
+                  <div className="absolute inset-2 border-4 border-transparent border-b-ag-dark-accent rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '0.8s' }}></div>
+                  <div className="absolute inset-4 border-4 border-transparent border-r-ag-dark-accent rounded-full animate-spin" style={{ animationDuration: '0.6s' }}></div>
+                </div>
+                <div className="text-ag-dark-text-secondary text-sm animate-pulse">Loading ontology view...</div>
+              </div>
             </div>
           )}
           {error && (

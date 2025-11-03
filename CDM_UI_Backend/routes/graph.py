@@ -30,7 +30,7 @@ async def get_ontology_view(
             OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO|IS_RELEVANT_TO]->(o)
             OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO|IS_RELEVANT_TO]->(o)
             OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            RETURN DISTINCT s, r1, d, r2, c, r3, oc, r4, o
+            RETURN s, r1, d, r2, c, r3, oc, r4, o
         """,
         'ontology': """
             MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o:Object {object: $object_name})
@@ -39,19 +39,15 @@ async def get_ontology_view(
         'identifiers': """
             MATCH (o:Object {object: $object_name})
             OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+            OPTIONAL MATCH (g1:Group)-[r4a:HAS_VARIABLE]->(v1)
+            OPTIONAL MATCH (p1:Part)-[r5a:HAS_GROUP]->(g1)
             OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+            OPTIONAL MATCH (g2:Group)-[r4b:HAS_VARIABLE]->(v2)
+            OPTIONAL MATCH (p2:Part)-[r5b:HAS_GROUP]->(g2)
             OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            WITH o, r1, v1, r2, v2, r3, v3
-            UNWIND [
-                CASE WHEN v1 IS NOT NULL THEN {var: v1, rel: r1} ELSE null END,
-                CASE WHEN v2 IS NOT NULL THEN {var: v2, rel: r2} ELSE null END,
-                CASE WHEN v3 IS NOT NULL THEN {var: v3, rel: r3} ELSE null END
-            ] AS varRel
-            WITH o, varRel.var AS v, varRel.rel AS r
-            WHERE v IS NOT NULL
-            OPTIONAL MATCH (g:Group)-[r4:HAS_VARIABLE]->(v)
-            OPTIONAL MATCH (p:Part)-[r5:HAS_GROUP]->(g)
-            RETURN DISTINCT o, v, g, p, r, r4, r5
+            OPTIONAL MATCH (g3:Group)-[r4c:HAS_VARIABLE]->(v3)
+            OPTIONAL MATCH (p3:Part)-[r5c:HAS_GROUP]->(g3)
+            RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
         """,
         'relationships': """
             MATCH (o:Object {object: $object_name})-[r:RELATES_TO]->(o2:Object)
@@ -75,13 +71,11 @@ async def get_ontology_view(
         edge_ids = set()
         
         with driver.session() as session:
-            # Use a single query execution with optimized result processing
+            # Execute query and process results directly (streaming is faster than converting to list)
             result = session.run(cypher_query, object_name=object_name)
             
-            # Process records more efficiently by collecting first, then processing
-            records_list = list(result)  # Convert to list for single pass processing
-            
-            for record in records_list:
+            # Process records directly without converting to list (streaming is faster)
+            for record in result:
                 # Process each field in the record
                 for key, value in record.items():
                     if value is None:
@@ -182,44 +176,40 @@ async def get_bulk_ontology_view(
             OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO|IS_RELEVANT_TO]->(o)
             OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO|IS_RELEVANT_TO]->(o)
             OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            RETURN DISTINCT s, r1, d, r2, c, r3, oc, r4, o
+            RETURN s, r1, d, r2, c, r3, oc, r4, o
         """,
         'ontology': """
             MATCH (o:Object)
             WHERE o.object IN $object_names
             OPTIONAL MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o)
-            RETURN DISTINCT b, r1, a, r2, o
+            RETURN b, r1, a, r2, o
         """,
         'identifiers': """
             MATCH (o:Object)
             WHERE o.object IN $object_names
             OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+            OPTIONAL MATCH (g1:Group)-[r4a:HAS_VARIABLE]->(v1)
+            OPTIONAL MATCH (p1:Part)-[r5a:HAS_GROUP]->(g1)
             OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+            OPTIONAL MATCH (g2:Group)-[r4b:HAS_VARIABLE]->(v2)
+            OPTIONAL MATCH (p2:Part)-[r5b:HAS_GROUP]->(g2)
             OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            WITH o, r1, v1, r2, v2, r3, v3
-            UNWIND [
-                CASE WHEN v1 IS NOT NULL THEN {var: v1, rel: r1} ELSE null END,
-                CASE WHEN v2 IS NOT NULL THEN {var: v2, rel: r2} ELSE null END,
-                CASE WHEN v3 IS NOT NULL THEN {var: v3, rel: r3} ELSE null END
-            ] AS varRel
-            WITH o, varRel.var AS v, varRel.rel AS r
-            WHERE v IS NOT NULL
-            OPTIONAL MATCH (g:Group)-[r4:HAS_VARIABLE]->(v)
-            OPTIONAL MATCH (p:Part)-[r5:HAS_GROUP]->(g)
-            RETURN DISTINCT o, v, g, p, r, r4, r5
+            OPTIONAL MATCH (g3:Group)-[r4c:HAS_VARIABLE]->(v3)
+            OPTIONAL MATCH (p3:Part)-[r5c:HAS_GROUP]->(g3)
+            RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
         """,
         'relationships': """
             MATCH (o:Object)
             WHERE o.object IN $object_names
             OPTIONAL MATCH (o)-[r:RELATES_TO]->(o2:Object)
             OPTIONAL MATCH (o2)-[r2:RELATES_TO]->(o)
-            RETURN DISTINCT o, r, o2, r2
+            RETURN o, r, o2, r2
         """,
         'variants': """
             MATCH (o:Object)
             WHERE o.object IN $object_names
             OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
-            RETURN DISTINCT o, r, v
+            RETURN o, r, v
         """
     }
     
@@ -235,13 +225,11 @@ async def get_bulk_ontology_view(
         edge_ids = set()
         
         with driver.session() as session:
-            # Use a single query execution with optimized result processing
+            # Execute query and process results directly (streaming is faster than converting to list)
             result = session.run(cypher_query, object_names=object_names)
             
-            # Process records more efficiently by collecting first, then processing
-            records_list = list(result)  # Convert to list for single pass processing
-            
-            for record in records_list:
+            # Process records directly without converting to list (streaming is faster)
+            for record in result:
                 # Process each field in the record
                 for key, value in record.items():
                     if value is None:
