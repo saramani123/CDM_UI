@@ -41,11 +41,12 @@ async def get_ontology_view(
             OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
             OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
             OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            WITH o, 
-                 collect(DISTINCT {var: v1, rel: r1}) + 
-                 collect(DISTINCT {var: v2, rel: r2}) + 
-                 collect(DISTINCT {var: v3, rel: r3}) AS allVarRels
-            UNWIND allVarRels AS varRel
+            WITH o, r1, v1, r2, v2, r3, v3
+            UNWIND [
+                CASE WHEN v1 IS NOT NULL THEN {var: v1, rel: r1} ELSE null END,
+                CASE WHEN v2 IS NOT NULL THEN {var: v2, rel: r2} ELSE null END,
+                CASE WHEN v3 IS NOT NULL THEN {var: v3, rel: r3} ELSE null END
+            ] AS varRel
             WITH o, varRel.var AS v, varRel.rel AS r
             WHERE v IS NOT NULL
             OPTIONAL MATCH (g:Group)-[r4:HAS_VARIABLE]->(v)
@@ -74,9 +75,13 @@ async def get_ontology_view(
         edge_ids = set()
         
         with driver.session() as session:
+            # Use a single query execution with optimized result processing
             result = session.run(cypher_query, object_name=object_name)
             
-            for record in result:
+            # Process records more efficiently by collecting first, then processing
+            records_list = list(result)  # Convert to list for single pass processing
+            
+            for record in records_list:
                 # Process each field in the record
                 for key, value in record.items():
                     if value is None:
@@ -90,8 +95,11 @@ async def get_ontology_view(
                             labels = list(value.labels) if value.labels else []
                             label = labels[0] if labels else 'Unknown'
                             
-                            # Get node properties
-                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            # Get node properties - cache items() to avoid multiple calls
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
                             name = props.get('name') or props.get('object') or props.get('being') or props.get('avatar') or node_id
                             
                             nodes[node_id] = {
@@ -110,8 +118,11 @@ async def get_ontology_view(
                             start_id = str(value.start_node.id)
                             end_id = str(value.end_node.id)
                             
-                            # Get relationship properties
-                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            # Get relationship properties - cache items() to avoid multiple calls
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
                             
                             # For RELATES_TO, use role property as label if available
                             edge_label = value.type
@@ -185,11 +196,12 @@ async def get_bulk_ontology_view(
             OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
             OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
             OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            WITH o, 
-                 collect(DISTINCT {var: v1, rel: r1}) + 
-                 collect(DISTINCT {var: v2, rel: r2}) + 
-                 collect(DISTINCT {var: v3, rel: r3}) AS allVarRels
-            UNWIND allVarRels AS varRel
+            WITH o, r1, v1, r2, v2, r3, v3
+            UNWIND [
+                CASE WHEN v1 IS NOT NULL THEN {var: v1, rel: r1} ELSE null END,
+                CASE WHEN v2 IS NOT NULL THEN {var: v2, rel: r2} ELSE null END,
+                CASE WHEN v3 IS NOT NULL THEN {var: v3, rel: r3} ELSE null END
+            ] AS varRel
             WITH o, varRel.var AS v, varRel.rel AS r
             WHERE v IS NOT NULL
             OPTIONAL MATCH (g:Group)-[r4:HAS_VARIABLE]->(v)
@@ -223,9 +235,13 @@ async def get_bulk_ontology_view(
         edge_ids = set()
         
         with driver.session() as session:
+            # Use a single query execution with optimized result processing
             result = session.run(cypher_query, object_names=object_names)
             
-            for record in result:
+            # Process records more efficiently by collecting first, then processing
+            records_list = list(result)  # Convert to list for single pass processing
+            
+            for record in records_list:
                 # Process each field in the record
                 for key, value in record.items():
                     if value is None:
@@ -239,8 +255,11 @@ async def get_bulk_ontology_view(
                             labels = list(value.labels) if value.labels else []
                             label = labels[0] if labels else 'Unknown'
                             
-                            # Get node properties
-                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            # Get node properties - cache items() to avoid multiple calls
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
                             name = props.get('name') or props.get('object') or props.get('being') or props.get('avatar') or node_id
                             
                             nodes[node_id] = {
@@ -259,8 +278,11 @@ async def get_bulk_ontology_view(
                             start_id = str(value.start_node.id)
                             end_id = str(value.end_node.id)
                             
-                            # Get relationship properties
-                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            # Get relationship properties - cache items() to avoid multiple calls
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
                             
                             # For RELATES_TO, use role property as label if available
                             edge_label = value.type

@@ -452,24 +452,23 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           enabled: true,
           stabilization: {
             enabled: true,
-            iterations: isBulk ? 300 : 200, // More iterations for bulk views to ensure stabilization
-            updateInterval: 25, // Update every 25ms for smoother stabilization
+            iterations: 100, // Reduced from 200-300 for faster loading - same as generic graph modal
+            updateInterval: 50, // Increased from 25ms to reduce computation overhead
             onlyDynamicEdges: false,
             fit: true // Fit the network to container after stabilization
           },
-          // Help separate multiple edges between same nodes
-          // Use even stronger forces to push nodes apart, which helps separate parallel edges
+          // Optimized physics settings for faster stabilization
           barnesHut: {
-            gravitationalConstant: isBulk ? -5000 : -8000, // Less aggressive for bulk to prevent continuous movement
-            centralGravity: isBulk ? 0.1 : 0.05, // Slightly more central gravity for bulk to help stabilization
-            springLength: isBulk ? 200 : 300, // Shorter springs for bulk views for faster stabilization
-            springConstant: isBulk ? 0.08 : 0.15, // Less strong springs for bulk to prevent oscillation
-            damping: isBulk ? 0.25 : 0.15, // Higher damping for bulk views to reduce movement
-            avoidOverlap: 1.0 // Maximum overlap avoidance
+            gravitationalConstant: -2000, // Reduced from -5000/-8000 for faster convergence
+            centralGravity: 0.3, // Increased for faster stabilization
+            springLength: 95, // Reduced for faster stabilization (same as generic graph modal)
+            springConstant: 0.04, // Reduced from 0.08-0.15 for faster convergence
+            damping: 0.09, // Reduced from 0.15-0.25 for faster stabilization (same as generic graph modal)
+            avoidOverlap: 0.1 // Reduced from 1.0 to speed up calculation
           },
-          solver: 'barnesHut', // Explicitly use barnesHut solver
-          maxVelocity: isBulk ? 5 : 10, // Limit velocity for bulk views to prevent excessive movement
-          timestep: isBulk ? 0.25 : 0.35 // Smaller timestep for more stable simulation
+          solver: 'barnesHut',
+          maxVelocity: 10, // Increased from 5 for faster movement
+          timestep: 0.35 // Increased for faster simulation
         },
         interaction: {
           hover: true,
