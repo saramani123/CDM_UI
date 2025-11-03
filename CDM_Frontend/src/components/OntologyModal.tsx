@@ -9,8 +9,10 @@ import { getOntologyView, getBulkOntologyView } from '../services/api';
 interface OntologyModalProps {
   isOpen: boolean;
   onClose: () => void;
-  objectName?: string; // Optional - for single object mode
-  objectNames?: string[]; // Optional - for bulk mode
+  objectId?: string; // Optional - for single object mode (preferred for distinct objects)
+  objectName?: string; // Optional - for single object mode (fallback for backward compatibility)
+  objectIds?: string[]; // Optional - for bulk mode (preferred for distinct objects)
+  objectNames?: string[]; // Optional - for bulk mode (fallback for backward compatibility)
   sectionName: string;
   viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants';
   isBulkMode?: boolean; // New flag to indicate bulk mode
@@ -19,15 +21,17 @@ interface OntologyModalProps {
 export const OntologyModal: React.FC<OntologyModalProps> = ({
   isOpen,
   onClose,
+  objectId,
   objectName,
+  objectIds,
   objectNames,
   sectionName,
   viewType,
   isBulkMode = false
 }) => {
-  // Detect mode (single vs bulk)
-  const isBulk = isBulkMode && objectNames && objectNames.length > 0;
-  const displayObjects = isBulk ? objectNames! : [objectName!];
+  // Detect mode (single vs bulk) - prefer IDs if available
+  const isBulk = isBulkMode && (objectIds?.length > 0 || objectNames?.length > 0);
+  const hasObjectIds = isBulk ? (objectIds?.length > 0) : !!objectId;
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -135,12 +139,12 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       // Don't clear innerHTML - vis-network's destroy() handles cleanup
       // If there's leftover content, vis-network will replace it anyway
 
-      // Fetch ontology view data (bulk or single)
+      // Fetch ontology view data (bulk or single) - prefer IDs if available
       let graphData;
       if (isBulk) {
-        graphData = await getBulkOntologyView(displayObjects, viewType);
+        graphData = await getBulkOntologyView(objectIds || null, objectNames || null, viewType);
       } else {
-        graphData = await getOntologyView(displayObjects[0], viewType);
+        graphData = await getOntologyView(objectId || null, objectName || null, viewType);
       }
 
       if (graphData.nodeCount === 0) {
@@ -167,8 +171,10 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         
         // Highlight all selected objects in bulk mode, or single object in single mode
         const isSelectedObject = isBulk 
-          ? displayObjects.includes(node.label) || displayObjects.some(obj => node.properties?.object === obj)
-          : node.label === displayObjects[0] || node.properties?.object === displayObjects[0];
+          ? (objectIds && objectIds.some(id => node.properties?.id === id)) || 
+            (objectNames && objectNames.some(name => node.label === name || node.properties?.object === name))
+          : (objectId && node.properties?.id === objectId) ||
+            (objectName && (node.label === objectName || node.properties?.object === objectName));
         const nodeColor = isSelectedObject && viewType === 'drivers' 
           ? { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } }
           : colorConfigForNode;
@@ -650,13 +656,13 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       return;
     }
 
-    // Determine if we should load based on current mode
-    const shouldLoad = isBulkMode && objectNames && objectNames.length > 0
-      ? true
-      : objectName ? true : false;
+    // Determine if we should load based on current mode - check IDs first, then names
+    const shouldLoad = isBulkMode 
+      ? (objectIds && objectIds.length > 0) || (objectNames && objectNames.length > 0)
+      : (objectId || objectName);
 
     if (isOpen && shouldLoad) {
-      console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, objectName, objectNames: objectNames?.length, viewType });
+      console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, objectId, objectName, objectIds: objectIds?.length, objectNames: objectNames?.length, viewType });
       
       // Reset state when modal opens
       setError(null);
@@ -677,7 +683,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         // Don't cleanup network here - let the close handler do it
       };
     }
-  }, [isOpen, objectName, objectNames, viewType, isBulkMode]);
+  }, [isOpen, objectId, objectName, objectIds, objectNames, viewType, isBulkMode]);
 
   // Separate effect for cleanup on unmount
   useEffect(() => {
@@ -701,8 +707,8 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
               </h2>
               <p className="text-sm text-ag-dark-text-secondary mt-1">
                 {isBulk 
-                  ? `Objects: ${displayObjects.length} selected | Instance: ${envInfo.instanceName}`
-                  : `Object: ${displayObjects[0]} | Instance: ${envInfo.instanceName}`
+                  ? `Objects: ${(objectIds?.length || objectNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
+                  : `Object: ${objectName || objectId || 'Unknown'} | Instance: ${envInfo.instanceName}`
                 }
               </p>
             </div>

@@ -1611,11 +1611,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       />
 
       {/* Ontology Modal */}
-      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedObject?.object && (
+      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && (selectedObject?.id || selectedObject?.object) && (
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}
           onClose={closeOntologyModal}
-          objectName={selectedObject.object}
+          objectId={selectedObject?.id || undefined}
+          objectName={selectedObject?.object || undefined}
           sectionName={
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :

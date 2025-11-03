@@ -11,53 +11,89 @@ class GraphQueryRequest(BaseModel):
 
 @router.get("/ontology/view")
 async def get_ontology_view(
-    object_name: str = Query(..., description="Name of the object"),
+    object_id: Optional[str] = Query(None, description="ID of the object (preferred for distinct objects)"),
+    object_name: Optional[str] = Query(None, description="Name of the object (fallback for backward compatibility)"),
     view: str = Query(..., description="Type of ontology view: drivers, ontology, identifiers, relationships, variants")
 ):
     """
     Get ontology view for a specific object and section.
     Maps view type to appropriate Cypher query.
+    Uses object_id if provided (for distinct objects), otherwise falls back to object_name.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Neo4j driver not available")
     
-    # Define Cypher queries for each view type
-    queries = {
-        'drivers': """
-            MATCH (o:Object {object: $object_name})
-            OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            RETURN s, r1, d, r2, c, r3, oc, r4, o
-        """,
-        'ontology': """
-            MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o:Object {object: $object_name})
-            RETURN b, r1, a, r2, o
-        """,
-        'identifiers': """
-            MATCH (o:Object {object: $object_name})
-            OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
-            OPTIONAL MATCH (g1:Group)-[r4a:HAS_VARIABLE]->(v1)
-            OPTIONAL MATCH (p1:Part)-[r5a:HAS_GROUP]->(g1)
-            OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
-            OPTIONAL MATCH (g2:Group)-[r4b:HAS_VARIABLE]->(v2)
-            OPTIONAL MATCH (p2:Part)-[r5b:HAS_GROUP]->(g2)
-            OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            OPTIONAL MATCH (g3:Group)-[r4c:HAS_VARIABLE]->(v3)
-            OPTIONAL MATCH (p3:Part)-[r5c:HAS_GROUP]->(g3)
-            RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
-        """,
-        'relationships': """
-            MATCH (o:Object {object: $object_name})-[r:RELATES_TO]->(o2:Object)
-            RETURN o, r, o2
-        """,
-        'variants': """
-            MATCH (o:Object {object: $object_name})-[r:HAS_VARIANT]->(v:Variant)
-            RETURN o, r, v
-        """
-    }
+    if not object_id and not object_name:
+        raise HTTPException(status_code=400, detail="Either object_id or object_name must be provided")
+    
+    # Define Cypher queries for each view type - use object_id if available, otherwise object_name
+    if object_id:
+        # Match by distinct object ID - optimized for speed
+        queries = {
+            'drivers': """
+                MATCH (o:Object {id: $object_id})
+                OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+                RETURN s, r1, d, r2, c, r3, oc, r4, o
+            """,
+            'ontology': """
+                MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o:Object {id: $object_id})
+                RETURN b, r1, a, r2, o
+            """,
+            'identifiers': """
+                MATCH (o:Object {id: $object_id})
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
+            """,
+            'relationships': """
+                MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(o2:Object)
+                RETURN o, r, o2
+            """,
+            'variants': """
+                MATCH (o:Object {id: $object_id})-[r:HAS_VARIANT]->(v:Variant)
+                RETURN o, r, v
+            """
+        }
+        query_param = object_id
+        param_name = 'object_id'
+    else:
+        # Fallback to object name for backward compatibility - optimized
+        queries = {
+            'drivers': """
+                MATCH (o:Object {object: $object_name})
+                OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+                RETURN s, r1, d, r2, c, r3, oc, r4, o
+            """,
+            'ontology': """
+                MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o:Object {object: $object_name})
+                RETURN b, r1, a, r2, o
+            """,
+            'identifiers': """
+                MATCH (o:Object {object: $object_name})
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
+            """,
+            'relationships': """
+                MATCH (o:Object {object: $object_name})-[r:RELATES_TO]->(o2:Object)
+                RETURN o, r, o2
+            """,
+            'variants': """
+                MATCH (o:Object {object: $object_name})-[r:HAS_VARIANT]->(v:Variant)
+                RETURN o, r, v
+            """
+        }
+        query_param = object_name
+        param_name = 'object_name'
     
     if view not in queries:
         raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, identifiers, relationships, variants")
@@ -72,7 +108,7 @@ async def get_ontology_view(
         
         with driver.session() as session:
             # Execute query and process results directly (streaming is faster than converting to list)
-            result = session.run(cypher_query, object_name=object_name)
+            result = session.run(cypher_query, **{param_name: query_param})
             
             # Process records directly without converting to list (streaming is faster)
             for record in result:
@@ -145,73 +181,123 @@ async def get_ontology_view(
 
 @router.post("/ontology/view/bulk")
 async def get_bulk_ontology_view(
-    object_names: List[str] = Body(..., description="List of object names"),
+    object_ids: Optional[List[str]] = Body(None, description="List of object IDs (preferred for distinct objects)"),
+    object_names: Optional[List[str]] = Body(None, description="List of object names (fallback for backward compatibility)"),
     view: str = Body(..., description="Type of ontology view: drivers, ontology, identifiers, relationships, variants")
 ):
     """
     Get ontology view for multiple objects and section.
     Maps view type to appropriate Cypher query for bulk selection.
+    Uses object_ids if provided (for distinct objects), otherwise falls back to object_names.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Neo4j driver not available")
     
-    if not object_names or len(object_names) == 0:
-        raise HTTPException(status_code=400, detail="At least one object name is required")
+    if not object_ids and not object_names:
+        raise HTTPException(status_code=400, detail="Either object_ids or object_names must be provided")
+    
+    # Use object_ids if available, otherwise fall back to object_names
+    if object_ids:
+        if len(object_ids) == 0:
+            raise HTTPException(status_code=400, detail="At least one object ID is required")
+        identifiers = object_ids
+        use_ids = True
+    else:
+        if len(object_names) == 0:
+            raise HTTPException(status_code=400, detail="At least one object name is required")
+        identifiers = object_names
+        use_ids = False
     
     # Limit maximum objects for performance (as per spec)
     MAX_OBJECTS = 50
-    if len(object_names) > MAX_OBJECTS:
+    if len(identifiers) > MAX_OBJECTS:
         raise HTTPException(
             status_code=400, 
             detail=f"Maximum {MAX_OBJECTS} objects allowed for bulk view. Please reduce selection."
         )
     
-    # Define Cypher queries for each view type (bulk version)
-    queries = {
-        'drivers': """
-            MATCH (o:Object)
-            WHERE o.object IN $object_names
-            OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO|IS_RELEVANT_TO]->(o)
-            RETURN s, r1, d, r2, c, r3, oc, r4, o
-        """,
-        'ontology': """
-            MATCH (o:Object)
-            WHERE o.object IN $object_names
-            OPTIONAL MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o)
-            RETURN b, r1, a, r2, o
-        """,
-        'identifiers': """
-            MATCH (o:Object)
-            WHERE o.object IN $object_names
-            OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
-            OPTIONAL MATCH (g1:Group)-[r4a:HAS_VARIABLE]->(v1)
-            OPTIONAL MATCH (p1:Part)-[r5a:HAS_GROUP]->(g1)
-            OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
-            OPTIONAL MATCH (g2:Group)-[r4b:HAS_VARIABLE]->(v2)
-            OPTIONAL MATCH (p2:Part)-[r5b:HAS_GROUP]->(g2)
-            OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-            OPTIONAL MATCH (g3:Group)-[r4c:HAS_VARIABLE]->(v3)
-            OPTIONAL MATCH (p3:Part)-[r5c:HAS_GROUP]->(g3)
-            RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
-        """,
-        'relationships': """
-            MATCH (o:Object)
-            WHERE o.object IN $object_names
-            OPTIONAL MATCH (o)-[r:RELATES_TO]->(o2:Object)
-            OPTIONAL MATCH (o2)-[r2:RELATES_TO]->(o)
-            RETURN o, r, o2, r2
-        """,
-        'variants': """
-            MATCH (o:Object)
-            WHERE o.object IN $object_names
-            OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
-            RETURN o, r, v
-        """
-    }
+    # Define Cypher queries for each view type (bulk version) - use object_ids if available
+    if use_ids:
+        queries = {
+            'drivers': """
+                MATCH (o:Object)
+                WHERE o.id IN $object_ids
+                OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+                RETURN s, r1, d, r2, c, r3, oc, r4, o
+            """,
+            'ontology': """
+                MATCH (o:Object)
+                WHERE o.id IN $object_ids
+                OPTIONAL MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o)
+                RETURN b, r1, a, r2, o
+            """,
+            'identifiers': """
+                MATCH (o:Object)
+                WHERE o.id IN $object_ids
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
+            """,
+            'relationships': """
+                MATCH (o:Object)
+                WHERE o.id IN $object_ids
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(o2:Object)
+                OPTIONAL MATCH (o3:Object)-[r2:RELATES_TO]->(o)
+                RETURN o, r, o2, r2, o3
+            """,
+            'variants': """
+                MATCH (o:Object)
+                WHERE o.id IN $object_ids
+                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                RETURN o, r, v
+            """
+        }
+        param_name = 'object_ids'
+    else:
+        queries = {
+            'drivers': """
+                MATCH (o:Object)
+                WHERE o.object IN $object_names
+                OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+                RETURN s, r1, d, r2, c, r3, oc, r4, o
+            """,
+            'ontology': """
+                MATCH (o:Object)
+                WHERE o.object IN $object_names
+                OPTIONAL MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o)
+                RETURN b, r1, a, r2, o
+            """,
+            'identifiers': """
+                MATCH (o:Object)
+                WHERE o.object IN $object_names
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
+            """,
+            'relationships': """
+                MATCH (o:Object)
+                WHERE o.object IN $object_names
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(o2:Object)
+                OPTIONAL MATCH (o3:Object)-[r2:RELATES_TO]->(o)
+                RETURN o, r, o2, r2, o3
+            """,
+            'variants': """
+                MATCH (o:Object)
+                WHERE o.object IN $object_names
+                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                RETURN o, r, v
+            """
+        }
+        param_name = 'object_names'
     
     if view not in queries:
         raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, identifiers, relationships, variants")
@@ -226,7 +312,7 @@ async def get_bulk_ontology_view(
         
         with driver.session() as session:
             # Execute query and process results directly (streaming is faster than converting to list)
-            result = session.run(cypher_query, object_names=object_names)
+            result = session.run(cypher_query, **{param_name: identifiers})
             
             # Process records directly without converting to list (streaming is faster)
             for record in result:

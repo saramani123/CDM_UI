@@ -31,8 +31,23 @@ export const executeGraphQuery = async (query: string): Promise<{ nodes: any[], 
 };
 
 // Ontology view function
-export const getOntologyView = async (objectName: string, view: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants'): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
-  const response = await fetch(`${API_BASE_URL}/ontology/view?object_name=${encodeURIComponent(objectName)}&view=${view}`, {
+export const getOntologyView = async (
+  objectId: string | null,
+  objectName: string | null,
+  view: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build query params - prefer object_id if available, otherwise fall back to object_name
+  const params = new URLSearchParams();
+  if (objectId) {
+    params.append('object_id', objectId);
+  } else if (objectName) {
+    params.append('object_name', objectName);
+  } else {
+    throw new Error('Either objectId or objectName must be provided');
+  }
+  params.append('view', view);
+
+  const response = await fetch(`${API_BASE_URL}/ontology/view?${params.toString()}`, {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
@@ -49,18 +64,26 @@ export const getOntologyView = async (objectName: string, view: 'drivers' | 'ont
 
 // Bulk ontology view function
 export const getBulkOntologyView = async (
-  objectNames: string[], 
+  objectIds: string[] | null,
+  objectNames: string[] | null,
   viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build request body - prefer object_ids if available, otherwise fall back to object_names
+  const body: any = { view: viewType };
+  if (objectIds && objectIds.length > 0) {
+    body.object_ids = objectIds;
+  } else if (objectNames && objectNames.length > 0) {
+    body.object_names = objectNames;
+  } else {
+    throw new Error('Either objectIds or objectNames must be provided');
+  }
+
   const response = await fetch(`${API_BASE_URL}/ontology/view/bulk`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      object_names: objectNames,
-      view: viewType
-    })
+    body: JSON.stringify(body)
   });
   
   if (!response.ok) {

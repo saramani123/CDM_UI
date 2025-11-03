@@ -1166,6 +1166,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}
           onClose={closeBulkOntologyModal}
+          objectIds={selectedObjects.map(obj => obj.id).filter(Boolean)}
           objectNames={selectedObjects.map(obj => obj.object || obj.name).filter(Boolean)}
           sectionName={
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :

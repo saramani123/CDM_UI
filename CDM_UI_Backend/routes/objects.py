@@ -32,12 +32,13 @@ async def get_objects():
 
     try:
         with driver.session() as session:
-            # Optimized single query to get all objects with relationships and variants
+            # Optimized single query to get all objects with relationships, variants, and variables
             # This avoids N+1 query problem by fetching everything in one query
             result = session.run("""
                 MATCH (o:Object)
                 OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
                 OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
                 WITH o, 
                      collect(DISTINCT {
                          id: r.id,
@@ -47,7 +48,8 @@ async def get_objects():
                          toAvatar: other.avatar,
                          toObject: other.object
                      }) as relationships,
-                     collect(DISTINCT v.name) as variant_names
+                     collect(DISTINCT v.name) as variant_names,
+                     count(DISTINCT var) as variables_count
                 RETURN o.id as id, 
                        o.driver as driver, 
                        o.being as being,
@@ -55,7 +57,8 @@ async def get_objects():
                        o.object as object, 
                        o.status as status,
                        relationships,
-                       variant_names
+                       variant_names,
+                       variables_count
                 ORDER BY o.id
             """)
             
@@ -87,6 +90,9 @@ async def get_objects():
                     for name in variant_names
                 ]
                 
+                # Get variables count from the query result
+                variables_count = record.get("variables_count", 0) or 0
+                
                 obj = {
                     "id": record["id"],
                     "driver": record["driver"],
@@ -95,7 +101,7 @@ async def get_objects():
                     "object": record["object"],
                     "relationships": len(relationships),
                     "variants": len(variants),
-                    "variables": 0,
+                    "variables": variables_count,
                     "status": record["status"] or "Active",
                     "relationshipsList": relationships,
                     "variantsList": variants
@@ -141,6 +147,12 @@ async def get_object(object_id: str):
                 MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
                 RETURN count(v) as var_count
             """, object_id=object_id).single()
+            
+            # Get variables count (HAS_SPECIFIC_VARIABLE relationships)
+            variables_count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
+                RETURN count(var) as variables_count
+            """, object_id=object_id).single()
 
             obj = {
                 "id": record["id"],
@@ -151,7 +163,7 @@ async def get_object(object_id: str):
                 "status": record["status"],
                 "relationships": rel_count_result["rel_count"] if rel_count_result else 0,
                 "variants": var_count_result["var_count"] if var_count_result else 0,
-                "variables": 0,
+                "variables": variables_count_result["variables_count"] if variables_count_result else 0,
                 "relationshipsList": [],
                 "variantsList": []
             }

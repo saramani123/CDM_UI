@@ -895,7 +895,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               }
                               return getGridDriverDisplayValue(column.key, value || '');
                             })() : 
-                            (row[column.key] || '-')
+                            (['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
+                              ? (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined ? '-' : row[column.key])
+                              : (row[column.key] || '-'))
                         }
                       </span>
                     )}

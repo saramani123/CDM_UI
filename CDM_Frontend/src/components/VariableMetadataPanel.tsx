@@ -26,6 +26,7 @@ interface VariableMetadataPanelProps {
   allData?: any[];
   objectsData?: any[];
   selectedCount?: number;
+  onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
 }
 
 export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
@@ -36,7 +37,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   selectedVariable,
   allData = [],
   objectsData = [],
-  selectedCount = 0
+  selectedCount = 0,
+  onObjectsRefresh
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {};
@@ -869,9 +871,10 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           if (onSave) {
             await onSave({});
           }
-          // Note: objectsData comes from App.tsx - we don't need to refresh objects
-          // because relationships don't change object properties
-          // However, we ensure gridData always parses from driver string to show correct values
+          // Refresh objects data to update the variables count
+          if (onObjectsRefresh) {
+            await onObjectsRefresh();
+          }
         }}
         initialCsvData={pendingCsvData}
       />
