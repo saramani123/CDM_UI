@@ -105,16 +105,38 @@ function App() {
   const [isCustomSortActive, setIsCustomSortActive] = useState(persistedState.isCustomSortActive);
   const [isColumnSortActive, setIsColumnSortActive] = useState(persistedState.isColumnSortActive);
 
-  // Variables Custom Sort state
+  // Variables Custom Sort state - load from localStorage
+  const loadVariablesPersistedState = () => {
+    try {
+      const savedVariablesCustomSortRules = localStorage.getItem('cdm_variables_custom_sort_rules');
+      const savedVariablesCustomSortActive = localStorage.getItem('cdm_variables_custom_sort_active');
+      const savedVariablesColumnSortActive = localStorage.getItem('cdm_variables_column_sort_active');
+      
+      return {
+        variablesCustomSortRules: savedVariablesCustomSortRules ? JSON.parse(savedVariablesCustomSortRules) : [],
+        isVariablesCustomSortActive: savedVariablesCustomSortActive === 'true',
+        isVariablesColumnSortActive: savedVariablesColumnSortActive === 'true'
+      };
+    } catch (error) {
+      console.error('Error loading persisted variables state:', error);
+      return {
+        variablesCustomSortRules: [],
+        isVariablesCustomSortActive: false,
+        isVariablesColumnSortActive: false
+      };
+    }
+  };
+
+  const variablesPersistedState = loadVariablesPersistedState();
   const [isVariablesCustomSortOpen, setIsVariablesCustomSortOpen] = useState(false);
   const [variablesCustomSortRules, setVariablesCustomSortRules] = useState<Array<{
     id: string;
     column: string;
     sortOn: string;
     order: 'asc' | 'desc';
-  }>>([]);
-  const [isVariablesCustomSortActive, setIsVariablesCustomSortActive] = useState(false);
-  const [isVariablesColumnSortActive, setIsVariablesColumnSortActive] = useState(false);
+  }>>(variablesPersistedState.variablesCustomSortRules);
+  const [isVariablesCustomSortActive, setIsVariablesCustomSortActive] = useState(variablesPersistedState.isVariablesCustomSortActive);
+  const [isVariablesColumnSortActive, setIsVariablesColumnSortActive] = useState(variablesPersistedState.isVariablesColumnSortActive);
 
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
@@ -248,6 +270,8 @@ function App() {
   }, [apiObjects, objectsError, objectsLoading, activeTab]);
 
   // Function to apply saved order from localStorage
+  // The backend already returns drivers in order (respecting d.order property)
+  // We use localStorage to preserve custom user reordering across sessions
   const applySavedOrder = (driversData: any) => {
     const orderedDrivers = { ...driversData };
     
@@ -266,32 +290,41 @@ function App() {
             const validSavedItems = parsedOrder.filter((item: string) => currentItems.includes(item));
             
             // Find new items that weren't in the saved order
+            // These should be added at the end to preserve existing order
             const newItems = currentItems.filter((item: string) => !parsedOrder.includes(item));
             
             // Combine: valid saved items in their saved order + new items at the end
             const finalOrder = [...validSavedItems, ...newItems];
             
-            // Only update if the order is different from current API order
-            if (JSON.stringify(finalOrder) !== JSON.stringify(currentItems)) {
+            // Always use the saved order (if we have valid saved items) to preserve user's custom ordering
+            // Only fall back to API order if saved order is empty or invalid
+            if (validSavedItems.length > 0) {
               orderedDrivers[columnType as keyof typeof orderedDrivers] = finalOrder;
               
               // Update localStorage with the new order (including new items)
               localStorage.setItem(storageKey, JSON.stringify(finalOrder));
               
-              console.log(`Applied saved order for ${columnType}:`, finalOrder);
+              console.log(`✅ Applied saved custom order for ${columnType}:`, finalOrder);
               console.log(`  - Valid saved items: ${validSavedItems.length}`);
-              console.log(`  - New items: ${newItems.length}`);
+              console.log(`  - New items added at end: ${newItems.length}`);
             } else {
-              console.log(`Saved order for ${columnType} matches API order, no change needed`);
+              // No valid saved items, use API order and save it
+              orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
+              localStorage.setItem(storageKey, JSON.stringify(currentItems));
+              console.log(`📝 No saved order for ${columnType}, using API order:`, currentItems);
             }
           }
         } catch (error) {
-          console.error(`Error parsing saved order for ${columnType}:`, error);
+          console.error(`❌ Error parsing saved order for ${columnType}:`, error);
+          // On error, use API order
+          orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
+          localStorage.setItem(storageKey, JSON.stringify(currentItems));
         }
       } else if (currentItems.length > 0) {
-        // No saved order, save the current API order
+        // No saved order, use API order (which respects backend d.order property) and save it
+        orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
         localStorage.setItem(storageKey, JSON.stringify(currentItems));
-        console.log(`Saved initial order for ${columnType}:`, currentItems);
+        console.log(`📝 Initial order saved for ${columnType} from API:`, currentItems);
       }
     });
     
@@ -1209,8 +1242,8 @@ function App() {
     }
   };
 
-  const handleDriversReorder = (columnType: ColumnType, newOrder: string[]) => {
-    // Update local state
+  const handleDriversReorder = async (columnType: ColumnType, newOrder: string[]) => {
+    // Update local state immediately for responsive UI
     setDriversState(prev => ({
       ...prev,
       [columnType]: newOrder
@@ -1219,6 +1252,18 @@ function App() {
     // Persist the new order to localStorage
     const storageKey = `cdm_drivers_order_${columnType}`;
     localStorage.setItem(storageKey, JSON.stringify(newOrder));
+    
+    // Persist to backend to ensure it survives deployments
+    try {
+      // Convert columnType to driver_type format (sectors -> sector, etc.)
+      const driverType = columnType.replace(/s$/, '') as 'sector' | 'domain' | 'country' | 'variableClarifier';
+      await apiService.reorderDrivers(driverType, newOrder);
+      console.log(`✅ Successfully persisted driver order for ${columnType} to backend`);
+    } catch (error) {
+      console.error(`❌ Failed to persist driver order for ${columnType} to backend:`, error);
+      // Don't throw - we've already updated local state and localStorage
+      // The order will still work locally, just won't persist across deployments
+    }
   };
 
   const handleDriverDeleteClick = (driverName: string, columnType: ColumnType) => {
@@ -1389,6 +1434,9 @@ function App() {
     setVariablesCustomSortRules(sortRules);
     setIsVariablesCustomSortActive(sortRules.length > 0);
     setIsVariablesColumnSortActive(false); // Clear column sort when grid sort is applied
+    // Clear localStorage for column sort
+    localStorage.removeItem('cdm_variables_column_sort_active');
+    localStorage.removeItem('cdm_variables_sort_config');
     console.log('Variables custom sort applied:', sortRules);
   };
 
@@ -1397,6 +1445,9 @@ function App() {
     if (isVariablesCustomSortActive) {
       setVariablesCustomSortRules([]);
       setIsVariablesCustomSortActive(false);
+      // Clear localStorage for custom sort
+      localStorage.removeItem('cdm_variables_custom_sort_rules');
+      localStorage.removeItem('cdm_variables_custom_sort_active');
     }
     setIsVariablesColumnSortActive(true);
   };
@@ -1405,7 +1456,26 @@ function App() {
     setVariablesCustomSortRules([]);
     setIsVariablesCustomSortActive(false);
     setIsVariablesColumnSortActive(false);
+    // Clear localStorage
+    localStorage.removeItem('cdm_variables_custom_sort_rules');
+    localStorage.removeItem('cdm_variables_custom_sort_active');
+    localStorage.removeItem('cdm_variables_column_sort_active');
   };
+
+  // Persist variables custom sort rules to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_variables_custom_sort_rules', JSON.stringify(variablesCustomSortRules));
+  }, [variablesCustomSortRules]);
+
+  // Persist variables custom sort active state to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_variables_custom_sort_active', isVariablesCustomSortActive.toString());
+  }, [isVariablesCustomSortActive]);
+
+  // Persist variables column sort active state to localStorage
+  React.useEffect(() => {
+    localStorage.setItem('cdm_variables_column_sort_active', isVariablesColumnSortActive.toString());
+  }, [isVariablesColumnSortActive]);
 
 
   return (

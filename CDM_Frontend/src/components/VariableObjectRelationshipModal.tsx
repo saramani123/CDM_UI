@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Link, Upload } from 'lucide-react';
+import { X, Save, Link, Upload, ArrowUpAZ } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns, parseDriverField } from '../data/mockData';
 import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
+import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 
 interface VariableObjectRelationshipModalProps {
   isOpen: boolean;
@@ -35,6 +36,13 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   const [isAllSelected, setIsAllSelected] = useState(false);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
+  const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
+  const [customSortRules, setCustomSortRules] = useState<Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>>([]);
 
   // Initialize selected objects when modal opens
   useEffect(() => {
@@ -54,6 +62,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       setSelectedObjects({});
       setIsAllSelected(false);
       setUploadErrors([]);
+      setCustomSortRules([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, selectedVariable?.id, allObjects.length]);
@@ -432,7 +441,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
 
   // Prepare data for the grid - include all object columns
   // Ensure sector, domain, country are preserved from parsed driver field
-  const gridData = allObjects.map(obj => {
+  let gridData = allObjects.map(obj => {
     const objData = selectedObjects[obj.id];
     // Preserve parsed sector, domain, country values (they come from parseDriverField)
     // If they're missing, parse from driver string
@@ -455,6 +464,35 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       isSelected: objData?.isSelected || (isAllSelected && objData?.isAllSelected) || false
     };
   });
+
+  // Apply custom sort if rules exist - only sort by Being, Avatar, Object
+  if (customSortRules.length > 0) {
+    gridData = [...gridData].sort((a, b) => {
+      for (const rule of customSortRules) {
+        if (!rule.column) continue;
+        
+        // Only allow sorting by Being, Avatar, Object
+        if (!['being', 'avatar', 'object'].includes(rule.column)) continue;
+        
+        const aValue = String(a[rule.column] || '').toLowerCase();
+        const bValue = String(b[rule.column] || '').toLowerCase();
+        
+        let comparison = aValue.localeCompare(bValue);
+        
+        // Apply order (asc/desc)
+        if (rule.order === 'desc') {
+          comparison = -comparison;
+        }
+        
+        // If this rule doesn't determine the order, continue to next rule
+        if (comparison !== 0) {
+          return comparison;
+        }
+      }
+      
+      return 0; // All rules are equal
+    });
+  }
 
   // Custom columns for the variable-object relationship modal
   const relationshipColumns = [
@@ -482,6 +520,22 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
               </h2>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setIsCsvUploadOpen(true)}
+                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+                title="Upload Relationships CSV"
+              >
+                <Upload className="w-4 h-4" />
+                Upload CSV
+              </button>
+              <button
+                onClick={() => setIsCustomSortOpen(true)}
+                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+                title="Custom Sort"
+              >
+                <ArrowUpAZ className="w-4 h-4" />
+                Custom Sort
+              </button>
               <button
                 onClick={handleSelectAll}
                 className={`px-4 py-2 border rounded text-sm transition-colors ${
@@ -551,15 +605,23 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
         </div>
       </div>
 
-      {/* CSV Upload Modal - Can be opened from metadata panel or modal */}
-      {isCsvUploadOpen && (
-        <CsvUploadModal
-          isOpen={isCsvUploadOpen}
-          onClose={() => setIsCsvUploadOpen(false)}
-          type="variable-object-relationships"
-          onUpload={handleCsvUpload}
-        />
-      )}
+      {/* CSV Upload Modal */}
+      <CsvUploadModal
+        isOpen={isCsvUploadOpen}
+        onClose={() => setIsCsvUploadOpen(false)}
+        type="variable-object-relationships"
+        onUpload={handleCsvUpload}
+      />
+
+      {/* Custom Sort Modal */}
+      <RelationshipCustomSortModal
+        isOpen={isCustomSortOpen}
+        onClose={() => setIsCustomSortOpen(false)}
+        onApplySort={(sortRules) => {
+          setCustomSortRules(sortRules);
+        }}
+        currentSortRules={customSortRules}
+      />
     </>
   );
 };

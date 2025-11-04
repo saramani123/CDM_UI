@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText, Plus } from 'lucide-react';
+import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
@@ -48,10 +48,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     return initial;
   });
 
-  // Driver selections state
+  // Driver selections state - will be expanded when driversData loads
   const [driverSelections, setDriverSelections] = useState(() => {
     if (selectedVariable?.driver) {
-      return parseVariableDriverString(selectedVariable.driver);
+      const parsed = parseVariableDriverString(selectedVariable.driver);
+      // Note: We can't expand ALL here because driversData might not be loaded yet
+      // This will be handled in the useEffect below
+      return parsed;
     }
     return {
       sector: [],
@@ -177,7 +180,21 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     
     // Update driver selections when selected variable changes
     if (selectedVariable?.driver) {
-      setDriverSelections(parseVariableDriverString(selectedVariable.driver));
+      const parsed = parseVariableDriverString(selectedVariable.driver);
+      // Expand "ALL" to include all individual values for proper multiselect display
+      const expanded: typeof parsed = {
+        sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+          ? ['ALL', ...driversData.sectors] 
+          : parsed.sector,
+        domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+          ? ['ALL', ...driversData.domains] 
+          : parsed.domain,
+        country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+          ? ['ALL', ...driversData.countries] 
+          : parsed.country,
+        variableClarifier: parsed.variableClarifier
+      };
+      setDriverSelections(expanded);
     } else {
       setDriverSelections({
         sector: [],
@@ -186,11 +203,10 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         variableClarifier: ''
       });
     }
-  }, [selectedVariable?.id]); // Only reset when variable actually changes
+  }, [selectedVariable?.id, driversData]); // Reset when variable changes or drivers data loads
 
   // Variable-object relationship modal state
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
-  const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
 
 
@@ -816,16 +832,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsCsvUploadOpen(true)}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Upload Relationships CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
               onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
               disabled={!isPanelEnabled}
               className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
@@ -879,20 +885,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         initialCsvData={pendingCsvData}
       />
 
-      {/* CSV Upload Modal */}
-      <CsvUploadModal
-        isOpen={isCsvUploadOpen}
-        onClose={() => setIsCsvUploadOpen(false)}
-        type="variable-object-relationships"
-        onUpload={(data: any[] | File) => {
-          // Store CSV data and open the relationship modal
-          if (Array.isArray(data)) {
-            setPendingCsvData(data);
-            setIsCsvUploadOpen(false);
-            setIsVariableObjectRelationshipModalOpen(true);
-          }
-        }}
-      />
+      {/* CSV Upload Modal removed - moved to VariableObjectRelationshipModal */}
 
       {/* Add Field Value Modal */}
       {selectedFieldForAdd && (

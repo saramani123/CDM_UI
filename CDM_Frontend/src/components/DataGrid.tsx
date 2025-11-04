@@ -68,11 +68,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
-  // Load persisted state from localStorage
+  // Load persisted state from localStorage - use grid-specific keys
   const loadPersistedDataGridState = () => {
     try {
-      const savedColumnFilters = localStorage.getItem('cdm_objects_column_filters');
-      const savedSortConfig = localStorage.getItem('cdm_objects_sort_config');
+      const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
+      const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+      const savedColumnFilters = localStorage.getItem(filterKey);
+      const savedSortConfig = localStorage.getItem(sortKey);
       
       return {
         columnFilters: savedColumnFilters ? JSON.parse(savedColumnFilters) : {},
@@ -133,15 +135,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
     setLocalSelectedRows(selectedRows);
   }, [selectedRows]);
 
-  // Persist column filters to localStorage
+  // Persist column filters to localStorage - use grid-specific key
   React.useEffect(() => {
-    localStorage.setItem('cdm_objects_column_filters', JSON.stringify(columnFilters));
-  }, [columnFilters]);
+    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
+    localStorage.setItem(filterKey, JSON.stringify(columnFilters));
+  }, [columnFilters, gridType]);
 
-  // Persist sort config to localStorage
+  // Persist sort config to localStorage - use grid-specific key
   React.useEffect(() => {
-    localStorage.setItem('cdm_objects_sort_config', JSON.stringify(sortConfig));
-  }, [sortConfig]);
+    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+    localStorage.setItem(sortKey, JSON.stringify(sortConfig));
+  }, [sortConfig, gridType]);
 
   const handleColumnHeaderClick = (column: Column, event: React.MouseEvent) => {
     const rect = (event.target as HTMLElement).getBoundingClientRect();
@@ -165,6 +169,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleColumnSort = (columnKey: string, type: 'custom' | 'none') => {
+    // If custom sort is active, clear it before applying column sort (mutual exclusivity)
+    if (isCustomSortActive && type !== 'none') {
+      onClearCustomSort?.();
+    }
+    
     if (type === 'none') {
       setSortConfig(null);
     } else {
@@ -174,6 +183,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
         // Don't modify the sortConfig for custom sort - it's already set by handleCustomSort
         return;
       }
+      // Apply per-column sort (mutually exclusive with custom sort)
       setSortConfig({
         key: columnKey,
         type,
@@ -189,6 +199,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
       customOrderLength: customOrder.length,
       previousSortConfig: sortConfig
     });
+    
+    // If grid-level custom sort is active, clear it when applying per-column custom sort
+    if (isCustomSortActive && customSortRules.length > 0) {
+      onClearCustomSort?.();
+    }
     
     const newSortConfig = {
       key: columnKey,
@@ -213,14 +228,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleClearAllFilters = () => {
+    // Only clear filters, preserve sorting
     setFilters({});
     setColumnFilters({});
+    // Don't clear sortConfig - filters and sorts should coexist
+    // Don't call onClearCustomSort - preserve sorting
+    // Clear only filter-related localStorage
+    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
+    localStorage.removeItem(filterKey);
+    // Note: Sorting state is preserved
+  };
+
+  const handleResetSorting = () => {
+    // Clear sorting only, preserve filters
     setSortConfig(null);
     onClearCustomSort?.();
-    // Clear localStorage
-    localStorage.removeItem('cdm_objects_column_filters');
-    localStorage.removeItem('cdm_objects_sort_config');
-    // Note: Column sort state is managed by parent component
+    // Clear only sort-related localStorage
+    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+    localStorage.removeItem(sortKey);
+    // Note: Filter state is preserved
   };
 
 
@@ -302,7 +328,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
   }, [columnWidths, isLargeGrid]);
 
-  const hasActiveFilters = Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
+  // Note: hasActiveFilters is now calculated inline in the render to show separate buttons for filters and sorting
 
   const filteredAndSortedData = useMemo(() => {
     console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length, affectedIds: affectedIds.size, affectedIdsArray: Array.from(affectedIds), customSortRules: customSortRules.length });
@@ -698,15 +724,25 @@ export const DataGrid: React.FC<DataGridProps> = ({
       >
         {/* Grid Container with Horizontal Scroll */}
         <div className="overflow-x-auto">
-          {/* Clear Filters Button */}
-          {hasActiveFilters && (
-            <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2">
-              <button
-                onClick={handleClearAllFilters}
-                className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-              >
-                Clear All Filters & Sorts
-              </button>
+          {/* Clear Filters and Reset Sorting Buttons */}
+          {(Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive) && (
+            <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2 flex gap-4">
+              {(Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+                >
+                  Reset Filters
+                </button>
+              )}
+              {(sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive) && (
+                <button
+                  onClick={handleResetSorting}
+                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+                >
+                  Reset Sorting
+                </button>
+              )}
             </div>
           )}
           

@@ -357,6 +357,13 @@ class ApiService {
     });
   }
 
+  async reorderDrivers(type: string, orderedNames: string[]) {
+    return this.request(`/drivers/${type}/reorder/`, {
+      method: 'PUT',
+      body: JSON.stringify({ orderedNames }),
+    });
+  }
+
   async bulkCreateDrivers(type: string, driversData: any) {
     return this.request(`/drivers/${type}/bulk`, {
       method: 'POST',

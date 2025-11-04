@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { X, Save, Link, Check, Trash2 } from 'lucide-react';
+import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns } from '../data/mockData';
 import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
+import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
+import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 
 interface InitialRelationship {
   targetObject: ObjectData;
@@ -39,6 +41,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
+  const [customSortRules, setCustomSortRules] = useState<Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>>([]);
+  const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
 
   // Initialize relationship data when modal opens
   useEffect(() => {
@@ -48,6 +58,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // Reset relationship data when modal closes
     if (!isOpen) {
       setRelationshipData({});
+      setCustomSortRules([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, selectedObject?.id, allObjects.length, initialRelationships.length]);
@@ -421,7 +432,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   if (!isOpen || !selectedObject) return null;
 
   // Prepare data for the grid with relationship controls
-  const gridData = allObjects.map(obj => {
+  let gridData = allObjects.map(obj => {
     const relData = relationshipData[obj.id];
     const isSelf = obj.id === selectedObject.id;
     
@@ -432,6 +443,32 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       roles: relData?.roles || ''
     };
   });
+
+  // Apply custom sort if rules exist
+  if (customSortRules.length > 0) {
+    gridData = [...gridData].sort((a, b) => {
+      for (const rule of customSortRules) {
+        if (!rule.column) continue;
+        
+        const aValue = String(a[rule.column] || '').toLowerCase();
+        const bValue = String(b[rule.column] || '').toLowerCase();
+        
+        let comparison = aValue.localeCompare(bValue);
+        
+        // Apply order (asc/desc)
+        if (rule.order === 'desc') {
+          comparison = -comparison;
+        }
+        
+        // If this rule doesn't determine the order, continue to next rule
+        if (comparison !== 0) {
+          return comparison;
+        }
+      }
+      
+      return 0; // All rules are equal
+    });
+  }
 
   // Custom columns for the relationship modal
   const relationshipColumns = [
@@ -516,12 +553,30 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               Configuring Relationships
             </h2>
           </div>
-          <button
-            onClick={handleClose}
-            className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setIsRelationshipCsvUploadOpen(true)}
+              className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              title="Upload Relationships CSV"
+            >
+              <Upload className="w-4 h-4" />
+              Upload CSV
+            </button>
+            <button
+              onClick={() => setIsCustomSortOpen(true)}
+              className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              title="Custom Sort"
+            >
+              <ArrowUpAZ className="w-4 h-4" />
+              Custom Sort
+            </button>
+            <button
+              onClick={handleClose}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content */}
@@ -572,6 +627,84 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Custom Sort Modal */}
+      <RelationshipCustomSortModal
+        isOpen={isCustomSortOpen}
+        onClose={() => setIsCustomSortOpen(false)}
+        onApplySort={(sortRules) => {
+          setCustomSortRules(sortRules);
+        }}
+        currentSortRules={customSortRules}
+      />
+
+      {/* Relationship CSV Upload Modal */}
+      <RelationshipCsvUploadModal
+        isOpen={isRelationshipCsvUploadOpen}
+        onClose={() => setIsRelationshipCsvUploadOpen(false)}
+        selectedObject={selectedObject}
+        allObjects={allObjects}
+        onProcessed={(processedRelationships: ProcessedRelationship[]) => {
+          setIsRelationshipCsvUploadOpen(false);
+          // Apply the processed relationships to the modal
+          // Convert ProcessedRelationship[] to InitialRelationship[] format
+          const initialRels: InitialRelationship[] = processedRelationships.map(rel => ({
+            targetObject: rel.targetObject,
+            relationshipType: rel.relationshipType,
+            role: rel.role
+          }));
+          
+          // Update relationship data with CSV uploaded relationships
+          // Ensure all objects are initialized first
+          const updatedData: Record<string, RelationshipData> = { ...relationshipData };
+          
+          // Initialize any missing objects
+          for (const obj of allObjects) {
+            if (!updatedData[obj.id]) {
+              const isSelf = obj.id === selectedObject?.id;
+              updatedData[obj.id] = {
+                objectId: obj.id,
+                isSelected: false,
+                relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
+                roles: '',
+                hasMixedTypes: false
+              };
+            }
+          }
+          
+          // Apply CSV uploaded relationships
+          for (const rel of processedRelationships) {
+            const targetObjId = rel.targetObject.id;
+            const existingData = updatedData[targetObjId];
+            
+            if (existingData) {
+              // If relationship already exists, append roles
+              const existingRoles = existingData.roles ? existingData.roles.split(', ').filter(Boolean) : [];
+              const newRoles = rel.role ? [rel.role] : [];
+              const combinedRoles = [...new Set([...existingRoles, ...newRoles])].join(', ');
+              
+              updatedData[targetObjId] = {
+                ...existingData,
+                isSelected: true,
+                relationshipType: rel.relationshipType,
+                roles: combinedRoles,
+                hasMixedTypes: false
+              };
+            } else {
+              // New relationship (shouldn't happen if we initialized above, but just in case)
+              updatedData[targetObjId] = {
+                objectId: targetObjId,
+                isSelected: true,
+                relationshipType: rel.relationshipType,
+                roles: rel.role || '',
+                hasMixedTypes: false
+              };
+            }
+          }
+          
+          setRelationshipData(updatedData);
+        }}
+      />
     </div>
   );
 };

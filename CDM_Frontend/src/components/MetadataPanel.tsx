@@ -4,7 +4,6 @@ import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { CsvUploadModal } from './CsvUploadModal';
-import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
@@ -77,10 +76,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     };
   });
 
-  // Driver selections state
+  // Driver selections state - will be expanded when driversData loads
   const [driverSelections, setDriverSelections] = useState(() => {
     if (selectedObject?.driver) {
-      return parseDriverString(selectedObject.driver);
+      const parsed = parseDriverString(selectedObject.driver);
+      // Note: We can't expand ALL here because driversData might not be loaded yet
+      // This will be handled in the useEffect below
+      return parsed;
     }
     return {
       sector: [],
@@ -142,7 +144,21 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     
     // Update driver selections when selected object changes
     if (selectedObject?.driver) {
-      setDriverSelections(parseDriverString(selectedObject.driver));
+      const parsed = parseDriverString(selectedObject.driver);
+      // Expand "ALL" to include all individual values for proper multiselect display
+      const expanded: typeof parsed = {
+        sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+          ? ['ALL', ...driversData.sectors] 
+          : parsed.sector,
+        domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+          ? ['ALL', ...driversData.domains] 
+          : parsed.domain,
+        country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+          ? ['ALL', ...driversData.countries] 
+          : parsed.country,
+        objectClarifier: parsed.objectClarifier
+      };
+      setDriverSelections(expanded);
     } else {
       setDriverSelections({
         sector: [],
@@ -151,7 +167,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         objectClarifier: ''
       });
     }
-  }, [selectedObject?.id]); // Only reset when object actually changes
+  }, [selectedObject?.id, driversData]); // Reset when object changes or drivers data loads
 
   // Get dynamic avatar options based on current being and driver values
   const avatarOptions = getAvatarOptions(formData.being || '', formData.driver || '', allData);
@@ -183,9 +199,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
-  const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
-  const [csvUploadedRelationships, setCsvUploadedRelationships] = useState<ProcessedRelationship[]>([]);
 
   // Load relationships when selectedObject changes
   React.useEffect(() => {
@@ -1368,16 +1382,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsRelationshipCsvUploadOpen(true)}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Upload Relationships CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
               onClick={onEnterRelationshipView}
               disabled={!isPanelEnabled}
               className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
@@ -1574,26 +1578,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         </div>
       )}
 
-      {/* Relationship CSV Upload Modal */}
-      <RelationshipCsvUploadModal
-        isOpen={isRelationshipCsvUploadOpen}
-        onClose={() => setIsRelationshipCsvUploadOpen(false)}
-        selectedObject={selectedObject || null}
-        allObjects={allData || []}
-        onProcessed={(processedRelationships: ProcessedRelationship[]) => {
-          setCsvUploadedRelationships(processedRelationships);
-          setIsRelationshipCsvUploadOpen(false);
-          // Open relationship modal with the processed relationships
-          // We'll pass these via onEnterRelationshipView callback
-          // For now, store them and open the modal
-          if (onEnterRelationshipView) {
-            // Store in a way that App.tsx can access
-            (window as any).__pendingCsvRelationships = processedRelationships;
-            onEnterRelationshipView();
-            (window as any).__pendingCsvRelationships = undefined;
-          }
-        }}
-      />
+      {/* Relationship CSV Upload Modal removed - moved to RelationshipModal */}
 
       {/* CSV Upload Modals */}
       <CsvUploadModal

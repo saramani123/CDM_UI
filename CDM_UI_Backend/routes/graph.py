@@ -33,9 +33,13 @@ async def get_ontology_view(
         queries = {
             'drivers': """
                 MATCH (o:Object {id: $object_id})
+                WITH o
                 OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                WITH o, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2, c, r3
                 OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
                 RETURN s, r1, d, r2, c, r3, oc, r4, o
             """,
@@ -45,9 +49,18 @@ async def get_ontology_view(
             """,
             'identifiers': """
                 MATCH (o:Object {id: $object_id})
-                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
-                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
-                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                WITH o
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+                OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+                OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+                OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+                OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+                OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+                OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
                 RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
             """,
             'relationships': """
@@ -66,9 +79,13 @@ async def get_ontology_view(
         queries = {
             'drivers': """
                 MATCH (o:Object {object: $object_name})
+                WITH o
                 OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                WITH o, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2, c, r3
                 OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
                 RETURN s, r1, d, r2, c, r3, oc, r4, o
             """,
@@ -78,9 +95,18 @@ async def get_ontology_view(
             """,
             'identifiers': """
                 MATCH (o:Object {object: $object_name})
-                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
-                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
-                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                WITH o
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+                OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+                OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+                OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+                OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+                OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+                OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
                 RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
             """,
             'relationships': """
@@ -223,9 +249,13 @@ async def get_bulk_ontology_view(
             'drivers': """
                 MATCH (o:Object)
                 WHERE o.id IN $object_ids
+                WITH o
                 OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                WITH o, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2, c, r3
                 OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
                 RETURN s, r1, d, r2, c, r3, oc, r4, o
             """,
@@ -238,9 +268,18 @@ async def get_bulk_ontology_view(
             'identifiers': """
                 MATCH (o:Object)
                 WHERE o.id IN $object_ids
-                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
-                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
-                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                WITH o
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+                OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+                OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+                OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+                OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+                OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+                OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
                 RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
             """,
             'relationships': """
@@ -263,9 +302,13 @@ async def get_bulk_ontology_view(
             'drivers': """
                 MATCH (o:Object)
                 WHERE o.object IN $object_names
+                WITH o
                 OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+                WITH o, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+                WITH o, s, r1, d, r2, c, r3
                 OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
                 RETURN s, r1, d, r2, c, r3, oc, r4, o
             """,
@@ -278,9 +321,18 @@ async def get_bulk_ontology_view(
             'identifiers': """
                 MATCH (o:Object)
                 WHERE o.object IN $object_names
-                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)<-[r4a:HAS_VARIABLE]-(g1:Group)<-[r5a:HAS_GROUP]-(p1:Part)
-                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)<-[r4b:HAS_VARIABLE]-(g2:Group)<-[r5b:HAS_GROUP]-(p2:Part)
-                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)<-[r4c:HAS_VARIABLE]-(g3:Group)<-[r5c:HAS_GROUP]-(p3:Part)
+                WITH o
+                OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+                OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+                OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a
+                OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+                OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+                OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+                WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+                OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+                OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+                OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
                 RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c
             """,
             'relationships': """
