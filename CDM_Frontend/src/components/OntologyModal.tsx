@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Network, Eye, Copy, Plus, Minus } from 'lucide-react';
+import { X, Network, Eye, Copy, Plus, Minus, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 // @ts-ignore - vis-network doesn't have complete TypeScript definitions
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
@@ -59,6 +59,8 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
   const [selectedEdge, setSelectedEdge] = useState<any>(null);
   // For metadata view, auto-expand properties panel
   const [showDetailsPanel, setShowDetailsPanel] = useState(isVariableMode && viewType === 'metadata');
+  const [showCypherQuery, setShowCypherQuery] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
   const networkRef = useRef<VisNetwork | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isLoadingRef = useRef(false);
@@ -725,6 +727,205 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       .trim();
   };
 
+  // Generate Cypher query for the current view
+  const getCypherQuery = (): string => {
+    if (isVariableMode) {
+      // Variable mode queries
+      if (isBulk) {
+        const useIds = variableIds?.length > 0;
+        const paramValue = useIds ? '$variable_ids' : '$variable_names';
+        const fieldName = useIds ? 'v.id' : 'v.name';
+        
+        switch (viewType) {
+          case 'drivers':
+            return `MATCH (v:Variable)
+WHERE ${fieldName} IN ${paramValue}
+WITH v
+OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+WITH v, s, r1
+OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+WITH v, s, r1, d, r2
+OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+WITH v, s, r1, d, r2, c, r3
+OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+RETURN s, r1, d, r2, c, r3, vc, r4, v`;
+          case 'ontology':
+            return `MATCH (v:Variable)
+WHERE ${fieldName} IN ${paramValue}
+OPTIONAL MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
+RETURN p, r1, g, r2, v`;
+          case 'metadata':
+            return `MATCH (v:Variable)
+WHERE ${fieldName} IN ${paramValue}
+RETURN v`;
+          case 'objectRelationships':
+            return `MATCH (v:Variable)
+WHERE ${fieldName} IN ${paramValue}
+WITH v
+OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+WITH v, o, r1
+OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+WITH v, o, r1, g, r2
+OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+RETURN v, o, r1, g, r2, p, r3`;
+          default:
+            return '';
+        }
+      } else {
+        // Single variable mode
+        const paramValue = variableId ? `{id: $variable_id}` : `{name: $variable_name}`;
+        
+        switch (viewType) {
+          case 'drivers':
+            return `MATCH (v:Variable ${paramValue})
+WITH v
+OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+WITH v, s, r1
+OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+WITH v, s, r1, d, r2
+OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+WITH v, s, r1, d, r2, c, r3
+OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+RETURN s, r1, d, r2, c, r3, vc, r4, v`;
+          case 'ontology':
+            return `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable ${paramValue})
+RETURN p, r1, g, r2, v`;
+          case 'metadata':
+            return `MATCH (v:Variable ${paramValue})
+RETURN v`;
+          case 'objectRelationships':
+            return `MATCH (v:Variable ${paramValue})
+WITH v
+OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+WITH v, o, r1
+OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+WITH v, o, r1, g, r2
+OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+RETURN v, o, r1, g, r2, p, r3`;
+          default:
+            return '';
+        }
+      }
+    } else {
+      // Object mode queries
+      if (isBulk) {
+        const useIds = objectIds?.length > 0;
+        const paramValue = useIds ? '$object_ids' : '$object_names';
+        const fieldName = useIds ? 'o.id' : 'o.object';
+        
+        switch (viewType) {
+          case 'drivers':
+            return `MATCH (o:Object)
+WHERE ${fieldName} IN ${paramValue}
+WITH o
+OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+WITH o, s, r1
+OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+WITH o, s, r1, d, r2
+OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+WITH o, s, r1, d, r2, c, r3
+OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+RETURN s, r1, d, r2, c, r3, oc, r4, o`;
+          case 'ontology':
+            return `MATCH (o:Object)
+WHERE ${fieldName} IN ${paramValue}
+OPTIONAL MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o)
+RETURN b, r1, a, r2, o`;
+          case 'identifiers':
+            return `MATCH (o:Object)
+WHERE ${fieldName} IN ${paramValue}
+WITH o
+OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+WITH o, v1, r1, g1, p1, r4a, r5a
+OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
+RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c`;
+          case 'relationships':
+            return `MATCH (o:Object)
+WHERE ${fieldName} IN ${paramValue}
+OPTIONAL MATCH (o)-[r:RELATES_TO]->(o2:Object)
+OPTIONAL MATCH (o3:Object)-[r2:RELATES_TO]->(o)
+RETURN o, r, o2, r2, o3`;
+          case 'variants':
+            return `MATCH (o:Object)
+WHERE ${fieldName} IN ${paramValue}
+OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+RETURN o, r, v`;
+          default:
+            return '';
+        }
+      } else {
+        // Single object mode
+        const paramValue = objectId ? `{id: $object_id}` : `{object: $object_name}`;
+        
+        switch (viewType) {
+          case 'drivers':
+            return `MATCH (o:Object ${paramValue})
+WITH o
+OPTIONAL MATCH (s:Sector)-[r1:RELEVANT_TO]->(o)
+WITH o, s, r1
+OPTIONAL MATCH (d:Domain)-[r2:RELEVANT_TO]->(o)
+WITH o, s, r1, d, r2
+OPTIONAL MATCH (c:Country)-[r3:RELEVANT_TO]->(o)
+WITH o, s, r1, d, r2, c, r3
+OPTIONAL MATCH (oc:ObjectClarifier)-[r4:RELEVANT_TO]->(o)
+RETURN s, r1, d, r2, c, r3, oc, r4, o`;
+          case 'ontology':
+            return `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)-[r2:HAS_OBJECT]->(o:Object ${paramValue})
+RETURN b, r1, a, r2, o`;
+          case 'identifiers':
+            return `MATCH (o:Object ${paramValue})
+WITH o
+OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
+OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
+OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
+WITH o, v1, r1, g1, p1, r4a, r5a
+OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
+OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
+OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
+WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
+OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
+OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
+RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c`;
+          case 'relationships':
+            return `MATCH (o:Object ${paramValue})-[r:RELATES_TO]->(o2:Object)
+RETURN o, r, o2`;
+          case 'variants':
+            return `MATCH (o:Object ${paramValue})-[r:HAS_VARIANT]->(v:Variant)
+RETURN o, r, v`;
+          default:
+            return '';
+        }
+      }
+    }
+  };
+
+  // Copy query to clipboard
+  const copyQueryToClipboard = (query: string) => {
+    navigator.clipboard.writeText(query).then(() => {
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }).catch(err => {
+      console.error('Failed to copy query:', err);
+    });
+  };
+
+  // Handle opening in Neo4j Console
+  const handleOpenInNeo4jConsole = () => {
+    const query = getCypherQuery();
+    const encodedQuery = encodeURIComponent(query);
+    const neo4jUrl = import.meta.env.VITE_NEO4J_CONSOLE_URL || 'https://console.neo4j.io/';
+    window.open(`${neo4jUrl}?query=${encodedQuery}`, '_blank');
+  };
+
   // Cleanup function - must destroy vis-network before React unmounts
   const cleanupNetwork = () => {
     // Destroy network first - vis-network's destroy() cleans up its own DOM nodes
@@ -1039,14 +1240,66 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 p-6 border-t border-ag-dark-border">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
-          >
-            Close
-          </button>
+        {/* Footer with Cypher Query Section */}
+        <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface flex flex-col min-h-0" style={{ maxHeight: showCypherQuery ? '40vh' : 'auto' }}>
+          {/* Action Buttons - Side by side */}
+          <div className="px-6 py-3 flex gap-3 flex-shrink-0">
+            <button
+              onClick={() => setShowCypherQuery(!showCypherQuery)}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
+            >
+              {showCypherQuery ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  Hide Cypher Query
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  View Cypher Query
+                </>
+              )}
+            </button>
+            
+            <button
+              onClick={handleOpenInNeo4jConsole}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-accent text-ag-dark-accent rounded text-sm font-medium hover:bg-ag-dark-accent hover:text-white transition-colors"
+            >
+              <ExternalLink className="w-4 h-4" />
+              View in Neo4j Console
+            </button>
+
+            <div className="flex-1" /> {/* Spacer */}
+
+            <button
+              onClick={onClose}
+              className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
+            >
+              Close
+            </button>
+          </div>
+
+          {/* Cypher Query - Expandable below buttons with scrolling */}
+          {showCypherQuery && (
+            <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto flex-1 min-h-0">
+              <div className="flex items-center justify-between mb-2 pt-4">
+                <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
+                  Cypher Query
+                </label>
+                <button
+                  onClick={() => copyQueryToClipboard(getCypherQuery())}
+                  className={`text-xs transition-colors px-2 py-1 rounded ${
+                    copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-surface'
+                  }`}
+                >
+                  {copySuccess ? 'Copied!' : 'Copy Query'}
+                </button>
+              </div>
+              <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto overflow-y-auto border border-ag-dark-border whitespace-pre-wrap break-words">
+                {getCypherQuery()}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
     </div>
