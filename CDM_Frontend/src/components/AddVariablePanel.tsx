@@ -50,7 +50,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     variableClarifier: ''
   });
 
-  const { drivers: driversData } = useDrivers();
+  const { drivers: driversData, loading: driversLoading } = useDrivers();
 
   // Object relationships - store selected object IDs from modal
   const [selectedObjectRelationships, setSelectedObjectRelationships] = useState<string[]>([]);
@@ -374,7 +374,12 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         </div>
         
         {isExpanded && (
-          <div className="mt-6 ml-6 pb-6">
+          <div 
+            className="mt-6 ml-6 pb-6"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {children}
           </div>
         )}
@@ -388,7 +393,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
-          <h3 className="text-lg font-semibold text-ag-dark-text">Add New Variable</h3>
+          <h3 className="text-lg font-semibold text-ag-dark-text">Add</h3>
         </div>
         <button
           onClick={onClose}
@@ -396,6 +401,26 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         >
           <X className="w-5 h-5" />
         </button>
+      </div>
+
+      {/* Variable Name Field - Outside collapsible sections */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Variable <span className="text-ag-dark-error">*</span>
+        </label>
+            <input
+              type="text"
+              value={formData.variable}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleChange('variable', e.target.value);
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="Enter variable name..."
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+            />
       </div>
 
       {/* Drivers Section */}
@@ -407,7 +432,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </label>
             <MultiSelect
               label="Sector"
-              options={driversData.sectors}
+              options={driversLoading && driversData.sectors.length === 0 ? ['Loading...'] : ['ALL', ...driversData.sectors]}
               values={driverSelections.sector}
               onChange={(values) => handleDriverSelectionChange('sector', values)}
             />
@@ -419,7 +444,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </label>
             <MultiSelect
               label="Domain"
-              options={driversData.domains}
+              options={driversLoading && driversData.domains.length === 0 ? ['Loading...'] : ['ALL', ...driversData.domains]}
               values={driverSelections.domain}
               onChange={(values) => handleDriverSelectionChange('domain', values)}
             />
@@ -431,7 +456,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </label>
             <MultiSelect
               label="Country"
-              options={driversData.countries}
+              options={driversLoading && driversData.countries.length === 0 ? ['Loading...'] : ['ALL', ...driversData.countries]}
               values={driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
             />
@@ -498,7 +523,13 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             <input
               type="text"
               value={formData.section}
-              onChange={(e) => handleChange('section', e.target.value)}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleChange('section', e.target.value);
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               placeholder="Enter section..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
@@ -528,18 +559,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Variable <span className="text-ag-dark-error">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.variable}
-              onChange={(e) => handleChange('variable', e.target.value)}
-              placeholder="Enter variable name..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
         </div>
       </CollapsibleSection>
 

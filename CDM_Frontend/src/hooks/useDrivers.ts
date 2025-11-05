@@ -1,22 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiService } from '../services/api';
 import { DriversData, ColumnType } from '../data/driversData';
 
-export const useDrivers = () => {
-  const [drivers, setDrivers] = useState<DriversData>({
-    sectors: [],
-    domains: [],
-    countries: [],
-    objectClarifiers: [],
-    variableClarifiers: []
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+// Global cache for drivers data to avoid redundant API calls
+let globalDriversCache: DriversData | null = null;
+let globalLoadingState = false;
+let globalErrorState: string | null = null;
+let fetchPromise: Promise<void> | null = null;
+let subscribers: Set<() => void> = new Set();
 
-  const fetchDrivers = async () => {
+const notifySubscribers = () => {
+  subscribers.forEach(subscriber => subscriber());
+};
+
+const fetchDriversGlobal = async (): Promise<void> => {
+  // If already fetching, return the existing promise
+  if (fetchPromise) {
+    return fetchPromise;
+  }
+
+  // If already cached, return immediately
+  if (globalDriversCache) {
+    return Promise.resolve();
+  }
+
+  fetchPromise = (async () => {
     try {
-      setLoading(true);
-      setError(null);
+      globalLoadingState = true;
+      globalErrorState = null;
+      notifySubscribers();
       
       // Fetch all driver types in parallel
       const [sectors, domains, countries, objectClarifiers, variableClarifiers] = await Promise.all([
@@ -27,38 +39,103 @@ export const useDrivers = () => {
         apiService.getDrivers('variableClarifiers')
       ]);
       
-      setDrivers({
+      globalDriversCache = {
         sectors: Array.isArray(sectors) ? sectors : [],
         domains: Array.isArray(domains) ? domains : [],
         countries: Array.isArray(countries) ? countries : [],
         objectClarifiers: Array.isArray(objectClarifiers) ? objectClarifiers : [],
         variableClarifiers: Array.isArray(variableClarifiers) ? variableClarifiers : []
-      });
+      };
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch drivers');
+      globalErrorState = err instanceof Error ? err.message : 'Failed to fetch drivers';
       console.error('Error fetching drivers:', err);
     } finally {
+      globalLoadingState = false;
+      fetchPromise = null;
+      notifySubscribers();
+    }
+  })();
+
+  return fetchPromise;
+};
+
+export const useDrivers = () => {
+  const [drivers, setDrivers] = useState<DriversData>(globalDriversCache || {
+    sectors: [],
+    domains: [],
+    countries: [],
+    objectClarifiers: [],
+    variableClarifiers: []
+  });
+  const [loading, setLoading] = useState(globalLoadingState);
+  const [error, setError] = useState<string | null>(globalErrorState);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    const updateState = () => {
+      if (isMountedRef.current) {
+        if (globalDriversCache) {
+          setDrivers(globalDriversCache);
+        }
+        setLoading(globalLoadingState);
+        setError(globalErrorState);
+      }
+    };
+
+    // Subscribe to global state changes
+    subscribers.add(updateState);
+
+    // If data is already cached, use it immediately
+    if (globalDriversCache) {
+      setDrivers(globalDriversCache);
       setLoading(false);
+      setError(null);
+    } else {
+      // Start fetching if not already cached
+      fetchDriversGlobal();
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      subscribers.delete(updateState);
+    };
+  }, []);
+
+  const fetchDrivers = async () => {
+    // Clear cache and refetch
+    globalDriversCache = null;
+    await fetchDriversGlobal();
+    if (isMountedRef.current) {
+      if (globalDriversCache) {
+        setDrivers(globalDriversCache);
+      }
+      setLoading(globalLoadingState);
+      setError(globalErrorState);
     }
   };
-
-  // Fetch drivers on mount
-  useEffect(() => {
-    fetchDrivers();
-  }, []);
 
   const createDriver = async (type: ColumnType, name: string) => {
     try {
       await apiService.createDriver(type, { name });
-      // Refresh the specific driver type
+      // Refresh the specific driver type and update global cache
       const updatedDrivers = await apiService.getDrivers(type);
-      setDrivers(prev => ({
-        ...prev,
-        [type]: updatedDrivers || []
-      }));
+      if (globalDriversCache) {
+        globalDriversCache = {
+          ...globalDriversCache,
+          [type]: updatedDrivers || []
+        };
+      }
+      notifySubscribers();
+      if (isMountedRef.current) {
+        setDrivers(globalDriversCache || drivers);
+      }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to create ${type}`);
+      const errorMsg = err instanceof Error ? err.message : `Failed to create ${type}`;
+      if (isMountedRef.current) {
+        setError(errorMsg);
+      }
       throw err;
     }
   };
@@ -66,15 +143,24 @@ export const useDrivers = () => {
   const updateDriver = async (type: ColumnType, oldName: string, newName: string) => {
     try {
       await apiService.updateDriver(type, oldName, { name: newName });
-      // Refresh the specific driver type
+      // Refresh the specific driver type and update global cache
       const updatedDrivers = await apiService.getDrivers(type);
-      setDrivers(prev => ({
-        ...prev,
-        [type]: updatedDrivers || []
-      }));
+      if (globalDriversCache) {
+        globalDriversCache = {
+          ...globalDriversCache,
+          [type]: updatedDrivers || []
+        };
+      }
+      notifySubscribers();
+      if (isMountedRef.current) {
+        setDrivers(globalDriversCache || drivers);
+      }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to update ${type}`);
+      const errorMsg = err instanceof Error ? err.message : `Failed to update ${type}`;
+      if (isMountedRef.current) {
+        setError(errorMsg);
+      }
       throw err;
     }
   };
@@ -82,15 +168,24 @@ export const useDrivers = () => {
   const deleteDriver = async (type: ColumnType, name: string) => {
     try {
       const response = await apiService.deleteDriver(type, name);
-      // Refresh the specific driver type
+      // Refresh the specific driver type and update global cache
       const updatedDrivers = await apiService.getDrivers(type);
-      setDrivers(prev => ({
-        ...prev,
-        [type]: updatedDrivers || []
-      }));
+      if (globalDriversCache) {
+        globalDriversCache = {
+          ...globalDriversCache,
+          [type]: updatedDrivers || []
+        };
+      }
+      notifySubscribers();
+      if (isMountedRef.current) {
+        setDrivers(globalDriversCache || drivers);
+      }
       return response; // Return the full response with affected objects/variables
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to delete ${type}`);
+      const errorMsg = err instanceof Error ? err.message : `Failed to delete ${type}`;
+      if (isMountedRef.current) {
+        setError(errorMsg);
+      }
       throw err;
     }
   };
@@ -98,22 +193,27 @@ export const useDrivers = () => {
   const bulkCreateDrivers = async (type: ColumnType, names: string[]) => {
     try {
       await apiService.bulkCreateDrivers(type, { names });
-      // Refresh the specific driver type
+      // Refresh the specific driver type and update global cache
       const updatedDrivers = await apiService.getDrivers(type);
-      setDrivers(prev => ({
-        ...prev,
-        [type]: updatedDrivers || []
-      }));
+      if (globalDriversCache) {
+        globalDriversCache = {
+          ...globalDriversCache,
+          [type]: updatedDrivers || []
+        };
+      }
+      notifySubscribers();
+      if (isMountedRef.current) {
+        setDrivers(globalDriversCache || drivers);
+      }
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to bulk create ${type}`);
+      const errorMsg = err instanceof Error ? err.message : `Failed to bulk create ${type}`;
+      if (isMountedRef.current) {
+        setError(errorMsg);
+      }
       throw err;
     }
   };
-
-  useEffect(() => {
-    fetchDrivers();
-  }, []);
 
   return {
     drivers,

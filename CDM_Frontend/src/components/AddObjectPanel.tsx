@@ -1167,6 +1167,23 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
           // Close the modal - relationships will be handled when object is created
           setIsRelationshipModalOpen(false);
         }}
+        onRelationshipsChange={(relationships) => {
+          // Store relationships locally to be included when object is created
+          setPendingRelationships(relationships);
+        }}
+        initialRelationships={pendingRelationships.map(rel => {
+          const targetObject = allData.find(obj => 
+            obj.being === rel.toBeing && 
+            obj.avatar === rel.toAvatar && 
+            obj.object === rel.toObject
+          );
+          if (!targetObject) return null;
+          return {
+            targetObject: targetObject,
+            relationshipType: (rel.type || 'Inter-Table') as 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table',
+            role: rel.role || ''
+          };
+        }).filter((rel): rel is InitialRelationship => rel !== null)} as any
       />
     </div>
   );

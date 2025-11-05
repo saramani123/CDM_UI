@@ -470,9 +470,14 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         <input
           type="text"
           value={formData.variable}
-          onChange={(e) => handleChange('variable', e.target.value)}
-          disabled={!isPanelEnabled}
+          onChange={(e) => {
+            e.stopPropagation();
+            handleChange('variable', e.target.value);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          disabled={!isPanelEnabled}
           className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
             !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
@@ -587,7 +592,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <input
               type="text"
               value={formData.section}
-              onChange={(e) => handleChange('section', e.target.value)}
+              onChange={(e) => {
+                e.stopPropagation();
+                handleChange('section', e.target.value);
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               disabled={!isPanelEnabled}
               placeholder="Enter section..."
               className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${

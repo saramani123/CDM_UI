@@ -20,6 +20,7 @@ interface RelationshipModalProps {
   allObjects: ObjectData[];
   onSave?: () => void; // Callback to refresh main data
   initialRelationships?: InitialRelationship[]; // Pre-selected relationships from CSV upload
+  onRelationshipsChange?: (relationships: any[]) => void; // Callback to store relationships for temporary objects
 }
 
 interface RelationshipData {
@@ -36,7 +37,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   selectedObject,
   allObjects,
   onSave,
-  initialRelationships = []
+  initialRelationships = [],
+  onRelationshipsChange
 }) => {
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
   const [loading, setLoading] = useState(false);
@@ -68,9 +70,15 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setLoading(true);
     try {
-      // Load existing relationships for the selected object
-      const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-      const relationshipsList = existingRelationships.relationshipsList || [];
+      // Check if this is a temporary object (for new object creation)
+      const isTemporaryObject = selectedObject.id === 'temp-new-object' || selectedObject.id.startsWith('temp-');
+      
+      let relationshipsList: any[] = [];
+      if (!isTemporaryObject) {
+        // Load existing relationships for the selected object
+        const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+        relationshipsList = existingRelationships.relationshipsList || [];
+      }
 
       // Initialize relationship data for all objects
       const initialData: Record<string, RelationshipData> = {};
@@ -134,18 +142,22 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
 
-      // Apply initial relationships from CSV upload if any
+      // Apply initial relationships from CSV upload or stored relationships if any
       if (initialRelationships.length > 0) {
         for (const initialRel of initialRelationships) {
           const targetObjId = initialRel.targetObject.id;
           if (initialData[targetObjId]) {
             // If relationship already exists, append roles
-            const existingRoles = initialData[targetObjId].roles;
-            const newRoles = initialRel.role;
+            const existingRoles = initialData[targetObjId].roles || '';
+            const newRoles = initialRel.role || '';
             // Combine roles, avoiding duplicates
             const roleSet = new Set<string>();
-            existingRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
-            newRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            if (existingRoles) {
+              existingRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            }
+            if (newRoles) {
+              newRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            }
             const combinedRoles = Array.from(roleSet).join(', ');
             
             initialData[targetObjId] = {
@@ -258,6 +270,42 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
   const handleSave = async () => {
     if (!selectedObject) return;
+
+    // Check if this is a temporary object (for new object creation)
+    const isTemporaryObject = selectedObject.id === 'temp-new-object' || selectedObject.id.startsWith('temp-');
+    
+    // If temporary object, store relationships locally instead of saving to API
+    if (isTemporaryObject && onRelationshipsChange) {
+      const relationshipsToStore: any[] = [];
+      
+      // Process each object's relationship data
+      for (const [objectId, relData] of Object.entries(relationshipData)) {
+        const targetObject = allObjects.find(obj => obj.id === objectId);
+        if (!targetObject) continue;
+
+        const validRoles = validateRoles(relData.roles);
+
+        if (relData.isSelected && validRoles.length > 0) {
+          // Create relationship entries for each role
+          for (const role of validRoles) {
+            relationshipsToStore.push({
+              id: Date.now().toString() + Math.random(),
+              type: relData.relationshipType,
+              role: role,
+              toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
+              toAvatar: targetObject.avatar || 'ALL',
+              toObject: targetObject.object || 'ALL'
+            });
+          }
+        }
+      }
+      
+      // Store relationships via callback
+      onRelationshipsChange(relationshipsToStore);
+      alert('Relationships configured successfully! They will be created when you save the object.');
+      onClose();
+      return;
+    }
 
     setSaving(true);
     try {

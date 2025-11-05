@@ -534,6 +534,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </div>
       </div>
 
+      {/* Variable Name Field - Outside collapsible sections */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          Variable
+        </label>
+        <input
+          type="text"
+          value={formData.variable}
+          onChange={(e) => {
+            e.stopPropagation();
+            handleChange('variable', e.target.value);
+          }}
+          onKeyDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          placeholder="Keep current variable"
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+        />
+      </div>
+
       {/* Drivers Section */}
       <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="drivers">
         <div className="space-y-4">
@@ -658,26 +678,18 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <input
               type="text"
               value={formData.section}
-              onChange={(e) => handleChange('section', e.target.value)}
-              placeholder="Keep current section"
+              onChange={(e) => {
+                e.stopPropagation();
+                handleChange('section', e.target.value);
+              }}
+              onKeyDown={(e) => e.stopPropagation()}
               onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder="Keep current section"
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Variable
-            </label>
-            <input
-              type="text"
-              value={formData.variable}
-              onChange={(e) => handleChange('variable', e.target.value)}
-              placeholder="Keep current variable"
-              onClick={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
         </div>
       </CollapsibleSection>
 
