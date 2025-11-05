@@ -1803,6 +1803,8 @@ function App() {
                 selectedCount={selectedRows.length}
                 allData={variableData}
                 objectsData={data}
+                selectedVariableIds={selectedRows.map(row => row.id).filter(Boolean) as string[]}
+                selectedVariableNames={selectedRows.map(row => row.variable).filter(Boolean) as string[]}
               />
             </div>
           ) : (

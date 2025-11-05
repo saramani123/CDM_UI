@@ -94,6 +94,70 @@ export const getBulkOntologyView = async (
   return response.json();
 };
 
+// Variable ontology view function
+export const getVariableOntologyView = async (
+  variableId: string | null,
+  variableName: string | null,
+  view: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build query params - prefer variable_id if available, otherwise fall back to variable_name
+  const params = new URLSearchParams();
+  if (variableId) {
+    params.append('variable_id', variableId);
+  } else if (variableName) {
+    params.append('variable_name', variableName);
+  } else {
+    throw new Error('Either variableId or variableName must be provided');
+  }
+  params.append('view', view);
+
+  const response = await fetch(`${API_BASE_URL}/ontology/view/variable?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get variable ontology view');
+  }
+
+  return await response.json();
+};
+
+// Bulk variable ontology view function
+export const getBulkVariableOntologyView = async (
+  variableIds: string[] | null,
+  variableNames: string[] | null,
+  viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build request body - prefer variable_ids if available, otherwise fall back to variable_names
+  const body: any = { view: viewType };
+  if (variableIds && variableIds.length > 0) {
+    body.variable_ids = variableIds;
+  } else if (variableNames && variableNames.length > 0) {
+    body.variable_names = variableNames;
+  } else {
+    throw new Error('Either variableIds or variableNames must be provided');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/ontology/view/variable/bulk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `Failed to fetch bulk variable ontology view: ${response.statusText}` }));
+    throw new Error(error.detail || `Failed to fetch bulk variable ontology view: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
 export interface ApiResponse<T> {
   data?: T;
   error?: string;

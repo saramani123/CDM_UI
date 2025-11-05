@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network } from 'lucide-react';
 import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { useObjects } from '../hooks/useObjects';
+import { OntologyModal } from './OntologyModal';
 
 interface ObjectRelationship {
   id: string;
@@ -19,6 +20,8 @@ interface BulkEditVariablesPanelProps {
   selectedCount: number;
   allData?: any[];
   objectsData?: any[];
+  selectedVariableIds?: string[]; // IDs of selected variables for bulk ontology views
+  selectedVariableNames?: string[]; // Names of selected variables for bulk ontology views (fallback)
 }
 
 export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
@@ -27,7 +30,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   onSave,
   selectedCount,
   allData = [],
-  objectsData = []
+  objectsData = [],
+  selectedVariableIds,
+  selectedVariableNames
 }) => {
   // Basic form data for variables
   const [formData, setFormData] = useState({
@@ -68,6 +73,41 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   // Confirmation dialog state
   const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
+
+  // Ontology modal state
+  const [ontologyModalOpen, setOntologyModalOpen] = useState<{
+    isOpen: boolean;
+    viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | null;
+  }>({ isOpen: false, viewType: null });
+
+  const openOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships') => {
+    setOntologyModalOpen({ isOpen: true, viewType });
+  };
+
+  const closeOntologyModal = () => {
+    setOntologyModalOpen({ isOpen: false, viewType: null });
+  };
+
+  // Get selected variable IDs/names for bulk ontology views
+  // Prefer passed props, otherwise derive from allData if we can determine selection
+  const getSelectedVariableIds = (): string[] | undefined => {
+    if (selectedVariableIds && selectedVariableIds.length > 0) {
+      return selectedVariableIds;
+    }
+    // If not provided, return undefined - bulk mode will need IDs from parent
+    return undefined;
+  };
+
+  const getSelectedVariableNames = (): string[] | undefined => {
+    if (selectedVariableNames && selectedVariableNames.length > 0) {
+      return selectedVariableNames;
+    }
+    // If IDs not available and names not provided, try to derive from allData
+    // But this is tricky without knowing which are selected, so return undefined
+    return undefined;
+  };
+
+  const hasSelectedVariables = selectedCount > 0 && (getSelectedVariableIds() || getSelectedVariableNames());
   
   // Get objects data - use hook if not provided as prop
   const { objects: objectsFromHook } = useObjects();
@@ -414,7 +454,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     icon?: React.ReactNode;
     actions?: React.ReactNode;
     children: React.ReactNode;
-  }> = ({ title, sectionKey, icon, actions, children }) => {
+    ontologyViewType?: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships';
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType }) => {
     const isExpanded = expandedSections[sectionKey];
     
     return (
@@ -432,15 +473,37 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             {icon}
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
-          {isExpanded && actions && (
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {actions}
-            </div>
-          )}
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {isExpanded && actions && <>{actions}</>}
+            {ontologyViewType && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasSelectedVariables) {
+                    openOntologyModal(ontologyViewType);
+                  }
+                }}
+                disabled={!hasSelectedVariables}
+                className={`p-1 transition-colors ${
+                  hasSelectedVariables 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={hasSelectedVariables ? "View Neo4j Ontology" : "Select variables to view ontology"}
+              >
+                <Network className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
         
         {isExpanded && (
-          <div className="mt-6 ml-6 pb-6">
+          <div 
+            className="mt-6 ml-6 pb-6"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             {children}
           </div>
         )}
@@ -472,7 +535,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       </div>
 
       {/* Drivers Section */}
-      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="drivers">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -538,7 +601,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       </CollapsibleSection>
 
       {/* Ontology Section */}
-      <CollapsibleSection title="Ontology (Taxonomy)" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Ontology (Taxonomy)" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -619,7 +682,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       </CollapsibleSection>
 
       {/* Metadata Section */}
-      <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="metadata">
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -758,6 +821,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         title="Object Relationships" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="objectRelationships"
         actions={
           <div className="flex items-center gap-2">
             <button
@@ -869,6 +933,25 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Ontology Modal */}
+      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && hasSelectedVariables && (
+        <OntologyModal
+          isOpen={ontologyModalOpen.isOpen}
+          onClose={closeOntologyModal}
+          variableIds={getSelectedVariableIds()}
+          variableNames={getSelectedVariableNames()}
+          sectionName={
+            ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
+            ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
+            ontologyModalOpen.viewType === 'metadata' ? 'Metadata' :
+            'Object Relationships'
+          }
+          viewType={ontologyModalOpen.viewType}
+          mode="variable"
+          isBulkMode={true}
+        />
       )}
     </div>
   );

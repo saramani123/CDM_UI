@@ -4,18 +4,25 @@ import { X, Network, Eye, Copy, Plus, Minus } from 'lucide-react';
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
 import type { Data, Options, Node, Edge } from 'vis-network';
-import { getOntologyView, getBulkOntologyView } from '../services/api';
+import { getOntologyView, getBulkOntologyView, getVariableOntologyView, getBulkVariableOntologyView } from '../services/api';
 
 interface OntologyModalProps {
   isOpen: boolean;
   onClose: () => void;
+  // Object mode props
   objectId?: string; // Optional - for single object mode (preferred for distinct objects)
   objectName?: string; // Optional - for single object mode (fallback for backward compatibility)
   objectIds?: string[]; // Optional - for bulk mode (preferred for distinct objects)
   objectNames?: string[]; // Optional - for bulk mode (fallback for backward compatibility)
+  // Variable mode props
+  variableId?: string; // Optional - for single variable mode (preferred)
+  variableName?: string; // Optional - for single variable mode (fallback)
+  variableIds?: string[]; // Optional - for bulk variable mode (preferred)
+  variableNames?: string[]; // Optional - for bulk variable mode (fallback)
   sectionName: string;
-  viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants';
+  viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata' | 'objectRelationships';
   isBulkMode?: boolean; // New flag to indicate bulk mode
+  mode?: 'object' | 'variable'; // New flag to indicate if this is for objects or variables
 }
 
 export const OntologyModal: React.FC<OntologyModalProps> = ({
@@ -25,19 +32,33 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
   objectName,
   objectIds,
   objectNames,
+  variableId,
+  variableName,
+  variableIds,
+  variableNames,
   sectionName,
   viewType,
-  isBulkMode = false
+  isBulkMode = false,
+  mode = 'object' // Default to object mode for backward compatibility
 }) => {
+  // Detect if this is for variables or objects
+  const isVariableMode = mode === 'variable' || variableId || variableName || variableIds?.length > 0 || variableNames?.length > 0;
+  
   // Detect mode (single vs bulk) - prefer IDs if available
-  const isBulk = isBulkMode && (objectIds?.length > 0 || objectNames?.length > 0);
+  const isBulk = isBulkMode && (
+    isVariableMode 
+      ? (variableIds?.length > 0 || variableNames?.length > 0)
+      : (objectIds?.length > 0 || objectNames?.length > 0)
+  );
   const hasObjectIds = isBulk ? (objectIds?.length > 0) : !!objectId;
+  const hasVariableIds = isBulk ? (variableIds?.length > 0) : !!variableId;
   
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [selectedEdge, setSelectedEdge] = useState<any>(null);
-  const [showDetailsPanel, setShowDetailsPanel] = useState(false);
+  // For metadata view, auto-expand properties panel
+  const [showDetailsPanel, setShowDetailsPanel] = useState(isVariableMode && viewType === 'metadata');
   const networkRef = useRef<VisNetwork | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isLoadingRef = useRef(false);
@@ -60,6 +81,40 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
 
   // Color configurations for different views
   const getColorConfig = () => {
+    // Variable mode color configs
+    if (isVariableMode) {
+      switch (viewType) {
+        case 'drivers':
+          return {
+            Sector: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+            Domain: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+            Country: { background: '#F59E0B', border: '#D97706', highlight: { background: '#FBBF24', border: '#F59E0B' } },
+            VariableClarifier: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } },
+            Variable: { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } } // Bold color for focus node
+          };
+        case 'ontology':
+          return {
+            Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } },
+            Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+            Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } } // Gold for focal node
+          };
+        case 'metadata':
+          return {
+            Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } } // Gold for focal node
+          };
+        case 'objectRelationships':
+          return {
+            Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
+            Object: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+            Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+            Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } }
+          };
+        default:
+          return {};
+      }
+    }
+    
+    // Object mode color configs (existing)
     switch (viewType) {
       case 'drivers':
         return {
@@ -109,7 +164,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       return;
     }
     
-    console.log('loadGraph: Starting load', { isBulk, objectName, objectNames: objectNames?.length, viewType });
+    console.log('loadGraph: Starting load', { isBulk, isVariableMode, objectName, objectNames: objectNames?.length, variableName, variableNames: variableNames?.length, viewType });
     isLoadingRef.current = true;
     setIsLoading(true);
     setError(null);
@@ -141,17 +196,42 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
 
       // Fetch ontology view data (bulk or single) - prefer IDs if available
       let graphData;
-      if (isBulk) {
-        graphData = await getBulkOntologyView(objectIds || null, objectNames || null, viewType);
+      if (isVariableMode) {
+        // Variable mode
+        if (isBulk) {
+          graphData = await getBulkVariableOntologyView(variableIds || null, variableNames || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships');
+        } else {
+          graphData = await getVariableOntologyView(variableId || null, variableName || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships');
+        }
       } else {
-        graphData = await getOntologyView(objectId || null, objectName || null, viewType);
+        // Object mode (existing)
+        if (isBulk) {
+          graphData = await getBulkOntologyView(objectIds || null, objectNames || null, viewType as 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants');
+        } else {
+          graphData = await getOntologyView(objectId || null, objectName || null, viewType as 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants');
+        }
       }
 
       if (graphData.nodeCount === 0) {
-        setError('No nodes found. This object may not have relationships in this view.');
+        setError(isVariableMode 
+          ? 'No nodes found. This variable may not have relationships in this view.'
+          : 'No nodes found. This object may not have relationships in this view.');
         setIsLoading(false);
         isLoadingRef.current = false;
         return;
+      }
+
+      // For metadata view, auto-select the first variable node and expand panel
+      if (isVariableMode && viewType === 'metadata' && graphData.nodes.length > 0) {
+        const firstVariable = graphData.nodes.find((n: any) => n.group === 'Variable') || graphData.nodes[0];
+        if (firstVariable) {
+          setSelectedNode({
+            ...firstVariable,
+            label: firstVariable.label || firstVariable.properties?.name || firstVariable.properties?.variable || 'Variable',
+            group: firstVariable.group || 'Variable'
+          });
+          setShowDetailsPanel(true);
+        }
       }
 
       const colorConfig = getColorConfig();
@@ -169,14 +249,25 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           highlight: { background: '#9CA3AF', border: '#6B7280' } 
         };
         
-        // Highlight all selected objects in bulk mode, or single object in single mode
-        const isSelectedObject = isBulk 
-          ? (objectIds && objectIds.some(id => node.properties?.id === id)) || 
-            (objectNames && objectNames.some(name => node.label === name || node.properties?.object === name))
-          : (objectId && node.properties?.id === objectId) ||
-            (objectName && (node.label === objectName || node.properties?.object === objectName));
-        const nodeColor = isSelectedObject && viewType === 'drivers' 
-          ? { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } }
+                        // Highlight selected nodes (objects or variables) in bulk mode, or single in single mode
+        let isSelected = false;
+        if (isVariableMode) {
+          isSelected = isBulk 
+            ? (variableIds && variableIds.some(id => node.properties?.id === id)) || 
+              (variableNames && variableNames.some(name => node.label === name || node.properties?.variable === name || node.properties?.name === name))
+            : (variableId && node.properties?.id === variableId) ||
+              (variableName && (node.label === variableName || node.properties?.variable === variableName || node.properties?.name === variableName));
+        } else {
+          isSelected = isBulk 
+            ? (objectIds && objectIds.some(id => node.properties?.id === id)) || 
+              (objectNames && objectNames.some(name => node.label === name || node.properties?.object === name))
+            : (objectId && node.properties?.id === objectId) ||
+              (objectName && (node.label === objectName || node.properties?.object === objectName));
+        }
+        const nodeColor = isSelected && (viewType === 'drivers' || (isVariableMode && viewType === 'metadata')) 
+          ? (isVariableMode && viewType === 'metadata' 
+              ? { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }
+              : { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } })
           : colorConfigForNode;
         
         return {
@@ -185,7 +276,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
           group: group,
           color: nodeColor,
           font: { color: '#E5E7EB', size: 14 },
-          size: isSelectedObject ? 20 : 16,
+          size: isSelected ? 20 : 16,
           properties: node.properties || {}
         };
       });
@@ -543,7 +634,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         // Add click handlers for nodes and edges
         networkRef.current.on('click', (params: any) => {
           if (params.nodes.length > 0) {
-            // Node clicked - select but don't auto-open panel
+            // Node clicked - select but don't auto-open panel (unless metadata view)
             const nodeId = params.nodes[0];
             const node = allNodesData.current.find(n => String(n.id) === String(nodeId));
             if (node) {
@@ -555,7 +646,10 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
                 group: visNode?.group || node.group || 'Unknown'
               });
               setSelectedEdge(null);
-              // Don't auto-open panel - user will click eye icon
+              // For metadata view, auto-open panel when node is selected
+              if (isVariableMode && viewType === 'metadata') {
+                setShowDetailsPanel(true);
+              }
             }
           } else if (params.edges.length > 0) {
             // Edge clicked - select but don't auto-open panel
@@ -572,10 +666,12 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
               // Don't auto-open panel - user will click eye icon
             }
           } else {
-            // Clicked on empty space - deselect and close panel
+            // Clicked on empty space - deselect and close panel (unless metadata view)
             setSelectedNode(null);
             setSelectedEdge(null);
-            setShowDetailsPanel(false);
+            if (!(isVariableMode && viewType === 'metadata')) {
+              setShowDetailsPanel(false);
+            }
           }
         });
 
@@ -657,19 +753,24 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
     }
 
     // Determine if we should load based on current mode - check IDs first, then names
-    const shouldLoad = isBulkMode 
-      ? (objectIds && objectIds.length > 0) || (objectNames && objectNames.length > 0)
-      : (objectId || objectName);
+    const shouldLoad = isVariableMode
+      ? (isBulkMode 
+          ? (variableIds && variableIds.length > 0) || (variableNames && variableNames.length > 0)
+          : (variableId || variableName))
+      : (isBulkMode 
+          ? (objectIds && objectIds.length > 0) || (objectNames && objectNames.length > 0)
+          : (objectId || objectName));
 
     if (isOpen && shouldLoad) {
-      console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, objectId, objectName, objectIds: objectIds?.length, objectNames: objectNames?.length, viewType });
+      console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, isVariableMode, objectId, objectName, objectIds: objectIds?.length, objectNames: objectNames?.length, variableId, variableName, variableIds: variableIds?.length, variableNames: variableNames?.length, viewType });
       
       // Reset state when modal opens
       setError(null);
       setIsLoading(true);
       setSelectedNode(null);
       setSelectedEdge(null);
-      setShowDetailsPanel(false);
+      // For metadata view, auto-expand properties panel
+      setShowDetailsPanel(isVariableMode && viewType === 'metadata');
       isLoadingRef.current = false; // Reset loading ref before starting new load
       
       // Small delay to ensure DOM is ready
@@ -683,7 +784,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         // Don't cleanup network here - let the close handler do it
       };
     }
-  }, [isOpen, objectId, objectName, objectIds, objectNames, viewType, isBulkMode]);
+  }, [isOpen, objectId, objectName, objectIds, objectNames, variableId, variableName, variableIds, variableNames, viewType, isBulkMode, isVariableMode]);
 
   // Separate effect for cleanup on unmount
   useEffect(() => {
@@ -706,9 +807,13 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
                 Ontology View – {sectionName}
               </h2>
               <p className="text-sm text-ag-dark-text-secondary mt-1">
-                {isBulk 
-                  ? `Objects: ${(objectIds?.length || objectNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
-                  : `Object: ${objectName || objectId || 'Unknown'} | Instance: ${envInfo.instanceName}`
+                {isVariableMode 
+                  ? (isBulk 
+                      ? `Variables: ${(variableIds?.length || variableNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
+                      : `Variable: ${variableName || variableId || 'Unknown'} | Instance: ${envInfo.instanceName}`)
+                  : (isBulk 
+                      ? `Objects: ${(objectIds?.length || objectNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
+                      : `Object: ${objectName || objectId || 'Unknown'} | Instance: ${envInfo.instanceName}`)
                 }
               </p>
             </div>

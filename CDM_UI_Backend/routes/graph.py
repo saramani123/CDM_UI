@@ -435,6 +435,358 @@ async def get_bulk_ontology_view(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
 
+@router.get("/ontology/view/variable")
+async def get_variable_ontology_view(
+    variable_id: Optional[str] = Query(None, description="ID of the variable (preferred)"),
+    variable_name: Optional[str] = Query(None, description="Name of the variable (fallback)"),
+    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships")
+):
+    """
+    Get ontology view for a specific variable and section.
+    Maps view type to appropriate Cypher query.
+    Uses variable_id if provided, otherwise falls back to variable_name.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Neo4j driver not available")
+    
+    if not variable_id and not variable_name:
+        raise HTTPException(status_code=400, detail="Either variable_id or variable_name must be provided")
+    
+    # Define Cypher queries for each view type
+    if variable_id:
+        queries = {
+            'drivers': """
+                MATCH (v:Variable {id: $variable_id})
+                WITH v
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2, c, r3
+                OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+                RETURN s, r1, d, r2, c, r3, vc, r4, v
+            """,
+            'ontology': """
+                MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                RETURN p, r1, g, r2, v
+            """,
+            'metadata': """
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v
+            """,
+            'objectRelationships': """
+                MATCH (v:Variable {id: $variable_id})
+                WITH v
+                OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+                WITH v, o, r1
+                OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+                WITH v, o, r1, g, r2
+                OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+                RETURN v, o, r1, g, r2, p, r3
+            """
+        }
+        query_param = variable_id
+        param_name = 'variable_id'
+    else:
+        queries = {
+            'drivers': """
+                MATCH (v:Variable {name: $variable_name})
+                WITH v
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2, c, r3
+                OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+                RETURN s, r1, d, r2, c, r3, vc, r4, v
+            """,
+            'ontology': """
+                MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable {name: $variable_name})
+                RETURN p, r1, g, r2, v
+            """,
+            'metadata': """
+                MATCH (v:Variable {name: $variable_name})
+                RETURN v
+            """,
+            'objectRelationships': """
+                MATCH (v:Variable {name: $variable_name})
+                WITH v
+                OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+                WITH v, o, r1
+                OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+                WITH v, o, r1, g, r2
+                OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+                RETURN v, o, r1, g, r2, p, r3
+            """
+        }
+        query_param = variable_name
+        param_name = 'variable_name'
+    
+    if view not in queries:
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships")
+    
+    try:
+        cypher_query = queries[view]
+        
+        nodes = {}
+        edges = []
+        node_ids = set()
+        edge_ids = set()
+        
+        with driver.session() as session:
+            result = session.run(cypher_query, **{param_name: query_param})
+            
+            for record in result:
+                for key, value in record.items():
+                    if value is None:
+                        continue
+                    
+                    if isinstance(value, Node):
+                        node_id = str(value.id)
+                        if node_id not in node_ids:
+                            node_ids.add(node_id)
+                            labels = list(value.labels) if value.labels else []
+                            label = labels[0] if labels else 'Unknown'
+                            
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
+                            name = props.get('name') or props.get('variable') or props.get('object') or node_id
+                            
+                            nodes[node_id] = {
+                                'id': node_id,
+                                'label': name,
+                                'group': label,
+                                'properties': props
+                            }
+                    
+                    elif isinstance(value, Relationship):
+                        rel_id = str(value.id)
+                        if rel_id not in edge_ids:
+                            edge_ids.add(rel_id)
+                            start_id = str(value.start_node.id)
+                            end_id = str(value.end_node.id)
+                            
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
+                            
+                            edge_label = value.type
+                            
+                            if start_id and end_id:
+                                edges.append({
+                                    'id': rel_id,
+                                    'from': start_id,
+                                    'to': end_id,
+                                    'label': edge_label,
+                                    'properties': props
+                                })
+        
+        return {
+            'nodes': list(nodes.values()),
+            'edges': edges,
+            'nodeCount': len(nodes),
+            'edgeCount': len(edges)
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
+@router.post("/ontology/view/variable/bulk")
+async def get_bulk_variable_ontology_view(
+    variable_ids: Optional[List[str]] = Body(None, description="List of variable IDs (preferred)"),
+    variable_names: Optional[List[str]] = Body(None, description="List of variable names (fallback)"),
+    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships")
+):
+    """
+    Get ontology view for multiple variables and section.
+    Maps view type to appropriate Cypher query for bulk selection.
+    Uses variable_ids if provided, otherwise falls back to variable_names.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Neo4j driver not available")
+    
+    if not variable_ids and not variable_names:
+        raise HTTPException(status_code=400, detail="Either variable_ids or variable_names must be provided")
+    
+    # Use variable_ids if available, otherwise fall back to variable_names
+    if variable_ids:
+        if len(variable_ids) == 0:
+            raise HTTPException(status_code=400, detail="At least one variable ID is required")
+        identifiers = variable_ids
+        use_ids = True
+    else:
+        if len(variable_names) == 0:
+            raise HTTPException(status_code=400, detail="At least one variable name is required")
+        identifiers = variable_names
+        use_ids = False
+    
+    # Limit maximum variables for performance
+    MAX_VARIABLES = 50
+    if len(identifiers) > MAX_VARIABLES:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Maximum {MAX_VARIABLES} variables allowed for bulk view. Please reduce selection."
+        )
+    
+    # Define Cypher queries for each view type (bulk version)
+    if use_ids:
+        queries = {
+            'drivers': """
+                MATCH (v:Variable)
+                WHERE v.id IN $variable_ids
+                WITH v
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2, c, r3
+                OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+                RETURN s, r1, d, r2, c, r3, vc, r4, v
+            """,
+            'ontology': """
+                MATCH (v:Variable)
+                WHERE v.id IN $variable_ids
+                OPTIONAL MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
+                RETURN p, r1, g, r2, v
+            """,
+            'metadata': """
+                MATCH (v:Variable)
+                WHERE v.id IN $variable_ids
+                RETURN v
+            """,
+            'objectRelationships': """
+                MATCH (v:Variable)
+                WHERE v.id IN $variable_ids
+                WITH v
+                OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+                WITH v, o, r1
+                OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+                WITH v, o, r1, g, r2
+                OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+                RETURN v, o, r1, g, r2, p, r3
+            """
+        }
+        param_name = 'variable_ids'
+    else:
+        queries = {
+            'drivers': """
+                MATCH (v:Variable)
+                WHERE v.name IN $variable_names
+                WITH v
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(v)
+                WITH v, s, r1, d, r2, c, r3
+                OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
+                RETURN s, r1, d, r2, c, r3, vc, r4, v
+            """,
+            'ontology': """
+                MATCH (v:Variable)
+                WHERE v.name IN $variable_names
+                OPTIONAL MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
+                RETURN p, r1, g, r2, v
+            """,
+            'metadata': """
+                MATCH (v:Variable)
+                WHERE v.name IN $variable_names
+                RETURN v
+            """,
+            'objectRelationships': """
+                MATCH (v:Variable)
+                WHERE v.name IN $variable_names
+                WITH v
+                OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
+                WITH v, o, r1
+                OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
+                WITH v, o, r1, g, r2
+                OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
+                RETURN v, o, r1, g, r2, p, r3
+            """
+        }
+        param_name = 'variable_names'
+    
+    if view not in queries:
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships")
+    
+    try:
+        cypher_query = queries[view]
+        
+        nodes = {}
+        edges = []
+        node_ids = set()
+        edge_ids = set()
+        
+        with driver.session() as session:
+            result = session.run(cypher_query, **{param_name: identifiers})
+            
+            for record in result:
+                for key, value in record.items():
+                    if value is None:
+                        continue
+                    
+                    if isinstance(value, Node):
+                        node_id = str(value.id)
+                        if node_id not in node_ids:
+                            node_ids.add(node_id)
+                            labels = list(value.labels) if value.labels else []
+                            label = labels[0] if labels else 'Unknown'
+                            
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
+                            name = props.get('name') or props.get('variable') or props.get('object') or node_id
+                            
+                            nodes[node_id] = {
+                                'id': node_id,
+                                'label': name,
+                                'group': label,
+                                'properties': props
+                            }
+                    
+                    elif isinstance(value, Relationship):
+                        rel_id = str(value.id)
+                        if rel_id not in edge_ids:
+                            edge_ids.add(rel_id)
+                            start_id = str(value.start_node.id)
+                            end_id = str(value.end_node.id)
+                            
+                            if hasattr(value, 'items'):
+                                props = dict(value.items())
+                            else:
+                                props = {}
+                            
+                            edge_label = value.type
+                            
+                            if start_id and end_id:
+                                edges.append({
+                                    'id': rel_id,
+                                    'from': start_id,
+                                    'to': end_id,
+                                    'label': edge_label,
+                                    'properties': props
+                                })
+        
+        return {
+            'nodes': list(nodes.values()),
+            'edges': edges,
+            'nodeCount': len(nodes),
+            'edgeCount': len(edges)
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
 @router.post("/graph/query")
 async def execute_graph_query(request: GraphQueryRequest):
     """
