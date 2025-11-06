@@ -5,9 +5,11 @@ import type { ObjectData } from '../data/mockData';
 interface RelationshipCsvUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedObject: ObjectData | null;
+  selectedObject: ObjectData | null; // For single-object mode (backward compatibility)
+  selectedObjects?: ObjectData[]; // For bulk mode (multiple source objects)
   allObjects: ObjectData[];
   onProcessed: (validRelationships: ProcessedRelationship[]) => void;
+  isBulkMode?: boolean; // Flag to indicate bulk edit mode
 }
 
 export interface ProcessedRelationship {
@@ -31,9 +33,17 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
   isOpen,
   onClose,
   selectedObject,
+  selectedObjects = [],
   allObjects,
-  onProcessed
+  onProcessed,
+  isBulkMode = false
 }) => {
+  // Determine source objects: use selectedObjects if provided (bulk mode), otherwise use selectedObject (single mode)
+  const sourceObjects = isBulkMode && selectedObjects.length > 0 
+    ? selectedObjects 
+    : selectedObject 
+      ? [selectedObject] 
+      : [];
   const [isDragOver, setIsDragOver] = useState(false);
   const [processingResult, setProcessingResult] = useState<ProcessingResult | null>(null);
   const [showResult, setShowResult] = useState(false);
@@ -76,8 +86,8 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
   };
 
   const parseCsv = (csvContent: string): ProcessingResult => {
-    if (!selectedObject) {
-      return { valid: [], errors: [{ type: 'missing_object', message: 'No object selected', rowData: [] }] };
+    if (sourceObjects.length === 0) {
+      return { valid: [], errors: [{ type: 'missing_object', message: 'No object(s) selected', rowData: [] }] };
     }
 
     const lines = csvContent.split('\n').filter(line => line.trim());
@@ -135,31 +145,50 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
         continue;
       }
 
-      // Check if this is the same object (self-relationship)
-      const isSelf = targetObject.id === selectedObject.id;
+      // Check if this target is also one of the source objects (for Intra-Table logic)
+      const isTargetAlsoSource = sourceObjects.some(so => so.id === targetObject.id);
       
-      // Check if relationship already exists
+      // Check if relationship already exists in this CSV upload
       const relationshipKey = `${targetObject.id}-${relationshipType}-${role}`;
-      if (seenTargets.has(targetObject.id)) {
+      if (seenTargets.has(relationshipKey)) {
         errors.push({
           type: 'existing_relationship',
-          message: `Relationship to ${sector} - ${domain} - ${country} - ${being} - ${avatar} - ${object} already exists in this upload. You can modify roles or relationship type in the UI.`,
+          message: `Row ${i + 1}: Duplicate relationship to ${sector} - ${domain} - ${country} - ${being} - ${avatar} - ${object} already exists in this upload.`,
           rowData: values
         });
         continue;
       }
 
-      seenTargets.add(targetObject.id);
+      seenTargets.add(relationshipKey);
 
       // Validate relationship type
       let finalRelationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
-      if (isSelf) {
-        // Self-relationships are always Intra-Table
-        finalRelationshipType = 'Intra-Table';
+      if (isTargetAlsoSource) {
+        // If target is also a source, it will be Intra-Table (handled in save logic)
+        // But we still validate the CSV type for non-self relationships
+        if (relationshipType === 'Inter-Table' || relationshipType === 'Blood' || relationshipType === 'Subtype' || relationshipType === 'Intra-Table') {
+          // In bulk mode, Intra-Table is only for self-relationships
+          // For other source objects, use the specified type
+          finalRelationshipType = relationshipType === 'Intra-Table' ? 'Inter-Table' : relationshipType;
+        } else {
+          errors.push({
+            type: 'missing_object',
+            message: `Row ${i + 1}: Invalid relationship type "${relationshipType}". Must be Inter-Table, Blood, Subtype, or Intra-Table.`,
+            rowData: values
+          });
+          continue;
+        }
       } else {
         // Validate relationship type from CSV
         if (relationshipType === 'Inter-Table' || relationshipType === 'Blood' || relationshipType === 'Subtype') {
           finalRelationshipType = relationshipType;
+        } else if (relationshipType === 'Intra-Table') {
+          errors.push({
+            type: 'missing_object',
+            message: `Row ${i + 1}: Intra-Table relationship type is only valid for self-relationships (when target is also a source object).`,
+            rowData: values
+          });
+          continue;
         } else {
           errors.push({
             type: 'missing_object',
@@ -170,12 +199,20 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
         }
       }
 
-      // Process role - append CSV role to default role (object name)
-      const defaultRole = selectedObject.object;
-      const csvRole = role || '';
-      const finalRole = csvRole 
-        ? `${defaultRole}, ${csvRole}`.split(', ').filter(r => r.trim()).join(', ')
-        : defaultRole;
+      // Process role - in bulk mode, no default role word (per spec requirement 1)
+      // In single mode, append CSV role to default role (object name)
+      let finalRole: string;
+      if (isBulkMode) {
+        // In bulk mode, use the role from CSV as-is (no default)
+        finalRole = role || '';
+      } else {
+        // In single mode, append CSV role to default role (object name)
+        const defaultRole = sourceObjects[0]?.object || '';
+        const csvRole = role || '';
+        finalRole = csvRole 
+          ? `${defaultRole}, ${csvRole}`.split(', ').filter(r => r.trim()).join(', ')
+          : defaultRole;
+      }
 
       valid.push({
         targetObject,
@@ -338,10 +375,16 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
                 <p>• First row should contain column headers</p>
                 <p>• Each subsequent row represents one relationship</p>
                 <p>• Columns must be in the exact order shown above</p>
-                <p>• Allowed Relationship Types: Inter-Table, Blood, Subtype</p>
-                <p>• Relationship Type for self-relationships is automatically set to Intra-Table</p>
+                <p>• Allowed Relationship Types: Inter-Table, Blood, Subtype{isBulkMode ? ', Intra-Table (for self-relationships)' : ''}</p>
+                {isBulkMode ? (
+                  <p>• Relationship Type for self-relationships (when target is also a source) is automatically set to Intra-Table</p>
+                ) : (
+                  <p>• Relationship Type for self-relationships is automatically set to Intra-Table</p>
+                )}
                 <p className="pt-2 text-ag-dark-text">
-                  Each row creates a relationship between this object and the specified target. Ensure all fields match existing objects.
+                  {isBulkMode 
+                    ? `Each row creates relationships from all ${sourceObjects.length} selected source object(s) to the specified target. Ensure all fields match existing objects.`
+                    : 'Each row creates a relationship between this object and the specified target. Ensure all fields match existing objects.'}
                 </p>
               </div>
             </>

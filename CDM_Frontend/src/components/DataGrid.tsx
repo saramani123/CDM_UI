@@ -845,15 +845,18 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   }
                 }}
                 className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer ${
-                  isRowSelected(row) ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
+                  // Priority: Selected current object (intra-table) > Selected > Current object > Affected
+                  isCurrentObject(row) && relationshipData?.[row.id]?.isSelected 
+                    ? 'bg-blue-700 bg-opacity-60 border-blue-400 border-opacity-80 shadow-md' 
+                    : relationshipData?.[row.id]?.isSelected 
+                      ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
+                      : isRowSelected(row) 
+                        ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
+                        : ''
                 } ${
-                  relationshipData?.[row.id]?.isSelected ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' : ''
+                  isCurrentObject(row) && !relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
                 } ${
                   isRowAffected(row) ? 'bg-red-900 bg-opacity-30 border-red-500 border-opacity-50' : ''
-                } ${
-                  isCurrentObject(row) ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
-                } ${
-                  isCurrentObject(row) && relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-50 border-blue-500 border-opacity-70' : ''
                 } ${
                   dragOverIndex === index ? 'border-t-2 border-t-ag-dark-accent' : ''
                 } ${

@@ -16,11 +16,13 @@ interface InitialRelationship {
 interface RelationshipModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedObject: ObjectData | null;
+  selectedObject: ObjectData | null; // For single-object mode (backward compatibility)
+  selectedObjects?: ObjectData[]; // For bulk mode (multiple source objects)
   allObjects: ObjectData[];
   onSave?: () => void; // Callback to refresh main data
   initialRelationships?: InitialRelationship[]; // Pre-selected relationships from CSV upload
   onRelationshipsChange?: (relationships: any[]) => void; // Callback to store relationships for temporary objects
+  isBulkMode?: boolean; // Flag to indicate bulk edit mode
 }
 
 interface RelationshipData {
@@ -35,11 +37,19 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   isOpen,
   onClose,
   selectedObject,
+  selectedObjects = [],
   allObjects,
   onSave,
   initialRelationships = [],
-  onRelationshipsChange
+  onRelationshipsChange,
+  isBulkMode = false
 }) => {
+  // Determine source objects: use selectedObjects if provided (bulk mode), otherwise use selectedObject (single mode)
+  const sourceObjects = isBulkMode && selectedObjects.length > 0 
+    ? selectedObjects 
+    : selectedObject 
+      ? [selectedObject] 
+      : [];
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,7 +64,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
   // Initialize relationship data when modal opens
   useEffect(() => {
-    if (isOpen && selectedObject && allObjects.length > 0) {
+    if (isOpen && sourceObjects.length > 0 && allObjects.length > 0) {
+      // Always refresh data when modal opens to ensure latest relationships are shown
       initializeRelationshipData();
     }
     // Reset relationship data when modal closes
@@ -63,33 +74,53 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       setCustomSortRules([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, selectedObject?.id, allObjects.length, initialRelationships.length]);
+  }, [isOpen, sourceObjects.length, allObjects.length, initialRelationships.length]);
+
+  // Force refresh when modal opens (to catch bulk relationship updates)
+  // This ensures that when you open an individual object's modal after bulk operations,
+  // it always shows the latest relationships from Neo4j
+  useEffect(() => {
+    if (isOpen && sourceObjects.length > 0 && allObjects.length > 0) {
+      // Force refresh when modal opens to ensure latest relationships are shown
+      // Use a small delay to allow any pending state updates to complete
+      const refreshTimer = setTimeout(() => {
+        initializeRelationshipData();
+      }, 150);
+      return () => clearTimeout(refreshTimer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const initializeRelationshipData = async () => {
-    if (!selectedObject) return;
+    if (sourceObjects.length === 0) return;
 
     setLoading(true);
     try {
-      // Check if this is a temporary object (for new object creation)
-      const isTemporaryObject = selectedObject.id === 'temp-new-object' || selectedObject.id.startsWith('temp-');
+      // For bulk mode, we don't load existing relationships (they're just for reference)
+      // In bulk mode, we're creating new relationships, not editing existing ones
+      // For single mode, load existing relationships
+      const isTemporaryObject = sourceObjects.length === 1 && 
+        (sourceObjects[0].id === 'temp-new-object' || sourceObjects[0].id.startsWith('temp-'));
       
-      let relationshipsList: any[] = [];
-      if (!isTemporaryObject) {
-        // Load existing relationships for the selected object
-        const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-        relationshipsList = existingRelationships.relationshipsList || [];
-      }
-
       // Initialize relationship data for all objects
       const initialData: Record<string, RelationshipData> = {};
       
       for (const obj of allObjects) {
-        const isSelf = obj.id === selectedObject.id;
-        const existingRels = relationshipsList.filter((rel: any) => 
-          rel.toBeing === obj.being && 
-          rel.toAvatar === obj.avatar && 
-          rel.toObject === obj.object
-        );
+        // Check if this object is one of the source objects (for Intra-Table logic)
+        const isSourceObject = sourceObjects.some(so => so.id === obj.id);
+        
+        // In bulk mode, don't load existing relationships - we're creating new ones
+        // In single mode, load existing relationships for the selected object
+        let existingRels: any[] = [];
+        if (!isBulkMode && sourceObjects.length === 1 && !isTemporaryObject) {
+          const existingRelationships = await apiService.getObjectRelationships(sourceObjects[0].id) as any;
+          const relationshipsList = existingRelationships.relationshipsList || [];
+          existingRels = relationshipsList.filter((rel: any) => 
+            rel.toBeing === obj.being && 
+            rel.toAvatar === obj.avatar && 
+            rel.toObject === obj.object
+          );
+        }
 
         if (existingRels.length > 0) {
           // Handle legacy relationships with proper role fallbacks
@@ -133,11 +164,17 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           };
         } else {
           // No existing relationships
+          // In bulk mode, no default role word (per spec requirement 1)
+          // In single mode, default role = object name for self-relationships
+          const defaultRoles = isBulkMode 
+            ? '' 
+            : (isSourceObject ? sourceObjects[0]?.object || '' : '');
+          
           initialData[obj.id] = {
             objectId: obj.id,
             isSelected: false,
-            relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
-            roles: ''
+            relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
+            roles: defaultRoles
           };
         }
       }
@@ -186,12 +223,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       // Initialize with empty data
       const initialData: Record<string, RelationshipData> = {};
       for (const obj of allObjects) {
-        const isSelf = obj.id === selectedObject.id;
+        const isSourceObject = sourceObjects.some(so => so.id === obj.id);
+        // In bulk mode, no default role word
+        const defaultRoles = isBulkMode ? '' : (isSourceObject ? sourceObjects[0]?.object || '' : '');
         initialData[obj.id] = {
           objectId: obj.id,
           isSelected: false,
-          relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
-          roles: ''
+          relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
+          roles: defaultRoles
         };
       }
       
@@ -222,12 +261,20 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       const currentData = prev[objectId];
       const currentlySelected = currentData?.isSelected || false;
       
+      // In bulk mode, no default role word (per spec requirement 1)
+      // In single mode, default role = object name when selecting
+      const defaultRole = isBulkMode 
+        ? '' 
+        : (!currentlySelected ? (sourceObjects[0]?.object || '') : '');
+      
       return {
         ...prev,
         [objectId]: {
           ...prev[objectId],
           isSelected: !currentlySelected,
-          roles: !currentlySelected ? (prev[objectId]?.roles || selectedObject?.object || '') : prev[objectId]?.roles || ''
+          roles: !currentlySelected 
+            ? (prev[objectId]?.roles || defaultRole) 
+            : prev[objectId]?.roles || ''
         }
       };
     });
@@ -269,10 +316,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   };
 
   const handleSave = async () => {
-    if (!selectedObject) return;
+    if (sourceObjects.length === 0) return;
 
-    // Check if this is a temporary object (for new object creation)
-    const isTemporaryObject = selectedObject.id === 'temp-new-object' || selectedObject.id.startsWith('temp-');
+    // Check if this is a temporary object (for new object creation) - only for single mode
+    const isTemporaryObject = sourceObjects.length === 1 && 
+      (sourceObjects[0].id === 'temp-new-object' || sourceObjects[0].id.startsWith('temp-'));
     
     // If temporary object, store relationships locally instead of saving to API
     if (isTemporaryObject && onRelationshipsChange) {
@@ -315,10 +363,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const targetObject = allObjects.find(obj => obj.id === objectId);
         if (!targetObject) continue;
 
-        const isSelf = objectId === selectedObject.id;
         const hasRoles = relData.roles && relData.roles.trim().length > 0;
         const isSelected = relData.isSelected;
-
 
         // Check if user entered roles but didn't check the box
         if (hasRoles && !isSelected) {
@@ -347,7 +393,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const hasSemicolon = roleText.includes(';');
           const hasSpace = roleText.includes(' ') && !hasComma;
           
-          
           // If it has multiple words but no comma, it's probably wrong format
           if (roleText.split(' ').length > 1 && !hasComma && !hasSemicolon) {
             alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
@@ -364,109 +409,237 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
 
-      // Validation 3: Check if user deleted the auto-created role (object name)
-      for (const [objectId, relData] of Object.entries(relationshipData)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
+      // Validation 3: Check if user deleted the auto-created role (object name) - only for single mode
+      if (!isBulkMode && sourceObjects.length === 1) {
+        for (const [objectId, relData] of Object.entries(relationshipData)) {
+          const targetObject = allObjects.find(obj => obj.id === objectId);
+          if (!targetObject) continue;
 
-        const isSelf = objectId === selectedObject.id;
-        if (isSelf && relData.roles && relData.roles.trim().length > 0) {
-          const validRoles = validateRoles(relData.roles);
-          const objectName = selectedObject.object;
-          
-          // Check if the object name is missing from the roles
-          if (!validRoles.includes(objectName)) {
-            alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
+          const isSelf = objectId === sourceObjects[0].id;
+          if (isSelf && relData.roles && relData.roles.trim().length > 0) {
+            const validRoles = validateRoles(relData.roles);
+            const objectName = sourceObjects[0].object;
+            
+            // Check if the object name is missing from the roles
+            if (!validRoles.includes(objectName)) {
+              alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
+              setSaving(false);
+              return;
+            }
+          }
+        }
+      }
+
+      // Validation 4: Check for empty role list (warn but allow for bulk mode)
+      if (isBulkMode) {
+        let hasSelectedButNoRoles = false;
+        for (const [objectId, relData] of Object.entries(relationshipData)) {
+          if (relData.isSelected) {
+            const validRoles = validateRoles(relData.roles);
+            if (validRoles.length === 0) {
+              hasSelectedButNoRoles = true;
+              break;
+            }
+          }
+        }
+        if (hasSelectedButNoRoles) {
+          const proceed = window.confirm('Some selected relationships have no roles. They will be created without roles. Continue?');
+          if (!proceed) {
             setSaving(false);
             return;
           }
         }
       }
 
-      // Process each object's relationship data
-      for (const [objectId, relData] of Object.entries(relationshipData)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
+      // Process relationships
+      if (isBulkMode) {
+        // BULK MODE: Create relationships from each source object to each target object
+        const relationshipsToCreate: Array<{
+          sourceObjectId: string;
+          targetObject: ObjectData;
+          relationshipType: string;
+          roles: string[];
+        }> = [];
 
-        const isSelf = objectId === selectedObject.id;
-        const validRoles = validateRoles(relData.roles);
+        // Collect all relationships to create
+        for (const [objectId, relData] of Object.entries(relationshipData)) {
+          const targetObject = allObjects.find(obj => obj.id === objectId);
+          if (!targetObject) continue;
 
-        if (relData.isSelected && validRoles.length > 0) {
-          
-          // First, delete existing relationships for this object to handle type changes
-          try {
-            const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-            const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
-              rel.toBeing === targetObject.being && 
-              rel.toAvatar === targetObject.avatar && 
-              rel.toObject === targetObject.object
-            );
+          const validRoles = validateRoles(relData.roles);
+          const isTargetAlsoSource = sourceObjects.some(so => so.id === objectId);
 
-            for (const rel of relationshipsToDelete) {
-              await apiService.deleteRelationship(selectedObject.id, rel.id);
+          if (relData.isSelected) {
+            // Skip if no valid roles (per spec: empty role list is allowed but we need at least one role to create)
+            // If user confirmed to proceed with empty roles, we'll create with empty role
+            if (validRoles.length === 0) {
+              // User already confirmed to proceed with empty roles, so create with empty string
+              // But we need at least one role entry, so use empty string
+              validRoles.push('');
             }
-          } catch (error) {
-            console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
-          }
 
-          // Create new relationships with updated type
-          for (const role of validRoles) {
+            // Determine relationship type based on Intra-Table logic (requirement 4)
+            // If target is also a source, use Intra-Table for that source, Inter-Table for others
+            const relationshipType = isTargetAlsoSource ? 'Intra-Table' : (relData.relationshipType || 'Inter-Table');
+
+            // For each source object, create relationships to this target
+            for (const sourceObject of sourceObjects) {
+              const sourceIsTarget = sourceObject.id === objectId;
+              // For self-relationships, always use Intra-Table
+              const finalType = sourceIsTarget ? 'Intra-Table' : relationshipType;
+
+              relationshipsToCreate.push({
+                sourceObjectId: sourceObject.id,
+                targetObject,
+                relationshipType: finalType,
+                roles: validRoles
+              });
+            }
+          }
+        }
+
+        // Filter out relationships with completely empty roles (no roles at all)
+        // But keep relationships with empty string roles if user confirmed
+        const finalRelationshipsToCreate = relationshipsToCreate.filter(rel => {
+          // Must have at least one role (even if empty string)
+          return rel.roles && rel.roles.length > 0;
+        });
+
+        if (finalRelationshipsToCreate.length === 0) {
+          alert('No relationships to create. Please select at least one target object.');
+          setSaving(false);
+          return;
+        }
+
+        // Use bulk API endpoint if available, otherwise create individually
+        try {
+          await apiService.bulkCreateRelationships(finalRelationshipsToCreate);
+        } catch (error: any) {
+          console.error('Bulk relationship creation error:', error);
+          // If bulk endpoint doesn't exist or fails, fall back to individual creation
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            // Fall back to individual creation
+            for (const rel of finalRelationshipsToCreate) {
+              for (const role of rel.roles) {
+                try {
+                  await apiService.createRelationship(rel.sourceObjectId, {
+                    type: rel.relationshipType,
+                    role: role || '',
+                    toBeing: rel.targetObject.being,
+                    toAvatar: rel.targetObject.avatar,
+                    toObject: rel.targetObject.object
+                  });
+                } catch (err: any) {
+                  // Check if it's a duplicate error
+                  if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
+                    console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object}`);
+                  } else {
+                    throw err;
+                  }
+                }
+              }
+            }
+          } else {
+            // Log the full error for debugging
+            console.error('Full error details:', error);
+            throw error;
+          }
+        }
+      } else {
+        // SINGLE MODE: Original logic for single object
+        const selectedObject = sourceObjects[0];
+        for (const [objectId, relData] of Object.entries(relationshipData)) {
+          const targetObject = allObjects.find(obj => obj.id === objectId);
+          if (!targetObject) continue;
+
+          const isSelf = objectId === selectedObject.id;
+          const validRoles = validateRoles(relData.roles);
+
+          if (relData.isSelected && validRoles.length > 0) {
+            // First, delete existing relationships for this object to handle type changes
             try {
-              // Check if this role already exists in Neo4j
               const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-              const existingRels = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+              const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
                 rel.toBeing === targetObject.being && 
                 rel.toAvatar === targetObject.avatar && 
-                rel.toObject === targetObject.object &&
-                rel.role === role
+                rel.toObject === targetObject.object
               );
-              
-              // Only create if it doesn't already exist
-              if (existingRels.length === 0) {
-                await apiService.createRelationship(selectedObject.id, {
-                  type: relData.relationshipType,
-                  role: role,
-                  toBeing: targetObject.being,
-                  toAvatar: targetObject.avatar,
-                  toObject: targetObject.object
-                });
+
+              for (const rel of relationshipsToDelete) {
+                await apiService.deleteRelationship(selectedObject.id, rel.id);
               }
             } catch (error) {
-              console.error(`Failed to create relationship for ${targetObject.object}:`, error);
+              console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
             }
-          }
-        } else if (!relData.isSelected) {
-          // Delete all relationships for this object
-          try {
-            const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-            const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
-              rel.toBeing === targetObject.being && 
-              rel.toAvatar === targetObject.avatar && 
-              rel.toObject === targetObject.object
-            );
 
-            for (const rel of relationshipsToDelete) {
-              await apiService.deleteRelationship(selectedObject.id, rel.id);
+            // Create new relationships with updated type
+            for (const role of validRoles) {
+              try {
+                // Check if this role already exists in Neo4j
+                const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+                const existingRels = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+                  rel.toBeing === targetObject.being && 
+                  rel.toAvatar === targetObject.avatar && 
+                  rel.toObject === targetObject.object &&
+                  rel.role === role
+                );
+                
+                // Only create if it doesn't already exist
+                if (existingRels.length === 0) {
+                  await apiService.createRelationship(selectedObject.id, {
+                    type: relData.relationshipType,
+                    role: role,
+                    toBeing: targetObject.being,
+                    toAvatar: targetObject.avatar,
+                    toObject: targetObject.object
+                  });
+                }
+              } catch (error) {
+                console.error(`Failed to create relationship for ${targetObject.object}:`, error);
+              }
             }
-          } catch (error) {
-            console.error(`Failed to delete relationships for ${targetObject.object}:`, error);
+          } else if (!relData.isSelected) {
+            // Delete all relationships for this object
+            try {
+              const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+              const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+                rel.toBeing === targetObject.being && 
+                rel.toAvatar === targetObject.avatar && 
+                rel.toObject === targetObject.object
+              );
+
+              for (const rel of relationshipsToDelete) {
+                await apiService.deleteRelationship(selectedObject.id, rel.id);
+              }
+            } catch (error) {
+              console.error(`Failed to delete relationships for ${targetObject.object}:`, error);
+            }
           }
         }
       }
 
-      // Refresh the data after saving
-      await initializeRelationshipData();
-      
-      // Call the callback to refresh main grid data
+      // Call the callback to refresh main grid data FIRST (before closing)
+      // This ensures the main grid is updated with new relationship counts
       if (onSave) {
         onSave();
       }
       
-      alert('Relationships updated successfully!');
+      // Refresh the data after saving (for single mode, to show updated relationships)
+      // In bulk mode, we close immediately since we're not editing existing relationships
+      if (!isBulkMode) {
+        await initializeRelationshipData();
+      }
+      
+      alert(isBulkMode ? 'Bulk relationships created successfully!' : 'Relationships updated successfully!');
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save relationships:', error);
-      alert('Failed to save relationships. Please try again.');
+      const errorMessage = error.message || 'Failed to save relationships. Please try again.';
+      if (errorMessage.includes('Duplicate')) {
+        alert(`Duplicate relationship detected: ${errorMessage}`);
+      } else {
+        alert(errorMessage);
+      }
     } finally {
       setSaving(false);
     }
@@ -477,17 +650,17 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     onClose();
   };
 
-  if (!isOpen || !selectedObject) return null;
+  if (!isOpen || sourceObjects.length === 0) return null;
 
   // Prepare data for the grid with relationship controls
   let gridData = allObjects.map(obj => {
     const relData = relationshipData[obj.id];
-    const isSelf = obj.id === selectedObject.id;
+    const isSourceObject = sourceObjects.some(so => so.id === obj.id);
     
     return {
       ...obj,
-      isCurrentObject: isSelf,
-      relationshipType: relData?.relationshipType || (isSelf ? 'Intra-Table' : 'Inter-Table'),
+      isCurrentObject: isSourceObject, // Highlight all source objects in bulk mode
+      relationshipType: relData?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table'),
       roles: relData?.roles || ''
     };
   });
@@ -527,16 +700,22 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       title: 'Relationship Type',
       width: 200, // Expanded from 150
       render: (row: any) => {
-        const isSelf = row.id === selectedObject.id;
-        const currentType = relationshipData[row.id]?.relationshipType || (isSelf ? 'Intra-Table' : 'Inter-Table');
+        const isSourceObject = sourceObjects.some(so => so.id === row.id);
+        const currentType = relationshipData[row.id]?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table');
         const hasMixedTypes = relationshipData[row.id]?.hasMixedTypes || false;
+        
+        // In bulk mode, if target is also a source, disable type selection (will be Intra-Table)
+        // In single mode, disable for self-relationships
+        const isDisabled = isBulkMode 
+          ? isSourceObject // In bulk mode, disable if this is a source object
+          : isSourceObject && sourceObjects.length === 1; // In single mode, disable for self
         
         return (
           <div className="relative">
             <select
               value={currentType}
               onChange={(e) => handleRelationshipTypeChange(row.id, e.target.value as any)}
-              disabled={isSelf}
+              disabled={isDisabled}
               className={`w-full px-3 py-1.5 text-sm bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed pr-8 appearance-none ${
                 hasMixedTypes 
                   ? 'border-yellow-500 bg-yellow-900/20' 
@@ -549,7 +728,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 backgroundSize: '16px'
               }}
             >
-            {isSelf ? (
+            {isDisabled ? (
               <option value="Intra-Table">Intra-Table</option>
             ) : (
               <>
@@ -598,7 +777,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           <div className="flex items-center gap-2">
             <Link className="w-5 h-5 text-ag-dark-text-secondary" />
             <h2 className="text-xl font-semibold text-ag-dark-text">
-              Configuring Relationships
+              {isBulkMode ? `Configuring Relationships (${sourceObjects.length} objects)` : 'Configuring Relationships'}
             </h2>
           </div>
           <div className="flex items-center gap-3">
@@ -690,8 +869,10 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       <RelationshipCsvUploadModal
         isOpen={isRelationshipCsvUploadOpen}
         onClose={() => setIsRelationshipCsvUploadOpen(false)}
-        selectedObject={selectedObject}
+        selectedObject={isBulkMode ? null : selectedObject}
+        selectedObjects={isBulkMode ? sourceObjects : []}
         allObjects={allObjects}
+        isBulkMode={isBulkMode}
         onProcessed={(processedRelationships: ProcessedRelationship[]) => {
           setIsRelationshipCsvUploadOpen(false);
           // Apply the processed relationships to the modal

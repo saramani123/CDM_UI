@@ -67,7 +67,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   
   // Modal state for object relationships
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
-  const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
   
   // Confirmation dialog state
@@ -849,40 +848,25 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="objectRelationships"
         actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setIsCsvUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Relationships CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
-              className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-              title="View and manage relationships"
-            >
-              View Relationships
-            </button>
-          </div>
+          <button
+            onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
+            disabled={selectedCount === 0}
+            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+              selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={selectedCount === 0 ? "Select variables to view relationships" : "View and manage relationships"}
+          >
+            View Relationships
+          </button>
         }
       >
         <div className="py-4">
-          {selectedObjectRelationships.length === 0 ? (
-            <div className="text-center py-6 text-ag-dark-text-secondary">
-              <div className="text-sm">No object relationships defined</div>
-              <div className="text-xs mt-2 text-ag-dark-text-secondary">
-                Relationships will be applied to all {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''}
-              </div>
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              <span className="font-medium">Bulk relationship management:</span> Create relationships from all selected variables to target objects. 
+              Relationships will be appended to existing ones.
             </div>
-          ) : (
-            <div className="text-sm text-ag-dark-text">
-              {selectedObjectRelationships.length} object{selectedObjectRelationships.length !== 1 ? 's' : ''} selected
-              <div className="text-xs mt-2 text-ag-dark-text-secondary">
-                Will override existing relationships for {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       </CollapsibleSection>
 
@@ -904,31 +888,19 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           setIsVariableObjectRelationshipModalOpen(false);
           setPendingCsvData(null); // Clear pending CSV data when modal closes
         }}
-        selectedVariable={{
-          id: 'bulk-edit-temp-id',
-          variable: `Bulk Edit (${selectedCount} variables)`
-        }}
+        selectedVariable={null}
+        selectedVariables={selectedVariableIds && selectedVariableIds.length > 0 
+          ? allData.filter(v => selectedVariableIds.includes(v.id))
+          : allData.slice(0, selectedCount)}
         allObjects={allObjects}
-        previewMode={true}
-        onSelectionChange={(selectedObjectIds: string[]) => {
-          setSelectedObjectRelationships(selectedObjectIds);
-        }}
-        initialCsvData={pendingCsvData}
-      />
-
-      {/* CSV Upload Modal */}
-      <CsvUploadModal
-        isOpen={isCsvUploadOpen}
-        onClose={() => setIsCsvUploadOpen(false)}
-        type="variable-object-relationships"
-        onUpload={(data: any[] | File) => {
-          // Store CSV data and open the relationship modal
-          if (Array.isArray(data)) {
-            setPendingCsvData(data);
-            setIsCsvUploadOpen(false);
-            setIsVariableObjectRelationshipModalOpen(true);
+        onSave={() => {
+          // Refresh data after saving relationships
+          if (onSave) {
+            onSave({});
           }
         }}
+        initialCsvData={pendingCsvData}
+        isBulkMode={true}
       />
 
       {/* Confirmation Dialog */}

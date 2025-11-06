@@ -3,6 +3,7 @@ import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, Chevr
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
+import { RelationshipModal } from './RelationshipModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 
@@ -111,6 +112,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
+  
+  // Relationship modal state
+  const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -1008,9 +1012,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         ontologyViewType="relationships"
         actions={
           <button
-            disabled={true}
-            className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text opacity-50 cursor-not-allowed"
-            title="Bulk relationship management not yet supported"
+            onClick={() => setIsRelationshipModalOpen(true)}
+            disabled={selectedObjects.length === 0}
+            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+              selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={selectedObjects.length === 0 ? "Select objects to view relationships" : "View and manage relationships"}
           >
             View Relationships
           </button>
@@ -1019,8 +1026,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         <div className="mb-6">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Bulk relationship management</span> is not yet supported. 
-              Please select a single object to view and manage relationships.
+              <span className="font-medium">Bulk relationship management:</span> Create relationships from all selected objects to target objects. 
+              Relationships will be appended to existing ones.
             </div>
           </div>
         </div>
@@ -1159,6 +1166,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         onClose={() => setIsVariantUploadOpen(false)}
         type="variants"
         onUpload={handleVariantCsvUpload}
+      />
+
+      {/* Relationship Modal */}
+      <RelationshipModal
+        isOpen={isRelationshipModalOpen}
+        onClose={() => setIsRelationshipModalOpen(false)}
+        selectedObject={null}
+        selectedObjects={selectedObjects}
+        allObjects={allData}
+        onSave={() => {
+          // Refresh data after saving relationships
+          if (onSave) {
+            onSave({});
+          }
+        }}
+        isBulkMode={true}
       />
 
       {/* Ontology Modal */}

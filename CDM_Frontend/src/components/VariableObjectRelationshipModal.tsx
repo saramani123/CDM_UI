@@ -10,10 +10,12 @@ import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 interface VariableObjectRelationshipModalProps {
   isOpen: boolean;
   onClose: () => void;
-  selectedVariable: any;
+  selectedVariable: any; // For single-variable mode (backward compatibility)
+  selectedVariables?: any[]; // For bulk mode (multiple variables)
   allObjects: ObjectData[];
   onSave?: () => void; // Callback to refresh main data
   initialCsvData?: any[] | null; // CSV data to process when modal opens
+  isBulkMode?: boolean; // Flag to indicate bulk edit mode
 }
 
 interface SelectedObjectData {
@@ -26,10 +28,18 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   isOpen,
   onClose,
   selectedVariable,
+  selectedVariables = [],
   allObjects,
   onSave,
-  initialCsvData
+  initialCsvData,
+  isBulkMode = false
 }) => {
+  // Determine source variables: use selectedVariables if provided (bulk mode), otherwise use selectedVariable (single mode)
+  const sourceVariables = isBulkMode && selectedVariables.length > 0 
+    ? selectedVariables 
+    : selectedVariable 
+      ? [selectedVariable] 
+      : [];
   const [selectedObjects, setSelectedObjects] = useState<Record<string, SelectedObjectData>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -46,7 +56,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
 
   // Initialize selected objects when modal opens
   useEffect(() => {
-    if (isOpen && selectedVariable && allObjects.length > 0) {
+    if (isOpen && sourceVariables.length > 0 && allObjects.length > 0) {
       initializeSelectedObjects().then(() => {
         // Process initial CSV data if provided (after initialization)
         if (initialCsvData && initialCsvData.length > 0) {
@@ -65,38 +75,88 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       setCustomSortRules([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, selectedVariable?.id, allObjects.length]);
+  }, [isOpen, sourceVariables.length, allObjects.length]);
+
+  // Force refresh when modal opens (to catch bulk relationship updates)
+  // This ensures that when you open an individual variable's modal after bulk operations,
+  // it always shows the latest relationships from Neo4j
+  useEffect(() => {
+    if (isOpen && sourceVariables.length > 0 && allObjects.length > 0) {
+      // Force refresh when modal opens to ensure latest relationships are shown
+      // Use a small delay to allow any pending state updates to complete
+      const refreshTimer = setTimeout(() => {
+        initializeSelectedObjects();
+      }, 150);
+      return () => clearTimeout(refreshTimer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const initializeSelectedObjects = async () => {
-    if (!selectedVariable) return;
+    if (sourceVariables.length === 0) return;
 
     setLoading(true);
     try {
-      // Load existing relationships for the selected variable
-      const existingRelationships = await apiService.getVariableObjectRelationships(selectedVariable.id) as any;
-      const relationshipsList = existingRelationships.relationships || [];
+      // In bulk mode, we don't load existing relationships (they're just for reference)
+      // In bulk mode, we're creating new relationships, not editing existing ones
+      // For single mode, load existing relationships
+      let allExistingRelationships: any[] = [];
+      
+      if (!isBulkMode && sourceVariables.length === 1) {
+        // Single mode: load existing relationships for the selected variable
+        const existingRelationships = await apiService.getVariableObjectRelationships(sourceVariables[0].id) as any;
+        allExistingRelationships = existingRelationships.relationships || [];
+      } else if (isBulkMode) {
+        // Bulk mode: load existing relationships for all source variables to show what's already selected
+        // This helps prevent duplicates
+        for (const variable of sourceVariables) {
+          try {
+            const existingRelationships = await apiService.getVariableObjectRelationships(variable.id) as any;
+            const relationshipsList = existingRelationships.relationships || [];
+            allExistingRelationships.push(...relationshipsList.map((rel: any) => ({ ...rel, variableId: variable.id })));
+          } catch (error) {
+            console.error(`Failed to load relationships for variable ${variable.id}:`, error);
+          }
+        }
+      }
 
       // Initialize selection data for all objects
       const initialData: Record<string, SelectedObjectData> = {};
       
-      // Check if "ALL" is selected (HAS_VARIABLE relationship exists)
+      // Check if "ALL" is selected (HAS_VARIABLE relationship exists) - only for single mode
       let hasAllRelationship = false;
       
-      // Check for HAS_VARIABLE relationship first
-      hasAllRelationship = relationshipsList.some((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
+      if (!isBulkMode && sourceVariables.length === 1) {
+        // Check for HAS_VARIABLE relationship first (single mode only)
+        hasAllRelationship = allExistingRelationships.some((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
+      }
 
-      console.log('🔄 Initializing relationships. Found', relationshipsList.length, 'relationships');
+      console.log('🔄 Initializing relationships. Found', allExistingRelationships.length, 'relationships');
       console.log('🔄 AllObjects count:', allObjects.length);
+      console.log('🔄 Bulk mode:', isBulkMode, 'Source variables:', sourceVariables.length);
       
       for (const obj of allObjects) {
-        // Check if this object has a HAS_SPECIFIC_VARIABLE relationship
-        // Match by being, avatar, object (not by sector/domain/country which may not be stored as properties)
-        const hasSpecificRel = relationshipsList.some((rel: any) => 
-          rel.relationshipType === 'HAS_SPECIFIC_VARIABLE' &&
-          rel.toBeing === obj.being &&
-          rel.toAvatar === obj.avatar &&
-          rel.toObject === obj.object
-        );
+        // In bulk mode, check if ANY of the source variables has a relationship with this object
+        // In single mode, check if the selected variable has a relationship with this object
+        let hasSpecificRel = false;
+        
+        if (isBulkMode) {
+          // Check if any source variable has a relationship with this object
+          hasSpecificRel = allExistingRelationships.some((rel: any) => 
+            rel.relationshipType === 'HAS_SPECIFIC_VARIABLE' &&
+            rel.toBeing === obj.being &&
+            rel.toAvatar === obj.avatar &&
+            rel.toObject === obj.object
+          );
+        } else {
+          // Single mode: check if the selected variable has a relationship with this object
+          hasSpecificRel = allExistingRelationships.some((rel: any) => 
+            rel.relationshipType === 'HAS_SPECIFIC_VARIABLE' &&
+            rel.toBeing === obj.being &&
+            rel.toAvatar === obj.avatar &&
+            rel.toObject === obj.object
+          );
+        }
 
         if (hasSpecificRel) {
           console.log(`✓ Found relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
@@ -216,11 +276,23 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
           row.Avatar || row.avatar || '',
           row.Object || row.object || ''
         ].filter(Boolean).join(' - ');
-        errors.push(`No matching object found for [${rowValues}].`);
+        errors.push(`Row ${index + 1}: No matching object found for [${rowValues}].`);
       } else if (matchedObjects.has(matchingObject.id)) {
-        errors.push(`Duplicate object entry found in upload; duplicates ignored.`);
+        errors.push(`Row ${index + 1}: Duplicate object entry found in upload; duplicates ignored.`);
       } else if (updatedSelections[matchingObject.id]?.isSelected) {
-        errors.push(`Object ${matchingObject.object} already selected; skipping duplicate.`);
+        // In bulk mode, we still allow this but warn - it will be checked on save
+        // In single mode, this is a duplicate
+        if (!isBulkMode) {
+          errors.push(`Row ${index + 1}: Object ${matchingObject.object} already selected; skipping duplicate.`);
+        } else {
+          // In bulk mode, auto-highlight it anyway (will be checked for duplicates on save)
+          matchedObjects.add(matchingObject.id);
+          updatedSelections[matchingObject.id] = {
+            objectId: matchingObject.id,
+            isSelected: true,
+            isAllSelected: false
+          };
+        }
       } else {
         matchedObjects.add(matchingObject.id);
         updatedSelections[matchingObject.id] = {
@@ -237,14 +309,129 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     if (errors.length > 0) {
       // Show error popup
       alert(`Upload completed with ${errors.length} error(s):\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? `\n... and ${errors.length - 10} more errors` : ''}`);
+    } else {
+      // Show success message
+      alert(`Successfully uploaded ${matchedObjects.size} object(s) from CSV. Objects are now highlighted in the modal.`);
     }
   };
 
   const handleSave = async () => {
-    if (!selectedVariable) return;
+    if (sourceVariables.length === 0) return;
 
     setSaving(true);
     try {
+      if (isBulkMode) {
+        // BULK MODE: Create relationships from each source variable to each selected object
+        const selectedObjectIds = Object.entries(selectedObjects)
+          .filter(([_, data]) => data.isSelected)
+          .map(([id, _]) => id);
+        
+        if (selectedObjectIds.length === 0) {
+          alert('Please select at least one object to create relationships.');
+          setSaving(false);
+          return;
+        }
+
+        // Collect all relationships to create
+        const relationshipsToCreate: Array<{
+          variableId: string;
+          objectId: string;
+          object: ObjectData;
+        }> = [];
+
+        // Check for duplicates before creating
+        const duplicates: Array<{ variableId: string; variableName: string; objectName: string }> = [];
+
+        for (const variable of sourceVariables) {
+          // Get existing relationships for this variable
+          const existingRelationships = await apiService.getVariableObjectRelationships(variable.id) as any;
+          const relationshipsList = existingRelationships.relationships || [];
+          
+          // Create a set of existing object keys for this variable
+          const existingObjectKeys = new Set(
+            relationshipsList
+              .filter((rel: any) => rel.relationshipType === 'HAS_SPECIFIC_VARIABLE')
+              .map((rel: any) => `${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`)
+          );
+
+          for (const objectId of selectedObjectIds) {
+            const obj = allObjects.find(o => o.id === objectId);
+            if (!obj) continue;
+
+            const objectKey = `${obj.being}::${obj.avatar}::${obj.object}`;
+            
+            // Check if relationship already exists
+            if (existingObjectKeys.has(objectKey)) {
+              duplicates.push({
+                variableId: variable.id,
+                variableName: variable.variable || variable.name || variable.id,
+                objectName: `${obj.being} - ${obj.avatar} - ${obj.object}`
+              });
+            } else {
+              relationshipsToCreate.push({
+                variableId: variable.id,
+                objectId: objectId,
+                object: obj
+              });
+            }
+          }
+        }
+
+        // If duplicates found, show error and abort
+        if (duplicates.length > 0) {
+          const duplicateMessages = duplicates.map(dup => 
+            `${dup.variableName} → ${dup.objectName}`
+          );
+          alert(`Duplicate relationships detected. The following relationships already exist:\n\n${duplicateMessages.slice(0, 10).join('\n')}${duplicateMessages.length > 10 ? `\n... and ${duplicateMessages.length - 10} more` : ''}\n\nPlease remove duplicates before saving.`);
+          setSaving(false);
+          return;
+        }
+
+        // Use bulk API endpoint if available, otherwise create individually
+        try {
+          await apiService.bulkCreateVariableObjectRelationships(relationshipsToCreate);
+        } catch (error: any) {
+          // If bulk endpoint doesn't exist or fails, fall back to individual creation
+          if (error.message?.includes('404') || error.message?.includes('not found')) {
+            // Fall back to individual creation
+            for (const rel of relationshipsToCreate) {
+              try {
+                await apiService.createVariableObjectRelationship(rel.variableId, {
+                  relationshipType: 'HAS_SPECIFIC_VARIABLE',
+                  toSector: rel.object.sector || '',
+                  toDomain: rel.object.domain || '',
+                  toCountry: rel.object.country || '',
+                  toObjectClarifier: rel.object.classifier || '',
+                  toBeing: rel.object.being,
+                  toAvatar: rel.object.avatar,
+                  toObject: rel.object.object
+                });
+              } catch (err: any) {
+                // Check if it's a duplicate error
+                if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
+                  console.warn(`Duplicate relationship skipped: ${rel.variableId} -> ${rel.object.object}`);
+                } else {
+                  throw err;
+                }
+              }
+            }
+          } else {
+            throw error;
+          }
+        }
+
+        // Call the callback to refresh main grid data
+        if (onSave) {
+          await onSave();
+        }
+        
+        alert(`Bulk relationships created successfully! Created ${relationshipsToCreate.length} relationship(s) for ${sourceVariables.length} variable(s).`);
+        onClose();
+        return;
+      }
+
+      // SINGLE MODE: Original logic for single variable
+      const selectedVariable = sourceVariables[0];
       console.log('💾 Saving relationships for variable:', selectedVariable.id);
       console.log('💾 Selected objects:', Object.entries(selectedObjects).filter(([_, data]) => data.isSelected).map(([id, _]) => id));
       console.log('💾 isAllSelected:', isAllSelected);
@@ -400,27 +587,32 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
         }
       }
 
-      // Refresh the data to verify relationships were saved
-      await initializeSelectedObjects();
-      
-      // Verify relationships were actually created
-      const verifyRelationships = await apiService.getVariableObjectRelationships(selectedVariable.id) as any;
-      const verifyList = verifyRelationships.relationships || [];
-      const expectedCount = Object.values(selectedObjects).filter(d => d.isSelected).length;
-      console.log('✅ Verification: Found', verifyList.length, 'relationships after save (expected:', expectedCount, ')');
-      
-      if (verifyList.length === 0 && expectedCount > 0) {
-        alert('Warning: Relationships may not have been saved. Please check the console for errors.');
-        setSaving(false);
-        return; // Don't close modal or refresh if save failed
-      }
-      
-      // Call the callback to refresh main grid data (this will refresh variables list)
+      // Call the callback to refresh main grid data FIRST (before closing)
+      // This ensures the main grid is updated with new relationship counts
       if (onSave) {
         await onSave();
       }
       
-      alert('Relationships updated successfully!');
+      // Refresh the data after saving (for single mode, to show updated relationships)
+      // In bulk mode, we close immediately since we're not editing existing relationships
+      if (!isBulkMode) {
+        // Refresh the data to verify relationships were saved
+        await initializeSelectedObjects();
+        
+        // Verify relationships were actually created
+        const verifyRelationships = await apiService.getVariableObjectRelationships(selectedVariable.id) as any;
+        const verifyList = verifyRelationships.relationships || [];
+        const expectedCount = Object.values(selectedObjects).filter(d => d.isSelected).length;
+        console.log('✅ Verification: Found', verifyList.length, 'relationships after save (expected:', expectedCount, ')');
+        
+        if (verifyList.length === 0 && expectedCount > 0) {
+          alert('Warning: Relationships may not have been saved. Please check the console for errors.');
+          setSaving(false);
+          return; // Don't close modal or refresh if save failed
+        }
+      }
+      
+      alert(isBulkMode ? 'Bulk relationships created successfully!' : 'Relationships updated successfully!');
       onClose();
     } catch (error) {
       console.error('Failed to save relationships:', error);
@@ -437,7 +629,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     onClose();
   };
 
-  if (!isOpen || !selectedVariable) return null;
+  if (!isOpen || sourceVariables.length === 0) return null;
 
   // Prepare data for the grid - include all object columns
   // Ensure sector, domain, country are preserved from parsed driver field
@@ -516,7 +708,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
             <div className="flex items-center gap-2">
               <Link className="w-5 h-5 text-ag-dark-text-secondary" />
               <h2 className="text-xl font-semibold text-ag-dark-text">
-                Configuring Object Relationships for {selectedVariable?.variable || 'Variable'}
+                {isBulkMode 
+                  ? `Configuring Object Relationships (${sourceVariables.length} variables)` 
+                  : `Configuring Object Relationships for ${sourceVariables[0]?.variable || 'Variable'}`}
               </h2>
             </div>
             <div className="flex items-center gap-3">
@@ -570,10 +764,10 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
                   selectedRows={[]}
                   affectedIds={new Set()}
                   deletedDriverType={null}
-                  customSortRules={[]}
-                  onClearCustomSort={() => {}}
+                  customSortRules={customSortRules}
+                  onClearCustomSort={() => setCustomSortRules([])}
                   onColumnSort={() => {}}
-                  isCustomSortActive={false}
+                  isCustomSortActive={customSortRules.length > 0}
                   isColumnSortActive={false}
                   highlightCurrentObject={false}
                   showActionsColumn={false}

@@ -19,6 +19,17 @@ class RelationshipCreateRequest(BaseModel):
 class VariantCreateRequest(BaseModel):
     variant_name: str
 
+class BulkRelationshipItem(BaseModel):
+    source_object_id: str
+    target_being: str
+    target_avatar: str
+    target_object: str
+    relationship_type: str
+    roles: List[str]
+
+class BulkRelationshipCreateRequest(BaseModel):
+    relationships: List[BulkRelationshipItem]
+
 router = APIRouter()
 
 @router.get("/objects", response_model=List[Dict[str, Any]])
@@ -1629,6 +1640,197 @@ async def delete_relationship(object_id: str, relationship_id: str):
     except Exception as e:
         print(f"Error deleting relationship: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete relationship: {e}")
+
+@router.post("/objects/bulk-relationships", response_model=Dict[str, Any])
+async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Body(...)):
+    """Create multiple relationships for multiple source objects in bulk"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # First, validate all relationships and check for duplicates
+            duplicates = []
+            source_object_ids = set()
+            relationships_to_create = []
+            
+            # Collect all source object IDs
+            for rel in request.relationships:
+                source_object_ids.add(rel.source_object_id)
+            
+            # Check for duplicates before creating
+            # Duplicate = same (source object + target object) pair, regardless of role or relationship type
+            for rel in request.relationships:
+                # Find target objects matching the criteria
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                # Check for existing relationships (any relationship between source and target)
+                # Per spec: duplicate = same (source object + target object) pair, regardless of role or type
+                check_query = f"""
+                    MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
+                    WHERE {where_clause}
+                    RETURN source.id as source_id, target.object as target_object, target.being as target_being, 
+                           target.avatar as target_avatar, collect(DISTINCT r.role) as existing_roles
+                    LIMIT 1
+                """
+                params_check = {**params, "source_id": rel.source_object_id}
+                existing = session.run(check_query, **params_check).single()
+                
+                if existing:
+                    duplicates.append({
+                        "source_object_id": rel.source_object_id,
+                        "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}",
+                        "existing_roles": existing.get("existing_roles", [])
+                    })
+            
+            # If duplicates found, return error with full list
+            if duplicates:
+                duplicate_messages = [
+                    f"{dup['source_object_id']} → {dup['target_object']} (existing roles: {', '.join(dup.get('existing_roles', []))})"
+                    for dup in duplicates
+                ]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate relationship detected. The following source-target pairs already exist:\n" + "\n".join(duplicate_messages)
+                )
+            
+            # Validate that all target objects exist
+            missing_objects = []
+            for rel in request.relationships:
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                check_query = f"""
+                    MATCH (target:Object)
+                    WHERE {where_clause}
+                    RETURN count(target) as count
+                """
+                result = session.run(check_query, **params).single()
+                count = result["count"] if result else 0
+                
+                if count == 0:
+                    missing_objects.append(f"{rel.target_being} - {rel.target_avatar} - {rel.target_object}")
+            
+            if missing_objects:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"One or more objects in your CSV do not exist in the dataset:\n" + "\n".join(missing_objects)
+                )
+            
+            # Create all relationships in a single transaction
+            created_count = 0
+            for rel in request.relationships:
+                # Find target objects matching the criteria
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                query = f"""
+                    MATCH (target:Object)
+                    WHERE {where_clause}
+                    RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
+                """
+                
+                target_results = session.run(query, **params).data()
+                
+                # Create relationships for each target and each role
+                for target_result in target_results:
+                    target_id = target_result["target_id"]
+                    
+                    # Determine relationship type based on Intra-Table logic
+                    # If source and target are the same, use Intra-Table
+                    # Otherwise use the specified type (default to Inter-Table if empty)
+                    final_type = rel.relationship_type if rel.relationship_type else "Inter-Table"
+                    if rel.source_object_id == target_id:
+                        final_type = "Intra-Table"
+                    
+                    for role in rel.roles:
+                        relationship_id = str(uuid.uuid4())
+                        try:
+                            session.run("""
+                                MATCH (source:Object {id: $source_id})
+                                MATCH (target:Object {id: $target_id})
+                                CREATE (source)-[:RELATES_TO {
+                                    id: $relationship_id,
+                                    type: $relationship_type,
+                                    role: $role,
+                                    toBeing: $to_being,
+                                    toAvatar: $to_avatar,
+                                    toObject: $to_object
+                                }]->(target)
+                            """, source_id=rel.source_object_id, target_id=target_id, relationship_id=relationship_id,
+                                relationship_type=final_type, role=role, to_being=rel.target_being, 
+                                to_avatar=rel.target_avatar, to_object=rel.target_object)
+                            created_count += 1
+                        except Exception as e:
+                            print(f"DEBUG: Error creating relationship: {e}")
+            
+            # Update relationship counts for all affected source objects
+            for source_id in source_object_ids:
+                count_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                    RETURN count(other) as rel_count
+                """, object_id=source_id).single()
+                
+                rel_count = count_result["rel_count"] if count_result else 0
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.relationships = $rel_count
+                """, object_id=source_id, rel_count=rel_count)
+            
+            return {
+                "message": f"Successfully created {created_count} relationship(s)",
+                "created_count": created_count
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating bulk relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create bulk relationships: {e}")
 
 # Variant Management Endpoints
 @router.post("/objects/{object_id}/variants", response_model=Dict[str, Any])

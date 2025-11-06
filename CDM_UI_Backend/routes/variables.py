@@ -10,6 +10,18 @@ from db import get_driver
 from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest, VariableFieldOptionRequest, VariableFieldOptionsResponse
 
 # Pydantic models for JSON body parameters
+class BulkVariableObjectRelationshipItem(BaseModel):
+    variable_id: str
+    target_being: str
+    target_avatar: str
+    target_object: str
+    target_sector: Optional[str] = ""
+    target_domain: Optional[str] = ""
+    target_country: Optional[str] = ""
+    target_object_clarifier: Optional[str] = ""
+
+class BulkVariableObjectRelationshipCreateRequest(BaseModel):
+    relationships: List[BulkVariableObjectRelationshipItem]
 
 router = APIRouter()
 
@@ -932,6 +944,224 @@ async def delete_object_relationship(variable_id: str, relationship_data: Object
     except Exception as e:
         print(f"Error deleting object relationship: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete object relationship: {str(e)}")
+
+@router.post("/variables/bulk-object-relationships", response_model=Dict[str, Any])
+async def bulk_create_variable_object_relationships(request: BulkVariableObjectRelationshipCreateRequest = Body(...)):
+    """Create multiple variable-object relationships in bulk"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # First, validate all relationships and check for duplicates
+            duplicates = []
+            variable_ids = set()
+            relationships_to_create = []
+            
+            # Collect all variable IDs
+            for rel in request.relationships:
+                variable_ids.add(rel.variable_id)
+            
+            # Check for duplicates before creating
+            # Duplicate = same (variable + object) pair, regardless of other fields
+            for rel in request.relationships:
+                # Find target objects matching the criteria
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                # Check for existing relationships (any relationship between variable and target)
+                # Per spec: duplicate = same (variable + object) pair, regardless of other fields
+                check_query = f"""
+                    MATCH (v:Variable {{id: $variable_id}})<-[r:HAS_SPECIFIC_VARIABLE]-(target:Object)
+                    WHERE {where_clause}
+                    RETURN v.id as variable_id, target.object as target_object, target.being as target_being, 
+                           target.avatar as target_avatar
+                    LIMIT 1
+                """
+                params_check = {**params, "variable_id": rel.variable_id}
+                existing = session.run(check_query, **params_check).single()
+                
+                if existing:
+                    duplicates.append({
+                        "variable_id": rel.variable_id,
+                        "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}"
+                    })
+            
+            # If duplicates found, return error with full list
+            if duplicates:
+                duplicate_messages = [
+                    f"Variable {dup['variable_id']} → {dup['target_object']}"
+                    for dup in duplicates
+                ]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate relationship detected. The following variable-object pairs already exist:\n" + "\n".join(duplicate_messages)
+                )
+            
+            # Validate that all target objects exist
+            missing_objects = []
+            for rel in request.relationships:
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                check_query = f"""
+                    MATCH (target:Object)
+                    WHERE {where_clause}
+                    RETURN count(target) as count
+                """
+                result = session.run(check_query, **params).single()
+                count = result["count"] if result else 0
+                
+                if count == 0:
+                    missing_objects.append(f"{rel.target_being} - {rel.target_avatar} - {rel.target_object}")
+            
+            if missing_objects:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"One or more objects in your CSV do not exist in the dataset:\n" + "\n".join(missing_objects)
+                )
+            
+            # Create all relationships in a single transaction
+            created_count = 0
+            for rel in request.relationships:
+                # Find target objects matching the criteria
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                query = f"""
+                    MATCH (target:Object)
+                    WHERE {where_clause}
+                    RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
+                """
+                
+                target_results = session.run(query, **params).data()
+                
+                # Create relationships for each target
+                for target_result in target_results:
+                    target_id = target_result["target_id"]
+                    
+                    try:
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (o:Object {id: $target_id})
+                            MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                            ON CREATE SET r.createdBy = "frontend"
+                        """, variable_id=rel.variable_id, target_id=target_id)
+                        created_count += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error creating relationship: {e}")
+            
+            # Update relationship counts for all affected variables
+            for variable_id in variable_ids:
+                count_result = session.run("""
+                    MATCH (v:Variable {id: $variable_id})<-[r:HAS_SPECIFIC_VARIABLE]-(o:Object)
+                    RETURN count(r) as rel_count
+                """, variable_id=variable_id).single()
+                
+                rel_count = count_result["rel_count"] if count_result else 0
+                
+                session.run("""
+                    MATCH (v:Variable {id: $variable_id})
+                    SET v.objectRelationships = $rel_count
+                """, variable_id=variable_id, rel_count=rel_count)
+            
+            # Update variables count for all affected objects
+            # Get all unique object IDs that were affected
+            affected_object_ids = set()
+            for rel in request.relationships:
+                where_conditions = []
+                params = {}
+                
+                if rel.target_being != "ALL":
+                    where_conditions.append("target.being = $to_being")
+                    params["to_being"] = rel.target_being
+                
+                if rel.target_avatar != "ALL":
+                    where_conditions.append("target.avatar = $to_avatar")
+                    params["to_avatar"] = rel.target_avatar
+                
+                if rel.target_object != "ALL":
+                    where_conditions.append("target.object = $to_object")
+                    params["to_object"] = rel.target_object
+                
+                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+                
+                query = f"""
+                    MATCH (target:Object)
+                    WHERE {where_clause}
+                    RETURN target.id as target_id
+                """
+                
+                target_results = session.run(query, **params).data()
+                for target_result in target_results:
+                    affected_object_ids.add(target_result["target_id"])
+            
+            # Update variables count for each affected object
+            for object_id in affected_object_ids:
+                count_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable)
+                    RETURN count(v) as var_count
+                """, object_id=object_id).single()
+                
+                var_count = count_result["var_count"] if count_result else 0
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.variables = $var_count
+                """, object_id=object_id, var_count=var_count)
+            
+            return {
+                "message": f"Successfully created {created_count} relationship(s)",
+                "created_count": created_count
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating bulk variable-object relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create bulk variable-object relationships: {e}")
 
 @router.post("/variables/bulk-upload", response_model=CSVUploadResponse)
 async def bulk_upload_variables(file: UploadFile = File(...)):

@@ -198,7 +198,19 @@ class ApiService {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        // Try to get error details from response
+        let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+        } catch (e) {
+          // If JSON parsing fails, use default message
+        }
+        throw new Error(errorMessage);
       }
       
       return response.json();
@@ -268,6 +280,30 @@ class ApiService {
 
   async getObjectRelationships(objectId: string) {
     return this.request(`/objects/${objectId}`);
+  }
+
+  async bulkCreateRelationships(relationships: Array<{
+    sourceObjectId: string;
+    targetObject: any;
+    relationshipType: string;
+    roles: string[];
+  }>) {
+    return this.request('/objects/bulk-relationships', {
+      method: 'POST',
+      body: JSON.stringify({
+        relationships: relationships.map(rel => ({
+          source_object_id: rel.sourceObjectId,
+          target_being: rel.targetObject.being,
+          target_avatar: rel.targetObject.avatar,
+          target_object: rel.targetObject.object,
+          relationship_type: rel.relationshipType,
+          roles: rel.roles
+        }))
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
   }
 
   async getObjectVariants(objectId: string) {
@@ -506,6 +542,31 @@ class ApiService {
     return this.request(`/variables/${variableId}/object-relationships`, {
       method: 'DELETE',
       body: JSON.stringify(backendData),
+    });
+  }
+
+  async bulkCreateVariableObjectRelationships(relationships: Array<{
+    variableId: string;
+    objectId: string;
+    object: any;
+  }>) {
+    return this.request('/variables/bulk-object-relationships', {
+      method: 'POST',
+      body: JSON.stringify({
+        relationships: relationships.map(rel => ({
+          variable_id: rel.variableId,
+          target_being: rel.object.being,
+          target_avatar: rel.object.avatar,
+          target_object: rel.object.object,
+          target_sector: rel.object.sector || '',
+          target_domain: rel.object.domain || '',
+          target_country: rel.object.country || '',
+          target_object_clarifier: rel.object.classifier || ''
+        }))
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
   }
 
