@@ -851,6 +851,12 @@ async def create_object_relationship(variable_id: str, relationship_data: Object
             else:
                 print(f"✅ SUCCESS: All {relationships_created} relationships verified and committed")
             
+            # Update the variable's objectRelationships count
+            session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+            """, {"variable_id": variable_id})
+            
             return {"message": f"Created {relationships_created} object relationships", "created": relationships_created, "verified": final_count}
 
     except Exception as e:
@@ -913,6 +919,12 @@ async def delete_object_relationship(variable_id: str, relationship_data: Object
                     "object_id": object_id
                 })
                 relationships_deleted += 1
+
+            # Update the variable's objectRelationships count
+            session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+            """, {"variable_id": variable_id})
 
             print(f"Successfully deleted {relationships_deleted} object relationships")
             return {"message": f"Deleted {relationships_deleted} object relationships"}

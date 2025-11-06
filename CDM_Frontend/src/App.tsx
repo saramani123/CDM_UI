@@ -939,6 +939,13 @@ function App() {
   };
   const handleMetadataSave = async (updatedData: Record<string, any>) => {
     console.log('handleMetadataSave called with:', updatedData);
+    
+    // If this is a relationship refresh (from VariableObjectRelationshipModal), refresh variables and return
+    if (updatedData._refreshRelationships && activeTab === 'variables') {
+      await fetchVariables();
+      return;
+    }
+    
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
       
@@ -1000,6 +1007,9 @@ function App() {
               return newSet;
             });
           }
+          
+          // Refresh variables list to get updated relationship counts
+          await fetchVariables();
           
           // Return success to indicate the save was successful
           return result;

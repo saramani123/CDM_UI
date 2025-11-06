@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
@@ -204,7 +204,27 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         variableClarifier: ''
       });
     }
-  }, [selectedVariable?.id, driversData]); // Reset when variable changes or drivers data loads
+  }, [selectedVariable?.id]); // Reset when variable changes only - don't reset when drivers data loads
+
+  // Update driver selections separately when drivers data is available
+  React.useEffect(() => {
+    if (selectedVariable?.driver && driversData.sectors.length > 0) {
+      const parsed = parseVariableDriverString(selectedVariable.driver);
+      const expanded: typeof parsed = {
+        sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+          ? ['ALL', ...driversData.sectors] 
+          : parsed.sector,
+        domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+          ? ['ALL', ...driversData.domains] 
+          : parsed.domain,
+        country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+          ? ['ALL', ...driversData.countries] 
+          : parsed.country,
+        variableClarifier: parsed.variableClarifier
+      };
+      setDriverSelections(expanded);
+    }
+  }, [selectedVariable?.driver, driversData.sectors.length, driversData.domains.length, driversData.countries.length]);
 
   // Variable-object relationship modal state
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
@@ -235,12 +255,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }));
   };
 
-  const handleChange = (key: string, value: string | number) => {
+  const handleChange = React.useCallback((key: string, value: string | number) => {
     setFormData(prev => ({
       ...prev,
       [key]: value
     }));
-  };
+  }, []);
 
   const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
     if (field === 'variableClarifier') {
@@ -590,15 +610,29 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               Section
             </label>
             <input
+              key={`section-input-${selectedVariable?.id || 'new'}`}
               type="text"
               value={formData.section}
               onChange={(e) => {
                 e.stopPropagation();
                 handleChange('section', e.target.value);
               }}
-              onKeyDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onFocus={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
               disabled={!isPanelEnabled}
               placeholder="Enter section..."
               className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
@@ -924,9 +958,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         selectedVariable={selectedVariable}
         allObjects={objectsData}
         onSave={async () => {
-          // Refresh variable data if needed
+          // When relationships are saved, we need to refresh the variables list
+          // to get the updated relationship count. The onSave callback will handle this.
+          // We pass a special flag to indicate this is a relationship update
           if (onSave) {
-            await onSave({});
+            await onSave({ _refreshRelationships: true });
           }
           // Refresh objects data to update the variables count
           if (onObjectsRefresh) {

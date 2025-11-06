@@ -415,9 +415,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
         return; // Don't close modal or refresh if save failed
       }
       
-      // Call the callback to refresh main grid data
+      // Call the callback to refresh main grid data (this will refresh variables list)
       if (onSave) {
-        onSave();
+        await onSave();
       }
       
       alert('Relationships updated successfully!');
