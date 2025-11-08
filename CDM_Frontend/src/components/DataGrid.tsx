@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Filter, Edit, Trash2, ArrowUpDown, GripVertical } from 'lucide-react';
+import { Filter, Edit, Trash2, ArrowUpDown, GripVertical, Copy } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
@@ -20,6 +20,7 @@ interface DataGridProps {
   onRowSelect?: (selectedRows: Record<string, any>[]) => void;
   onEdit?: (row: Record<string, any>) => void;
   onDelete?: (row: Record<string, any>) => void;
+  onClone?: (row: Record<string, any>) => void;
   selectedRows?: Record<string, any>[];
   onReorder?: (newData: Record<string, any>[]) => void;
   affectedIds?: Set<string>;
@@ -49,6 +50,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onRowSelect,
   onEdit,
   onDelete,
+  onClone,
   selectedRows = [],
   onReorder,
   affectedIds = new Set(),
@@ -845,14 +847,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   }
                 }}
                 className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer ${
-                  // Priority: Selected current object (intra-table) > Selected > Current object > Affected
-                  isCurrentObject(row) && relationshipData?.[row.id]?.isSelected 
-                    ? 'bg-blue-700 bg-opacity-60 border-blue-400 border-opacity-80 shadow-md' 
-                    : relationshipData?.[row.id]?.isSelected 
-                      ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
-                      : isRowSelected(row) 
+                  // Priority: Cloned (unsaved) > Selected current object (intra-table) > Selected > Current object > Affected
+                  row._isCloned && !row._isSaved
+                    ? 'bg-orange-900 bg-opacity-20 border-orange-500 border-opacity-50' 
+                    : isCurrentObject(row) && relationshipData?.[row.id]?.isSelected 
+                      ? 'bg-blue-700 bg-opacity-60 border-blue-400 border-opacity-80 shadow-md' 
+                      : relationshipData?.[row.id]?.isSelected 
                         ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
-                        : ''
+                        : isRowSelected(row) 
+                          ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
+                          : ''
                 } ${
                   isCurrentObject(row) && !relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
                 } ${
@@ -944,7 +948,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   );
                 })}
                 {showActionsColumn && (
-                  <div className="w-20 flex items-center justify-center gap-1 px-2 py-1.5">
+                  <div className="w-20 flex items-center justify-center gap-2 px-2 py-1.5">
+                    {onClone && (gridType === 'objects' || gridType === 'variables') && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onClone?.(row); }}
+                        className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
+                        title={`Clone this ${gridType === 'objects' ? 'Object' : 'Variable'}`}
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => { e.stopPropagation(); onDelete?.(row); }}
                       className="text-ag-dark-error hover:text-red-400 transition-colors"

@@ -444,9 +444,18 @@ function App() {
         // Always use API data, even if empty
         // Ensure apiVariables is an array before setting
         const variablesArray = Array.isArray(apiVariables) ? apiVariables : (apiVariables ? [apiVariables] : []);
-        console.log('Using API variables data:', variablesArray);
-        console.log('Setting variableData to:', variablesArray);
-        setVariableData(variablesArray);
+        
+        // Filter out any cloned unsaved rows (they shouldn't be in API data, but just in case)
+        const filteredArray = variablesArray.filter((v: any) => !v._isCloned || v._isSaved);
+        
+        // Remove duplicates by ID (in case of any duplicates)
+        const uniqueArray = filteredArray.filter((v: any, index: number, self: any[]) => 
+          index === self.findIndex((t: any) => t.id === v.id)
+        );
+        
+        console.log('Using API variables data:', uniqueArray);
+        console.log('Setting variableData to:', uniqueArray);
+        setVariableData(uniqueArray);
       }
     }
   }, [apiVariables, variablesError, variablesLoading]);
@@ -585,7 +594,20 @@ function App() {
   const handleRowSelect = (rows: Record<string, any>[]) => {
     setSelectedRows(rows as ObjectData[]);
     if (rows.length === 1) {
-      setSelectedRowForMetadata(rows[0] as ObjectData);
+      const selectedRow = rows[0] as ObjectData;
+      // Clear clone flags if this is not actually a clone (doesn't have temporary clone ID)
+      // This prevents the clone panel from showing for saved variables
+      if (selectedRow.id && !selectedRow.id.startsWith('clone-')) {
+        const cleanRow = {
+          ...selectedRow,
+          _isCloned: undefined,
+          _isSaved: undefined,
+          _sourceId: undefined
+        };
+        setSelectedRowForMetadata(cleanRow);
+      } else {
+        setSelectedRowForMetadata(selectedRow);
+      }
     } else {
       setSelectedRowForMetadata(null);
     }
@@ -595,6 +617,19 @@ function App() {
   const handleDelete = async (row: Record<string, any>) => {
     console.log('🔴 handleDelete called with row:', row);
     console.log('🔴 activeTab:', activeTab);
+    
+    // If it's a cloned unsaved row, just remove it from the grid
+    if (row._isCloned && !row._isSaved) {
+      if (activeTab === 'objects') {
+        setData(prev => prev.filter(item => item.id !== row.id));
+      } else if (activeTab === 'variables') {
+        setVariableData(prev => prev.filter(item => item.id !== row.id));
+      }
+      if (selectedRowForMetadata?.id === row.id) {
+        setSelectedRowForMetadata(null);
+      }
+      return;
+    }
     
     if (confirm('Are you sure you want to delete this row?')) {
       try {
@@ -626,6 +661,95 @@ function App() {
           setSelectedRowForMetadata(null);
         }
       }
+    }
+  };
+
+  const handleClone = async (row: Record<string, any>) => {
+    console.log('🧬 handleClone called with row:', row);
+    console.log('🧬 activeTab:', activeTab);
+    
+    try {
+      if (activeTab === 'objects') {
+        // Get full object data including relationships and variants
+        const fullObjectData = await apiService.getObject(row.id);
+        
+        // Create cloned object with all data except name
+        const clonedObject: any = {
+          ...fullObjectData,
+          id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
+          object: '', // Clear object name - user must provide new name
+          _isCloned: true,
+          _isSaved: false,
+          _sourceId: row.id // Keep reference to source for tracking
+        };
+        
+        // Insert cloned row immediately below source row
+        const currentData = [...data];
+        const sourceIndex = currentData.findIndex(item => item.id === row.id);
+        if (sourceIndex !== -1) {
+          currentData.splice(sourceIndex + 1, 0, clonedObject);
+          setData(currentData);
+          
+          // Auto-select the cloned row
+          setSelectedRowForMetadata(clonedObject);
+          setSelectedRows([clonedObject]);
+        }
+      } else if (activeTab === 'variables') {
+        // Get relationships for the variable (backend doesn't have GET /variables/{id})
+        let objectRelationshipsList: any[] = [];
+        try {
+          const relationshipsData = await apiService.getVariableObjectRelationships(row.id) as any;
+          objectRelationshipsList = relationshipsData.relationships || [];
+        } catch (error) {
+          console.error('Failed to fetch variable relationships:', error);
+          // Continue without relationships - user can add them later
+        }
+        
+        // Create cloned variable with all data except name
+        // Use row data directly since backend doesn't have GET /variables/{id}
+        const clonedVariable: any = {
+          ...row,
+          id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
+          variable: '', // Clear variable name - user must provide new name
+          name: '', // Also clear name field if it exists
+          objectRelationshipsList: objectRelationshipsList, // Include relationships
+          _isCloned: true,
+          _isSaved: false,
+          _sourceId: row.id // Keep reference to source for tracking
+        };
+        
+        console.log('🧬 Created cloned variable:', {
+          id: clonedVariable.id,
+          variable: clonedVariable.variable,
+          part: clonedVariable.part,
+          group: clonedVariable.group,
+          _isCloned: clonedVariable._isCloned
+        });
+        
+        // Insert cloned row immediately below source row
+        const currentData = [...variableData];
+        const sourceIndex = currentData.findIndex(item => item.id === row.id);
+        console.log('🧬 Cloning variable - sourceIndex:', sourceIndex, 'currentData length:', currentData.length);
+        if (sourceIndex !== -1) {
+          currentData.splice(sourceIndex + 1, 0, clonedVariable);
+          console.log('🧬 Inserted cloned variable at index:', sourceIndex + 1, 'new length:', currentData.length);
+          console.log('🧬 Cloned variable:', clonedVariable);
+          setVariableData(currentData);
+          
+          // Auto-select the cloned row
+          setSelectedRowForMetadata(clonedVariable);
+          setSelectedRows([clonedVariable]);
+        } else {
+          console.error('🧬 Source variable not found in variableData, cannot insert clone');
+          // Fallback: just add to the end
+          setVariableData(prev => [...prev, clonedVariable]);
+          setSelectedRowForMetadata(clonedVariable);
+          setSelectedRows([clonedVariable]);
+        }
+      }
+    } catch (error) {
+      console.error('🧬 Failed to clone:', error);
+      alert('Failed to clone. Please try again.');
     }
   };
 
@@ -946,8 +1070,266 @@ function App() {
       return;
     }
     
+    // If this is a relationship update for a cloned variable (not saving yet), just update local state
+    if (updatedData._isRelationshipUpdate && activeTab === 'variables' && selectedRowForMetadata?._isCloned && !selectedRowForMetadata?._isSaved) {
+      setVariableData(prev => prev.map(item => 
+        item.id === selectedRowForMetadata.id 
+          ? { ...item, objectRelationshipsList: updatedData.objectRelationshipsList }
+          : item
+      ));
+      setSelectedRowForMetadata(prev => prev ? { ...prev, objectRelationshipsList: updatedData.objectRelationshipsList } : null);
+      return;
+    }
+    
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
+      
+      // Handle cloned rows - need to create new instead of update
+      if (selectedRowForMetadata._isCloned && !selectedRowForMetadata._isSaved) {
+        if (activeTab === 'objects') {
+          // Validate that object name is provided
+          if (!updatedData.object || !updatedData.object.trim()) {
+            alert('Please define a new Object name to save this clone.');
+            throw new Error('Object name is required');
+          }
+          
+          try {
+            // Convert the UI format to API format
+            const driverParts = updatedData.driver.split(', ').map(part => part.trim());
+            const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
+            const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
+            const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
+            const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
+            
+            // Use relationships and variants from updatedData (which includes user edits from metadata panel)
+            // If not provided, fall back to cloned data
+            const relationshipsToUse = updatedData.relationshipsList || selectedRowForMetadata.relationshipsList || [];
+            const variantsToUse = updatedData.variantsList || selectedRowForMetadata.variantsList || [];
+            
+            // Process relationships - update intra-table relationships to point to new cloned object
+            const processedRelationships = relationshipsToUse.map((rel: any) => {
+              // Check if this is an intra-table relationship (points to the original object)
+              const isIntraTable = rel.toBeing === selectedRowForMetadata.being &&
+                                   rel.toAvatar === selectedRowForMetadata.avatar &&
+                                   rel.toObject === selectedRowForMetadata.object;
+              
+              if (isIntraTable) {
+                // Update to point to the new cloned object
+                return {
+                  ...rel,
+                  toBeing: updatedData.being,
+                  toAvatar: updatedData.avatar,
+                  toObject: updatedData.object
+                };
+              }
+              // For inter-table relationships, keep as-is
+              return rel;
+            });
+            
+            // Process variants - convert to array of names if needed
+            const processedVariants = variantsToUse.map((v: any) => typeof v === 'string' ? v : (v.name || v));
+            
+            const apiObjectData: any = {
+              sector: sector,
+              domain: domain,
+              country: country,
+              objectClarifier: objectClarifier,
+              being: updatedData.being,
+              avatar: updatedData.avatar,
+              object: updatedData.object,
+              status: updatedData.status || 'Active',
+              // Include processed relationships (with intra-table relationships updated)
+              relationships: processedRelationships,
+              variants: processedVariants
+            };
+            
+            // Include identifier data if present
+            if (selectedRowForMetadata.identifier) {
+              apiObjectData.identifier = selectedRowForMetadata.identifier;
+            }
+            
+            // Create new object via API (this will clone relationships and variants)
+            const createdObject = await createObject(apiObjectData);
+            
+            // Refresh objects to get updated data
+            await fetchObjects();
+            
+            // Get the fresh object data from the API (without clone flags)
+            const freshObjectData = await apiService.getObject(createdObject.id);
+            
+            // Update local state - remove the cloned row (it will be replaced by the fresh data from fetchObjects)
+            // The fresh data is already in the data array from fetchObjects, so we just need to update the selection
+            setData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
+            
+            // Update selected row with fresh data (remove clone flags)
+            setSelectedRowForMetadata(freshObjectData);
+            setSelectedRows([freshObjectData]);
+          } catch (error: any) {
+            console.error('Error saving cloned object:', error);
+            const errorMessage = error?.message || 'Failed to save clone. Please try again.';
+            if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
+              alert(`Duplicate detected: ${errorMessage}`);
+            } else {
+              alert(errorMessage);
+            }
+            throw error;
+          }
+          return;
+        } else if (activeTab === 'variables') {
+          // Validate that variable name is provided
+          if (!updatedData.variable || !updatedData.variable.trim()) {
+            alert('Please define a new Variable name to save this clone.');
+            throw new Error('Variable name is required');
+          }
+          
+          try {
+            console.log('🧬 Creating cloned variable with data:', {
+              driver: updatedData.driver,
+              part: updatedData.part,
+              group: updatedData.group,
+              section: updatedData.section,
+              variable: updatedData.variable
+            });
+            
+            // Create new variable via API
+            // Use formData values if available, otherwise fall back to selectedRowForMetadata
+            const variableToCreate = {
+              driver: updatedData.driver || selectedRowForMetadata.driver || 'ALL, ALL, ALL, None',
+              part: updatedData.part || selectedRowForMetadata.part || '',
+              group: updatedData.group || selectedRowForMetadata.group || '',
+              section: updatedData.section || selectedRowForMetadata.section || '',
+              variable: updatedData.variable || selectedRowForMetadata.variable || '',
+              formatI: updatedData.formatI || selectedRowForMetadata.formatI || '',
+              formatII: updatedData.formatII || selectedRowForMetadata.formatII || '',
+              gType: updatedData.gType || selectedRowForMetadata.gType || '',
+              validation: updatedData.validation || selectedRowForMetadata.validation || '',
+              default: updatedData.default || selectedRowForMetadata.default || '',
+              graph: updatedData.graph || selectedRowForMetadata.graph || 'Y',
+              status: updatedData.status || selectedRowForMetadata.status || 'Active'
+            };
+            
+            console.log('🧬 Variable data to create:', variableToCreate);
+            
+            const createdVariable = await createVariable(variableToCreate);
+            
+            console.log('🧬 Variable created successfully:', createdVariable);
+            
+            // Use relationships from updatedData (which includes user edits from metadata panel)
+            // If not provided, fall back to cloned data
+            const relationshipsToUse = updatedData.objectRelationshipsList || selectedRowForMetadata.objectRelationshipsList || [];
+            
+            console.log('🧬 Cloning relationships:', relationshipsToUse.length);
+            
+            // Clone object relationships if any
+            if (relationshipsToUse.length > 0) {
+              for (const relationship of relationshipsToUse) {
+                try {
+                  await createObjectRelationship(createdVariable.id, {
+                    toBeing: relationship.toBeing,
+                    toAvatar: relationship.toAvatar,
+                    toObject: relationship.toObject
+                  });
+                  console.log('🧬 Relationship created:', relationship);
+                } catch (relError) {
+                  console.error('🧬 Failed to create relationship:', relError);
+                  // Continue with other relationships even if one fails
+                }
+              }
+            }
+            
+            // Remove the cloned row from local state BEFORE refreshing (to prevent duplicates)
+            setVariableData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
+            
+            console.log('🧬 Refreshing variables...');
+            // Refresh variables to get updated data (this will include the newly created variable)
+            await fetchVariables();
+            
+            // Wait for variablesLoading to complete
+            let loadingAttempts = 0;
+            while (variablesLoading && loadingAttempts < 50) { // 5 seconds max wait
+              await new Promise(resolve => setTimeout(resolve, 100));
+              loadingAttempts++;
+            }
+            
+            // Now find the variable in apiVariables (which should be updated)
+            let freshVariableData = null;
+            let attempts = 0;
+            const maxAttempts = 20; // 2 seconds total (20 * 100ms)
+            
+            while (!freshVariableData && attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
+              // Check apiVariables first (from hook, updated immediately after fetchVariables)
+              if (apiVariables && Array.isArray(apiVariables)) {
+                freshVariableData = apiVariables.find((v: any) => v.id === createdVariable.id);
+                if (freshVariableData) {
+                  console.log('🧬 Found in apiVariables:', freshVariableData);
+                  break;
+                }
+              }
+              
+              attempts++;
+            }
+            
+            // If still not found, wait a bit more for useEffect to sync to variableData
+            if (!freshVariableData) {
+              await new Promise(resolve => setTimeout(resolve, 300));
+              // Check variableData one more time
+              const currentData = variableData;
+              freshVariableData = currentData.find((v: any) => v.id === createdVariable.id);
+              if (freshVariableData) {
+                console.log('🧬 Found in variableData after sync:', freshVariableData);
+              }
+            }
+            
+            if (freshVariableData) {
+              console.log('🧬 Found fresh variable data:', freshVariableData);
+              // Explicitly remove clone flags to ensure clean state
+              const cleanVariableData = {
+                ...freshVariableData,
+                _isCloned: undefined,
+                _isSaved: undefined,
+                _sourceId: undefined
+              };
+              // Update selected row with fresh data (remove clone flags)
+              setSelectedRowForMetadata(cleanVariableData);
+              setSelectedRows([cleanVariableData]);
+            } else {
+              console.warn('🧬 Could not find fresh variable data after refresh, using created variable:', createdVariable);
+              // Fallback: use the created variable data directly and add it to the grid
+              // This ensures the variable appears even if the refresh didn't work
+              const fallbackVariable = {
+                ...createdVariable,
+                objectRelationships: 0,
+                objectRelationshipsList: relationshipsToUse,
+                _isCloned: undefined,
+                _isSaved: undefined,
+                _sourceId: undefined
+              };
+              setVariableData(prev => {
+                // Check if it's already there to avoid duplicates
+                const exists = prev.find(v => v.id === createdVariable.id);
+                if (!exists) {
+                  return [...prev, fallbackVariable];
+                }
+                return prev;
+              });
+              setSelectedRowForMetadata(fallbackVariable);
+              setSelectedRows([fallbackVariable]);
+            }
+          } catch (error: any) {
+            console.error('🧬 Error saving cloned variable:', error);
+            const errorMessage = error?.message || 'Failed to save clone. Please try again.';
+            if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
+              alert(`Duplicate detected: ${errorMessage}`);
+            } else {
+              alert(`Failed to save clone: ${errorMessage}`);
+            }
+            throw error;
+          }
+          return;
+        }
+      }
       
       if (activeTab === 'variables') {
         // Handle variables update via API
@@ -1749,6 +2131,7 @@ function App() {
               data={activeTab === 'lists' ? listData : activeTab === 'variables' ? filteredVariableData : filteredData}
               onRowSelect={handleRowSelect}
               onDelete={handleDelete}
+              onClone={handleClone}
               selectionMode={activeTab === 'objects' || activeTab === 'variables' ? 'row' : 'checkbox'}
               selectedRows={selectedRows}
               onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
@@ -1996,6 +2379,17 @@ function App() {
         onSave={() => {
           setInitialRelationships([]); // Clear after saving
           fetchObjects();
+        }}
+        onRelationshipsChange={(relationships) => {
+          // For cloned unsaved objects, update the relationshipsList in local state
+          if (selectedRowForMetadata?._isCloned && !selectedRowForMetadata?._isSaved) {
+            setData(prev => prev.map(item => 
+              item.id === selectedRowForMetadata.id 
+                ? { ...item, relationshipsList: relationships }
+                : item
+            ));
+            setSelectedRowForMetadata(prev => prev ? { ...prev, relationshipsList: relationships } : null);
+          }
         }}
         initialRelationships={initialRelationships}
       />

@@ -102,6 +102,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       const isTemporaryObject = sourceObjects.length === 1 && 
         (sourceObjects[0].id === 'temp-new-object' || sourceObjects[0].id.startsWith('temp-'));
       
+      // Check if this is a cloned unsaved object - use relationships from cloned data
+      const isClonedObject = sourceObjects.length === 1 && 
+        sourceObjects[0]._isCloned && 
+        !sourceObjects[0]._isSaved;
+      
       // Initialize relationship data for all objects
       const initialData: Record<string, RelationshipData> = {};
       
@@ -113,13 +118,24 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         // In single mode, load existing relationships for the selected object
         let existingRels: any[] = [];
         if (!isBulkMode && sourceObjects.length === 1 && !isTemporaryObject) {
-          const existingRelationships = await apiService.getObjectRelationships(sourceObjects[0].id) as any;
-          const relationshipsList = existingRelationships.relationshipsList || [];
-          existingRels = relationshipsList.filter((rel: any) => 
-            rel.toBeing === obj.being && 
-            rel.toAvatar === obj.avatar && 
-            rel.toObject === obj.object
-          );
+          if (isClonedObject) {
+            // For cloned objects, use relationships from the cloned data
+            const clonedRelationships = sourceObjects[0].relationshipsList || [];
+            existingRels = clonedRelationships.filter((rel: any) => 
+              rel.toBeing === obj.being && 
+              rel.toAvatar === obj.avatar && 
+              rel.toObject === obj.object
+            );
+          } else {
+            // For saved objects, load from API
+            const existingRelationships = await apiService.getObjectRelationships(sourceObjects[0].id) as any;
+            const relationshipsList = existingRelationships.relationshipsList || [];
+            existingRels = relationshipsList.filter((rel: any) => 
+              rel.toBeing === obj.being && 
+              rel.toAvatar === obj.avatar && 
+              rel.toObject === obj.object
+            );
+          }
         }
 
         if (existingRels.length > 0) {
@@ -322,8 +338,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     const isTemporaryObject = sourceObjects.length === 1 && 
       (sourceObjects[0].id === 'temp-new-object' || sourceObjects[0].id.startsWith('temp-'));
     
-    // If temporary object, store relationships locally instead of saving to API
-    if (isTemporaryObject && onRelationshipsChange) {
+    // Check if this is a cloned unsaved object - need to store relationships locally
+    const isClonedObject = sourceObjects.length === 1 && 
+      sourceObjects[0]._isCloned && 
+      !sourceObjects[0]._isSaved;
+    
+    // If temporary or cloned object, store relationships locally instead of saving to API
+    if ((isTemporaryObject || isClonedObject) && onRelationshipsChange) {
       const relationshipsToStore: any[] = [];
       
       // Process each object's relationship data

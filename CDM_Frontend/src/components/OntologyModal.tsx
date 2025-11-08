@@ -1011,10 +1011,10 @@ RETURN o, r, v`;
                 {isVariableMode 
                   ? (isBulk 
                       ? `Variables: ${(variableIds?.length || variableNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
-                      : `Variable: ${variableName || variableId || 'Unknown'} | Instance: ${envInfo.instanceName}`)
+                      : `Variable: ${variableName || 'Unknown'} | Instance: ${envInfo.instanceName}`)
                   : (isBulk 
                       ? `Objects: ${(objectIds?.length || objectNames?.length || 0)} selected | Instance: ${envInfo.instanceName}`
-                      : `Object: ${objectName || objectId || 'Unknown'} | Instance: ${envInfo.instanceName}`)
+                      : `Object: ${objectName || 'Unknown'} | Instance: ${envInfo.instanceName}`)
                 }
               </p>
             </div>

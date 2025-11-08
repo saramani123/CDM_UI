@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network } from 'lucide-react';
+import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
@@ -502,6 +502,22 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         />
+        {/* Alert for cloned rows */}
+        {selectedVariable?._isCloned && !selectedVariable?._isSaved && (
+          <div className="mt-2 p-3 bg-orange-900 bg-opacity-20 border border-orange-500 border-opacity-50 rounded text-sm">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-orange-400 font-medium mb-1">
+                  Please define a new Variable name to save this clone.
+                </div>
+                <div className="text-orange-300 text-xs">
+                  Each Variable must have a unique combination of Sector, Domain, Country, and other identifying attributes. Please edit the name or adjust another field to make it distinct.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Drivers Section */}
@@ -937,9 +953,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         <div className="mt-8 pt-6 border-t border-ag-dark-border">
           <button
             onClick={handleSave}
-            disabled={!isPanelEnabled}
+            disabled={!isPanelEnabled || (selectedVariable?._isCloned && !selectedVariable?._isSaved && !formData.variable?.trim())}
             className={`w-full bg-ag-dark-accent text-white py-2 px-4 rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center justify-center gap-2 ${
-              !isPanelEnabled ? 'opacity-50 cursor-not-allowed bg-ag-dark-text-secondary hover:bg-ag-dark-text-secondary' : ''
+              !isPanelEnabled || (selectedVariable?._isCloned && !selectedVariable?._isSaved && !formData.variable?.trim()) ? 'opacity-50 cursor-not-allowed bg-ag-dark-text-secondary hover:bg-ag-dark-text-secondary' : ''
             }`}
           >
             <Save className="w-4 h-4" />
@@ -969,6 +985,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             await onObjectsRefresh();
           }
         }}
+        onRelationshipsChange={(relationships) => {
+          // For cloned unsaved variables, update the objectRelationshipsList in local state
+          // Pass through onSave so App.tsx can update the cloned variable's state
+          if (selectedVariable?._isCloned && !selectedVariable?._isSaved && onSave) {
+            onSave({ objectRelationshipsList: relationships, _isRelationshipUpdate: true });
+          }
+        }}
         initialCsvData={pendingCsvData}
       />
 
@@ -993,8 +1016,17 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}
           onClose={closeOntologyModal}
-          variableId={selectedVariable?.id || undefined}
-          variableName={selectedVariable?.variable || undefined}
+          variableId={
+            // For cloned unsaved variables, don't use the temporary ID - it won't exist in Neo4j
+            // Only use variableId if it's a real saved variable (not a clone ID)
+            (selectedVariable?.id?.startsWith('clone-') || (selectedVariable?._isCloned && !selectedVariable?._isSaved))
+              ? undefined
+              : (selectedVariable?.id && !selectedVariable?.id.startsWith('clone-')) ? selectedVariable.id : undefined
+          }
+          variableName={
+            // Always pass variable name for display in header (even if we use variableId for query)
+            selectedVariable?.variable || undefined
+          }
           sectionName={
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, Info } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
@@ -206,6 +206,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     if (selectedObject?.id) {
       console.log('MetadataPanel: Loading relationships for object:', selectedObject.object, 'id:', selectedObject.id);
       
+      // If this is a cloned unsaved object, use the relationships from the cloned data
+      if (selectedObject._isCloned && !selectedObject._isSaved) {
+        console.log('MetadataPanel: Using relationships from cloned object data:', selectedObject.relationshipsList);
+        setRelationships(selectedObject.relationshipsList || []);
+        return;
+      }
+      
       const loadRelationships = async () => {
         try {
           const relationshipData = await apiService.getObjectRelationships(selectedObject.id);
@@ -223,12 +230,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     } else {
       setRelationships([]);
     }
-  }, [selectedObject?.id]);
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.relationshipsList]);
 
   // Load variants when selectedObject changes
   React.useEffect(() => {
     if (selectedObject?.id) {
       console.log('MetadataPanel: Loading variants for object:', selectedObject.object, 'id:', selectedObject.id);
+      
+      // If this is a cloned unsaved object, use the variants from the cloned data
+      if (selectedObject._isCloned && !selectedObject._isSaved) {
+        console.log('MetadataPanel: Using variants from cloned object data:', selectedObject.variantsList);
+        const variantsTextContent = (selectedObject.variantsList || []).map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+        setVariantsText(variantsTextContent);
+        return;
+      }
       
       const loadVariants = async () => {
         try {
@@ -249,11 +264,59 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     } else {
       setVariantsText('');
     }
-  }, [selectedObject?.id]);
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.variantsList]);
 
   // Load identifier relationships when selectedObject changes
   React.useEffect(() => {
     if (selectedObject?.id) {
+      // If this is a cloned unsaved object, use the identifier data from the cloned object
+      if (selectedObject._isCloned && !selectedObject._isSaved && selectedObject.identifier) {
+        console.log('MetadataPanel: Using identifier data from cloned object:', selectedObject.identifier);
+        try {
+          const identifierData = selectedObject.identifier;
+          
+          // Load unique IDs (previously discrete IDs)
+          const discreteIds = identifierData?.discreteIds || [];
+          const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
+            id: `unique-${index + 1}`,
+            variableId: di.variableId || ''
+          }));
+          if (uniqueIdEntriesList.length === 0) {
+            setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+          } else {
+            setUniqueIdEntries(uniqueIdEntriesList);
+          }
+          
+          // Load composite IDs
+          const compositeIds = identifierData?.compositeIds || {};
+          const newCompositeKeys = compositeKeys.map(key => {
+            const compositeIdData = compositeIds[key.id];
+            if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
+              const variableIds = compositeIdData.map((ci: any) => ci.variableId).filter(Boolean);
+              return {
+                id: key.id,
+                part: compositeIdData[0].part || '',
+                group: compositeIdData[0].group || '',
+                variables: variableIds
+              };
+            }
+            return { id: key.id, part: '', group: '', variables: [] };
+          });
+          setCompositeKeys(newCompositeKeys);
+        } catch (error) {
+          console.error('MetadataPanel: failed to load identifiers from cloned data:', error);
+          setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+          setCompositeKeys([
+            { id: '1', part: '', group: '', variables: [] },
+            { id: '2', part: '', group: '', variables: [] },
+            { id: '3', part: '', group: '', variables: [] },
+            { id: '4', part: '', group: '', variables: [] },
+            { id: '5', part: '', group: '', variables: [] }
+          ]);
+        }
+        return;
+      }
+      
       const loadIdentifiers = async () => {
         try {
           const objectData = await apiService.getObject(selectedObject.id);
@@ -317,7 +380,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         { id: '5', part: '', group: '', variables: [] }
       ]);
     }
-  }, [selectedObject?.id, selectedObject]);
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.identifier]);
 
   // Get distinct values from data
   const getDistinctBeings = () => {
@@ -993,6 +1056,22 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         />
+        {/* Alert for cloned rows */}
+        {selectedObject?._isCloned && !selectedObject?._isSaved && (
+          <div className="mt-2 p-3 bg-orange-900 bg-opacity-20 border border-orange-500 border-opacity-50 rounded text-sm">
+            <div className="flex items-start gap-2">
+              <Info className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <div className="text-orange-400 font-medium mb-1">
+                  Please define a new Object name to save this clone.
+                </div>
+                <div className="text-orange-300 text-xs">
+                  Each Object must have a unique combination of Sector, Domain, Country, and other identifying attributes. Please edit the name or adjust another field to make it distinct.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Drivers Section */}
@@ -1567,9 +1646,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         <div className="mt-6 pt-4 border-t border-ag-dark-border">
           <button
             onClick={handleSave}
-            disabled={!isPanelEnabled}
+            disabled={!isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved && !formData.object?.trim())}
             className={`w-full bg-ag-dark-accent text-white py-2 px-4 rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center justify-center gap-2 ${
-              !isPanelEnabled ? 'opacity-50 cursor-not-allowed bg-ag-dark-text-secondary hover:bg-ag-dark-text-secondary' : ''
+              !isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved && !formData.object?.trim()) ? 'opacity-50 cursor-not-allowed bg-ag-dark-text-secondary hover:bg-ag-dark-text-secondary' : ''
             }`}
           >
             <Save className="w-4 h-4" />
@@ -1600,8 +1679,18 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}
           onClose={closeOntologyModal}
-          objectId={selectedObject?.id || undefined}
-          objectName={selectedObject?.object || undefined}
+          objectId={
+            // For cloned unsaved objects, don't use the temporary ID - it won't exist in Neo4j
+            // Only use objectId if it's a real saved object (not a clone ID)
+            // Also ensure we don't use clone- prefixed IDs even if _isCloned flag is missing
+            (selectedObject?.id?.startsWith('clone-') || (selectedObject?._isCloned && !selectedObject?._isSaved))
+              ? undefined
+              : (selectedObject?.id && !selectedObject?.id.startsWith('clone-')) ? selectedObject.id : undefined
+          }
+          objectName={
+            // Always pass object name for display in header (even if we use objectId for query)
+            selectedObject?.object || undefined
+          }
           sectionName={
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :

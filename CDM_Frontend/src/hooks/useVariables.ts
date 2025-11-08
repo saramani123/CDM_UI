@@ -43,7 +43,8 @@ export const useVariables = () => {
   const createVariable = async (variableData: Omit<VariableData, 'id' | 'objectRelationships' | 'objectRelationshipsList'>) => {
     try {
       const newVariable = await apiService.createVariable(variableData) as VariableData;
-      setVariables(prev => [...prev, newVariable]);
+      // Don't add to state immediately - let fetchVariables() handle it to avoid duplicates
+      // The caller should call fetchVariables() after creating to get fresh data
       return newVariable;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create variable');

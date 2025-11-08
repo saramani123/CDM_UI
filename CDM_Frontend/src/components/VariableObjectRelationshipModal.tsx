@@ -14,6 +14,7 @@ interface VariableObjectRelationshipModalProps {
   selectedVariables?: any[]; // For bulk mode (multiple variables)
   allObjects: ObjectData[];
   onSave?: () => void; // Callback to refresh main data
+  onRelationshipsChange?: (relationships: any[]) => void; // Callback to store relationships for temporary/cloned variables
   initialCsvData?: any[] | null; // CSV data to process when modal opens
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
 }
@@ -31,6 +32,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   selectedVariables = [],
   allObjects,
   onSave,
+  onRelationshipsChange,
   initialCsvData,
   isBulkMode = false
 }) => {
@@ -102,10 +104,21 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       // For single mode, load existing relationships
       let allExistingRelationships: any[] = [];
       
+      // Check if this is a cloned unsaved variable - use relationships from cloned data
+      const isClonedVariable = sourceVariables.length === 1 && 
+        sourceVariables[0]._isCloned && 
+        !sourceVariables[0]._isSaved;
+      
       if (!isBulkMode && sourceVariables.length === 1) {
-        // Single mode: load existing relationships for the selected variable
-        const existingRelationships = await apiService.getVariableObjectRelationships(sourceVariables[0].id) as any;
-        allExistingRelationships = existingRelationships.relationships || [];
+        if (isClonedVariable) {
+          // For cloned variables, use relationships from the cloned data
+          const clonedRelationships = sourceVariables[0].objectRelationshipsList || [];
+          allExistingRelationships = clonedRelationships;
+        } else {
+          // For saved variables, load from API
+          const existingRelationships = await apiService.getVariableObjectRelationships(sourceVariables[0].id) as any;
+          allExistingRelationships = existingRelationships.relationships || [];
+        }
       } else if (isBulkMode) {
         // Bulk mode: load existing relationships for all source variables to show what's already selected
         // This helps prevent duplicates
@@ -317,6 +330,39 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
 
   const handleSave = async () => {
     if (sourceVariables.length === 0) return;
+
+    // Check if this is a cloned unsaved variable - need to store relationships locally
+    const isClonedVariable = sourceVariables.length === 1 && 
+      sourceVariables[0]._isCloned && 
+      !sourceVariables[0]._isSaved;
+    
+    // If cloned variable, store relationships locally instead of saving to API
+    if (isClonedVariable && onRelationshipsChange) {
+      const relationshipsToStore: any[] = [];
+      
+      // Process each object's relationship data
+      for (const [objectId, objData] of Object.entries(selectedObjects)) {
+        const targetObject = allObjects.find(obj => obj.id === objectId);
+        if (!targetObject) continue;
+
+        if (objData.isSelected) {
+          // Create relationship entry
+          relationshipsToStore.push({
+            id: Date.now().toString() + Math.random(),
+            toBeing: targetObject.being || 'ALL',
+            toAvatar: targetObject.avatar || 'ALL',
+            toObject: targetObject.object || 'ALL',
+            relationshipType: objData.isAllSelected ? 'HAS_VARIABLE' : 'HAS_SPECIFIC_VARIABLE'
+          });
+        }
+      }
+      
+      // Store relationships via callback
+      onRelationshipsChange(relationshipsToStore);
+      alert('Relationships configured successfully! They will be created when you save the variable.');
+      onClose();
+      return;
+    }
 
     setSaving(true);
     try {
