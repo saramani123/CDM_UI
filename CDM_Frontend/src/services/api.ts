@@ -158,6 +158,70 @@ export const getBulkVariableOntologyView = async (
   return response.json();
 };
 
+// List ontology view function
+export const getListOntologyView = async (
+  listId: string | null,
+  listName: string | null,
+  view: 'drivers' | 'ontology' | 'metadata'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build query params - prefer list_id if available, otherwise fall back to list_name
+  const params = new URLSearchParams();
+  if (listId) {
+    params.append('list_id', listId);
+  } else if (listName) {
+    params.append('list_name', listName);
+  } else {
+    throw new Error('Either listId or listName must be provided');
+  }
+  params.append('view', view);
+
+  const response = await fetch(`${API_BASE_URL}/ontology/view/list?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to get list ontology view');
+  }
+
+  return await response.json();
+};
+
+// Bulk list ontology view function
+export const getBulkListOntologyView = async (
+  listIds: string[] | null,
+  listNames: string[] | null,
+  viewType: 'drivers' | 'ontology' | 'metadata'
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+  // Build request body - prefer list_ids if available, otherwise fall back to list_names
+  const body: any = { view: viewType };
+  if (listIds && listIds.length > 0) {
+    body.list_ids = listIds;
+  } else if (listNames && listNames.length > 0) {
+    body.list_names = listNames;
+  } else {
+    throw new Error('Either listIds or listNames must be provided');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/ontology/view/list/bulk`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body)
+  });
+  
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `Failed to fetch bulk list ontology view: ${response.statusText}` }));
+    throw new Error(error.detail || `Failed to fetch bulk list ontology view: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
 export interface ApiResponse<T> {
   data?: T;
   error?: string;

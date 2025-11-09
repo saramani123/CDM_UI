@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List } from 'lucide-react';
+import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
@@ -8,6 +8,7 @@ import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { listFieldOptions } from '../data/listsData';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { ListsOntologyModal } from './ListsOntologyModal';
 
 interface CompositeKey {
   id: string;
@@ -140,6 +141,20 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+  
+  // Lists ontology modal state
+  const [listsOntologyModalOpen, setListsOntologyModalOpen] = useState<{
+    isOpen: boolean;
+    viewType: 'drivers' | 'ontology' | 'metadata' | null;
+  }>({ isOpen: false, viewType: null });
+
+  const openListsOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata') => {
+    setListsOntologyModalOpen({ isOpen: true, viewType });
+  };
+
+  const closeListsOntologyModal = () => {
+    setListsOntologyModalOpen({ isOpen: false, viewType: null });
+  };
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -736,10 +751,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     icon?: React.ReactNode;
     actions?: React.ReactNode;
     children: React.ReactNode;
-    ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants';
-  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType }) => {
+    ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata';
+    listsOntologyViewType?: 'drivers' | 'ontology' | 'metadata';
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, listsOntologyViewType }) => {
     const isExpanded = expandedSections[sectionKey];
     const hasSelectedObjects = selectedObjects && selectedObjects.length > 0;
+    const isListsMode = activeTab === 'lists';
     
     return (
       <div className="border-t border-ag-dark-border pt-8">
@@ -758,12 +775,31 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {isExpanded && actions && <>{actions}</>}
-            {ontologyViewType && (
+            {isListsMode && listsOntologyViewType && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   if (hasSelectedObjects) {
-                    openBulkOntologyModal(ontologyViewType);
+                    openListsOntologyModal(listsOntologyViewType);
+                  }
+                }}
+                disabled={!hasSelectedObjects}
+                className={`p-1 transition-colors ${
+                  hasSelectedObjects 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={hasSelectedObjects ? "View Neo4j Ontology" : "Select lists to view ontology"}
+              >
+                {listsOntologyViewType === 'metadata' ? <Eye className="w-4 h-4" /> : <Network className="w-4 h-4" />}
+              </button>
+            )}
+            {!isListsMode && ontologyViewType && ontologyViewType !== 'metadata' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasSelectedObjects) {
+                    openBulkOntologyModal(ontologyViewType as 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants');
                   }
                 }}
                 disabled={!hasSelectedObjects}
@@ -826,7 +862,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </div>
 
           {/* Drivers Section - Lists */}
-          <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+          <CollapsibleSection 
+            title="Drivers" 
+            sectionKey="drivers" 
+            icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}
+            listsOntologyViewType="drivers"
+          >
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -867,7 +908,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </CollapsibleSection>
 
           {/* Ontology Section - Lists */}
-          <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+          <CollapsibleSection 
+            title="Ontology" 
+            sectionKey="ontology" 
+            icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}
+            listsOntologyViewType="ontology"
+          >
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -920,7 +966,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </CollapsibleSection>
 
           {/* Metadata Section - Lists */}
-          <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
+          <CollapsibleSection 
+            title="Metadata" 
+            sectionKey="metadata" 
+            icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}
+            listsOntologyViewType="metadata"
+          >
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1554,8 +1605,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         />
       )}
 
-      {/* Ontology Modal */}
-      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedObjects.length > 0 && (
+      {/* Ontology Modal - Objects */}
+      {activeTab === 'objects' && ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedObjects.length > 0 && (
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}
           onClose={closeBulkOntologyModal}
@@ -1569,6 +1620,23 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             'Variants'
           }
           viewType={ontologyModalOpen.viewType}
+          isBulkMode={true}
+        />
+      )}
+
+      {/* Lists Ontology Modal */}
+      {activeTab === 'lists' && listsOntologyModalOpen.isOpen && listsOntologyModalOpen.viewType && selectedObjects.length > 0 && (
+        <ListsOntologyModal
+          isOpen={listsOntologyModalOpen.isOpen}
+          onClose={closeListsOntologyModal}
+          listIds={selectedObjects.map(list => list.id).filter(Boolean)}
+          listNames={selectedObjects.map(list => list.list || list.name).filter(Boolean)}
+          sectionName={
+            listsOntologyModalOpen.viewType === 'drivers' ? 'Drivers' :
+            listsOntologyModalOpen.viewType === 'ontology' ? 'Ontology' :
+            'Metadata'
+          }
+          viewType={listsOntologyModalOpen.viewType}
           isBulkMode={true}
         />
       )}

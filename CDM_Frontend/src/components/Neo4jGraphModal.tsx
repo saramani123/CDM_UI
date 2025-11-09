@@ -9,7 +9,7 @@ import { executeGraphQuery } from '../services/api';
 interface Neo4jGraphModalProps {
   isOpen: boolean;
   onClose: () => void;
-  graphType?: 'objects' | 'variables'; // Default to 'objects' for backward compatibility
+  graphType?: 'objects' | 'variables' | 'lists'; // Default to 'objects' for backward compatibility
 }
 
 type GraphView = 'taxonomy' | 'model';
@@ -19,7 +19,8 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   onClose,
   graphType = 'objects'
 }) => {
-  const [activeView, setActiveView] = useState<GraphView>('taxonomy');
+  // For lists, only show taxonomy view
+  const [activeView, setActiveView] = useState<GraphView>(graphType === 'lists' ? 'taxonomy' : 'taxonomy');
   const [isLoading, setIsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,8 +53,11 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
 
   const envInfo = getEnvironmentInfo();
 
-  // Cypher queries for each view - different for objects vs variables
-  const cypherQueries = graphType === 'variables' ? {
+  // Cypher queries for each view - different for objects vs variables vs lists
+  const cypherQueries = graphType === 'lists' ? {
+    taxonomy: `MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List)
+RETURN s, r1, g, r2, l`
+  } : graphType === 'variables' ? {
     taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
 RETURN p, r1, g, r2, v`,
     model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
@@ -112,8 +116,12 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         return;
       }
 
-      // Map nodes with colors based on labels - different colors for objects vs variables
-      const labelColors: Record<string, { background: string; border: string; highlight: { background: string; border: string } }> = graphType === 'variables' ? {
+      // Map nodes with colors based on labels - different colors for objects vs variables vs lists
+      const labelColors: Record<string, { background: string; border: string; highlight: { background: string; border: string } }> = graphType === 'lists' ? {
+        Set: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+        Grouping: { background: '#F59E0B', border: '#D97706', highlight: { background: '#FBBF24', border: '#F59E0B' } },
+        List: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } }
+      } : graphType === 'variables' ? {
         Part: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
         Group: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
         Variable: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
@@ -381,7 +389,10 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         networkRef.current = null;
       }
 
-      const query = activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model;
+      // For lists, only use taxonomy query
+      const query = graphType === 'lists' 
+        ? cypherQueries.taxonomy 
+        : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
       // Small delay to ensure DOM is ready and previous viz is cleared
       const timeoutId = setTimeout(() => {
         runGraphQuery(query);
@@ -535,18 +546,20 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
               }`}
             >
-              {graphType === 'variables' ? 'Variable Taxonomy' : 'Object Taxonomy'}
+              {graphType === 'lists' ? 'List Taxonomy' : graphType === 'variables' ? 'Variable Taxonomy' : 'Object Taxonomy'}
             </button>
-            <button
-              onClick={() => setActiveView('model')}
-              className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-                activeView === 'model'
-                  ? 'text-ag-dark-accent border-ag-dark-accent'
-                  : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
-              }`}
-            >
-              {graphType === 'variables' ? 'Variable-Object Model' : 'Object Model'}
-            </button>
+            {graphType !== 'lists' && (
+              <button
+                onClick={() => setActiveView('model')}
+                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+                  activeView === 'model'
+                    ? 'text-ag-dark-accent border-ag-dark-accent'
+                    : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
+                }`}
+              >
+                {graphType === 'variables' ? 'Variable-Object Model' : 'Object Model'}
+              </button>
+            )}
           </div>
           {/* Eye Icon - Show details panel (far right of tabs bar) */}
           {(selectedNode || selectedEdge) && (

@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Network, Eye } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { ListsOntologyModal } from './ListsOntologyModal';
 
 interface ListMetadataField {
   key: string;
@@ -165,6 +166,20 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
+  
+  // Ontology modal state
+  const [ontologyModalOpen, setOntologyModalOpen] = useState<{
+    isOpen: boolean;
+    viewType: 'drivers' | 'ontology' | 'metadata' | null;
+  }>({ isOpen: false, viewType: null });
+
+  const openOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata') => {
+    setOntologyModalOpen({ isOpen: true, viewType });
+  };
+
+  const closeOntologyModal = () => {
+    setOntologyModalOpen({ isOpen: false, viewType: null });
+  };
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -420,8 +435,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     icon?: React.ReactNode;
     actions?: React.ReactNode;
     children: React.ReactNode;
-  }> = ({ title, sectionKey, icon, actions, children }) => {
+    ontologyViewType?: 'drivers' | 'ontology' | 'metadata';
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType }) => {
     const isExpanded = expandedSections[sectionKey];
+    const isListSelected = !!selectedList;
     
     return (
       <div className="border-t border-ag-dark-border pt-8">
@@ -438,11 +455,28 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             {icon}
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
-          {isExpanded && actions && (
-            <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-              {actions}
-            </div>
-          )}
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            {isExpanded && actions && <>{actions}</>}
+            {ontologyViewType && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isListSelected) {
+                    openOntologyModal(ontologyViewType);
+                  }
+                }}
+                disabled={!isListSelected}
+                className={`p-1 transition-colors ${
+                  isListSelected 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={isListSelected ? "View Neo4j Ontology" : "Select a list to view ontology"}
+              >
+                {ontologyViewType === 'metadata' ? <Eye className="w-4 h-4" /> : <Network className="w-4 h-4" />}
+              </button>
+            )}
+          </div>
         </div>
         
         {isExpanded && (
@@ -490,7 +524,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       </div>
 
       {/* Drivers Section */}
-      <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Drivers" 
+        sectionKey="drivers" 
+        icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="drivers"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -534,7 +573,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       </CollapsibleSection>
 
       {/* Ontology Section */}
-      <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Ontology" 
+        sectionKey="ontology" 
+        icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="ontology"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -594,7 +638,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       </CollapsibleSection>
 
       {/* Metadata Section */}
-      <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
+      <CollapsibleSection 
+        title="Metadata" 
+        sectionKey="metadata" 
+        icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="metadata"
+      >
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -858,6 +907,19 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           setSelectedVariables(relationships);
         }}
       />
+
+      {/* Lists Ontology Modal */}
+      {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedList && (
+        <ListsOntologyModal
+          isOpen={ontologyModalOpen.isOpen}
+          onClose={closeOntologyModal}
+          listId={selectedList.id}
+          listName={selectedList.list}
+          sectionName={ontologyModalOpen.viewType === 'drivers' ? 'Drivers' : ontologyModalOpen.viewType === 'ontology' ? 'Ontology' : 'Metadata'}
+          viewType={ontologyModalOpen.viewType}
+          isBulkMode={false}
+        />
+      )}
     </div>
   );
 };

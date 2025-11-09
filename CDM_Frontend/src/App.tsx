@@ -86,6 +86,7 @@ function App() {
   const [isBulkObjectUploadOpen, setIsBulkObjectUploadOpen] = useState(false);
   const [isNeo4jGraphModalOpen, setIsNeo4jGraphModalOpen] = useState(false);
   const [isNeo4jVariablesGraphModalOpen, setIsNeo4jVariablesGraphModalOpen] = useState(false);
+  const [isNeo4jListsGraphModalOpen, setIsNeo4jListsGraphModalOpen] = useState(false);
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
@@ -2346,15 +2347,17 @@ function App() {
             </div>
           ) : (
             <div className="lg:col-span-1">
-              {/* View Neo4j Knowledge Graph button (for Objects and Variables tabs) */}
-              {(activeTab === 'objects' || activeTab === 'variables') && (
+              {/* View Neo4j Knowledge Graph button (for Objects, Variables, and Lists tabs) */}
+              {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
                 <div className="mb-3">
                   <button
                     onClick={() => {
                       if (activeTab === 'objects') {
                         setIsNeo4jGraphModalOpen(true);
-                      } else {
+                      } else if (activeTab === 'variables') {
                         setIsNeo4jVariablesGraphModalOpen(true);
+                      } else if (activeTab === 'lists') {
+                        setIsNeo4jListsGraphModalOpen(true);
                       }
                     }}
                     className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
@@ -2527,6 +2530,13 @@ function App() {
         isOpen={isNeo4jVariablesGraphModalOpen}
         onClose={() => setIsNeo4jVariablesGraphModalOpen(false)}
         graphType="variables"
+      />
+
+      {/* Neo4j Knowledge Graph Modal - Lists */}
+      <Neo4jGraphModal
+        isOpen={isNeo4jListsGraphModalOpen}
+        onClose={() => setIsNeo4jListsGraphModalOpen(false)}
+        graphType="lists"
       />
 
       {/* Relationship Modal */}
