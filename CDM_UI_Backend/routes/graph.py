@@ -787,6 +787,286 @@ async def get_bulk_variable_ontology_view(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
 
+@router.get("/ontology/view/list")
+async def get_list_ontology_view(
+    list_id: Optional[str] = Query(None, description="ID of the list (preferred)"),
+    list_name: Optional[str] = Query(None, description="Name of the list (fallback)"),
+    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata")
+):
+    """
+    Get ontology view for a specific list and section.
+    Maps view type to appropriate Cypher query.
+    Uses list_id if provided, otherwise falls back to list_name.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Neo4j driver not available")
+    
+    if not list_id and not list_name:
+        raise HTTPException(status_code=400, detail="Either list_id or list_name must be provided")
+    
+    # Define Cypher queries for each view type
+    if list_id:
+        queries = {
+            'drivers': """
+                MATCH (l:List {id: $list_id})
+                WITH l
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
+                RETURN s, r1, d, r2, c, r3, l
+            """,
+            'ontology': """
+                MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List {id: $list_id})
+                RETURN s, r1, g, r2, l
+            """,
+            'metadata': """
+                MATCH (l:List {id: $list_id})
+                RETURN l
+            """
+        }
+        param_name = 'list_id'
+        param_value = list_id
+    else:
+        queries = {
+            'drivers': """
+                MATCH (l:List {name: $list_name})
+                WITH l
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
+                RETURN s, r1, d, r2, c, r3, l
+            """,
+            'ontology': """
+                MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List {name: $list_name})
+                RETURN s, r1, g, r2, l
+            """,
+            'metadata': """
+                MATCH (l:List {name: $list_name})
+                RETURN l
+            """
+        }
+        param_name = 'list_name'
+        param_value = list_name
+    
+    if view not in queries:
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata")
+    
+    try:
+        with driver.session() as session:
+            result = session.run(queries[view], {param_name: param_value})
+            
+            nodes = {}
+            edges = []
+            node_ids = set()
+            edge_ids = set()
+            
+            for record in result:
+                for key, value in record.items():
+                    if value is None:
+                        continue
+                    
+                    # Handle nodes
+                    if isinstance(value, Node):
+                        node_id = str(value.id)
+                        if node_id not in node_ids:
+                            node_ids.add(node_id)
+                            labels = list(value.labels) if value.labels else []
+                            label = labels[0] if labels else 'Unknown'
+                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            name = props.get('name', node_id)
+                            
+                            nodes[node_id] = {
+                                'id': node_id,
+                                'label': name,
+                                'group': label,
+                                'properties': props
+                            }
+                    
+                    # Handle relationships
+                    elif isinstance(value, Relationship):
+                        rel_id = str(value.id)
+                        if rel_id not in edge_ids:
+                            edge_ids.add(rel_id)
+                            start_id = str(value.start_node.id)
+                            end_id = str(value.end_node.id)
+                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            
+                            edges.append({
+                                'id': rel_id,
+                                'from': start_id,
+                                'to': end_id,
+                                'label': value.type,
+                                'properties': props
+                            })
+            
+            return {
+                'nodes': list(nodes.values()),
+                'edges': edges,
+                'nodeCount': len(nodes),
+                'edgeCount': len(edges)
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
+@router.post("/ontology/view/list/bulk")
+async def get_bulk_list_ontology_view(
+    list_ids: Optional[List[str]] = Body(None, description="List of list IDs (preferred)"),
+    list_names: Optional[List[str]] = Body(None, description="List of list names (fallback)"),
+    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata")
+):
+    """
+    Get ontology view for multiple lists and section.
+    Maps view type to appropriate Cypher query for bulk selection.
+    Uses list_ids if provided, otherwise falls back to list_names.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Neo4j driver not available")
+    
+    if not list_ids and not list_names:
+        raise HTTPException(status_code=400, detail="Either list_ids or list_names must be provided")
+    
+    # Use list_ids if available, otherwise fall back to list_names
+    if list_ids:
+        if len(list_ids) == 0:
+            raise HTTPException(status_code=400, detail="At least one list ID is required")
+        identifiers = list_ids
+        use_ids = True
+    else:
+        if len(list_names) == 0:
+            raise HTTPException(status_code=400, detail="At least one list name is required")
+        identifiers = list_names
+        use_ids = False
+    
+    # Limit maximum lists for performance
+    MAX_LISTS = 50
+    if len(identifiers) > MAX_LISTS:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Maximum {MAX_LISTS} lists allowed for bulk view. Please reduce selection."
+        )
+    
+    # Define Cypher queries for each view type (bulk version)
+    if use_ids:
+        queries = {
+            'drivers': """
+                MATCH (l:List)
+                WHERE l.id IN $list_ids
+                WITH l
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
+                RETURN s, r1, d, r2, c, r3, l
+            """,
+            'ontology': """
+                MATCH (l:List)
+                WHERE l.id IN $list_ids
+                OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
+                RETURN s, r1, g, r2, l
+            """,
+            'metadata': """
+                MATCH (l:List)
+                WHERE l.id IN $list_ids
+                RETURN l
+            """
+        }
+        param_name = 'list_ids'
+    else:
+        queries = {
+            'drivers': """
+                MATCH (l:List)
+                WHERE l.name IN $list_names
+                WITH l
+                OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1
+                OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
+                WITH l, s, r1, d, r2
+                OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
+                RETURN s, r1, d, r2, c, r3, l
+            """,
+            'ontology': """
+                MATCH (l:List)
+                WHERE l.name IN $list_names
+                OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
+                RETURN s, r1, g, r2, l
+            """,
+            'metadata': """
+                MATCH (l:List)
+                WHERE l.name IN $list_names
+                RETURN l
+            """
+        }
+        param_name = 'list_names'
+    
+    if view not in queries:
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata")
+    
+    try:
+        with driver.session() as session:
+            result = session.run(queries[view], {param_name: identifiers})
+            
+            nodes = {}
+            edges = []
+            node_ids = set()
+            edge_ids = set()
+            
+            for record in result:
+                for key, value in record.items():
+                    if value is None:
+                        continue
+                    
+                    # Handle nodes
+                    if isinstance(value, Node):
+                        node_id = str(value.id)
+                        if node_id not in node_ids:
+                            node_ids.add(node_id)
+                            labels = list(value.labels) if value.labels else []
+                            label = labels[0] if labels else 'Unknown'
+                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            name = props.get('name', node_id)
+                            
+                            nodes[node_id] = {
+                                'id': node_id,
+                                'label': name,
+                                'group': label,
+                                'properties': props
+                            }
+                    
+                    # Handle relationships
+                    elif isinstance(value, Relationship):
+                        rel_id = str(value.id)
+                        if rel_id not in edge_ids:
+                            edge_ids.add(rel_id)
+                            start_id = str(value.start_node.id)
+                            end_id = str(value.end_node.id)
+                            props = dict(value.items()) if hasattr(value, 'items') else {}
+                            
+                            edges.append({
+                                'id': rel_id,
+                                'from': start_id,
+                                'to': end_id,
+                                'label': value.type,
+                                'properties': props
+                            })
+            
+            return {
+                'nodes': list(nodes.values()),
+                'edges': edges,
+                'nodeCount': len(nodes),
+                'edgeCount': len(edges)
+            }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
+
 @router.post("/graph/query")
 async def execute_graph_query(request: GraphQueryRequest):
     """

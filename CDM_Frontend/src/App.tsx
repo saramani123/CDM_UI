@@ -456,16 +456,15 @@ function App() {
     }
   }, [selectedRows.length, activeTab]);
 
-  // Handle lists loading (mock data, so minimal loading)
+  // Handle lists loading - fetch from API
   React.useEffect(() => {
     if (activeTab === 'lists') {
-      // Lists use mock data, so just a brief loading state
+      // Fetch lists from API
       setIsLoading(true);
       setLoadingType('lists');
-      const timer = setTimeout(() => {
+      fetchLists().finally(() => {
         setIsLoading(false);
-      }, 500); // Brief loading for UX
-      return () => clearTimeout(timer);
+      });
     }
   }, [activeTab]);
 
@@ -688,9 +687,17 @@ function App() {
           await deleteObject(row.id);
           console.log('🔴 Object deleted successfully');
         } else if (activeTab === 'lists') {
-          setListData(prev => prev.filter(item => item.id !== row.id));
-          // Remove from selectedRows if it was selected
-          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          try {
+            await apiService.deleteList(row.id);
+            setListData(prev => prev.filter(item => item.id !== row.id));
+            // Remove from selectedRows if it was selected
+            setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          } catch (error) {
+            console.error('Error deleting list:', error);
+            // Fallback to local state update
+            setListData(prev => prev.filter(item => item.id !== row.id));
+            setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          }
         } else if (activeTab === 'variables') {
           setVariableData(prev => prev.filter(item => item.id !== row.id));
           // Remove from selectedRows if it was selected
@@ -707,8 +714,16 @@ function App() {
           setData(prev => prev.filter(item => item.id !== row.id));
           setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         } else if (activeTab === 'lists') {
-          setListData(prev => prev.filter(item => item.id !== row.id));
-          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          try {
+            await apiService.deleteList(row.id);
+            setListData(prev => prev.filter(item => item.id !== row.id));
+            setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          } catch (error) {
+            console.error('Error deleting list:', error);
+            // Fallback to local state update
+            setListData(prev => prev.filter(item => item.id !== row.id));
+            setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          }
         } else if (activeTab === 'variables') {
           setVariableData(prev => prev.filter(item => item.id !== row.id));
           setSelectedRows(prev => prev.filter(item => item.id !== row.id));
@@ -916,6 +931,15 @@ function App() {
           alert(`Successfully deleted ${successfulDeletions.length} variable(s).`);
         }
         
+        // Clear selections for successfully deleted items
+        if (successfulDeletions.length > 0) {
+          setSelectedRows(prev => prev.filter(row => !successfulDeletions.includes(row.id)));
+          // Clear metadata panel if the selected variable was deleted
+          if (selectedRowForMetadata && successfulDeletions.includes(selectedRowForMetadata.id)) {
+            setSelectedRowForMetadata(null);
+          }
+        }
+        
         // Refresh variable data from API to ensure UI is in sync
         try {
           await fetchVariables();
@@ -924,26 +948,53 @@ function App() {
           // Don't clear UI if refresh fails - keep what we have
         }
       } else if (activeTab === 'lists') {
-        setListData(prev => prev.filter(item => !selectedIds.includes(item.id)));
-      } else {
-        setData(prev => prev.filter(item => !selectedIds.includes(item.id)));
-      }
-      
-      // Clear selections for successfully deleted items
-      if (activeTab === 'variables') {
-        // For variables, only clear selections for successfully deleted items
+        // Delete lists via API
+        const successfulDeletions: string[] = [];
+        const failedDeletions: string[] = [];
+        
+        for (const id of selectedIds) {
+          try {
+            await apiService.deleteList(id);
+            successfulDeletions.push(id);
+          } catch (error) {
+            console.error(`Error deleting list ${id}:`, error);
+            failedDeletions.push(id);
+          }
+        }
+        
+        // Only remove successfully deleted lists from state
         if (successfulDeletions.length > 0) {
+          setListData(prev => prev.filter(item => !successfulDeletions.includes(item.id)));
+          // Clear selections for successfully deleted items
           setSelectedRows(prev => prev.filter(row => !successfulDeletions.includes(row.id)));
-          // Clear metadata panel if the selected variable was deleted
+          // Clear metadata panel if the selected list was deleted
           if (selectedRowForMetadata && successfulDeletions.includes(selectedRowForMetadata.id)) {
             setSelectedRowForMetadata(null);
           }
         }
-      } else {
-        // For other tabs (objects, lists), clear all selections
+        
+        // Show feedback about results
+        if (failedDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} list(s), but failed to delete ${failedDeletions.length} list(s). Please try again or check server logs.`);
+        } else if (successfulDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} list(s).`);
+        }
+        
+        // Refresh lists from API to ensure UI is in sync
+        try {
+          await fetchLists();
+        } catch (error) {
+          console.error('Error refreshing lists after deletion:', error);
+          // Don't clear UI if refresh fails - keep what we have
+        }
+      } else if (activeTab === 'objects') {
+        // Delete objects via API
+        setData(prev => prev.filter(item => !selectedIds.includes(item.id)));
+        // Clear all selections for objects
         setSelectedRows([]);
         setSelectedRowForMetadata(null);
       }
+      
       setIsBulkDeleteOpen(false);
     }
   };
@@ -1524,11 +1575,80 @@ function App() {
           });
         }
       } else if (activeTab === 'lists') {
-        setListData(prev => prev.map(item => 
-          item.id === selectedRowForMetadata.id 
-            ? { ...item, ...gridData }
-            : item
-        ));
+        // Update list via API
+        try {
+          // Convert to API format
+          const apiListData: any = {};
+          
+          if (gridData.sector !== undefined) {
+            apiListData.sector = Array.isArray(gridData.sector)
+              ? (gridData.sector.length === 1 && gridData.sector[0] === 'ALL'
+                  ? 'ALL'
+                  : gridData.sector.join(','))
+              : gridData.sector;
+          }
+          if (gridData.domain !== undefined) {
+            apiListData.domain = Array.isArray(gridData.domain)
+              ? (gridData.domain.length === 1 && gridData.domain[0] === 'ALL'
+                  ? 'ALL'
+                  : gridData.domain.join(','))
+              : gridData.domain;
+          }
+          if (gridData.country !== undefined) {
+            apiListData.country = Array.isArray(gridData.country)
+              ? (gridData.country.length === 1 && gridData.country[0] === 'ALL'
+                  ? 'ALL'
+                  : gridData.country.join(','))
+              : gridData.country;
+          }
+          if (gridData.set !== undefined) apiListData.set = gridData.set;
+          if (gridData.grouping !== undefined) apiListData.grouping = gridData.grouping;
+          if (gridData.list !== undefined) apiListData.list = gridData.list;
+          if (gridData.format !== undefined) apiListData.format = gridData.format;
+          if (gridData.source !== undefined) apiListData.source = gridData.source;
+          if (gridData.upkeep !== undefined) apiListData.upkeep = gridData.upkeep;
+          if (gridData.graph !== undefined) apiListData.graph = gridData.graph;
+          if (gridData.origin !== undefined) apiListData.origin = gridData.origin;
+          if (gridData.status !== undefined) apiListData.status = gridData.status;
+          
+          // Only update if there are fields to update
+          if (Object.keys(apiListData).length > 0) {
+            const updatedList = await apiService.updateList(selectedRowForMetadata.id, apiListData) as any;
+            
+            // Convert API response to ListData format
+            const listDataFormat: ListData = {
+              id: updatedList.id,
+              sector: Array.isArray(updatedList.sector) ? updatedList.sector : [updatedList.sector || 'ALL'],
+              domain: Array.isArray(updatedList.domain) ? updatedList.domain : [updatedList.domain || 'ALL'],
+              country: Array.isArray(updatedList.country) ? updatedList.country : [updatedList.country || 'ALL'],
+              set: updatedList.set,
+              grouping: updatedList.grouping,
+              list: updatedList.list,
+              format: updatedList.format || '',
+              source: updatedList.source || '',
+              upkeep: updatedList.upkeep || '',
+              graph: updatedList.graph || '',
+              origin: updatedList.origin || '',
+              status: updatedList.status || 'Active',
+              variablesAttachedList: updatedList.variablesAttachedList || [],
+              listValuesList: updatedList.listValuesList || []
+            };
+            
+            // Update local state
+            setListData(prev => prev.map(item => 
+              item.id === selectedRowForMetadata.id 
+                ? listDataFormat
+                : item
+            ));
+            
+            // Update selected row
+            setSelectedRowForMetadata(listDataFormat);
+          }
+        } catch (error) {
+          console.error('Error updating list:', error);
+          alert('Failed to update list. Please try again.');
+          throw error;
+        }
       } else if (activeTab === 'variables') {
         setVariableData(prev => prev.map(item => 
           item.id === selectedRowForMetadata.id 
@@ -1588,19 +1708,168 @@ function App() {
     }
   };
 
-  const handleBulkListUpload = (lists: ListData[]) => {
-    setListData(prev => [...prev, ...lists]);
-    // Select the first uploaded list to show in metadata panel
-    if (lists.length > 0) {
-      setSelectedRows([lists[0]]);
-      setSelectedRowForMetadata(lists[0]);
+  const fetchLists = async () => {
+    try {
+      const lists = await apiService.getLists() as any[];
+      // Convert API response to ListData format
+      const listsDataFormat: ListData[] = lists.map((list: any) => ({
+        id: list.id,
+        sector: Array.isArray(list.sector) ? list.sector : [list.sector || 'ALL'],
+        domain: Array.isArray(list.domain) ? list.domain : [list.domain || 'ALL'],
+        country: Array.isArray(list.country) ? list.country : [list.country || 'ALL'],
+        set: list.set,
+        grouping: list.grouping,
+        list: list.list,
+        format: list.format || '',
+        source: list.source || '',
+        upkeep: list.upkeep || '',
+        graph: list.graph || '',
+        origin: list.origin || '',
+        status: list.status || 'Active',
+        variablesAttachedList: list.variablesAttachedList || [],
+        listValuesList: list.listValuesList || []
+      }));
+      setListData(listsDataFormat);
+    } catch (error) {
+      console.error('Error fetching lists:', error);
+      // Keep existing data on error
     }
-    setIsBulkListUploadOpen(false);
   };
 
-  const handleAddList = (newListData: ListData) => {
-    setListData(prev => [...prev, newListData]);
-    setIsAddListOpen(false);
+  const handleBulkListUpload = async (lists: ListData[]) => {
+    try {
+      // Create each list via API
+      const createdLists: ListData[] = [];
+      for (const listData of lists) {
+        const apiListData = {
+          sector: Array.isArray(listData.sector) 
+            ? (listData.sector.length === 1 && listData.sector[0] === 'ALL' 
+                ? 'ALL' 
+                : listData.sector.join(','))
+            : listData.sector || 'ALL',
+          domain: Array.isArray(listData.domain)
+            ? (listData.domain.length === 1 && listData.domain[0] === 'ALL'
+                ? 'ALL'
+                : listData.domain.join(','))
+            : listData.domain || 'ALL',
+          country: Array.isArray(listData.country)
+            ? (listData.country.length === 1 && listData.country[0] === 'ALL'
+                ? 'ALL'
+                : listData.country.join(','))
+            : listData.country || 'ALL',
+          set: listData.set || '',
+          grouping: listData.grouping || '',
+          list: listData.list || '',
+          format: listData.format || '',
+          source: listData.source || '',
+          upkeep: listData.upkeep || '',
+          graph: listData.graph || '',
+          origin: listData.origin || '',
+          status: listData.status || 'Active'
+        };
+        
+        const createdList = await apiService.createList(apiListData) as any;
+        
+        // Convert API response to ListData format
+        const listDataFormat: ListData = {
+          id: createdList.id,
+          sector: Array.isArray(createdList.sector) ? createdList.sector : [createdList.sector || 'ALL'],
+          domain: Array.isArray(createdList.domain) ? createdList.domain : [createdList.domain || 'ALL'],
+          country: Array.isArray(createdList.country) ? createdList.country : [createdList.country || 'ALL'],
+          set: createdList.set,
+          grouping: createdList.grouping,
+          list: createdList.list,
+          format: createdList.format || '',
+          source: createdList.source || '',
+          upkeep: createdList.upkeep || '',
+          graph: createdList.graph || '',
+          origin: createdList.origin || '',
+          status: createdList.status || 'Active',
+          variablesAttachedList: createdList.variablesAttachedList || [],
+          listValuesList: createdList.listValuesList || []
+        };
+        
+        createdLists.push(listDataFormat);
+      }
+      
+      setListData(prev => [...prev, ...createdLists]);
+      // Select the first uploaded list to show in metadata panel
+      if (createdLists.length > 0) {
+        setSelectedRows([createdLists[0]]);
+        setSelectedRowForMetadata(createdLists[0]);
+      }
+      setIsBulkListUploadOpen(false);
+    } catch (error: any) {
+      console.error('Error uploading lists:', error);
+      const errorMessage = error?.message || 'Failed to upload lists. Please try again.';
+      alert(errorMessage);
+      throw error;
+    }
+  };
+
+  const handleAddList = async (newListData: ListData) => {
+    try {
+      // Convert to API format
+      const apiListData = {
+        sector: Array.isArray(newListData.sector) 
+          ? (newListData.sector.length === 1 && newListData.sector[0] === 'ALL' 
+              ? 'ALL' 
+              : newListData.sector.join(','))
+          : newListData.sector || 'ALL',
+        domain: Array.isArray(newListData.domain)
+          ? (newListData.domain.length === 1 && newListData.domain[0] === 'ALL'
+              ? 'ALL'
+              : newListData.domain.join(','))
+          : newListData.domain || 'ALL',
+        country: Array.isArray(newListData.country)
+          ? (newListData.country.length === 1 && newListData.country[0] === 'ALL'
+              ? 'ALL'
+              : newListData.country.join(','))
+          : newListData.country || 'ALL',
+        set: newListData.set || '',
+        grouping: newListData.grouping || '',
+        list: newListData.list || '',
+        format: newListData.format || '',
+        source: newListData.source || '',
+        upkeep: newListData.upkeep || '',
+        graph: newListData.graph || '',
+        origin: newListData.origin || '',
+        status: newListData.status || 'Active'
+      };
+      
+        const createdList = await apiService.createList(apiListData) as any;
+        
+        // Convert API response to ListData format
+        const listDataFormat: ListData = {
+          id: createdList.id,
+          sector: Array.isArray(createdList.sector) ? createdList.sector : [createdList.sector || 'ALL'],
+          domain: Array.isArray(createdList.domain) ? createdList.domain : [createdList.domain || 'ALL'],
+          country: Array.isArray(createdList.country) ? createdList.country : [createdList.country || 'ALL'],
+          set: createdList.set,
+          grouping: createdList.grouping,
+          list: createdList.list,
+          format: createdList.format || '',
+          source: createdList.source || '',
+          upkeep: createdList.upkeep || '',
+          graph: createdList.graph || '',
+          origin: createdList.origin || '',
+          status: createdList.status || 'Active',
+          variablesAttachedList: createdList.variablesAttachedList || [],
+          listValuesList: createdList.listValuesList || []
+        };
+        
+        setListData(prev => [...prev, listDataFormat]);
+      setIsAddListOpen(false);
+    } catch (error: any) {
+      console.error('Error creating list:', error);
+      const errorMessage = error?.message || 'Failed to create list. Please try again.';
+      if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
+        alert(`Duplicate detected: ${errorMessage}`);
+      } else {
+        alert(errorMessage);
+      }
+      throw error;
+    }
   };
   const handleFilterChange = (key: string, value: string) => {
     setFilters(prev => ({
