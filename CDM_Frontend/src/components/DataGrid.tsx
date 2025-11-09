@@ -73,8 +73,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   // Load persisted state from localStorage - use grid-specific keys
   const loadPersistedDataGridState = () => {
     try {
-      const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
-      const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+      const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
+                       gridType === 'lists' ? 'cdm_lists_column_filters' : 
+                       'cdm_objects_column_filters';
+      const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
+                     gridType === 'lists' ? 'cdm_lists_sort_config' : 
+                     'cdm_objects_sort_config';
       const savedColumnFilters = localStorage.getItem(filterKey);
       const savedSortConfig = localStorage.getItem(sortKey);
       
@@ -139,13 +143,29 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   // Persist column filters to localStorage - use grid-specific key
   React.useEffect(() => {
-    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
+    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
+                     gridType === 'lists' ? 'cdm_lists_column_filters' : 
+                     'cdm_objects_column_filters';
     localStorage.setItem(filterKey, JSON.stringify(columnFilters));
   }, [columnFilters, gridType]);
 
+  // Clear sortConfig when custom sort is applied (grid-level sort takes priority)
+  React.useEffect(() => {
+    if (isCustomSortActive && customSortRules.length > 0 && sortConfig !== null) {
+      console.log('🧹 Clearing sortConfig because custom sort is active');
+      setSortConfig(null);
+      const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
+                     gridType === 'lists' ? 'cdm_lists_sort_config' : 
+                     'cdm_objects_sort_config';
+      localStorage.removeItem(sortKey);
+    }
+  }, [isCustomSortActive, customSortRules.length, gridType]);
+
   // Persist sort config to localStorage - use grid-specific key
   React.useEffect(() => {
-    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
+                   gridType === 'lists' ? 'cdm_lists_sort_config' : 
+                   'cdm_objects_sort_config';
     localStorage.setItem(sortKey, JSON.stringify(sortConfig));
   }, [sortConfig, gridType]);
 
@@ -236,7 +256,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
     // Don't clear sortConfig - filters and sorts should coexist
     // Don't call onClearCustomSort - preserve sorting
     // Clear only filter-related localStorage
-    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 'cdm_objects_column_filters';
+    const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
+                     gridType === 'lists' ? 'cdm_lists_column_filters' : 
+                     'cdm_objects_column_filters';
     localStorage.removeItem(filterKey);
     // Note: Sorting state is preserved
   };
@@ -246,7 +268,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
     setSortConfig(null);
     onClearCustomSort?.();
     // Clear only sort-related localStorage
-    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 'cdm_objects_sort_config';
+    const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
+                   gridType === 'lists' ? 'cdm_lists_sort_config' : 
+                   'cdm_objects_sort_config';
     localStorage.removeItem(sortKey);
     // Note: Filter state is preserved
   };

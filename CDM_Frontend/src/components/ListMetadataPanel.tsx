@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
+import { useDrivers } from '../hooks/useDrivers';
+import { useVariables } from '../hooks/useVariables';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 
 interface ListMetadataField {
   key: string;
@@ -44,22 +47,106 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   allData = [],
   selectedCount = 0
 }) => {
+  // Use API drivers data
+  const { drivers: apiDrivers } = useDrivers();
+  const { variables: variablesData } = useVariables();
+  const driversData = apiDrivers || {
+    sectors: [],
+    domains: [],
+    countries: [],
+    objectClarifiers: [],
+    variableClarifiers: []
+  };
+
+  // Driver selections state
+  const [driverSelections, setDriverSelections] = useState({
+    sector: [] as string[],
+    domain: [] as string[],
+    country: [] as string[]
+  });
+
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {};
-    fields.forEach(field => {
-      initial[field.key] = field.value !== undefined ? field.value : '';
-    });
+    // Initialize from selectedList if available, otherwise from fields
+    if (selectedList) {
+      // Populate all metadata fields from selectedList
+      initial.format = selectedList.format || '';
+      initial.source = selectedList.source || '';
+      initial.upkeep = selectedList.upkeep || '';
+      initial.graph = selectedList.graph || '';
+      initial.origin = selectedList.origin || '';
+      initial.set = selectedList.set || '';
+      initial.grouping = selectedList.grouping || '';
+      initial.list = selectedList.list || '';
+      
+      // Initialize driver selections from selectedList
+      if (selectedList.sector) {
+        const sectors = Array.isArray(selectedList.sector) ? selectedList.sector : [selectedList.sector];
+        setDriverSelections(prev => ({ ...prev, sector: sectors }));
+        initial.sector = sectors;
+      }
+      if (selectedList.domain) {
+        const domains = Array.isArray(selectedList.domain) ? selectedList.domain : [selectedList.domain];
+        setDriverSelections(prev => ({ ...prev, domain: domains }));
+        initial.domain = domains;
+      }
+      if (selectedList.country) {
+        const countries = Array.isArray(selectedList.country) ? selectedList.country : [selectedList.country];
+        setDriverSelections(prev => ({ ...prev, country: countries }));
+        initial.country = countries;
+      }
+    } else {
+      // Fallback to fields if no selectedList
+      fields.forEach(field => {
+        initial[field.key] = field.value !== undefined ? field.value : '';
+      });
+    }
     return initial;
   });
 
-  // Update form data when fields change (when a new row is selected)
+  // Update form data when selectedList changes (when a new row is selected)
   React.useEffect(() => {
+    if (!selectedList) {
+      // Reset to empty if no selection
+      const emptyData: Record<string, any> = {};
+      fields.forEach(field => {
+        emptyData[field.key] = '';
+      });
+      setFormData(emptyData);
+      setDriverSelections({ sector: [], domain: [], country: [] });
+      return;
+    }
+
     const newFormData: Record<string, any> = {};
-    fields.forEach(field => {
-      newFormData[field.key] = field.value !== undefined ? field.value : '';
-    });
+    
+    // Populate all metadata fields from selectedList
+    newFormData.format = selectedList.format || '';
+    newFormData.source = selectedList.source || '';
+    newFormData.upkeep = selectedList.upkeep || '';
+    newFormData.graph = selectedList.graph || '';
+    newFormData.origin = selectedList.origin || '';
+    newFormData.set = selectedList.set || '';
+    newFormData.grouping = selectedList.grouping || '';
+    newFormData.list = selectedList.list || '';
+    
+    // Update driver selections from selectedList
+    const sectors = selectedList.sector 
+      ? (Array.isArray(selectedList.sector) ? selectedList.sector : [selectedList.sector])
+      : [];
+    const domains = selectedList.domain 
+      ? (Array.isArray(selectedList.domain) ? selectedList.domain : [selectedList.domain])
+      : [];
+    const countries = selectedList.country 
+      ? (Array.isArray(selectedList.country) ? selectedList.country : [selectedList.country])
+      : [];
+    
+    setDriverSelections({ sector: sectors, domain: domains, country: countries });
+    newFormData.sector = sectors;
+    newFormData.domain = domains;
+    newFormData.country = countries;
+    
     setFormData(newFormData);
-  }, [fields]);
+  }, [selectedList, fields]);
 
   // Initialize variables attached state
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>(() => {
@@ -74,6 +161,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
+  
+  // Relationship modal state
+  const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+  const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -132,6 +223,17 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     setFormData(prev => ({
       ...prev,
       [key]: value
+    }));
+  };
+
+  const handleDriverSelectionChange = (type: 'sector' | 'domain' | 'country', values: string[]) => {
+    setDriverSelections(prev => ({
+      ...prev,
+      [type]: values
+    }));
+    setFormData(prev => ({
+      ...prev,
+      [type]: values
     }));
   };
 
@@ -202,10 +304,114 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const handleSave = () => {
     const saveData = {
       ...formData,
-      variablesAttachedList: variablesAttached,
+      sector: driverSelections.sector,
+      domain: driverSelections.domain,
+      country: driverSelections.country,
+      variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
       listValuesList: listValues
     };
     onSave?.(saveData);
+  };
+
+  // Multi-select component
+  const MultiSelect: React.FC<{
+    label: string;
+    options: string[];
+    values: string[];
+    onChange: (values: string[]) => void;
+    disabled?: boolean;
+  }> = ({ label, options, values, onChange, disabled = false }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+          setIsOpen(false);
+        }
+      };
+
+      if (isOpen) {
+        document.addEventListener('mousedown', handleClickOutside);
+      }
+
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }, [isOpen]);
+    
+    const handleToggle = (option: string) => {
+      if (option === 'ALL') {
+        if (values.includes('ALL')) {
+          onChange([]);
+        } else {
+          const allIndividualValues = options.filter(opt => opt !== 'ALL');
+          onChange(['ALL', ...allIndividualValues]);
+        }
+      } else {
+        const newValues = values.includes(option)
+          ? values.filter(v => v !== option && v !== 'ALL')
+          : [...values.filter(v => v !== 'ALL'), option];
+        
+        const allIndividualValues = options.filter(opt => opt !== 'ALL');
+        const allSelected = allIndividualValues.every(opt => newValues.includes(opt));
+        if (allSelected && allIndividualValues.length > 0) {
+          onChange(['ALL', ...newValues]);
+        } else {
+          onChange(newValues);
+        }
+      }
+    };
+
+    const displayText = values.length === 0 
+      ? `Select ${label}` 
+      : values.includes('ALL') 
+        ? 'ALL' 
+        : values.length === 1 
+          ? values[0] 
+          : `${values.length} selected`;
+
+    return (
+      <div className="relative" ref={dropdownRef}>
+        <button
+          type="button"
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+          disabled={disabled}
+          className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
+            disabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+            backgroundPosition: 'right 12px center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: '16px'
+          }}
+        >
+          {displayText}
+        </button>
+        
+        {isOpen && (
+          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            {options.map((option) => (
+              <label
+                key={option}
+                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={values.includes(option)}
+                  onChange={() => handleToggle(option)}
+                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                />
+                <span className="text-sm text-ag-dark-text">{option}</span>
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
 
   const CollapsibleSection: React.FC<{
@@ -266,61 +472,63 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         )}
       </div>
 
+      {/* List Name Field - Moved to header section */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          List Name
+        </label>
+        <input
+          type="text"
+          value={formData.list || ''}
+          onChange={(e) => handleChange('list', e.target.value)}
+          disabled={!isPanelEnabled}
+          placeholder="Enter list name..."
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
+      </div>
+
       {/* Drivers Section */}
       <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Driver
+              Sector
             </label>
-            <select
-              value={formData.driver}
-              onChange={(e) => handleChange('driver', e.target.value)}
+            <MultiSelect
+              label="Sector"
+              options={['ALL', ...driversData.sectors]}
+              values={driverSelections.sector}
+              onChange={(values) => handleDriverSelectionChange('sector', values)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Driver</option>
-              {listFieldOptions.driver.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Clarifier
+              Domain
             </label>
-            <select
-              value={formData.clarifier}
-              onChange={(e) => handleChange('clarifier', e.target.value)}
+            <MultiSelect
+              label="Domain"
+              options={['ALL', ...driversData.domains]}
+              values={driverSelections.domain}
+              onChange={(values) => handleDriverSelectionChange('domain', values)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Clarifier</option>
-              {listFieldOptions.clarifier.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Country
+            </label>
+            <MultiSelect
+              label="Country"
+              options={['ALL', ...driversData.countries]}
+              values={driverSelections.country}
+              onChange={(values) => handleDriverSelectionChange('country', values)}
+              disabled={!isPanelEnabled}
+            />
           </div>
         </div>
       </CollapsibleSection>
@@ -382,21 +590,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              List
-            </label>
-            <input
-              type="text"
-              value={formData.list}
-              onChange={(e) => handleChange('list', e.target.value)}
-              disabled={!isPanelEnabled}
-              placeholder="Enter list name..."
-              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-            />
-          </div>
         </div>
       </CollapsibleSection>
 
@@ -407,135 +600,80 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Format
             </label>
-            <select
-              value={formData.format}
+            <input
+              type="text"
+              value={formData.format || ''}
               onChange={(e) => handleChange('format', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter format..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Format</option>
-              <option value="Text">Text</option>
-              <option value="Number">Number</option>
-              <option value="Date">Date</option>
-              <option value="Boolean">Boolean</option>
-              <option value="List">List</option>
-              <option value="Special">Special</option>
-            </select>
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Source
             </label>
-            <select
-              value={formData.source}
+            <input
+              type="text"
+              value={formData.source || ''}
               onChange={(e) => handleChange('source', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter source..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Source</option>
-              <option value="Internal">Internal</option>
-              <option value="External">External</option>
-              <option value="API">API</option>
-              <option value="Manual">Manual</option>
-              <option value="Calculated">Calculated</option>
-            </select>
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Upkeep
             </label>
-            <select
-              value={formData.upkeep}
+            <input
+              type="text"
+              value={formData.upkeep || ''}
               onChange={(e) => handleChange('upkeep', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter upkeep..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Upkeep</option>
-              <option value="Daily">Daily</option>
-              <option value="Weekly">Weekly</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Quarterly">Quarterly</option>
-              <option value="Annually">Annually</option>
-              <option value="As Needed">As Needed</option>
-            </select>
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Graph
             </label>
-            <select
-              value={formData.graph}
+            <input
+              type="text"
+              value={formData.graph || ''}
               onChange={(e) => handleChange('graph', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter graph..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Graph</option>
-              <option value="Y">Y</option>
-              <option value="N">N</option>
-              <option value="Conditional">Conditional</option>
-            </select>
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Origin
             </label>
-            <select
-              value={formData.origin}
+            <input
+              type="text"
+              value={formData.origin || ''}
               onChange={(e) => handleChange('origin', e.target.value)}
               disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+              placeholder="Enter origin..."
+              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                 !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Origin</option>
-              <option value="System">System</option>
-              <option value="User">User</option>
-              <option value="Import">Import</option>
-              <option value="Migration">Migration</option>
-              <option value="Generated">Generated</option>
-            </select>
+            />
           </div>
         </div>
       </CollapsibleSection>
@@ -546,215 +684,44 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <>
-            <button
-              onClick={() => setIsVariableAttachedUploadOpen(true)}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Upload Variables CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-            <button
-              onClick={addVariableAttached}
-              disabled={!isPanelEnabled}
-              className={`text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="Add Variable"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          </>
+          <button
+            onClick={() => setIsVariableRelationshipModalOpen(true)}
+            disabled={!isPanelEnabled}
+            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            title={!isPanelEnabled ? "Select a list to view relationships" : "View and manage relationships"}
+          >
+            View Relationships
+          </button>
         }
       >
-        <div className="space-y-6">
-          {/* Object Type Field */}
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Type
-            </label>
-            <select
-              value={formData.objectType}
-              onChange={(e) => handleChange('objectType', e.target.value)}
-              disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Object Type</option>
-              {listFieldOptions.objectType.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Variable Field */}
-          {/* Variables Attached */}
-          <div>
-            <h5 className="text-sm font-medium text-ag-dark-text mb-4">Variables Attached</h5>
-            {variablesAttached.length === 0 ? (
-              <div className="text-center py-6 text-ag-dark-text-secondary">
-                <div className="text-sm">No variables attached</div>
-                <button
-                  onClick={addVariableAttached}
-                  disabled={!isPanelEnabled}
-                  className={`mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm ${
-                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                >
-                  Add your first variable
-                </button>
+        <div className="mb-6">
+          {selectedVariables.length === 0 ? (
+            <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+              <div className="text-sm text-ag-dark-text-secondary">
+                <span className="font-medium">No variables selected:</span> Click "View Relationships" to select variables from the variables grid.
               </div>
-            ) : (
-              <div className="space-y-4">
-                {variablesAttached.map((variable, index) => (
-                  <div key={variable.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-medium text-ag-dark-text">
-                        Variable #{index + 1}
-                      </span>
-                      <button
-                        onClick={() => deleteVariableAttached(variable.id)}
-                        disabled={!isPanelEnabled}
-                        className={`text-ag-dark-error hover:text-red-400 transition-colors ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        title="Delete Variable"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+            </div>
+          ) : (
+            <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+              <div className="text-sm text-ag-dark-text">
+                <span className="font-medium">{selectedVariables.length} variable{selectedVariables.length !== 1 ? 's' : ''} selected:</span>
+                <div className="mt-2 space-y-1">
+                  {selectedVariables.slice(0, 5).map((variable: any) => (
+                    <div key={variable.id} className="text-ag-dark-text-secondary">
+                      {variable.part} / {variable.section} / {variable.group} / {variable.variable}
                     </div>
-                    
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                            Part
-                          </label>
-                          <select
-                            value={variable.part}
-                            onChange={(e) => handleVariableAttachedChange(variable.id, 'part', e.target.value)}
-                            disabled={!isPanelEnabled}
-                            className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: 'right 8px center',
-                              backgroundRepeat: 'no-repeat',
-                              backgroundSize: '12px'
-                            }}
-                          >
-                            <option value="">Select Part</option>
-                            {getDistinctParts().map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                            Section
-                          </label>
-                          <select
-                            value={variable.section}
-                            onChange={(e) => handleVariableAttachedChange(variable.id, 'section', e.target.value)}
-                            disabled={!isPanelEnabled}
-                            className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: 'right 8px center',
-                              backgroundRepeat: 'no-repeat',
-                              backgroundSize: '12px'
-                            }}
-                          >
-                            <option value="">Select Section</option>
-                            {variable.part && getDistinctSectionsForPart(variable.part).map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                            Group
-                          </label>
-                          <select
-                            value={variable.group}
-                            onChange={(e) => handleVariableAttachedChange(variable.id, 'group', e.target.value)}
-                            disabled={!isPanelEnabled}
-                            className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: 'right 8px center',
-                              backgroundRepeat: 'no-repeat',
-                              backgroundSize: '12px'
-                            }}
-                          >
-                            <option value="">Select Group</option>
-                            {variable.part && variable.section && getDistinctGroupsForPartAndSection(variable.part, variable.section).map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                            Variable
-                          </label>
-                          <select
-                            value={variable.variable}
-                            onChange={(e) => handleVariableAttachedChange(variable.id, 'variable', e.target.value)}
-                            disabled={!isPanelEnabled}
-                            className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                            }`}
-                            style={{
-                              backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                              backgroundPosition: 'right 8px center',
-                              backgroundRepeat: 'no-repeat',
-                              backgroundSize: '12px'
-                            }}
-                          >
-                            <option value="">Select Variable</option>
-                            {variable.part && variable.section && variable.group && 
-                              getDistinctVariablesForPartSectionGroup(variable.part, variable.section, variable.group).map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
+                  ))}
+                  {selectedVariables.length > 5 && (
+                    <div className="text-ag-dark-text-secondary">
+                      ... and {selectedVariables.length - 5} more
                     </div>
-                  </div>
-                ))}
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -872,6 +839,24 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onClose={() => setIsListValuesUploadOpen(false)}
         type="list-values"
         onUpload={handleListValuesCsvUpload}
+      />
+
+      {/* Variable Relationship Modal */}
+      <VariableObjectRelationshipModal
+        isOpen={isVariableRelationshipModalOpen}
+        onClose={() => setIsVariableRelationshipModalOpen(false)}
+        selectedVariable={selectedList}
+        allObjects={variablesData}
+        onSave={() => {
+          // Refresh data after saving relationships
+          if (onSave) {
+            onSave({});
+          }
+        }}
+        onRelationshipsChange={(relationships) => {
+          // Update selected variables when relationships change
+          setSelectedVariables(relationships);
+        }}
       />
     </div>
   );

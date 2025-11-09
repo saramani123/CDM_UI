@@ -1,16 +1,20 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText } from 'lucide-react';
 
+import { ListData } from '../data/listsData';
+
 interface BulkListUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (lists: any[]) => void;
+  onUpload: (lists: ListData[]) => void;
+  existingData?: ListData[];
 }
 
 export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
   isOpen,
   onClose,
-  onUpload
+  onUpload,
+  existingData = []
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -19,18 +23,17 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
   const csvFormat = {
     title: 'Upload Lists',
     columns: [
-      { number: 1, name: 'Driver', required: true },
-      { number: 2, name: 'Object Type', required: true },
-      { number: 3, name: 'Clarifier', required: true },
-      { number: 4, name: 'Format', required: true },
-      { number: 5, name: 'Variable', required: true },
-      { number: 6, name: 'Set', required: true },
-      { number: 7, name: 'Grouping', required: true },
-      { number: 8, name: 'List Name', required: true },
-      { number: 9, name: 'Source', required: false },
-      { number: 10, name: 'Upkeep', required: false },
-      { number: 11, name: 'Graph', required: false },
-      { number: 12, name: 'Origin', required: false }
+      { number: 1, name: 'Sector', required: true },
+      { number: 2, name: 'Domain', required: true },
+      { number: 3, name: 'Country', required: true },
+      { number: 4, name: 'Set', required: true },
+      { number: 5, name: 'Grouping', required: true },
+      { number: 6, name: 'List', required: true },
+      { number: 7, name: 'Format', required: false },
+      { number: 8, name: 'Source', required: false },
+      { number: 9, name: 'Upkeep', required: false },
+      { number: 10, name: 'Graph', required: false },
+      { number: 11, name: 'Origin', required: false }
     ]
   };
 
@@ -47,22 +50,33 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
 
       // Skip header row and parse data rows
       const dataRows = lines.slice(1);
-      const parsedLists: any[] = [];
+      const parsedLists: ListData[] = [];
       const errors: string[] = [];
 
       dataRows.forEach((line, index) => {
-        const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
+        // Parse CSV line, handling quoted values
+        const values: string[] = [];
+        let currentValue = '';
+        let inQuotes = false;
         
-        if (values.length < 12) {
-          errors.push(`Row ${index + 2}: Missing columns (expected 12, got ${values.length})`);
-          return;
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            values.push(currentValue.trim().replace(/^"|"$/g, ''));
+            currentValue = '';
+          } else {
+            currentValue += char;
+          }
         }
-
-        // Check required fields (columns 1-8)
-        const requiredFields = ['Driver', 'Object Type', 'Clarifier', 'Format', 'Variable', 'Set', 'Grouping', 'List Name'];
+        values.push(currentValue.trim().replace(/^"|"$/g, '')); // Add last value
+        
+        // Check required fields (columns 1-6)
+        const requiredFields = ['Sector', 'Domain', 'Country', 'Set', 'Grouping', 'List'];
         const missingFields: string[] = [];
         
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 6; i++) {
           if (!values[i] || values[i].trim() === '') {
             missingFields.push(requiredFields[i]);
           }
@@ -73,20 +87,76 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
           return;
         }
 
-        const newList = {
-          id: Date.now().toString() + index,
-          driver: values[0].trim(),
-          objectType: values[1].trim(),
-          clarifier: values[2].trim(),
-          format: values[3].trim(),
-          variable: values[4].trim(),
-          set: values[5].trim(),
-          grouping: values[6].trim(),
-          list: values[7].trim(),
-          source: values[8] && values[8].trim() !== '' ? values[8].trim() : '',
-          upkeep: values[9] && values[9].trim() !== '' ? values[9].trim() : '',
-          graph: values[10] && values[10].trim() !== '' ? values[10].trim() : '',
-          origin: values[11] && values[11].trim() !== '' ? values[11].trim() : '',
+        const sector = values[0]?.trim() || '';
+        const domain = values[1]?.trim() || '';
+        const country = values[2]?.trim() || '';
+        const set = values[3]?.trim() || '';
+        const grouping = values[4]?.trim() || '';
+        const list = values[5]?.trim() || '';
+
+        // Check for duplicate in existing data
+        const isDuplicateInExisting = existingData.some(existingList => {
+          const existingSector = Array.isArray(existingList.sector) 
+            ? (existingList.sector.length === 1 && existingList.sector[0] === 'ALL' ? 'ALL' : existingList.sector.sort().join(','))
+            : existingList.sector || '';
+          const existingDomain = Array.isArray(existingList.domain)
+            ? (existingList.domain.length === 1 && existingList.domain[0] === 'ALL' ? 'ALL' : existingList.domain.sort().join(','))
+            : existingList.domain || '';
+          const existingCountry = Array.isArray(existingList.country)
+            ? (existingList.country.length === 1 && existingList.country[0] === 'ALL' ? 'ALL' : existingList.country.sort().join(','))
+            : existingList.country || '';
+          
+          return existingSector === sector &&
+                 existingDomain === domain &&
+                 existingCountry === country &&
+                 existingList.set === set &&
+                 existingList.grouping === grouping &&
+                 existingList.list === list;
+        });
+
+        if (isDuplicateInExisting) {
+          errors.push(`Row ${index + 2}: A list with the same Sector (${sector}), Domain (${domain}), Country (${country}), Set (${set}), Grouping (${grouping}), and List (${list}) already exists in the dataset.`);
+          return;
+        }
+
+        // Check for duplicate within the CSV file itself
+        const isDuplicateInCSV = parsedLists.some(parsedList => {
+          const parsedSector = Array.isArray(parsedList.sector)
+            ? (parsedList.sector.length === 1 && parsedList.sector[0] === 'ALL' ? 'ALL' : parsedList.sector.sort().join(','))
+            : parsedList.sector || '';
+          const parsedDomain = Array.isArray(parsedList.domain)
+            ? (parsedList.domain.length === 1 && parsedList.domain[0] === 'ALL' ? 'ALL' : parsedList.domain.sort().join(','))
+            : parsedList.domain || '';
+          const parsedCountry = Array.isArray(parsedList.country)
+            ? (parsedList.country.length === 1 && parsedList.country[0] === 'ALL' ? 'ALL' : parsedList.country.sort().join(','))
+            : parsedList.country || '';
+          
+          return parsedSector === sector &&
+                 parsedDomain === domain &&
+                 parsedCountry === country &&
+                 parsedList.set === set &&
+                 parsedList.grouping === grouping &&
+                 parsedList.list === list;
+        });
+
+        if (isDuplicateInCSV) {
+          errors.push(`Row ${index + 2}: A duplicate entry with the same Sector (${sector}), Domain (${domain}), Country (${country}), Set (${set}), Grouping (${grouping}), and List (${list}) already exists earlier in the CSV file.`);
+          return;
+        }
+
+        const newList: ListData = {
+          id: `list-${Date.now()}-${index}`,
+          sector,
+          domain,
+          country,
+          set,
+          grouping,
+          list,
+          format: values[6] && values[6].trim() !== '' ? values[6].trim() : undefined,
+          source: values[7] && values[7].trim() !== '' ? values[7].trim() : undefined,
+          upkeep: values[8] && values[8].trim() !== '' ? values[8].trim() : undefined,
+          graph: values[9] && values[9].trim() !== '' ? values[9].trim() : undefined,
+          origin: values[10] && values[10].trim() !== '' ? values[10].trim() : undefined,
           status: 'Active',
           variablesAttachedList: [],
           listValuesList: []
@@ -179,7 +249,7 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
               ))}
             </div>
             <div className="text-xs text-ag-dark-error">
-              * Required fields (columns 1-8)
+              * Required fields (columns 1-6)
             </div>
           </div>
 
@@ -224,8 +294,8 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required Fields:</strong></p>
-            <p>• Driver through List Name must have values</p>
-            <p>• Source, Upkeep, Graph, Origin are optional and can be left empty</p>
+            <p>• Sector, Domain, Country, Set, Grouping, and List must have values</p>
+            <p>• Format, Source, Upkeep, Graph, Origin are optional and can be left empty</p>
             <p><strong>After Upload:</strong></p>
             <p>• You can attach variables through the List Metadata panel</p>
             <p>• Select any uploaded list to edit its variables attached and list values</p>

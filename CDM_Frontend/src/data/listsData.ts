@@ -1,13 +1,18 @@
 // Lists data structure and mock data
 export interface ListData {
   id: string;
-  driver: string;
-  objectType: string;
-  clarifier: string;
-  variable: string;
+  sector: string;
+  domain: string;
+  country: string;
   set: string;
   grouping: string;
   list: string;
+  // Metadata fields
+  format?: string;
+  source?: string;
+  upkeep?: string;
+  graph?: string;
+  origin?: string;
   // Parsed metadata fields
   status?: string;
   variablesAttachedList?: VariableAttached[];
@@ -27,12 +32,153 @@ export interface ListValue {
   value: string;
 }
 
-export const mockListData: ListData[] = [];
+export const mockListData: ListData[] = [
+  {
+    id: '1',
+    sector: 'ALL',
+    domain: 'ALL',
+    country: 'ALL',
+    set: 'Geography',
+    grouping: 'GICS',
+    list: 'Country',
+    format: 'Text',
+    source: 'Internal',
+    upkeep: 'Monthly',
+    graph: 'Y',
+    origin: 'System'
+  },
+  {
+    id: '2',
+    sector: 'ALL',
+    domain: 'ALL',
+    country: 'ALL',
+    set: 'Geography',
+    grouping: 'GICS',
+    list: 'State',
+    format: 'Text',
+    source: 'Internal',
+    upkeep: 'Monthly',
+    graph: 'Y',
+    origin: 'System'
+  },
+  {
+    id: '3',
+    sector: 'Technology',
+    domain: 'Information Technology',
+    country: 'United States',
+    set: 'Industry',
+    grouping: 'NAICS',
+    list: 'Software Categories',
+    format: 'List',
+    source: 'External',
+    upkeep: 'Quarterly',
+    graph: 'N',
+    origin: 'User'
+  },
+  {
+    id: '4',
+    sector: 'Healthcare',
+    domain: 'Research & Development',
+    country: 'United States',
+    set: 'Rating',
+    grouping: '-',
+    list: 'Medical Specialties',
+    format: 'Text',
+    source: 'API',
+    upkeep: 'Annually',
+    graph: 'Conditional',
+    origin: 'Import'
+  },
+  {
+    id: '5',
+    sector: 'Financial Services',
+    domain: 'Finance & Accounting',
+    country: 'ALL',
+    set: 'Flag',
+    grouping: 'ICB',
+    list: 'Account Types',
+    format: 'Special',
+    source: 'Internal',
+    upkeep: 'As Needed',
+    graph: 'Y',
+    origin: 'System'
+  },
+  {
+    id: '6',
+    sector: 'ALL',
+    domain: 'ALL',
+    country: 'Canada',
+    set: 'Geography',
+    grouping: 'GICS',
+    list: 'Province',
+    format: 'Text',
+    source: 'Internal',
+    upkeep: 'Monthly',
+    graph: 'Y',
+    origin: 'System'
+  },
+  {
+    id: '7',
+    sector: 'Manufacturing',
+    domain: 'Operations',
+    country: 'Germany',
+    set: 'Industry',
+    grouping: 'SIC',
+    list: 'Product Categories',
+    format: 'List',
+    source: 'Manual',
+    upkeep: 'Weekly',
+    graph: 'N',
+    origin: 'User'
+  },
+  {
+    id: '8',
+    sector: 'Retail',
+    domain: 'Sales & Marketing',
+    country: 'United Kingdom',
+    set: 'Timing',
+    grouping: '-',
+    list: 'Seasonal Periods',
+    format: 'Date',
+    source: 'Calculated',
+    upkeep: 'Quarterly',
+    graph: 'Conditional',
+    origin: 'Generated'
+  },
+  {
+    id: '9',
+    sector: 'ALL',
+    domain: 'ALL',
+    country: 'ALL',
+    set: 'Lexicon',
+    grouping: 'GICS',
+    list: 'Status Codes',
+    format: 'Flag',
+    source: 'Internal',
+    upkeep: 'As Needed',
+    graph: 'Y',
+    origin: 'System'
+  },
+  {
+    id: '10',
+    sector: 'Energy',
+    domain: 'Operations',
+    country: 'United States',
+    set: 'Industry',
+    grouping: 'NAICS',
+    list: 'Energy Sources',
+    format: 'Text',
+    source: 'External',
+    upkeep: 'Annually',
+    graph: 'N',
+    origin: 'Import'
+  }
+];
 
 export const listColumns = [
-  { key: 'driver', title: 'Driver', sortable: true, filterable: true, width: '160px' },
-  { key: 'objectType', title: 'Object Type', sortable: true, filterable: true, width: '140px' },
-  { key: 'clarifier', title: 'Clarifier', sortable: true, filterable: true, width: '120px' },
+  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '80px' },
+  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '80px' },
+  { key: 'country', title: 'C', sortable: true, filterable: true, width: '80px' },
   { key: 'set', title: 'Set', sortable: true, filterable: true, width: '140px' },
   { key: 'grouping', title: 'Grouping', sortable: true, filterable: true, width: '120px' },
   { key: 'list', title: 'List', sortable: true, filterable: true, width: '180px' }
@@ -40,48 +186,47 @@ export const listColumns = [
 
 // Dropdown options for list fields
 export const listFieldOptions = {
-  driver: ['***, ***, ***, ***'],
-  objectType: ['*', 'ANY', 'Security', 'Person', 'Company', 'Product'],
-  clarifier: ['*', 'ANY', 'Bond', 'Stock', 'Option', 'Future'],
   set: ['Flag', 'Geography', 'Rating', 'Timing', 'Industry', 'Lexicon'],
   grouping: ['-', 'GICS', 'NAICS', 'SIC', 'ICB']
 };
 
 export const listMetadataFields = [
   { 
-    key: 'driver', 
-    label: 'Driver', 
-    type: 'select' as const, 
-    options: listFieldOptions.driver,
-    required: true
-  },
-  { 
-    key: 'objectType', 
-    label: 'Object Type', 
-    type: 'select' as const, 
-    options: listFieldOptions.objectType,
-    required: true
-  },
-  { 
-    key: 'clarifier', 
-    label: 'Clarifier', 
-    type: 'select' as const, 
-    options: listFieldOptions.clarifier,
-    required: true
-  },
-  { 
     key: 'format', 
     label: 'Format', 
-    type: 'select' as const, 
-    options: ['Text', 'Number', 'Date', 'Boolean', 'List', 'Special'],
-    required: true
+    type: 'text' as const,
+    required: false
+  },
+  { 
+    key: 'source', 
+    label: 'Source', 
+    type: 'text' as const,
+    required: false
+  },
+  { 
+    key: 'upkeep', 
+    label: 'Upkeep', 
+    type: 'text' as const,
+    required: false
+  },
+  { 
+    key: 'graph', 
+    label: 'Graph', 
+    type: 'text' as const,
+    required: false
+  },
+  { 
+    key: 'origin', 
+    label: 'Origin', 
+    type: 'text' as const,
+    required: false
   },
   { 
     key: 'set', 
     label: 'Set', 
     type: 'select' as const,
     options: listFieldOptions.set,
-    required: true
+    required: false
   },
   { 
     key: 'grouping', 
@@ -95,33 +240,5 @@ export const listMetadataFields = [
     label: 'List', 
     type: 'text' as const,
     required: true
-  },
-  { 
-    key: 'source', 
-    label: 'Source', 
-    type: 'select' as const,
-    options: ['Internal', 'External', 'API', 'Manual', 'Calculated'],
-    required: false
-  },
-  { 
-    key: 'upkeep', 
-    label: 'Upkeep', 
-    type: 'select' as const,
-    options: ['Daily', 'Weekly', 'Monthly', 'Quarterly', 'Annually', 'As Needed'],
-    required: false
-  },
-  { 
-    key: 'graph', 
-    label: 'Graph', 
-    type: 'select' as const,
-    options: ['Y', 'N', 'Conditional'],
-    required: false
-  },
-  { 
-    key: 'origin', 
-    label: 'Origin', 
-    type: 'select' as const,
-    options: ['System', 'User', 'Import', 'Migration', 'Generated'],
-    required: false
   }
 ];
