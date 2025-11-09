@@ -688,8 +688,12 @@ function App() {
           console.log('🔴 Object deleted successfully');
         } else if (activeTab === 'lists') {
           setListData(prev => prev.filter(item => item.id !== row.id));
+          // Remove from selectedRows if it was selected
+          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         } else if (activeTab === 'variables') {
           setVariableData(prev => prev.filter(item => item.id !== row.id));
+          // Remove from selectedRows if it was selected
+          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         }
         
         if (selectedRowForMetadata?.id === row.id) {
@@ -700,10 +704,13 @@ function App() {
         // Fallback to local state update
         if (activeTab === 'objects') {
           setData(prev => prev.filter(item => item.id !== row.id));
+          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         } else if (activeTab === 'lists') {
           setListData(prev => prev.filter(item => item.id !== row.id));
+          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         } else if (activeTab === 'variables') {
           setVariableData(prev => prev.filter(item => item.id !== row.id));
+          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
         }
         
         if (selectedRowForMetadata?.id === row.id) {
@@ -932,7 +939,7 @@ function App() {
           }
         }
       } else {
-        // For other tabs, clear all selections
+        // For other tabs (objects, lists), clear all selections
         setSelectedRows([]);
         setSelectedRowForMetadata(null);
       }
