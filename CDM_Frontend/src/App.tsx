@@ -1055,24 +1055,16 @@ function App() {
         const updated = { ...item };
         
         if (activeTab === 'lists') {
-          // Update list fields if they were changed
+          // Update list fields - override existing values if they were changed
+          // Skip relationships and list values for now (will be implemented later)
           Object.keys(updatedData).forEach(key => {
-            if (updatedData[key] && !['variablesAttachedList', 'listValuesList'].includes(key)) {
+            if (updatedData[key] !== undefined && updatedData[key] !== '' && !['variablesAttachedList', 'listValuesList'].includes(key)) {
               updated[key] = updatedData[key];
             }
           });
           
-          // Append new variables attached if any were added
-          if (updatedData.variablesAttachedList && updatedData.variablesAttachedList.length > 0) {
-            const existingVariables = updated.variablesAttachedList || [];
-            updated.variablesAttachedList = [...existingVariables, ...updatedData.variablesAttachedList];
-          }
-          
-          // Append new list values if any were added
-          if (updatedData.listValuesList && updatedData.listValuesList.length > 0) {
-            const existingValues = updated.listValuesList || [];
-            updated.listValuesList = [...existingValues, ...updatedData.listValuesList];
-          }
+          // Handle relationships - skip for now (will be implemented later)
+          // Handle list values - skip for now (will be implemented later)
         } else {
           // Update object fields if they were changed
           if (updatedData.driver) updated.driver = updatedData.driver;
@@ -2327,7 +2319,7 @@ function App() {
                 onClose={() => {}} // Not used - panel closes automatically when selection changes
                 onSave={handleBulkEdit}
                 selectedCount={selectedRows.length}
-                allData={activeTab === 'variables' ? variableData : data}
+                allData={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
                 activeTab={activeTab}
                 selectedObjects={selectedRows}
               />

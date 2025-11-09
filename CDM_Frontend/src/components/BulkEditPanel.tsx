@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network } from 'lucide-react';
+import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { RelationshipModal } from './RelationshipModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
+import { listFieldOptions } from '../data/listsData';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 
 interface CompositeKey {
   id: string;
@@ -47,11 +49,23 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   activeTab = 'objects',
   selectedObjects = []
 }) => {
-  // Basic form data
+  // Basic form data - Objects
   const [formData, setFormData] = useState({
     being: '',
     avatar: '',
     objectName: ''
+  });
+
+  // Lists form data
+  const [listFormData, setListFormData] = useState({
+    list: '',
+    set: '',
+    grouping: '',
+    format: '',
+    source: '',
+    upkeep: '',
+    graph: '',
+    origin: ''
   });
 
   // Driver selections state
@@ -60,6 +74,13 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     domain: [] as string[],
     country: [] as string[],
     objectClarifier: ''
+  });
+
+  // Lists driver selections state (same structure as Objects)
+  const [listDriverSelections, setListDriverSelections] = useState({
+    sector: [] as string[],
+    domain: [] as string[],
+    country: [] as string[]
   });
 
   // Use only API drivers data
@@ -116,13 +137,19 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
   
+  // Lists relationships state
+  const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
+  const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
     ontology: false,
     identifiers: false,
     relationships: false,
-    variants: false
+    variants: false,
+    metadata: false,
+    listValues: false
   });
 
   // Ontology modal state
@@ -223,17 +250,31 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   };
 
   const handleChange = (key: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    if (activeTab === 'lists') {
+      setListFormData(prev => ({
+        ...prev,
+        [key]: value
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [key]: value
+      }));
+    }
   };
 
   const handleDriverSelectionChange = (type: 'sector' | 'domain' | 'country', values: string[]) => {
-    setDriverSelections(prev => ({
-      ...prev,
-      [type]: values
-    }));
+    if (activeTab === 'lists') {
+      setListDriverSelections(prev => ({
+        ...prev,
+        [type]: values
+      }));
+    } else {
+      setDriverSelections(prev => ({
+        ...prev,
+        [type]: values
+      }));
+    }
   };
 
   const handleObjectClarifierChange = (value: string) => {
@@ -404,6 +445,68 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   };
 
   const handleSaveBulkEdit = () => {
+    if (activeTab === 'lists') {
+      // Handle Lists bulk edit
+      const saveData: Record<string, any> = {};
+      
+      // Add list name if changed
+      if (listFormData.list.trim() !== '') {
+        saveData.list = listFormData.list;
+      }
+      
+      // Add driver selections if any are selected
+      if (listDriverSelections.sector.length > 0) {
+        saveData.sector = listDriverSelections.sector.length === 1 && listDriverSelections.sector[0] === 'ALL' 
+          ? 'ALL' 
+          : listDriverSelections.sector.join(',');
+      }
+      if (listDriverSelections.domain.length > 0) {
+        saveData.domain = listDriverSelections.domain.length === 1 && listDriverSelections.domain[0] === 'ALL' 
+          ? 'ALL' 
+          : listDriverSelections.domain.join(',');
+      }
+      if (listDriverSelections.country.length > 0) {
+        saveData.country = listDriverSelections.country.length === 1 && listDriverSelections.country[0] === 'ALL' 
+          ? 'ALL' 
+          : listDriverSelections.country.join(',');
+      }
+      
+      // Add ontology fields if changed
+      if (listFormData.set.trim() !== '') {
+        saveData.set = listFormData.set;
+      }
+      if (listFormData.grouping.trim() !== '') {
+        saveData.grouping = listFormData.grouping;
+      }
+      
+      // Add metadata fields if changed
+      if (listFormData.format.trim() !== '') {
+        saveData.format = listFormData.format;
+      }
+      if (listFormData.source.trim() !== '') {
+        saveData.source = listFormData.source;
+      }
+      if (listFormData.upkeep.trim() !== '') {
+        saveData.upkeep = listFormData.upkeep;
+      }
+      if (listFormData.graph.trim() !== '') {
+        saveData.graph = listFormData.graph;
+      }
+      if (listFormData.origin.trim() !== '') {
+        saveData.origin = listFormData.origin;
+      }
+      
+      // Add relationships if selected (for future implementation)
+      if (selectedVariables.length > 0) {
+        saveData.variablesAttachedList = selectedVariables;
+      }
+      
+      console.log('🔄 BulkEditPanel (Lists) - saveData:', saveData);
+      onSave(saveData);
+      return;
+    }
+    
+    // Handle Objects bulk edit (existing logic)
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 
                                driverSelections.domain.length > 0 || 
@@ -700,24 +803,265 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       {/* Bulk Edit Mode Notice - Always Visible */}
       <div className="bg-ag-dark-bg rounded-lg border border-ag-dark-border p-4 mb-6">
         <div className="text-sm text-ag-dark-text">
-          <span className="font-semibold text-ag-dark-accent">Bulk Edit Mode:</span> Changes will be applied to all {selectedCount} selected objects. New relationships and variants will be appended to existing ones.
+          <span className="font-semibold text-ag-dark-accent">Bulk Edit Mode:</span> Changes will be applied to all {selectedCount} selected {activeTab === 'lists' ? 'lists' : 'objects'}. {activeTab === 'lists' ? 'Setting any field to a different value will override existing values for those lists.' : 'New relationships and variants will be appended to existing ones.'}
         </div>
       </div>
 
-      {/* Object Name Field - Moved out of collapsible section */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-ag-dark-text mb-2">
-          Object Name
-        </label>
-        <input
-          type="text"
-          value={formData.objectName}
-          onChange={(e) => handleChange('objectName', e.target.value)}
-          placeholder="Keep current object names"
-          onClick={(e) => e.stopPropagation()}
-          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-        />
-      </div>
+      {/* Conditional rendering based on activeTab */}
+      {activeTab === 'lists' ? (
+        <>
+          {/* List Name Field */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              List Name
+            </label>
+            <input
+              type="text"
+              value={listFormData.list}
+              onChange={(e) => handleChange('list', e.target.value)}
+              placeholder="Keep current list names"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+            />
+          </div>
+
+          {/* Drivers Section - Lists */}
+          <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Sector
+                </label>
+                <MultiSelect
+                  label="Sector"
+                  options={['ALL', ...driversData.sectors]}
+                  values={listDriverSelections.sector}
+                  onChange={(values) => handleDriverSelectionChange('sector', values)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Domain
+                </label>
+                <MultiSelect
+                  label="Domain"
+                  options={['ALL', ...driversData.domains]}
+                  values={listDriverSelections.domain}
+                  onChange={(values) => handleDriverSelectionChange('domain', values)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Country
+                </label>
+                <MultiSelect
+                  label="Country"
+                  options={['ALL', ...driversData.countries]}
+                  values={listDriverSelections.country}
+                  onChange={(values) => handleDriverSelectionChange('country', values)}
+                />
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Ontology Section - Lists */}
+          <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Set
+                </label>
+                <select
+                  value={listFormData.set}
+                  onChange={(e) => handleChange('set', e.target.value)}
+                  className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  <option value="">Keep Current Set</option>
+                  {listFieldOptions.set.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Grouping
+                </label>
+                <select
+                  value={listFormData.grouping}
+                  onChange={(e) => handleChange('grouping', e.target.value)}
+                  className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  <option value="">Keep Current Grouping</option>
+                  {listFieldOptions.grouping.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Metadata Section - Lists */}
+          <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Format
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.format}
+                  onChange={(e) => handleChange('format', e.target.value)}
+                  placeholder="Keep current format"
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Source
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.source}
+                  onChange={(e) => handleChange('source', e.target.value)}
+                  placeholder="Keep current source"
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Upkeep
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.upkeep}
+                  onChange={(e) => handleChange('upkeep', e.target.value)}
+                  placeholder="Keep current upkeep"
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Graph
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.graph}
+                  onChange={(e) => handleChange('graph', e.target.value)}
+                  placeholder="Keep current graph"
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Origin
+                </label>
+                <input
+                  type="text"
+                  value={listFormData.origin}
+                  onChange={(e) => handleChange('origin', e.target.value)}
+                  placeholder="Keep current origin"
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                />
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {/* Relationships Section - Lists */}
+          <CollapsibleSection 
+            title="Relationships" 
+            sectionKey="relationships"
+            icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+            actions={
+              <button
+                onClick={() => setIsVariableRelationshipModalOpen(true)}
+                className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                title="View and manage relationships"
+              >
+                View Relationships
+              </button>
+            }
+          >
+            <div className="mb-6">
+              {selectedVariables.length === 0 ? (
+                <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+                  <div className="text-sm text-ag-dark-text-secondary">
+                    <span className="font-medium">No variables selected:</span> Click "View Relationships" to select variables from the variables grid.
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+                  <div className="text-sm text-ag-dark-text">
+                    <span className="font-medium">{selectedVariables.length} variable{selectedVariables.length !== 1 ? 's' : ''} selected:</span>
+                    <div className="mt-2 space-y-1">
+                      {selectedVariables.slice(0, 5).map((variable, idx) => (
+                        <div key={idx} className="text-xs text-ag-dark-text-secondary">
+                          • {variable.variable || variable.name || 'Unknown'}
+                        </div>
+                      ))}
+                      {selectedVariables.length > 5 && (
+                        <div className="text-xs text-ag-dark-text-secondary">
+                          ... and {selectedVariables.length - 5} more
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </CollapsibleSection>
+
+          {/* List Values Section - Lists (placeholder for now) */}
+          <CollapsibleSection 
+            title="List Values" 
+            sectionKey="listValues"
+            icon={<List className="w-4 h-4 text-ag-dark-text-secondary" />}
+          >
+            <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+              <div className="text-sm text-ag-dark-text-secondary">
+                List values bulk editing will be implemented later.
+              </div>
+            </div>
+          </CollapsibleSection>
+        </>
+      ) : (
+        <>
+          {/* Object Name Field - Moved out of collapsible section */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Object Name
+            </label>
+            <input
+              type="text"
+              value={formData.objectName}
+              onChange={(e) => handleChange('objectName', e.target.value)}
+              placeholder="Keep current object names"
+              onClick={(e) => e.stopPropagation()}
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+            />
+          </div>
 
       {/* Drivers Section */}
       <CollapsibleSection title="Drivers" sectionKey="drivers" icon={<Database className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="drivers">
@@ -1141,6 +1485,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           />
         </div>
       </CollapsibleSection>
+        </>
+      )}
 
       {/* Apply Changes Button */}
       <div className="mt-8 pt-6 border-t border-ag-dark-border">
@@ -1149,7 +1495,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           className="w-full bg-ag-dark-accent text-white py-2 px-4 rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center justify-center gap-2"
         >
           <Save className="w-4 h-4" />
-          Apply to {selectedCount} Objects
+          Apply to {selectedCount} {activeTab === 'lists' ? 'Lists' : 'Objects'}
         </button>
       </div>
 
@@ -1168,21 +1514,45 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         onUpload={handleVariantCsvUpload}
       />
 
-      {/* Relationship Modal */}
-      <RelationshipModal
-        isOpen={isRelationshipModalOpen}
-        onClose={() => setIsRelationshipModalOpen(false)}
-        selectedObject={null}
-        selectedObjects={selectedObjects}
-        allObjects={allData}
-        onSave={() => {
-          // Refresh data after saving relationships
-          if (onSave) {
-            onSave({});
-          }
-        }}
-        isBulkMode={true}
-      />
+      {/* Relationship Modal - Objects */}
+      {activeTab === 'objects' && (
+        <RelationshipModal
+          isOpen={isRelationshipModalOpen}
+          onClose={() => setIsRelationshipModalOpen(false)}
+          selectedObject={null}
+          selectedObjects={selectedObjects}
+          allObjects={allData}
+          onSave={() => {
+            // Refresh data after saving relationships
+            if (onSave) {
+              onSave({});
+            }
+          }}
+          isBulkMode={true}
+        />
+      )}
+
+      {/* Variable Relationship Modal - Lists */}
+      {activeTab === 'lists' && (
+        <VariableObjectRelationshipModal
+          isOpen={isVariableRelationshipModalOpen}
+          onClose={() => setIsVariableRelationshipModalOpen(false)}
+          selectedVariable={null}
+          selectedVariables={selectedObjects}
+          allObjects={variablesData as any}
+          onSave={() => {
+            // Refresh data after saving relationships
+            if (onSave) {
+              onSave({});
+            }
+          }}
+          onRelationshipsChange={(relationships) => {
+            // Update selected variables when relationships change
+            setSelectedVariables(relationships);
+          }}
+          isBulkMode={true}
+        />
+      )}
 
       {/* Ontology Modal */}
       {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && selectedObjects.length > 0 && (

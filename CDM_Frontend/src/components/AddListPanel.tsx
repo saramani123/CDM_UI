@@ -469,7 +469,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Sector
+              Sector <span className="text-ag-dark-error">*</span>
             </label>
             <MultiSelect
               label="Sector"
@@ -481,7 +481,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Domain
+              Domain <span className="text-ag-dark-error">*</span>
             </label>
             <MultiSelect
               label="Domain"
@@ -493,7 +493,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Country
+              Country <span className="text-ag-dark-error">*</span>
             </label>
             <MultiSelect
               label="Country"
@@ -534,7 +534,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Grouping
+              Grouping <span className="text-ag-dark-error">*</span>
             </label>
             <select
               value={formData.grouping}
