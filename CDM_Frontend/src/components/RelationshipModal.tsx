@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns } from '../data/mockData';
@@ -62,37 +62,57 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   }>>([]);
   const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
 
+  // Track if initialization is in progress to prevent duplicate calls
+  const isInitializingRef = useRef(false);
+  const initializationTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Initialize relationship data when modal opens
   useEffect(() => {
+    // Clear any pending initialization
+    if (initializationTimerRef.current) {
+      clearTimeout(initializationTimerRef.current);
+      initializationTimerRef.current = null;
+    }
+    
     if (isOpen && sourceObjects.length > 0 && allObjects.length > 0) {
-      // Always refresh data when modal opens to ensure latest relationships are shown
-      initializeRelationshipData();
+      // Use a small delay to allow any pending state updates to complete
+      // Only initialize if not already initializing
+      if (!isInitializingRef.current) {
+        initializationTimerRef.current = setTimeout(() => {
+          if (!isInitializingRef.current) {
+            initializeRelationshipData();
+          }
+        }, 150);
+      }
+      
+      return () => {
+        if (initializationTimerRef.current) {
+          clearTimeout(initializationTimerRef.current);
+          initializationTimerRef.current = null;
+        }
+      };
     }
     // Reset relationship data when modal closes
     if (!isOpen) {
       setRelationshipData({});
       setCustomSortRules([]);
+      isInitializingRef.current = false;
+      if (initializationTimerRef.current) {
+        clearTimeout(initializationTimerRef.current);
+        initializationTimerRef.current = null;
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, sourceObjects.length, allObjects.length, initialRelationships.length]);
-
-  // Force refresh when modal opens (to catch bulk relationship updates)
-  // This ensures that when you open an individual object's modal after bulk operations,
-  // it always shows the latest relationships from Neo4j
-  useEffect(() => {
-    if (isOpen && sourceObjects.length > 0 && allObjects.length > 0) {
-      // Force refresh when modal opens to ensure latest relationships are shown
-      // Use a small delay to allow any pending state updates to complete
-      const refreshTimer = setTimeout(() => {
-        initializeRelationshipData();
-      }, 150);
-      return () => clearTimeout(refreshTimer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, [isOpen, sourceObjects.length, allObjects.length]);
 
   const initializeRelationshipData = async () => {
     if (sourceObjects.length === 0) return;
+    
+    // Prevent duplicate calls - if already initializing, skip
+    if (isInitializingRef.current) {
+      return;
+    }
+    isInitializingRef.current = true;
 
     setLoading(true);
     try {
@@ -107,6 +127,19 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         sourceObjects[0]._isCloned && 
         !sourceObjects[0]._isSaved;
       
+      // Load existing relationships ONCE before the loop (not inside the loop)
+      let allExistingRelationships: any[] = [];
+      if (!isBulkMode && sourceObjects.length === 1 && !isTemporaryObject) {
+        if (isClonedObject) {
+          // For cloned objects, use relationships from the cloned data
+          allExistingRelationships = sourceObjects[0].relationshipsList || [];
+        } else {
+          // For saved objects, load from API ONCE
+          const existingRelationships = await apiService.getObjectRelationships(sourceObjects[0].id) as any;
+          allExistingRelationships = existingRelationships.relationshipsList || [];
+        }
+      }
+      
       // Initialize relationship data for all objects
       const initialData: Record<string, RelationshipData> = {};
       
@@ -114,29 +147,12 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         // Check if this object is one of the source objects (for Intra-Table logic)
         const isSourceObject = sourceObjects.some(so => so.id === obj.id);
         
-        // In bulk mode, don't load existing relationships - we're creating new ones
-        // In single mode, load existing relationships for the selected object
-        let existingRels: any[] = [];
-        if (!isBulkMode && sourceObjects.length === 1 && !isTemporaryObject) {
-          if (isClonedObject) {
-            // For cloned objects, use relationships from the cloned data
-            const clonedRelationships = sourceObjects[0].relationshipsList || [];
-            existingRels = clonedRelationships.filter((rel: any) => 
-              rel.toBeing === obj.being && 
-              rel.toAvatar === obj.avatar && 
-              rel.toObject === obj.object
-            );
-          } else {
-            // For saved objects, load from API
-            const existingRelationships = await apiService.getObjectRelationships(sourceObjects[0].id) as any;
-            const relationshipsList = existingRelationships.relationshipsList || [];
-            existingRels = relationshipsList.filter((rel: any) => 
-              rel.toBeing === obj.being && 
-              rel.toAvatar === obj.avatar && 
-              rel.toObject === obj.object
-            );
-          }
-        }
+        // Filter existing relationships for this specific object (no API call in loop)
+        const existingRels = allExistingRelationships.filter((rel: any) => 
+          rel.toBeing === obj.being && 
+          rel.toAvatar === obj.avatar && 
+          rel.toObject === obj.object
+        );
 
         if (existingRels.length > 0) {
           // Handle legacy relationships with proper role fallbacks
@@ -269,6 +285,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       setRelationshipData(initialData);
     } finally {
       setLoading(false);
+      isInitializingRef.current = false;
     }
   };
 
