@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Upload, FileText } from 'lucide-react';
+import { X, Upload, FileText, Loader2 } from 'lucide-react';
 
 import { ListData } from '../data/listsData';
 
@@ -17,6 +17,7 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
   existingData = []
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
 
@@ -38,15 +39,18 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
   };
 
   const handleFileUpload = (file: File) => {
+    setIsLoading(true);
     const reader = new FileReader();
     reader.onload = (e) => {
-      const csv = e.target?.result as string;
-      const lines = csv.split('\n').filter(line => line.trim());
-      
-      if (lines.length < 2) {
-        alert('CSV must contain at least a header row and one data row');
-        return;
-      }
+      try {
+        const csv = e.target?.result as string;
+        const lines = csv.split('\n').filter(line => line.trim());
+        
+        if (lines.length < 2) {
+          alert('CSV must contain at least a header row and one data row');
+          setIsLoading(false);
+          return;
+        }
 
       // Skip header row and parse data rows
       const dataRows = lines.slice(1);
@@ -165,17 +169,32 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
         parsedLists.push(newList);
       });
 
-      if (errors.length > 0) {
-        alert(`CSV Upload Errors:\n\n${errors.join('\n')}\n\nPlease fix these errors and try again.`);
-        return;
-      }
+        if (errors.length > 0) {
+          alert(`CSV Upload Errors:\n\n${errors.join('\n')}\n\nPlease fix these errors and try again.`);
+          setIsLoading(false);
+          return;
+        }
 
-      if (parsedLists.length > 0) {
-        onUpload(parsedLists);
-        onClose();
-      } else {
-        alert('No valid lists found in CSV. Please check the format.');
+        if (parsedLists.length > 0) {
+          // Small delay to show loading animation
+          setTimeout(() => {
+            onUpload(parsedLists);
+            setIsLoading(false);
+            onClose();
+          }, 500);
+        } else {
+          alert('No valid lists found in CSV. Please check the format.');
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('Error processing CSV:', error);
+        alert('Error processing CSV file. Please try again.');
+        setIsLoading(false);
       }
+    };
+    reader.onerror = () => {
+      alert('Error reading file. Please try again.');
+      setIsLoading(false);
     };
     reader.readAsText(file);
   };
@@ -260,34 +279,51 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
                 isDragOver
                   ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10'
                   : 'border-ag-dark-border hover:border-ag-dark-accent hover:bg-ag-dark-bg'
-              }`}
+              } ${isLoading ? 'opacity-50 pointer-events-none' : ''}`}
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
             >
-              <div className="space-y-4">
-                <div className="flex justify-center">
-                  <FileText className="w-12 h-12 text-ag-dark-text-secondary" />
+              {isLoading ? (
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <Loader2 className="w-12 h-12 text-ag-dark-accent animate-spin" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-ag-dark-text">
+                      Processing CSV file...
+                    </p>
+                    <p className="text-xs text-ag-dark-text-secondary">
+                      Please wait while we load your data
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-ag-dark-text">
-                    Drop your CSV file here
-                  </p>
-                  <p className="text-xs text-ag-dark-text-secondary">
-                    or click to browse
-                  </p>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex justify-center">
+                    <FileText className="w-12 h-12 text-ag-dark-text-secondary" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-ag-dark-text">
+                      Drop your CSV file here
+                    </p>
+                    <p className="text-xs text-ag-dark-text-secondary">
+                      or click to browse
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    UPLOAD CSV
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      disabled={isLoading}
+                    />
+                  </label>
                 </div>
-                <label className="inline-flex items-center gap-2 px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors cursor-pointer">
-                  <Upload className="w-4 h-4" />
-                  UPLOAD CSV
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
-                </label>
-              </div>
+              )}
             </div>
           </div>
 

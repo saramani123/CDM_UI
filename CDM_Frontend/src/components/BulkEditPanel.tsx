@@ -7,8 +7,10 @@ import { RelationshipModal } from './RelationshipModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { listFieldOptions } from '../data/listsData';
-import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
+import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
+import { apiService } from '../services/api';
 
 interface CompositeKey {
   id: string;
@@ -141,6 +143,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+  const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
   
   // Lists ontology modal state
   const [listsOntologyModalOpen, setListsOntologyModalOpen] = useState<{
@@ -753,7 +756,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     children: React.ReactNode;
     ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata';
     listsOntologyViewType?: 'drivers' | 'ontology' | 'metadata';
-  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, listsOntologyViewType }) => {
+    showRelationshipsGraph?: boolean;
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, listsOntologyViewType, showRelationshipsGraph }) => {
     const isExpanded = expandedSections[sectionKey];
     const hasSelectedObjects = selectedObjects && selectedObjects.length > 0;
     const isListsMode = activeTab === 'lists';
@@ -775,6 +779,25 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {isExpanded && actions && <>{actions}</>}
+            {isListsMode && showRelationshipsGraph && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasSelectedObjects) {
+                    setRelationshipsGraphModalOpen(true);
+                  }
+                }}
+                disabled={!hasSelectedObjects}
+                className={`p-1 transition-colors ${
+                  hasSelectedObjects 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={hasSelectedObjects ? "View Variable-List Relationships Graph" : "Select lists to view relationships graph"}
+              >
+                <Network className="w-4 h-4" />
+              </button>
+            )}
             {isListsMode && listsOntologyViewType && (
               <button
                 onClick={(e) => {
@@ -1045,6 +1068,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             title="Relationships" 
             sectionKey="relationships"
             icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+            showRelationshipsGraph={true}
             actions={
               <button
                 onClick={() => setIsVariableRelationshipModalOpen(true)}
@@ -1067,11 +1091,18 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   <div className="text-sm text-ag-dark-text">
                     <span className="font-medium">{selectedVariables.length} variable{selectedVariables.length !== 1 ? 's' : ''} selected:</span>
                     <div className="mt-2 space-y-1">
-                      {selectedVariables.slice(0, 5).map((variable, idx) => (
-                        <div key={idx} className="text-xs text-ag-dark-text-secondary">
-                          • {variable.variable || variable.name || 'Unknown'}
-                        </div>
-                      ))}
+                      {selectedVariables.slice(0, 5).map((variable, idx) => {
+                        const part = variable.part || '';
+                        const section = variable.section || '';
+                        const group = variable.group || '';
+                        const varName = variable.variable || variable.name || '';
+                        const displayParts = [part, section, group, varName].filter(p => p);
+                        return (
+                          <div key={idx} className="text-xs text-ag-dark-text-secondary">
+                            • {displayParts.length > 0 ? displayParts.join(' / ') : 'Unknown variable'}
+                          </div>
+                        );
+                      })}
                       {selectedVariables.length > 5 && (
                         <div className="text-xs text-ag-dark-text-secondary">
                           ... and {selectedVariables.length - 5} more
@@ -1583,24 +1614,31 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         />
       )}
 
-      {/* Variable Relationship Modal - Lists */}
+      {/* Variable List Relationship Modal - Lists */}
       {activeTab === 'lists' && (
-        <VariableObjectRelationshipModal
+        <VariableListRelationshipModal
           isOpen={isVariableRelationshipModalOpen}
           onClose={() => setIsVariableRelationshipModalOpen(false)}
-          selectedVariable={null}
-          selectedVariables={selectedObjects}
-          allObjects={variablesData as any}
-          onSave={() => {
+          selectedList={null}
+          selectedLists={selectedObjects}
+          allVariables={variablesData}
+          onSave={async () => {
             // Refresh data after saving relationships
             if (onSave) {
               onSave({});
             }
           }}
-          onRelationshipsChange={(relationships) => {
-            // Update selected variables when relationships change
-            setSelectedVariables(relationships);
-          }}
+          isBulkMode={true}
+        />
+      )}
+
+      {/* Variable-List Relationships Graph Modal - Lists */}
+      {activeTab === 'lists' && relationshipsGraphModalOpen && selectedObjects.length > 0 && (
+        <VariableListRelationshipsGraphModal
+          isOpen={relationshipsGraphModalOpen}
+          onClose={() => setRelationshipsGraphModalOpen(false)}
+          listIds={selectedObjects.map(list => list.id).filter(Boolean)}
+          listNames={selectedObjects.map(list => list.list || list.name).filter(Boolean)}
           isBulkMode={true}
         />
       )}

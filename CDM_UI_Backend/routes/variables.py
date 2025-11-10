@@ -1883,3 +1883,95 @@ async def get_variable_field_options():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get field options: {str(e)}")
+
+class VariableListRelationshipCreateRequest(BaseModel):
+    list_id: str
+
+@router.post("/variables/{variable_id}/list-relationships")
+async def create_variable_list_relationship(variable_id: str, request: VariableListRelationshipCreateRequest):
+    """
+    Create a HAS_LIST relationship from a variable to a list.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if variable exists
+            var_result = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id
+            """, {"variable_id": variable_id})
+            
+            if not var_result.single():
+                raise HTTPException(status_code=404, detail=f"Variable with id {variable_id} not found")
+            
+            # Check if list exists
+            list_result = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id
+            """, {"list_id": request.list_id})
+            
+            if not list_result.single():
+                raise HTTPException(status_code=404, detail=f"List with id {request.list_id} not found")
+            
+            # Check if relationship already exists
+            existing_result = session.run("""
+                MATCH (v:Variable {id: $variable_id})-[r:HAS_LIST]->(l:List {id: $list_id})
+                RETURN r
+            """, {"variable_id": variable_id, "list_id": request.list_id})
+            
+            if existing_result.single():
+                raise HTTPException(status_code=400, detail="Relationship already exists")
+            
+            # Create relationship
+            session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                MATCH (l:List {id: $list_id})
+                MERGE (v)-[:HAS_LIST]->(l)
+            """, {"variable_id": variable_id, "list_id": request.list_id})
+            
+            return {"success": True, "message": "Relationship created successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating variable-list relationship: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create variable-list relationship: {str(e)}")
+
+@router.delete("/variables/{variable_id}/list-relationships/{list_id}")
+async def delete_variable_list_relationship(variable_id: str, list_id: str):
+    """
+    Delete a HAS_LIST relationship from a variable to a list.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if relationship exists
+            result = session.run("""
+                MATCH (v:Variable {id: $variable_id})-[r:HAS_LIST]->(l:List {id: $list_id})
+                DELETE r
+                RETURN count(r) as deleted
+            """, {"variable_id": variable_id, "list_id": list_id})
+            
+            record = result.single()
+            deleted = record["deleted"] if record else 0
+            
+            if deleted == 0:
+                raise HTTPException(status_code=404, detail="Relationship not found")
+            
+            return {"success": True, "message": "Relationship deleted successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting variable-list relationship: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete variable-list relationship: {str(e)}")

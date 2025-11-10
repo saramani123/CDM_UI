@@ -554,3 +554,47 @@ async def get_list(list_id: str):
         print(f"Error fetching list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch list: {str(e)}")
 
+@router.get("/lists/{list_id}/variable-relationships")
+async def get_list_variable_relationships(list_id: str):
+    """
+    Get all variables that have a HAS_LIST relationship to the specified list.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (v:Variable)-[r:HAS_LIST]->(l:List {id: $list_id})
+                OPTIONAL MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                RETURN v.id as id, v.name as variable, v.section as section,
+                       p.name as part, g.name as group,
+                       v.formatI as formatI, v.formatII as formatII,
+                       v.gType as gType, v.validation as validation,
+                       v.default as default, v.graph as graph
+            """, {"list_id": list_id})
+            
+            variables = []
+            for record in result:
+                variables.append({
+                    "id": record["id"],
+                    "part": record["part"] or "",
+                    "section": record["section"] or "",
+                    "group": record["group"] or "",
+                    "variable": record["variable"] or record["name"] or "",
+                    "name": record["variable"] or record["name"] or "",
+                    "formatI": record["formatI"] or "",
+                    "formatII": record["formatII"] or "",
+                    "gType": record["gType"] or "",
+                    "validation": record["validation"] or "",
+                    "default": record["default"] or "",
+                    "graph": record["graph"] or ""
+                })
+            
+            return {"variables": variables}
+
+    except Exception as e:
+        print(f"Error fetching list variable relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch list variable relationships: {str(e)}")
+

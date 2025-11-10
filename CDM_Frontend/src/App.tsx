@@ -1708,7 +1708,7 @@ function App() {
     }
   };
 
-  const fetchLists = async () => {
+  const fetchLists = async (): Promise<ListData[]> => {
     try {
       const lists = await apiService.getLists() as any[];
       // Convert API response to ListData format
@@ -1729,17 +1729,68 @@ function App() {
         variablesAttachedList: list.variablesAttachedList || [],
         listValuesList: list.listValuesList || []
       }));
-      setListData(listsDataFormat);
+      
+      // Deduplicate by ID (in case API returns duplicates)
+      const uniqueLists = listsDataFormat.filter((list, index, self) => 
+        index === self.findIndex(l => l.id === list.id)
+      );
+      
+      // Also deduplicate by composite key (sector, domain, country, set, grouping, list)
+      const deduplicatedLists: ListData[] = [];
+      const seenKeys = new Set<string>();
+      
+      for (const list of uniqueLists) {
+        const sectorKey = Array.isArray(list.sector) 
+          ? (list.sector.length === 1 && list.sector[0] === 'ALL' ? 'ALL' : list.sector.sort().join(','))
+          : list.sector || 'ALL';
+        const domainKey = Array.isArray(list.domain)
+          ? (list.domain.length === 1 && list.domain[0] === 'ALL' ? 'ALL' : list.domain.sort().join(','))
+          : list.domain || 'ALL';
+        const countryKey = Array.isArray(list.country)
+          ? (list.country.length === 1 && list.country[0] === 'ALL' ? 'ALL' : list.country.sort().join(','))
+          : list.country || 'ALL';
+        
+        const compositeKey = `${sectorKey}|${domainKey}|${countryKey}|${list.set}|${list.grouping}|${list.list}`;
+        
+        if (!seenKeys.has(compositeKey)) {
+          seenKeys.add(compositeKey);
+          deduplicatedLists.push(list);
+        }
+      }
+      
+      setListData(deduplicatedLists);
+      return deduplicatedLists;
     } catch (error) {
       console.error('Error fetching lists:', error);
       // Keep existing data on error
+      return [];
     }
   };
 
   const handleBulkListUpload = async (lists: ListData[]) => {
     try {
       // Create each list via API
-      const createdLists: ListData[] = [];
+      const firstListInfo = lists.length > 0 ? {
+        sector: Array.isArray(lists[0].sector) 
+          ? (lists[0].sector.length === 1 && lists[0].sector[0] === 'ALL' 
+              ? 'ALL' 
+              : lists[0].sector.sort().join(','))
+          : lists[0].sector || 'ALL',
+        domain: Array.isArray(lists[0].domain)
+          ? (lists[0].domain.length === 1 && lists[0].domain[0] === 'ALL'
+              ? 'ALL'
+              : lists[0].domain.sort().join(','))
+          : lists[0].domain || 'ALL',
+        country: Array.isArray(lists[0].country)
+          ? (lists[0].country.length === 1 && lists[0].country[0] === 'ALL'
+              ? 'ALL'
+              : lists[0].country.sort().join(','))
+          : lists[0].country || 'ALL',
+        set: lists[0].set || '',
+        grouping: lists[0].grouping || '',
+        list: lists[0].list || ''
+      } : null;
+      
       for (const listData of lists) {
         const apiListData = {
           sector: Array.isArray(listData.sector) 
@@ -1768,35 +1819,44 @@ function App() {
           status: listData.status || 'Active'
         };
         
-        const createdList = await apiService.createList(apiListData) as any;
-        
-        // Convert API response to ListData format
-        const listDataFormat: ListData = {
-          id: createdList.id,
-          sector: Array.isArray(createdList.sector) ? createdList.sector : [createdList.sector || 'ALL'],
-          domain: Array.isArray(createdList.domain) ? createdList.domain : [createdList.domain || 'ALL'],
-          country: Array.isArray(createdList.country) ? createdList.country : [createdList.country || 'ALL'],
-          set: createdList.set,
-          grouping: createdList.grouping,
-          list: createdList.list,
-          format: createdList.format || '',
-          source: createdList.source || '',
-          upkeep: createdList.upkeep || '',
-          graph: createdList.graph || '',
-          origin: createdList.origin || '',
-          status: createdList.status || 'Active',
-          variablesAttachedList: createdList.variablesAttachedList || [],
-          listValuesList: createdList.listValuesList || []
-        };
-        
-        createdLists.push(listDataFormat);
+        await apiService.createList(apiListData) as any;
       }
       
-      setListData(prev => [...prev, ...createdLists]);
+      // Refresh lists from API to avoid duplicates
+      const refreshedLists = await fetchLists();
+      
       // Select the first uploaded list to show in metadata panel
-      if (createdLists.length > 0) {
-        setSelectedRows([createdLists[0]]);
-        setSelectedRowForMetadata(createdLists[0]);
+      if (firstListInfo && refreshedLists.length > 0) {
+        // Find the first uploaded list in the refreshed data
+        const firstCreatedList = refreshedLists.find(list => {
+          const listSector = Array.isArray(list.sector) 
+            ? (list.sector.length === 1 && list.sector[0] === 'ALL' 
+                ? 'ALL' 
+                : list.sector.sort().join(','))
+            : list.sector || 'ALL';
+          const listDomain = Array.isArray(list.domain)
+            ? (list.domain.length === 1 && list.domain[0] === 'ALL'
+                ? 'ALL'
+                : list.domain.sort().join(','))
+            : list.domain || 'ALL';
+          const listCountry = Array.isArray(list.country)
+            ? (list.country.length === 1 && list.country[0] === 'ALL'
+                ? 'ALL'
+                : list.country.sort().join(','))
+            : list.country || 'ALL';
+          
+          return listSector === firstListInfo.sector &&
+                 listDomain === firstListInfo.domain &&
+                 listCountry === firstListInfo.country &&
+                 list.set === firstListInfo.set &&
+                 list.grouping === firstListInfo.grouping &&
+                 list.list === firstListInfo.list;
+        });
+        
+        if (firstCreatedList) {
+          setSelectedRows([firstCreatedList]);
+          setSelectedRowForMetadata(firstCreatedList);
+        }
       }
       setIsBulkListUploadOpen(false);
     } catch (error: any) {

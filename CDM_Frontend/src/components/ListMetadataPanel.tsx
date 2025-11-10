@@ -4,8 +4,10 @@ import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
-import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
+import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
+import { apiService } from '../services/api';
 
 interface ListMetadataField {
   key: string;
@@ -166,6 +168,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
+  const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
   
   // Ontology modal state
   const [ontologyModalOpen, setOntologyModalOpen] = useState<{
@@ -193,7 +196,26 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   React.useEffect(() => {
     setVariablesAttached(selectedList?.variablesAttachedList || []);
     setListValues(selectedList?.listValuesList || []);
+    // Load relationships from API
+    if (selectedList?.id) {
+      loadRelationships();
+    } else {
+      setSelectedVariables([]);
+    }
   }, [selectedList]);
+
+  // Load relationships from API
+  const loadRelationships = async () => {
+    if (!selectedList?.id) return;
+    try {
+      const relationships = await apiService.getListVariableRelationships(selectedList.id) as any;
+      const variablesList = relationships.variables || [];
+      setSelectedVariables(variablesList);
+    } catch (error) {
+      console.error('Failed to load relationships:', error);
+      setSelectedVariables([]);
+    }
+  };
 
   // Get distinct values from variables data for cascading dropdowns
   const getDistinctParts = () => {
@@ -436,7 +458,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     actions?: React.ReactNode;
     children: React.ReactNode;
     ontologyViewType?: 'drivers' | 'ontology' | 'metadata';
-  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType }) => {
+    showRelationshipsGraph?: boolean;
+  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, showRelationshipsGraph }) => {
     const isExpanded = expandedSections[sectionKey];
     const isListSelected = !!selectedList;
     
@@ -457,6 +480,25 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {isExpanded && actions && <>{actions}</>}
+            {showRelationshipsGraph && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isListSelected) {
+                    setRelationshipsGraphModalOpen(true);
+                  }
+                }}
+                disabled={!isListSelected}
+                className={`p-1 transition-colors ${
+                  isListSelected 
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={isListSelected ? "View Variable-List Relationships Graph" : "Select a list to view relationships graph"}
+              >
+                <Network className="w-4 h-4" />
+              </button>
+            )}
             {ontologyViewType && (
               <button
                 onClick={(e) => {
@@ -732,6 +774,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         title="Relationships" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+        showRelationshipsGraph={true}
         actions={
           <button
             onClick={() => setIsVariableRelationshipModalOpen(true)}
@@ -757,11 +800,18 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               <div className="text-sm text-ag-dark-text">
                 <span className="font-medium">{selectedVariables.length} variable{selectedVariables.length !== 1 ? 's' : ''} selected:</span>
                 <div className="mt-2 space-y-1">
-                  {selectedVariables.slice(0, 5).map((variable: any) => (
-                    <div key={variable.id} className="text-ag-dark-text-secondary">
-                      {variable.part} / {variable.section} / {variable.group} / {variable.variable}
-                    </div>
-                  ))}
+                  {selectedVariables.slice(0, 5).map((variable: any) => {
+                    const part = variable.part || '';
+                    const section = variable.section || '';
+                    const group = variable.group || '';
+                    const varName = variable.variable || variable.name || '';
+                    const displayParts = [part, section, group, varName].filter(p => p);
+                    return (
+                      <div key={variable.id || variable.variableId} className="text-ag-dark-text-secondary">
+                        {displayParts.length > 0 ? displayParts.join(' / ') : 'Unknown variable'}
+                      </div>
+                    );
+                  })}
                   {selectedVariables.length > 5 && (
                     <div className="text-ag-dark-text-secondary">
                       ... and {selectedVariables.length - 5} more
@@ -890,22 +940,21 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onUpload={handleListValuesCsvUpload}
       />
 
-      {/* Variable Relationship Modal */}
-      <VariableObjectRelationshipModal
+      {/* Variable List Relationship Modal */}
+      <VariableListRelationshipModal
         isOpen={isVariableRelationshipModalOpen}
         onClose={() => setIsVariableRelationshipModalOpen(false)}
-        selectedVariable={selectedList}
-        allObjects={variablesData}
-        onSave={() => {
+        selectedList={selectedList}
+        allVariables={variablesData}
+        onSave={async () => {
+          // Reload relationships after saving
+          await loadRelationships();
           // Refresh data after saving relationships
           if (onSave) {
             onSave({});
           }
         }}
-        onRelationshipsChange={(relationships) => {
-          // Update selected variables when relationships change
-          setSelectedVariables(relationships);
-        }}
+        isBulkMode={false}
       />
 
       {/* Lists Ontology Modal */}
@@ -917,6 +966,17 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           listName={selectedList.list}
           sectionName={ontologyModalOpen.viewType === 'drivers' ? 'Drivers' : ontologyModalOpen.viewType === 'ontology' ? 'Ontology' : 'Metadata'}
           viewType={ontologyModalOpen.viewType}
+          isBulkMode={false}
+        />
+      )}
+
+      {/* Variable-List Relationships Graph Modal */}
+      {relationshipsGraphModalOpen && selectedList && (
+        <VariableListRelationshipsGraphModal
+          isOpen={relationshipsGraphModalOpen}
+          onClose={() => setRelationshipsGraphModalOpen(false)}
+          listId={selectedList.id}
+          listName={selectedList.list}
           isBulkMode={false}
         />
       )}

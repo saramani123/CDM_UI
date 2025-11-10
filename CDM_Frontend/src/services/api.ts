@@ -496,6 +496,26 @@ class ApiService {
     });
   }
 
+  // Variable-List Relationships
+  async getListVariableRelationships(listId: string) {
+    return this.request(`/lists/${listId}/variable-relationships`, {
+      method: 'GET',
+    });
+  }
+
+  async createVariableListRelationship(variableId: string, listId: string) {
+    return this.request(`/variables/${variableId}/list-relationships`, {
+      method: 'POST',
+      body: JSON.stringify({ list_id: listId }),
+    });
+  }
+
+  async deleteVariableListRelationship(variableId: string, listId: string) {
+    return this.request(`/variables/${variableId}/list-relationships/${listId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Drivers API
   async getDrivers(type: string) {
     return this.request(`/drivers/${type}`);
