@@ -1,16 +1,20 @@
 // Utility functions for managing driver abbreviations
 // Abbreviations are stored in localStorage (frontend-only, not persisted to Neo4j)
+// 
+// IMPORTANT: This storage key MUST NEVER change to ensure abbreviations persist across deployments.
+// Changing this key would cause all user abbreviations to be lost.
+// Abbreviations are stored per-browser and persist automatically across deployments.
 
 import { ColumnType } from '../data/driversData';
 import { getDriversData } from '../data/mockData';
+
+const STORAGE_KEY = 'cdm_driver_abbreviations';
 
 export interface DriverAbbreviations {
   sectors: Record<string, string>; // { "Transportation": "Transp.", ... }
   domains: Record<string, string>;
   countries: Record<string, string>;
 }
-
-const STORAGE_KEY = 'cdm_driver_abbreviations';
 
 // Get all abbreviations from localStorage
 export const getDriverAbbreviations = (): DriverAbbreviations => {

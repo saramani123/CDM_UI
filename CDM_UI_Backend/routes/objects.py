@@ -5,6 +5,7 @@ import csv
 import io
 import json
 from pydantic import BaseModel
+from neo4j import WRITE_ACCESS
 from db import get_driver
 from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRowData
 
@@ -1158,35 +1159,62 @@ async def cleanup_old_relationships():
 @router.delete("/objects/{object_id}")
 async def delete_object(object_id: str):
     """
-    Delete an object and its variants, but preserve drivers and other entities.
+    Delete an object and all its relationships.
+    This will delete the object node, its variants, and all relationships (both incoming and outgoing).
+    Connected nodes (like drivers, other objects, variables) will NOT be deleted, only the relationships.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        with driver.session() as session:
-            # Check if object exists
-            existing = session.run("MATCH (o:Object {id: $object_id}) RETURN o", object_id=object_id).single()
-            if not existing:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if object exists first
+            check_result = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id
+            """, {"object_id": object_id})
+            
+            check_record = check_result.single()
+            if not check_record:
+                raise HTTPException(status_code=404, detail="Object not found")
+            
+            # Delete the object and all its relationships using write transaction
+            # DETACH DELETE will delete the node and all relationships (both incoming and outgoing)
+            # but will NOT delete the connected nodes themselves
+            def delete_tx(tx):
+                # First, capture the ID before deletion since we can't access the node after DETACH DELETE
+                check = tx.run("""
+                    MATCH (o:Object {id: $object_id})
+                    RETURN o.id as id
+                """, {"object_id": object_id})
+                check_record = check.single()
+                if not check_record:
+                    return None
+                
+                # Then delete (can't return the node after deletion)
+                tx.run("""
+                    MATCH (o:Object {id: $object_id})
+                    OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                    DETACH DELETE v, o
+                """, {"object_id": object_id})
+                
+                return check_record
+            
+            record = session.execute_write(delete_tx)
+            if not record:
                 raise HTTPException(status_code=404, detail="Object not found")
 
-            # Delete object and its variants, but preserve relationships to drivers
-            session.run("""
-                MATCH (o:Object {id: $object_id})
-                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
-                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
-                DELETE r
-                DETACH DELETE v, o
-            """, object_id=object_id)
-
+            print(f"✅ Successfully deleted object {object_id}")
             return {"message": f"Object {object_id} deleted successfully"}
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error deleting object in Neo4j: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete object")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete object: {str(e)}")
 
 @router.post("/objects/upload", response_model=CSVUploadResponse)
 async def upload_objects_csv(file: UploadFile = File(...)):

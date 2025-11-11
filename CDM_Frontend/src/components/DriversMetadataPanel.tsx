@@ -256,11 +256,11 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
             onClick={handleSave}
             disabled={
               !inputValue.trim() || 
-              (inputValue === selectedItem && abbreviationValue.trim() === initialAbbreviationValue.trim())
+              (inputValue.trim() === (selectedItem || '').trim() && abbreviationValue.trim() === (initialAbbreviationValue || '').trim())
             }
             className={`w-full py-2 px-4 rounded transition-colors flex items-center justify-center gap-2 ${
               inputValue.trim() && 
-              (inputValue !== selectedItem || abbreviationValue.trim() !== initialAbbreviationValue.trim())
+              (inputValue.trim() !== (selectedItem || '').trim() || abbreviationValue.trim() !== (initialAbbreviationValue || '').trim())
                 ? 'bg-ag-dark-accent text-white hover:bg-ag-dark-accent-hover'
                 : 'bg-ag-dark-text-secondary text-ag-dark-text-secondary cursor-not-allowed opacity-50'
             }`}

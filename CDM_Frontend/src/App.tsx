@@ -988,11 +988,45 @@ function App() {
           // Don't clear UI if refresh fails - keep what we have
         }
       } else if (activeTab === 'objects') {
-        // Delete objects via API
-        setData(prev => prev.filter(item => !selectedIds.includes(item.id)));
-        // Clear all selections for objects
-        setSelectedRows([]);
-        setSelectedRowForMetadata(null);
+        // Delete objects via API - track successful deletions
+        const successfulDeletions: string[] = [];
+        const failedDeletions: string[] = [];
+        
+        for (const id of selectedIds) {
+          try {
+            await deleteObject(id);
+            successfulDeletions.push(id);
+          } catch (error) {
+            console.error(`Error deleting object ${id}:`, error);
+            failedDeletions.push(id);
+          }
+        }
+        
+        // Only remove successfully deleted objects from state
+        if (successfulDeletions.length > 0) {
+          setData(prev => prev.filter(item => !successfulDeletions.includes(item.id)));
+          // Clear selections for successfully deleted items
+          setSelectedRows(prev => prev.filter(row => !successfulDeletions.includes(row.id)));
+          // Clear metadata panel if the selected object was deleted
+          if (selectedRowForMetadata && successfulDeletions.includes(selectedRowForMetadata.id)) {
+            setSelectedRowForMetadata(null);
+          }
+        }
+        
+        // Show feedback about results
+        if (failedDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} object(s), but failed to delete ${failedDeletions.length} object(s). Please try again or check server logs.`);
+        } else if (successfulDeletions.length > 0) {
+          alert(`Successfully deleted ${successfulDeletions.length} object(s).`);
+        }
+        
+        // Refresh objects from API to ensure UI is in sync
+        try {
+          await fetchObjects();
+        } catch (error) {
+          console.error('Error refreshing objects after deletion:', error);
+          // Don't clear UI if refresh fails - keep what we have
+        }
       }
       
       setIsBulkDeleteOpen(false);
@@ -2030,9 +2064,8 @@ function App() {
     
     // Persist to backend to ensure it survives deployments
     try {
-      // Convert columnType to driver_type format (sectors -> sector, etc.)
-      const driverType = columnType.replace(/s$/, '') as 'sector' | 'domain' | 'country' | 'variableClarifier';
-      await apiService.reorderDrivers(driverType, newOrder);
+      // Backend expects the full columnType (sectors, domains, countries, etc.)
+      await apiService.reorderDrivers(columnType, newOrder);
       console.log(`✅ Successfully persisted driver order for ${columnType} to backend`);
     } catch (error) {
       console.error(`❌ Failed to persist driver order for ${columnType} to backend:`, error);

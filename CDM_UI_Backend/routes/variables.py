@@ -660,13 +660,24 @@ async def delete_variable(variable_id: str):
                 raise HTTPException(status_code=404, detail="Variable not found")
             
             # Delete the variable and all its relationships using write transaction
+            # Capture the ID before deletion since we can't access the node after DETACH DELETE
             def delete_tx(tx):
-                result = tx.run("""
+                # First, capture the ID
+                check = tx.run("""
                     MATCH (v:Variable {id: $id})
-                    DETACH DELETE v
                     RETURN v.id as id
                 """, {"id": variable_id})
-                return result.single()
+                check_record = check.single()
+                if not check_record:
+                    return None
+                
+                # Then delete (can't return the node after deletion)
+                tx.run("""
+                    MATCH (v:Variable {id: $id})
+                    DETACH DELETE v
+                """, {"id": variable_id})
+                
+                return check_record
             
             record = session.execute_write(delete_tx)
             if not record:

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException, status, Body
 from typing import List, Dict, Any, Optional
 import uuid
 from pydantic import BaseModel
+from neo4j import WRITE_ACCESS
 from db import get_driver
 
 router = APIRouter()
@@ -461,35 +462,60 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
 @router.delete("/lists/{list_id}")
 async def delete_list(list_id: str):
     """
-    Delete a list from the CDM.
+    Delete a list and all its relationships from the CDM.
+    This will delete the list node and all relationships (both incoming and outgoing).
+    Connected nodes (like drivers, variables) will NOT be deleted, only the relationships.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        with driver.session() as session:
-            # Check if list exists
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if list exists first
             check_result = session.run("""
                 MATCH (l:List {id: $id})
-                RETURN l
+                RETURN l.id as id
             """, {"id": list_id})
             
-            if not check_result.single():
+            check_record = check_result.single()
+            if not check_record:
                 raise HTTPException(status_code=404, detail="List not found")
             
-            # Delete the list and all its relationships
-            session.run("""
-                MATCH (l:List {id: $id})
-                DETACH DELETE l
-            """, {"id": list_id})
+            # Delete the list and all its relationships using write transaction
+            # DETACH DELETE will delete the node and all relationships (both incoming and outgoing)
+            # but will NOT delete the connected nodes themselves
+            def delete_tx(tx):
+                # First, capture the ID before deletion since we can't access the node after DETACH DELETE
+                check = tx.run("""
+                    MATCH (l:List {id: $id})
+                    RETURN l.id as id
+                """, {"id": list_id})
+                check_record = check.single()
+                if not check_record:
+                    return None
+                
+                # Then delete (can't return the node after deletion)
+                tx.run("""
+                    MATCH (l:List {id: $id})
+                    DETACH DELETE l
+                """, {"id": list_id})
+                
+                return check_record
             
+            record = session.execute_write(delete_tx)
+            if not record:
+                raise HTTPException(status_code=404, detail="List not found")
+
+            print(f"✅ Successfully deleted list {list_id}")
             return {"message": "List deleted successfully"}
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error deleting list: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to delete list: {str(e)}")
 
 @router.get("/lists/{list_id}")
