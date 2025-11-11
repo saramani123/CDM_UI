@@ -38,7 +38,7 @@ def get_entities_with_all_relationship(session, driver_type: str, entity_type: s
     """
     query = f"""
         MATCH (d:{driver_type} {{name: 'ALL'}})-[r:{relationship_type}]->(e:{entity_type})
-        RETURN e.id as id, e.name as name, type(e) as type
+        RETURN e.id as id, e.name as name, labels(e)[0] as type
     """
     result = session.run(query)
     return [{"id": record["id"], "name": record.get("name", ""), "type": record["type"]} for record in result]
