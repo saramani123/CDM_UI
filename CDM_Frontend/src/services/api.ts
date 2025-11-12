@@ -359,6 +359,19 @@ class ApiService {
     });
   }
 
+  async cloneIdentifiers(targetObjectId: string, sourceObjectId: string) {
+    return this.request(`/objects/${targetObjectId}/clone-identifiers/${sourceObjectId}`, {
+      method: 'POST',
+    });
+  }
+
+  async bulkCloneIdentifiers(sourceObjectId: string, targetObjectIds: string[]) {
+    return this.request(`/objects/bulk-clone-identifiers/${sourceObjectId}`, {
+      method: 'POST',
+      body: JSON.stringify(targetObjectIds),
+    });
+  }
+
   async bulkCreateRelationships(relationships: Array<{
     sourceObjectId: string;
     targetObject: any;

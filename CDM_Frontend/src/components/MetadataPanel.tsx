@@ -6,6 +6,7 @@ import { useVariables } from '../hooks/useVariables';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
+import { CloneIdentifiersModal } from './CloneIdentifiersModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
 
@@ -206,6 +207,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   
   // Clone relationships modal state
   const [isCloneRelationshipsModalOpen, setIsCloneRelationshipsModalOpen] = useState(false);
+  
+  // Clone identifiers modal state
+  const [isCloneIdentifiersModalOpen, setIsCloneIdentifiersModalOpen] = useState(false);
 
   // Load relationships when selectedObject changes
   React.useEffect(() => {
@@ -437,6 +441,21 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
   
   // Add a new unique ID entry
+  // Check if object has any identifiers defined
+  const hasIdentifiers = () => {
+    // Check unique IDs
+    const hasUniqueIds = uniqueIdEntries.some(entry => entry.variableId && entry.variableId.trim() !== '');
+    
+    // Check composite IDs
+    const hasCompositeIds = compositeKeys.some(key => 
+      (key.part && key.part.trim() !== '') || 
+      (key.group && key.group.trim() !== '') || 
+      (key.variables && key.variables.length > 0)
+    );
+    
+    return hasUniqueIds || hasCompositeIds;
+  };
+
   const handleAddUniqueIdEntry = () => {
     const newId = `unique-${Date.now()}`;
     setUniqueIdEntries(prev => [...prev, { id: newId, variableId: '' }]);
@@ -1265,7 +1284,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       </CollapsibleSection>
 
       {/* Identifiers Section */}
-      <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="identifiers">
+      <CollapsibleSection 
+        title="Identifiers" 
+        sectionKey="identifiers" 
+        icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} 
+        ontologyViewType="identifiers"
+        actions={
+          <div className="flex items-center gap-2">
+            {/* Clone Identifiers Button */}
+            <button
+              onClick={() => setIsCloneIdentifiersModalOpen(true)}
+              disabled={!isPanelEnabled || hasIdentifiers()}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled || hasIdentifiers() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={hasIdentifiers() ? "Please delete existing identifiers to use clone" : "Clone identifiers from another object"}
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+          </div>
+        }
+      >
         <div className="space-y-6">
           {/* Unique ID - Multiple entries support */}
           <div>
@@ -1740,6 +1779,60 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 }
               } catch (error) {
                 console.error('Failed to refresh relationships after cloning:', error);
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* Clone Identifiers Modal */}
+      {selectedObject && (
+        <CloneIdentifiersModal
+          isOpen={isCloneIdentifiersModalOpen}
+          onClose={() => setIsCloneIdentifiersModalOpen(false)}
+          targetObject={selectedObject}
+          allObjects={allData}
+          onCloneSuccess={async () => {
+            // Refresh identifiers after cloning
+            if (selectedObject?.id) {
+              try {
+                const objectData = await apiService.getObject(selectedObject.id) as any;
+                
+                // Load unique IDs
+                const discreteIds = objectData?.discreteIds || [];
+                const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
+                  id: `unique-${index + 1}`,
+                  variableId: di.variableId || ''
+                }));
+                if (uniqueIdEntriesList.length === 0) {
+                  setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+                } else {
+                  setUniqueIdEntries(uniqueIdEntriesList);
+                }
+                
+                // Load composite IDs
+                const compositeIds = objectData?.compositeIds || {};
+                const newCompositeKeys = compositeKeys.map(key => {
+                  const compositeIdData = compositeIds[key.id];
+                  if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
+                    const variableIds = compositeIdData.map((ci: any) => ci.variableId).filter(Boolean);
+                    return {
+                      id: key.id,
+                      part: compositeIdData[0].part || '',
+                      group: compositeIdData[0].group || '',
+                      variables: variableIds
+                    };
+                  }
+                  return { id: key.id, part: '', group: '', variables: [] };
+                });
+                setCompositeKeys(newCompositeKeys);
+                
+                // Refresh objects data
+                if (onObjectsRefresh) {
+                  await onObjectsRefresh();
+                }
+              } catch (error) {
+                console.error('Failed to refresh identifiers after cloning:', error);
               }
             }
           }}

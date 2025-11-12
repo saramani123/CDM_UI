@@ -5,6 +5,7 @@ import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { RelationshipModal } from './RelationshipModal';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
+import { CloneIdentifiersModal } from './CloneIdentifiersModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { listFieldOptions } from '../data/listsData';
@@ -144,9 +145,16 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
   const [isCloneRelationshipsModalOpen, setIsCloneRelationshipsModalOpen] = useState(false);
   
+  // Clone identifiers modal state
+  const [isCloneIdentifiersModalOpen, setIsCloneIdentifiersModalOpen] = useState(false);
+  
   // Check if any selected objects have relationships
   const [hasExistingRelationships, setHasExistingRelationships] = useState(false);
   const [objectsWithRelationships, setObjectsWithRelationships] = useState<string[]>([]);
+  
+  // Check if any selected objects have identifiers
+  const [hasExistingIdentifiers, setHasExistingIdentifiers] = useState(false);
+  const [objectsWithIdentifiers, setObjectsWithIdentifiers] = useState<string[]>([]);
   
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
@@ -642,28 +650,62 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     // No need to call it here explicitly as the panel closes when selection becomes single
   };
 
-  // Check if any selected objects have existing relationships
-  useEffect(() => {
-    const checkRelationships = async () => {
-      if (activeTab !== 'objects' || selectedObjects.length === 0) {
-        setHasExistingRelationships(false);
-        setObjectsWithRelationships([]);
-        return;
-      }
-
-      const objectsWithRels: string[] = [];
-      for (const obj of selectedObjects) {
-        if (obj.relationships && obj.relationships > 0) {
-          objectsWithRels.push(obj.object || obj.id);
+    // Check if any selected objects have existing relationships
+    useEffect(() => {
+      const checkRelationships = async () => {
+        if (activeTab !== 'objects' || selectedObjects.length === 0) {
+          setHasExistingRelationships(false);
+          setObjectsWithRelationships([]);
+          return;
         }
-      }
 
-      setHasExistingRelationships(objectsWithRels.length > 0);
-      setObjectsWithRelationships(objectsWithRels);
-    };
+        const objectsWithRels: string[] = [];
+        for (const obj of selectedObjects) {
+          if (obj.relationships && obj.relationships > 0) {
+            objectsWithRels.push(obj.object || obj.id);
+          }
+        }
 
-    checkRelationships();
-  }, [selectedObjects, activeTab]);
+        setHasExistingRelationships(objectsWithRels.length > 0);
+        setObjectsWithRelationships(objectsWithRels);
+      };
+
+      checkRelationships();
+    }, [selectedObjects, activeTab]);
+
+    // Check if any selected objects have existing identifiers
+    useEffect(() => {
+      const checkIdentifiers = async () => {
+        if (activeTab !== 'objects' || selectedObjects.length === 0) {
+          setHasExistingIdentifiers(false);
+          setObjectsWithIdentifiers([]);
+          return;
+        }
+
+        const objectsWithIds: string[] = [];
+        for (const obj of selectedObjects) {
+          // Check if object has identifiers by loading its data
+          try {
+            const objectData = await apiService.getObject(obj.id) as any;
+            const hasUniqueIds = (objectData?.discreteIds || []).length > 0;
+            const hasCompositeIds = Object.values(objectData?.compositeIds || {}).some((compIds: any) => 
+              Array.isArray(compIds) && compIds.length > 0
+            );
+            
+            if (hasUniqueIds || hasCompositeIds) {
+              objectsWithIds.push(obj.object || obj.id);
+            }
+          } catch (error) {
+            console.error(`Error checking identifiers for object ${obj.id}:`, error);
+          }
+        }
+
+        setHasExistingIdentifiers(objectsWithIds.length > 0);
+        setObjectsWithIdentifiers(objectsWithIds);
+      };
+
+      checkIdentifiers();
+    }, [selectedObjects, activeTab]);
 
   // Multi-select component
   const MultiSelect: React.FC<{
@@ -1295,7 +1337,33 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       </CollapsibleSection>
 
       {/* Identifiers Section */}
-      <CollapsibleSection title="Identifiers" sectionKey="identifiers" icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="identifiers">
+      <CollapsibleSection 
+        title="Identifiers" 
+        sectionKey="identifiers" 
+        icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} 
+        ontologyViewType="identifiers"
+        actions={
+          <div className="flex items-center gap-2">
+            {/* Clone Identifiers Button */}
+            <button
+              onClick={() => setIsCloneIdentifiersModalOpen(true)}
+              disabled={selectedObjects.length === 0 || hasExistingIdentifiers}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedObjects.length === 0 || hasExistingIdentifiers ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={
+                selectedObjects.length === 0 
+                  ? "Select objects to clone identifiers" 
+                  : hasExistingIdentifiers 
+                    ? `Please delete existing identifiers for: ${objectsWithIdentifiers.join(', ')}` 
+                    : "Clone identifiers from another object"
+              }
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+          </div>
+        }
+      >
         <div className="space-y-6">
           {/* Unique ID - Multiple entries support */}
           <div>
@@ -1738,6 +1806,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           allObjects={allData}
           onCloneSuccess={async () => {
             // Refresh objects data to update the relationships count immediately
+            if (onObjectsRefresh) {
+              await onObjectsRefresh();
+            }
+          }}
+        />
+      )}
+
+      {/* Clone Identifiers Modal - Only for objects tab */}
+      {activeTab === 'objects' && selectedObjects.length > 0 && (
+        <CloneIdentifiersModal
+          isOpen={isCloneIdentifiersModalOpen}
+          onClose={() => setIsCloneIdentifiersModalOpen(false)}
+          targetObjects={selectedObjects}
+          allObjects={allData}
+          onCloneSuccess={async () => {
+            // Refresh objects data after cloning identifiers
             if (onObjectsRefresh) {
               await onObjectsRefresh();
             }

@@ -2274,6 +2274,286 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
         print(f"Error bulk cloning relationships: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to bulk clone relationships: {e}")
 
+@router.post("/objects/{target_object_id}/clone-identifiers/{source_object_id}", response_model=Dict[str, Any])
+async def clone_identifiers(target_object_id: str, source_object_id: str):
+    """
+    Clone all identifiers (unique IDs and composite IDs) from a source object to a target object.
+    Only works if the target object has no existing identifiers.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Check if target object exists
+            target_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=target_object_id).single()
+            
+            if not target_check:
+                raise HTTPException(status_code=404, detail=f"Target object with ID {target_object_id} not found")
+            
+            # Check if source object exists
+            source_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=source_object_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
+            
+            # Check if target object already has identifiers
+            unique_id_count = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(:Variable)
+                RETURN count(*) as count
+            """, object_id=target_object_id).single()
+            
+            composite_id_count = session.run("""
+                MATCH (o:Object {id: $object_id})-[r:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(:Variable)
+                RETURN count(*) as count
+            """, object_id=target_object_id).single()
+            
+            total_existing = (unique_id_count["count"] if unique_id_count else 0) + (composite_id_count["count"] if composite_id_count else 0)
+            
+            if total_existing > 0:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Target object already has identifiers. Please delete existing identifiers before cloning."
+                )
+            
+            # Get unique ID relationships from source object
+            unique_id_result = session.run("""
+                MATCH (source:Object {id: $source_id})-[:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(v:Variable)
+                RETURN v.id as variableId
+            """, source_id=source_object_id).data()
+            
+            # Get composite ID relationships from source object
+            composite_ids_data = {}
+            for i in range(1, 6):
+                composite_result = session.run(f"""
+                    MATCH (source:Object {{id: $source_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    RETURN v.id as variableId, p.name as part, g.name as group
+                """, source_id=source_object_id).data()
+                
+                if composite_result:
+                    # Get the part and group from the first result (they should all be the same for a given composite ID)
+                    first_record = composite_result[0]
+                    part = first_record.get("part", "")
+                    group = first_record.get("group", "")
+                    variable_ids = [record["variableId"] for record in composite_result]
+                    composite_ids_data[str(i)] = {
+                        "part": part,
+                        "group": group,
+                        "variables": variable_ids
+                    }
+            
+            cloned_unique_count = 0
+            cloned_composite_count = 0
+            
+            # Clone unique IDs
+            for record in unique_id_result:
+                variable_id = record["variableId"]
+                if variable_id:
+                    try:
+                        session.run("""
+                            MATCH (target:Object {id: $target_id})
+                            MATCH (v:Variable {id: $var_id})
+                            MERGE (target)-[:HAS_UNIQUE_ID]->(v)
+                        """, target_id=target_object_id, var_id=variable_id)
+                        cloned_unique_count += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error cloning unique ID {variable_id}: {e}")
+            
+            # Clone composite IDs
+            for composite_index, composite_data in composite_ids_data.items():
+                part = composite_data["part"]
+                group = composite_data["group"]
+                variable_ids = composite_data["variables"]
+                
+                if part and group and variable_ids:
+                    for var_id in variable_ids:
+                        if var_id:
+                            try:
+                                session.run(f"""
+                                    MATCH (target:Object {{id: $target_id}})
+                                    MATCH (v:Variable {{id: $var_id}})
+                                    MERGE (target)-[:HAS_COMPOSITE_ID_{composite_index}]->(v)
+                                """, target_id=target_object_id, var_id=var_id)
+                                cloned_composite_count += 1
+                            except Exception as e:
+                                print(f"DEBUG: Error cloning composite ID {composite_index} variable {var_id}: {e}")
+            
+            return {
+                "message": f"Successfully cloned identifiers: {cloned_unique_count} unique ID(s), {cloned_composite_count} composite ID relationship(s)",
+                "cloned_unique_count": cloned_unique_count,
+                "cloned_composite_count": cloned_composite_count,
+                "total_cloned": cloned_unique_count + cloned_composite_count
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cloning identifiers: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clone identifiers: {e}")
+
+@router.post("/objects/bulk-clone-identifiers/{source_object_id}", response_model=Dict[str, Any])
+async def bulk_clone_identifiers(source_object_id: str, target_object_ids: List[str] = Body(...)):
+    """
+    Clone all identifiers (unique IDs and composite IDs) from a source object to multiple target objects.
+    Only works if all target objects have no existing identifiers.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Check if source object exists
+            source_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=source_object_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
+            
+            if not target_object_ids:
+                raise HTTPException(status_code=400, detail="At least one target object ID must be provided")
+            
+            # Check if all target objects exist and have no identifiers
+            target_objects_info = []
+            for target_id in target_object_ids:
+                target_check = session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    RETURN o.id as id, o.object as object_name
+                """, object_id=target_id).single()
+                
+                if not target_check:
+                    raise HTTPException(status_code=404, detail=f"Target object with ID {target_id} not found")
+                
+                # Check if target object already has identifiers
+                unique_id_count = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(:Variable)
+                    RETURN count(*) as count
+                """, object_id=target_id).single()
+                
+                composite_id_count = session.run("""
+                    MATCH (o:Object {id: $object_id})-[r:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(:Variable)
+                    RETURN count(*) as count
+                """, object_id=target_id).single()
+                
+                total_existing = (unique_id_count["count"] if unique_id_count else 0) + (composite_id_count["count"] if composite_id_count else 0)
+                
+                if total_existing > 0:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Target object '{target_check['object_name']}' (ID: {target_id}) already has identifiers. Please delete existing identifiers before cloning."
+                    )
+                
+                target_objects_info.append({
+                    "id": target_id,
+                    "name": target_check["object_name"]
+                })
+            
+            # Get unique ID relationships from source object
+            unique_id_result = session.run("""
+                MATCH (source:Object {id: $source_id})-[:HAS_UNIQUE_ID|HAS_DISCRETE_ID]->(v:Variable)
+                RETURN v.id as variableId
+            """, source_id=source_object_id).data()
+            
+            # Get composite ID relationships from source object
+            composite_ids_data = {}
+            for i in range(1, 6):
+                composite_result = session.run(f"""
+                    MATCH (source:Object {{id: $source_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    RETURN v.id as variableId, p.name as part, g.name as group
+                """, source_id=source_object_id).data()
+                
+                if composite_result:
+                    # Get the part and group from the first result (they should all be the same for a given composite ID)
+                    first_record = composite_result[0]
+                    part = first_record.get("part", "")
+                    group = first_record.get("group", "")
+                    variable_ids = [record["variableId"] for record in composite_result]
+                    composite_ids_data[str(i)] = {
+                        "part": part,
+                        "group": group,
+                        "variables": variable_ids
+                    }
+            
+            print(f"DEBUG: Bulk cloning identifiers from source {source_object_id} to {len(target_object_ids)} target objects")
+            print(f"DEBUG: Source has {len(unique_id_result)} unique IDs and {len(composite_ids_data)} composite ID types")
+            
+            # Clone identifiers to each target object
+            total_cloned_unique = 0
+            total_cloned_composite = 0
+            results_by_target = {}
+            
+            for target_info in target_objects_info:
+                target_object_id = target_info["id"]
+                target_name = target_info["name"]
+                cloned_unique_count = 0
+                cloned_composite_count = 0
+                
+                # Clone unique IDs
+                for record in unique_id_result:
+                    variable_id = record["variableId"]
+                    if variable_id:
+                        try:
+                            session.run("""
+                                MATCH (target:Object {id: $target_id})
+                                MATCH (v:Variable {id: $var_id})
+                                MERGE (target)-[:HAS_UNIQUE_ID]->(v)
+                            """, target_id=target_object_id, var_id=variable_id)
+                            cloned_unique_count += 1
+                        except Exception as e:
+                            print(f"DEBUG: Error cloning unique ID {variable_id} for {target_name}: {e}")
+                
+                # Clone composite IDs
+                for composite_index, composite_data in composite_ids_data.items():
+                    part = composite_data["part"]
+                    group = composite_data["group"]
+                    variable_ids = composite_data["variables"]
+                    
+                    if part and group and variable_ids:
+                        for var_id in variable_ids:
+                            if var_id:
+                                try:
+                                    session.run(f"""
+                                        MATCH (target:Object {{id: $target_id}})
+                                        MATCH (v:Variable {{id: $var_id}})
+                                        MERGE (target)-[:HAS_COMPOSITE_ID_{composite_index}]->(v)
+                                    """, target_id=target_object_id, var_id=var_id)
+                                    cloned_composite_count += 1
+                                except Exception as e:
+                                    print(f"DEBUG: Error cloning composite ID {composite_index} variable {var_id} for {target_name}: {e}")
+                
+                total_cloned_unique += cloned_unique_count
+                total_cloned_composite += cloned_composite_count
+                results_by_target[target_name] = {
+                    "cloned_unique_count": cloned_unique_count,
+                    "cloned_composite_count": cloned_composite_count
+                }
+            
+            response = {
+                "message": f"Successfully cloned identifiers to {len(target_object_ids)} object(s). Total: {total_cloned_unique} unique ID(s), {total_cloned_composite} composite ID relationship(s)",
+                "cloned_unique_count": total_cloned_unique,
+                "cloned_composite_count": total_cloned_composite,
+                "total_cloned": total_cloned_unique + total_cloned_composite,
+                "total_targets": len(target_object_ids),
+                "results_by_target": results_by_target
+            }
+            
+            return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bulk cloning identifiers: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk clone identifiers: {e}")
+
 # Variant Management Endpoints
 @router.post("/objects/{object_id}/variants", response_model=Dict[str, Any])
 async def create_variant(object_id: str, request: VariantCreateRequest = Body(...)):
