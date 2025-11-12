@@ -68,8 +68,10 @@ async def get_ontology_view(
                 RETURN o, r, o2
             """,
             'variants': """
-                MATCH (o:Object {id: $object_id})-[r:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})
+                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
                 RETURN o, r, v
+                ORDER BY v.name
             """
         }
         query_param = object_id
@@ -114,8 +116,10 @@ async def get_ontology_view(
                 RETURN o, r, o2
             """,
             'variants': """
-                MATCH (o:Object {object: $object_name})-[r:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {object: $object_name})
+                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
                 RETURN o, r, v
+                ORDER BY v.name
             """
         }
         query_param = object_name
@@ -179,6 +183,10 @@ async def get_ontology_view(
                                 props = dict(value.items())
                             else:
                                 props = {}
+                            
+                            # For RELATES_TO relationships, ensure frequency property exists (default to "Critical")
+                            if value.type == 'RELATES_TO' and 'frequency' not in props:
+                                props['frequency'] = 'Critical'
                             
                             # For RELATES_TO, use role property as label if available
                             edge_label = value.type
@@ -294,6 +302,7 @@ async def get_bulk_ontology_view(
                 WHERE o.id IN $object_ids
                 OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
                 RETURN o, r, v
+                ORDER BY o.object, v.name
             """
         }
         param_name = 'object_ids'
@@ -347,6 +356,7 @@ async def get_bulk_ontology_view(
                 WHERE o.object IN $object_names
                 OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
                 RETURN o, r, v
+                ORDER BY o.object, v.name
             """
         }
         param_name = 'object_names'
@@ -409,6 +419,10 @@ async def get_bulk_ontology_view(
                                 props = dict(value.items())
                             else:
                                 props = {}
+                            
+                            # For RELATES_TO relationships, ensure frequency property exists (default to "Critical")
+                            if value.type == 'RELATES_TO' and 'frequency' not in props:
+                                props['frequency'] = 'Critical'
                             
                             # For RELATES_TO, use role property as label if available
                             edge_label = value.type

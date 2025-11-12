@@ -774,7 +774,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
           
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
-            <div className="flex text-sm font-medium text-ag-dark-text">
+            <div className="flex text-sm font-medium text-ag-dark-text min-w-full">
               {selectionMode === 'checkbox' && !relationshipData && (
                 <div className="w-10 flex items-center justify-center p-2">
                   <input
@@ -870,7 +870,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     handleRowSelection(row, !currentlySelected);
                   }
                 }}
-                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer ${
+                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer min-w-full ${
                   // Priority: Cloned (unsaved) > Selected current object (intra-table) > Selected > Current object > Affected
                   row._isCloned && !row._isSaved
                     ? 'bg-orange-900 bg-opacity-20 border-orange-500 border-opacity-50' 

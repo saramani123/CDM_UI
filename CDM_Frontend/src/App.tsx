@@ -1856,7 +1856,7 @@ function App() {
   };
 
 
-  const handleBulkObjectUpload = (objects: ObjectData[]) => {
+  const handleBulkObjectUpload = async (objects: ObjectData[]) => {
     // Parse driver fields for each object before adding to state
     const parsedObjects = objects.map(obj => {
       const parsed = parseDriverField(obj.driver);
@@ -1869,8 +1869,17 @@ function App() {
       };
     });
     
-    // Add objects to local state to refresh the UI
+    // Add objects to local state immediately for quick UI update
     setData(prev => [...prev, ...parsedObjects]);
+    
+    // Also refresh from API to ensure we have the latest data with correct counts
+    try {
+      await fetchObjects();
+    } catch (error) {
+      console.error('Error refreshing objects after upload:', error);
+      // Don't fail the upload if refresh fails - we already updated local state
+    }
+    
     setIsBulkObjectUploadOpen(false);
   };
 

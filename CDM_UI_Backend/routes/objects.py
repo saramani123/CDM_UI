@@ -13,6 +13,7 @@ from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRo
 class RelationshipCreateRequest(BaseModel):
     relationship_type: str
     role: str
+    frequency: Optional[str] = "Critical"
     to_being: str
     to_avatar: str
     to_object: str
@@ -27,6 +28,7 @@ class BulkRelationshipItem(BaseModel):
     target_object: str
     relationship_type: str
     roles: List[str]
+    frequency: Optional[str] = "Critical"
 
 class BulkRelationshipCreateRequest(BaseModel):
     relationships: List[BulkRelationshipItem]
@@ -183,7 +185,7 @@ async def get_object(object_id: str):
             # Get relationships
             relationships_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                RETURN r.id as id, r.type as type, r.role as role,
+                RETURN r.id as id, r.type as type, r.role as role, r.frequency as frequency,
                        other.being as toBeing, other.avatar as toAvatar, other.object as toObject
             """, object_id=object_id)
 
@@ -193,6 +195,7 @@ async def get_object(object_id: str):
                     "id": rel_record["id"] or str(uuid.uuid4()),  # Use existing ID or generate new one
                     "type": rel_record["type"],
                     "role": rel_record["role"],
+                    "frequency": rel_record.get("frequency") or "Critical",  # Default to Critical if not present
                     "toBeing": rel_record["toBeing"],
                     "toAvatar": rel_record["toAvatar"],
                     "toObject": rel_record["toObject"]
@@ -459,6 +462,7 @@ async def create_object(object_data: ObjectCreateRequest):
                                 id: $relationship_id,
                                 type: $relationship_type,
                                 role: $role,
+                                frequency: $frequency,
                                 toBeing: $to_being,
                                 toAvatar: $to_avatar,
                                 toObject: $to_object
@@ -466,6 +470,7 @@ async def create_object(object_data: ObjectCreateRequest):
                         """, source_id=new_id, target_id=target_id, relationship_id=relationship_id,
                             relationship_type=rel.get("type", "Inter-Table"),
                             role=rel.get("role", ""),
+                            frequency=rel.get("frequency", "Critical"),
                             to_being=rel.get("toBeing", "ALL"),
                             to_avatar=rel.get("toAvatar", "ALL"),
                             to_object=rel.get("toObject", "ALL"))
@@ -889,6 +894,7 @@ async def update_object(
                                         id: $relationship_id,
                                         type: $relationship_type,
                                         role: $role,
+                                        frequency: $frequency,
                                         toBeing: $to_being,
                                         toAvatar: $to_avatar,
                                         toObject: $to_object
@@ -896,6 +902,7 @@ async def update_object(
                                 """, source_id=object_id, target_id=target_id, relationship_id=relationship_id,
                                     relationship_type=rel.get("type", "Inter-Table"),
                                     role=rel.get("role", ""),
+                                    frequency=rel.get("frequency", "Critical"),
                                     to_being=rel.get("toBeing", "ALL"),
                                     to_avatar=rel.get("toAvatar", "ALL"),
                                     to_object=rel.get("toObject", "ALL"))
@@ -1102,7 +1109,7 @@ async def cleanup_old_relationships():
             # Get all old Relationship nodes and their connections
             old_relationships = session.run("""
                 MATCH (o:Object)-[:HAS_RELATIONSHIP]->(r:Relationship)
-                RETURN o.id as source_id, r.type as type, r.role as role,
+                RETURN o.id as source_id, r.type as type, r.role as role, r.frequency as frequency,
                        r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject
             """).data()
             
@@ -1131,12 +1138,14 @@ async def cleanup_old_relationships():
                             id: $relationship_id,
                             type: $type,
                             role: $role,
+                            frequency: $frequency,
                             toBeing: $toBeing,
                             toAvatar: $toAvatar,
                             toObject: $toObject
                         }]->(target)
                     """, source_id=rel["source_id"], target_id=target_result["target_id"], relationship_id=relationship_id,
                         type=rel["type"], role=rel["role"],
+                        frequency=rel.get("frequency", "Critical"),
                         toBeing=rel["toBeing"], toAvatar=rel["toAvatar"], toObject=rel["toObject"])
             
             # Delete all old Relationship nodes
@@ -1236,6 +1245,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
 
         # Validate required columns - support both formats
         required_columns = ['Sector', 'Domain', 'Country', 'Object Clarifier', 'Being', 'Avatar', 'Object']
+        optional_columns = ['Variants']
         print(f"DEBUG: CSV fieldnames: {csv_reader.fieldnames}")
 
         if not csv_reader.fieldnames:
@@ -1252,6 +1262,8 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                 status_code=400,
                 detail=f"CSV must contain columns: {', '.join(required_columns)}. Missing: {', '.join(missing_columns)}"
             )
+        
+        # Note: Variants column is optional, so we don't check for it
 
         created_objects = []
         errors = []
@@ -1384,11 +1396,84 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             CREATE (oc)-[:RELEVANT_TO]->(o)
                         """, clarifier=object_clarifier, object_id=new_id)
 
+                    # Create variants if provided in CSV
+                    variants_list = []
+                    if hasattr(csv_row, 'Variants') and csv_row.Variants:
+                        # Parse comma-separated variants
+                        variants_str = csv_row.Variants.strip()
+                        if variants_str:
+                            variants_list = [v.strip() for v in variants_str.split(',') if v.strip()]
+                    
+                    variants_created = False
+                    if variants_list:
+                        print(f"DEBUG: Processing {len(variants_list)} variants for object {new_id}")
+                        for variant_name in variants_list:
+                            if not variant_name:
+                                continue
+                            
+                            # Check if variant already exists globally (case-insensitive)
+                            existing_variant = session.run("""
+                                MATCH (v:Variant)
+                                WHERE toLower(v.name) = toLower($variant_name)
+                                RETURN v.id as id, v.name as name
+                            """, variant_name=variant_name).single()
+                            
+                            if existing_variant:
+                                # Variant exists globally, connect it to this object
+                                variant_id = existing_variant["id"]
+                                print(f"DEBUG: Connecting existing variant '{variant_name}' to object {new_id}")
+                                
+                                # Check if already connected to avoid duplicates
+                                already_connected = session.run("""
+                                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                                    RETURN v.id as id
+                                """, object_id=new_id, variant_id=variant_id).single()
+                                
+                                if not already_connected:
+                                    session.run("""
+                                        MATCH (o:Object {id: $object_id})
+                                        MATCH (v:Variant {id: $variant_id})
+                                        CREATE (o)-[:HAS_VARIANT]->(v)
+                                    """, object_id=new_id, variant_id=variant_id)
+                                    variants_created = True
+                            else:
+                                # Create new variant
+                                variant_id = str(uuid.uuid4())
+                                print(f"DEBUG: Creating new variant '{variant_name}' for object {new_id}")
+                                
+                                session.run("""
+                                    CREATE (v:Variant {
+                                        id: $variant_id,
+                                        name: $variant_name
+                                    })
+                                """, variant_id=variant_id, variant_name=variant_name)
+                                
+                                session.run("""
+                                    MATCH (o:Object {id: $object_id})
+                                    MATCH (v:Variant {id: $variant_id})
+                                    CREATE (o)-[:HAS_VARIANT]->(v)
+                                """, object_id=new_id, variant_id=variant_id)
+                                variants_created = True
+                        
+                        # Update variant count after creating all variants
+                        var_count_result = session.run("""
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            RETURN count(v) as var_count
+                        """, object_id=new_id).single()
+                        
+                        var_count = var_count_result["var_count"] if var_count_result else 0
+                        
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            SET o.variants = $var_count
+                        """, object_id=new_id, var_count=var_count)
+                        print(f"DEBUG: Updated variant count to {var_count} for object {new_id}")
+
                     print(f"DEBUG: Successfully created object {new_id}")
                     # Get relationships for the newly created object
                     relationships_result = session.run("""
                         MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
-                        RETURN r.id as id, r.type as type, r.role as role,
+                        RETURN r.id as id, r.type as type, r.role as role, r.frequency as frequency,
                                other.being as toBeing, other.avatar as toAvatar, other.object as toObject
                     """, object_id=new_id)
 
@@ -1398,12 +1483,13 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             "id": rel_record["id"] or str(uuid.uuid4()),  # Use existing ID or generate new one
                             "type": rel_record["type"],
                             "role": rel_record["role"],
+                            "frequency": rel_record.get("frequency") or "Critical",
                             "toBeing": rel_record["toBeing"],
                             "toAvatar": rel_record["toAvatar"],
                             "toObject": rel_record["toObject"]
                         })
 
-                    # Get variants for the newly created object
+                    # Get variants for the newly created object (already retrieved above if variants were created)
                     variants_result = session.run("""
                         MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
                         RETURN v.name as name
@@ -1415,6 +1501,28 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             "id": str(uuid.uuid4()),
                             "name": var_record["name"]
                         })
+                    
+                    # Get variant count (if not already set above when creating variants)
+                    if not variants_created:
+                        var_count_result = session.run("""
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            RETURN count(v) as var_count
+                        """, object_id=new_id).single()
+                        
+                        var_count = var_count_result["var_count"] if var_count_result else 0
+                        
+                        # Set variant count on object
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            SET o.variants = $var_count
+                        """, object_id=new_id, var_count=var_count)
+                    else:
+                        # var_count was already set above when creating variants, just retrieve it
+                        var_count_result = session.run("""
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            RETURN count(v) as var_count
+                        """, object_id=new_id).single()
+                        var_count = var_count_result["var_count"] if var_count_result else 0
 
                     created_objects.append({
                         "id": new_id,
@@ -1424,7 +1532,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         "object": csv_row.Object,
                         "status": "Active",
                         "relationships": len(relationships),
-                        "variants": len(variants),
+                        "variants": var_count,
                         "variables": 0,
                         "relationshipsList": relationships,
                         "variantsList": variants
@@ -1599,13 +1707,14 @@ async def create_relationship(
                             id: $relationship_id,
                             type: $relationship_type,
                             role: $role,
+                            frequency: $frequency,
                             toBeing: $to_being,
                             toAvatar: $to_avatar,
                             toObject: $to_object
                         }]->(target)
                     """, source_id=object_id, target_id=target_id, relationship_id=relationship_id,
-                        relationship_type=request.relationship_type, role=request.role, to_being=request.to_being, 
-                        to_avatar=request.to_avatar, to_object=request.to_object)
+                        relationship_type=request.relationship_type, role=request.role, frequency=request.frequency or "Critical",
+                        to_being=request.to_being, to_avatar=request.to_avatar, to_object=request.to_object)
                     print(f"DEBUG: Successfully created relationship to {target_result['object']}")
                 except Exception as e:
                     print(f"DEBUG: Error creating relationship to {target_result['object']}: {e}")
@@ -1825,13 +1934,14 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                                     id: $relationship_id,
                                     type: $relationship_type,
                                     role: $role,
+                                    frequency: $frequency,
                                     toBeing: $to_being,
                                     toAvatar: $to_avatar,
                                     toObject: $to_object
                                 }]->(target)
                             """, source_id=rel.source_object_id, target_id=target_id, relationship_id=relationship_id,
-                                relationship_type=final_type, role=role, to_being=rel.target_being, 
-                                to_avatar=rel.target_avatar, to_object=rel.target_object)
+                                relationship_type=final_type, role=role, frequency=rel.frequency or "Critical",
+                                to_being=rel.target_being, to_avatar=rel.target_avatar, to_object=rel.target_object)
                             created_count += 1
                         except Exception as e:
                             print(f"DEBUG: Error creating relationship: {e}")
@@ -1953,12 +2063,14 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                                 id: $relationship_id,
                                 type: $relationship_type,
                                 role: $role,
+                                frequency: $frequency,
                                 toBeing: $to_being,
                                 toAvatar: $to_avatar,
                                 toObject: $to_object
                             }]->(target)
                         """, target_id=target_object_id, relationship_id=relationship_id,
                             relationship_type=relationship_type, role=role,
+                            frequency=rel.get("frequency", "Critical"),
                             to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                         cloned_count += 1
                     except Exception as e:
@@ -1999,6 +2111,7 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                                 id: $relationship_id,
                                 type: $relationship_type,
                                 role: $role,
+                                frequency: $frequency,
                                 toBeing: $to_being,
                                 toAvatar: $to_avatar,
                                 toObject: $to_object
@@ -2006,7 +2119,8 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                             RETURN r.id as relationship_id
                         """, target_id=target_object_id, target_obj_id=target_obj_id,
                             relationship_id=relationship_id, relationship_type=relationship_type,
-                            role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                            role=role, frequency=rel.get("frequency", "Critical"),
+                            to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                         
                         created_rel = result.single()
                         if created_rel and created_rel.get("relationship_id"):
@@ -2115,7 +2229,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
             # Get all relationships from source object
             source_relationships = session.run("""
                 MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
-                RETURN r.id as relationship_id, r.type as type, r.role as role,
+                RETURN r.id as relationship_id, r.type as type, r.role as role, r.frequency as frequency,
                        r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject,
                        target.id as target_object_id, target.being as target_being,
                        target.avatar as target_avatar, target.object as target_object
@@ -2162,6 +2276,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                     id: $relationship_id,
                                     type: $relationship_type,
                                     role: $role,
+                                    frequency: $frequency,
                                     toBeing: $to_being,
                                     toAvatar: $to_avatar,
                                     toObject: $to_object
@@ -2169,6 +2284,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                 RETURN r.id as relationship_id
                             """, target_id=target_object_id, relationship_id=relationship_id,
                                 relationship_type=relationship_type, role=role,
+                                frequency=rel.get("frequency", "Critical"),
                                 to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                             
                             created_rel = result.single()
@@ -2209,6 +2325,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                     id: $relationship_id,
                                     type: $relationship_type,
                                     role: $role,
+                                    frequency: $frequency,
                                     toBeing: $to_being,
                                     toAvatar: $to_avatar,
                                     toObject: $to_object
@@ -2216,7 +2333,8 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                 RETURN r.id as relationship_id
                             """, target_id=target_object_id, target_obj_id=target_obj_id,
                                 relationship_id=relationship_id, relationship_type=relationship_type,
-                                role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                                role=role, frequency=rel.get("frequency", "Critical"),
+                                to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                             
                             created_rel = result.single()
                             if created_rel and created_rel.get("relationship_id"):
@@ -3100,13 +3218,14 @@ async def bulk_upload_relationships(object_id: str, file: UploadFile = File(...)
                             id: $relationship_id,
                             type: $relationship_type,
                             role: $role,
+                            frequency: $frequency,
                             toBeing: $to_being,
                             toAvatar: $to_avatar,
                             toObject: $to_object
                         }]->(target)
                     """, source_id=object_id, target_id=target_id, relationship_id=relationship_id,
-                        relationship_type=relationship_type, role=role, to_being=to_being, 
-                        to_avatar=to_avatar, to_object=to_object)
+                        relationship_type=relationship_type, role=role, frequency="Critical",
+                        to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                     
                     created_relationships.append({
                         "id": relationship_id,

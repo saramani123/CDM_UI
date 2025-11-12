@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload } from 'lucide-react';
 import { DataGrid } from './DataGrid';
-import { objectColumns } from '../data/mockData';
+import { objectColumns, parseDriverField } from '../data/mockData';
 import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
 import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
+import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
 
 interface InitialRelationship {
   targetObject: ObjectData;
@@ -30,6 +31,7 @@ interface RelationshipData {
   isSelected: boolean;
   relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
   roles: string;
+  frequency: 'Critical' | 'Likely' | 'Possible';
   hasMixedTypes?: boolean; // Flag to indicate mixed relationship types
 }
 
@@ -158,6 +160,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Handle legacy relationships with proper role fallbacks
           const roles = new Set<string>();
           const relationshipTypes = new Set<string>();
+          const frequencies = new Set<string>();
           
           for (const rel of existingRels) {
             // Add explicit role if it exists and is not empty
@@ -171,6 +174,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             }
             
             relationshipTypes.add(rel.type);
+            // Collect frequencies, defaulting to Critical if not present
+            frequencies.add(rel.frequency || 'Critical');
           }
           
           // Determine relationship type
@@ -183,6 +188,15 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             relationshipType = 'Inter-Table';
           }
           
+          // Determine frequency (use first one if all are the same, otherwise default to Critical)
+          let frequency: 'Critical' | 'Likely' | 'Possible' = 'Critical';
+          if (frequencies.size === 1) {
+            const freqValue = frequencies.values().next().value;
+            if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
+              frequency = freqValue as 'Critical' | 'Likely' | 'Possible';
+            }
+          }
+          
           // Convert roles set to comma-separated string, deduplicated
           const rolesArray = Array.from(roles);
           const rolesString = rolesArray.join(', ');
@@ -192,6 +206,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             isSelected: true,
             relationshipType: relationshipType,
             roles: rolesString,
+            frequency: frequency,
             hasMixedTypes: hasMixedTypes
           };
         } else {
@@ -206,7 +221,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             objectId: obj.id,
             isSelected: false,
             relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
-            roles: defaultRoles
+            roles: defaultRoles,
+            frequency: 'Critical'
           };
         }
       }
@@ -234,6 +250,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: combinedRoles,
+              frequency: 'Critical',
               hasMixedTypes: false
             };
           } else {
@@ -243,6 +260,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: initialRel.role,
+              frequency: 'Critical',
               hasMixedTypes: false
             };
           }
@@ -262,7 +280,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           objectId: obj.id,
           isSelected: false,
           relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
-          roles: defaultRoles
+          roles: defaultRoles,
+          frequency: 'Critical'
         };
       }
       
@@ -276,6 +295,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: initialRel.role,
+              frequency: 'Critical',
               hasMixedTypes: false
             };
           }
@@ -333,6 +353,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     }));
   };
 
+  const handleFrequencyChange = (objectId: string, frequency: 'Critical' | 'Likely' | 'Possible') => {
+    setRelationshipData(prev => ({
+      ...prev,
+      [objectId]: {
+        ...prev[objectId],
+        frequency: frequency
+      }
+    }));
+  };
+
   const validateRoles = (roles: string): string[] => {
     if (!roles.trim()) return [];
     
@@ -378,6 +408,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               id: Date.now().toString() + Math.random(),
               type: relData.relationshipType,
               role: role,
+              frequency: relData.frequency || 'Critical',
               toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
               toAvatar: targetObject.avatar || 'ALL',
               toObject: targetObject.object || 'ALL'
@@ -530,7 +561,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 sourceObjectId: sourceObject.id,
                 targetObject,
                 relationshipType: finalType,
-                roles: validRoles
+                roles: validRoles,
+                frequency: relData.frequency || 'Critical'
               });
             }
           }
@@ -563,6 +595,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                   await apiService.createRelationship(rel.sourceObjectId, {
                     type: rel.relationshipType,
                     role: role || '',
+                    frequency: rel.frequency || 'Critical',
                     toBeing: rel.targetObject.being,
                     toAvatar: rel.targetObject.avatar,
                     toObject: rel.targetObject.object
@@ -627,6 +660,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                   await apiService.createRelationship(selectedObject.id, {
                     type: relData.relationshipType,
                     role: role,
+                    frequency: relData.frequency || 'Critical',
                     toBeing: targetObject.being,
                     toAvatar: targetObject.avatar,
                     toObject: targetObject.object
@@ -731,7 +765,50 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
   // Custom columns for the relationship modal
   const relationshipColumns = [
-    // Filter out sector, domain, country from objectColumns and keep only being, avatar, object
+    // Add S, D, C columns with abbreviations first
+    {
+      key: 'sector',
+      title: 'S',
+      width: 80,
+      render: (row: any) => {
+        const parsed = parseDriverField(row.driver || '');
+        const sectorValue = row.sector || parsed.sector || '';
+        return (
+          <span className="text-sm text-ag-dark-text">
+            {getGridDriverDisplayValue('sector', sectorValue)}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'domain',
+      title: 'D',
+      width: 80,
+      render: (row: any) => {
+        const parsed = parseDriverField(row.driver || '');
+        const domainValue = row.domain || parsed.domain || '';
+        return (
+          <span className="text-sm text-ag-dark-text">
+            {getGridDriverDisplayValue('domain', domainValue)}
+          </span>
+        );
+      }
+    },
+    {
+      key: 'country',
+      title: 'C',
+      width: 80,
+      render: (row: any) => {
+        const parsed = parseDriverField(row.driver || '');
+        const countryValue = row.country || parsed.country || '';
+        return (
+          <span className="text-sm text-ag-dark-text">
+            {getGridDriverDisplayValue('country', countryValue)}
+          </span>
+        );
+      }
+    },
+    // Then Being, Avatar, Object columns
     ...objectColumns.filter(col => ['being', 'avatar', 'object'].includes(col.key)),
     {
       key: 'relationshipType',
@@ -749,7 +826,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           : isSourceObject && sourceObjects.length === 1; // In single mode, disable for self
         
         return (
-          <div className="relative">
+          <div className="relative w-full" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
             <select
               value={currentType}
               onChange={(e) => handleRelationshipTypeChange(row.id, e.target.value as any)}
@@ -786,21 +863,44 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       }
     },
     {
+      key: 'frequency',
+      title: 'Frequency',
+      width: 150,
+      render: (row: any) => {
+        const currentFrequency = relationshipData[row.id]?.frequency || 'Critical';
+        return (
+          <div className="relative w-full" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
+            <select
+              value={currentFrequency}
+              onChange={(e) => handleFrequencyChange(row.id, e.target.value as 'Critical' | 'Likely' | 'Possible')}
+              className="w-full px-3 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent pr-8 appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 8px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="Critical">Critical</option>
+              <option value="Likely">Likely</option>
+              <option value="Possible">Possible</option>
+            </select>
+          </div>
+        );
+      }
+    },
+    {
       key: 'roles',
       title: 'Roles',
       width: 400, // Expanded from 250 to use freed space from removed columns
       render: (row: any) => (
-        <div className="w-full h-full flex items-center">
+        <div className="w-full h-full flex items-center" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
           <input
             type="text"
             value={relationshipData[row.id]?.roles || ''}
             onChange={(e) => handleRolesChange(row.id, e.target.value)}
             placeholder="Enter roles (comma-separated)"
             className="w-full px-2 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            style={{ 
-              width: 'calc(100% + 400px)',
-              marginRight: '-400px'
-            }}
           />
         </div>
       )

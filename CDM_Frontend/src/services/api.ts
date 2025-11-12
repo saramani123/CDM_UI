@@ -326,6 +326,7 @@ class ApiService {
       body: JSON.stringify({
         relationship_type: relationshipData.type || 'Inter-Table',
         role: relationshipData.role || '',
+        frequency: relationshipData.frequency || 'Critical',
         to_being: relationshipData.toBeing || 'ALL',
         to_avatar: relationshipData.toAvatar || 'ALL',
         to_object: relationshipData.toObject || 'ALL'
@@ -377,6 +378,7 @@ class ApiService {
     targetObject: any;
     relationshipType: string;
     roles: string[];
+    frequency?: string;
   }>) {
     return this.request('/objects/bulk-relationships', {
       method: 'POST',
@@ -387,7 +389,8 @@ class ApiService {
           target_avatar: rel.targetObject.avatar,
           target_object: rel.targetObject.object,
           relationship_type: rel.relationshipType,
-          roles: rel.roles
+          roles: rel.roles,
+          frequency: rel.frequency || 'Critical'
         }))
       }),
       headers: {

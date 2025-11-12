@@ -419,6 +419,7 @@ class CSVRowData(BaseModel):
     Being: str = Field(..., description="Being type")
     Avatar: str = Field(..., description="Avatar type")
     Object: str = Field(..., description="Object name")
+    Variants: Optional[str] = Field(None, description="Comma-separated list of variants (optional)")
     
     class Config:
         populate_by_name = True

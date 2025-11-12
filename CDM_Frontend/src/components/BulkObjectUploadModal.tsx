@@ -26,7 +26,8 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
       { number: 4, name: 'Object Clarifier', required: true },
       { number: 5, name: 'Being', required: true },
       { number: 6, name: 'Avatar', required: true },
-      { number: 7, name: 'Object', required: true }
+      { number: 7, name: 'Object', required: true },
+      { number: 8, name: 'Variants', required: false }
     ]
   };
 
@@ -41,6 +42,10 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
           avatar: string;
           object: string;
           driver: string;
+          variants: number;
+          relationships: number;
+          relationshipsList: any[];
+          variantsList: any[];
         }>;
         errors: string[];
       };
@@ -55,18 +60,19 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
       // Call onUpload with the created objects to refresh the UI
       if (result.created_objects && result.created_objects.length > 0) {
         // Convert the created objects to the format expected by the UI
+        // Use actual values from backend response
         const uiObjects = result.created_objects.map((obj) => ({
           id: obj.id,
           driver: obj.driver,
           being: obj.being,
           avatar: obj.avatar,
           object: obj.object,
-          relationships: 0,
-          variants: 0,
+          relationships: obj.relationships || 0,
+          variants: obj.variants || 0,
           variables: '-',
           status: 'Active',
-          relationshipsList: [],
-          variantsList: [],
+          relationshipsList: obj.relationshipsList || [],
+          variantsList: obj.variantsList || [],
         }));
         onUpload(uiObjects);
       }
@@ -136,19 +142,21 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
               {csvFormat.columns.map((column) => (
                 <div
                   key={column.number}
-                  className="flex items-center justify-between px-4 py-3 border-b border-ag-dark-border last:border-b-0 bg-red-900 bg-opacity-20"
+                  className={`flex items-center justify-between px-4 py-3 border-b border-ag-dark-border last:border-b-0 ${
+                    column.required ? 'bg-red-900 bg-opacity-20' : 'bg-ag-dark-bg'
+                  }`}
                 >
                   <span className="text-sm text-ag-dark-text-secondary">
                     Column {column.number}
                   </span>
-                  <span className="text-sm font-medium text-ag-dark-error">
-                    {column.name} *
+                  <span className={`text-sm font-medium ${column.required ? 'text-ag-dark-error' : 'text-ag-dark-text-secondary'}`}>
+                    {column.name} {column.required ? '*' : '(optional)'}
                   </span>
                 </div>
               ))}
             </div>
-            <div className="text-xs text-ag-dark-error">
-              * All fields are required
+            <div className="text-xs text-ag-dark-text-secondary">
+              * Required fields | (optional) = Optional fields
             </div>
           </div>
 
@@ -193,11 +201,14 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required Fields:</strong></p>
-            <p>• All 7 columns must have values</p>
+            <p>• Columns 1-7 must have values</p>
             <p>• Object Clarifier can be "None" if not applicable</p>
             <p>• Use "ALL" for Sector/Domain/Country to apply to all values</p>
+            <p><strong>Optional Fields:</strong></p>
+            <p>• Column 8 (Variants): Comma-separated list of variants (e.g., "Variant1, Variant2, Variant3")</p>
+            <p>• Variants will be automatically created and linked to the object</p>
             <p><strong>After Upload:</strong></p>
-            <p>• IDs, relationships, and variants can be added after upload</p>
+            <p>• IDs and relationships can be added after upload</p>
             <p>• Select any uploaded object to edit its complete metadata</p>
           </div>
         </div>
