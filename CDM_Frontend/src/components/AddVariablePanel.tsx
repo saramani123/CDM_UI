@@ -278,13 +278,23 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         if (values.includes('ALL')) {
           onChange([]);
         } else {
-          onChange(['ALL']);
+          // When ALL is selected, select ALL individual values too
+          const allIndividualValues = options.filter(opt => opt !== 'ALL');
+          onChange(['ALL', ...allIndividualValues]);
         }
       } else {
         const newValues = values.includes(option)
           ? values.filter(v => v !== option && v !== 'ALL')
           : [...values.filter(v => v !== 'ALL'), option];
-        onChange(newValues);
+        
+        // If all individual values are selected, also select ALL
+        const allIndividualValues = options.filter(opt => opt !== 'ALL');
+        const allSelected = allIndividualValues.every(opt => newValues.includes(opt));
+        if (allSelected && allIndividualValues.length > 0) {
+          onChange(['ALL', ...newValues]);
+        } else {
+          onChange(newValues);
+        }
       }
       // Keep dropdown open for multiple selections
     };

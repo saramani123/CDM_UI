@@ -12,7 +12,7 @@ import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
 import { BulkEditVariablesPanel } from './components/BulkEditVariablesPanel';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
-import { mockObjectData, objectColumns, metadataFields, parseDriverField, type ObjectData } from './data/mockData';
+import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseDriverString, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
@@ -311,13 +311,35 @@ function App() {
         console.log('App - Setting data to apiObjects:', objectsArray);
         console.log('App - Affected object IDs before data update:', Array.from(affectedObjectIds));
         
+        // Preserve unsaved cloned objects when syncing API data
+        setData(prevData => {
+          // Find all unsaved cloned objects in current data
+          const unsavedClones = prevData.filter(obj => 
+            obj._isCloned && !obj._isSaved && obj.id?.startsWith('clone-')
+          );
+          
+          // Merge API data with unsaved clones
+          // Remove any saved clones from unsaved clones list (they're now in API data)
+          const stillUnsavedClones = unsavedClones.filter(clone => {
+            // Check if this clone was saved (has a real ID in API data)
+            // We can't easily match by content, so we'll keep all unsaved clones
+            // The save handler will remove them from the list
+            return true;
+          });
+          
+          // Combine API data with unsaved clones
+          const mergedData = [...objectsArray, ...stillUnsavedClones];
+          
+          console.log('App - Preserved unsaved clones:', stillUnsavedClones.length);
+          return mergedData;
+        });
+        
         // Check if any of the affected objects are in the new data
         if (affectedObjectIds.size > 0) {
           const affectedObjectsInNewData = objectsArray.filter(obj => affectedObjectIds.has(obj.id));
           console.log('App - Affected objects in new data:', affectedObjectsInNewData.map(obj => ({ id: obj.id, driver: obj.driver })));
         }
         
-        setData(objectsArray);
         console.log('App - Data updated, affected object IDs should still be:', Array.from(affectedObjectIds));
       }
     }
@@ -498,17 +520,29 @@ function App() {
         // Ensure apiVariables is an array before setting
         const variablesArray = Array.isArray(apiVariables) ? apiVariables : (apiVariables ? [apiVariables] : []);
         
-        // Filter out any cloned unsaved rows (they shouldn't be in API data, but just in case)
-        const filteredArray = variablesArray.filter((v: any) => !v._isCloned || v._isSaved);
-        
-        // Remove duplicates by ID (in case of any duplicates)
-        const uniqueArray = filteredArray.filter((v: any, index: number, self: any[]) => 
-          index === self.findIndex((t: any) => t.id === v.id)
-        );
-        
-        console.log('Using API variables data:', uniqueArray);
-        console.log('Setting variableData to:', uniqueArray);
-        setVariableData(uniqueArray);
+        // Preserve unsaved cloned variables when syncing API data
+        setVariableData(prevData => {
+          // Find all unsaved cloned variables in current data
+          const unsavedClones = prevData.filter(v => 
+            v._isCloned && !v._isSaved && v.id?.startsWith('clone-')
+          );
+          
+          // Filter out any cloned unsaved rows from API data (they shouldn't be there, but just in case)
+          const filteredArray = variablesArray.filter((v: any) => !v._isCloned || v._isSaved);
+          
+          // Remove duplicates by ID (in case of any duplicates)
+          const uniqueArray = filteredArray.filter((v: any, index: number, self: any[]) => 
+            index === self.findIndex((t: any) => t.id === v.id)
+          );
+          
+          // Combine API data with unsaved clones
+          const mergedData = [...uniqueArray, ...unsavedClones];
+          
+          console.log('App - Preserved unsaved variable clones:', unsavedClones.length);
+          console.log('Using API variables data:', uniqueArray);
+          console.log('Setting variableData to:', mergedData);
+          return mergedData;
+        });
       }
     }
   }, [apiVariables, variablesError, variablesLoading]);
@@ -745,15 +779,32 @@ function App() {
         // Get full object data including relationships and variants
         const fullObjectData = await apiService.getObject(row.id);
         
+        // Parse driver string to get sector, domain, country for grid display
+        const parsedDriver = parseDriverString(fullObjectData.driver || '');
+        
         // Create cloned object with all data except name
         const clonedObject: any = {
           ...fullObjectData,
           id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
           object: '', // Clear object name - user must provide new name
+          // Ensure grid display fields are populated
+          sector: parsedDriver.sector.length > 0 ? parsedDriver.sector[0] : (fullObjectData.sector || ''),
+          domain: parsedDriver.domain.length > 0 ? parsedDriver.domain[0] : (fullObjectData.domain || ''),
+          country: parsedDriver.country.length > 0 ? parsedDriver.country[0] : (fullObjectData.country || ''),
           _isCloned: true,
           _isSaved: false,
           _sourceId: row.id // Keep reference to source for tracking
         };
+        
+        console.log('🧬 Created cloned object:', {
+          id: clonedObject.id,
+          object: clonedObject.object,
+          driver: clonedObject.driver,
+          sector: clonedObject.sector,
+          domain: clonedObject.domain,
+          country: clonedObject.country,
+          _isCloned: clonedObject._isCloned
+        });
         
         // Insert cloned row immediately below source row
         const currentData = [...data];
@@ -762,7 +813,15 @@ function App() {
           currentData.splice(sourceIndex + 1, 0, clonedObject);
           setData(currentData);
           
-          // Auto-select the cloned row
+          // Auto-select the cloned row (single selection to prevent bulk edit mode)
+          setSelectedRowForMetadata(clonedObject);
+          setSelectedRows([clonedObject]);
+          
+          console.log('🧬 Inserted cloned object at index:', sourceIndex + 1, 'new length:', currentData.length);
+        } else {
+          console.error('🧬 Source object not found in data, cannot insert clone');
+          // Fallback: just add to the end
+          setData(prev => [...prev, clonedObject]);
           setSelectedRowForMetadata(clonedObject);
           setSelectedRows([clonedObject]);
         }
@@ -808,7 +867,7 @@ function App() {
           console.log('🧬 Cloned variable:', clonedVariable);
           setVariableData(currentData);
           
-          // Auto-select the cloned row
+          // Auto-select the cloned row (single selection to prevent bulk edit mode)
           setSelectedRowForMetadata(clonedVariable);
           setSelectedRows([clonedVariable]);
         } else {
@@ -1227,13 +1286,38 @@ function App() {
             throw new Error('Object name is required');
           }
           
+          // Check for duplicate object name (case-insensitive)
+          // An object is unique by: sector, domain, country, objectClarifier, being, avatar, object
+          const driverParts = updatedData.driver.split(', ').map(part => part.trim());
+          const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
+          const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
+          const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
+          const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
+          
+          // Check if an object with the same combination already exists
+          const duplicateObject = data.find(obj => {
+            if (obj.id === selectedRowForMetadata.id) return false; // Don't check against self
+            const objDriverParts = (obj.driver || '').split(', ').map((p: string) => p.trim());
+            const objSector = objDriverParts[0] === 'ALL' ? ['ALL'] : [objDriverParts[0]];
+            const objDomain = objDriverParts[1] === 'ALL' ? ['ALL'] : [objDriverParts[1]];
+            const objCountry = objDriverParts[2] === 'ALL' ? ['ALL'] : [objDriverParts[2]];
+            const objClarifier = objDriverParts[3] === 'None' ? 'None' : objDriverParts[3];
+            
+            return obj.being === updatedData.being &&
+                   obj.avatar === updatedData.avatar &&
+                   obj.object?.toLowerCase() === updatedData.object?.toLowerCase() &&
+                   JSON.stringify(objSector) === JSON.stringify(sector) &&
+                   JSON.stringify(objDomain) === JSON.stringify(domain) &&
+                   JSON.stringify(objCountry) === JSON.stringify(country) &&
+                   objClarifier === objectClarifier;
+          });
+          
+          if (duplicateObject) {
+            alert(`Cannot save: An object with the same combination of Sector, Domain, Country, Object Clarifier, Being, Avatar, and Object name already exists. Please change the Object name or modify other fields to make it unique.`);
+            throw new Error('Duplicate object detected');
+          }
+          
           try {
-            // Convert the UI format to API format
-            const driverParts = updatedData.driver.split(', ').map(part => part.trim());
-            const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
-            const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
-            const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
-            const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
             
             // Use relationships and variants from updatedData (which includes user edits from metadata panel)
             // If not provided, fall back to cloned data
@@ -1284,20 +1368,65 @@ function App() {
             
             // Create new object via API (this will clone relationships and variants)
             const createdObject = await createObject(apiObjectData);
+            const newObjectId = createdObject.id;
             
-            // Refresh objects to get updated data
-            await fetchObjects();
-            
-            // Get the fresh object data from the API (without clone flags)
-            const freshObjectData = await apiService.getObject(createdObject.id);
-            
-            // Update local state - remove the cloned row (it will be replaced by the fresh data from fetchObjects)
-            // The fresh data is already in the data array from fetchObjects, so we just need to update the selection
+            // Remove the cloned row from local state immediately
             setData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
             
-            // Update selected row with fresh data (remove clone flags)
-            setSelectedRowForMetadata(freshObjectData);
-            setSelectedRows([freshObjectData]);
+            // Refresh objects to get updated data (this will add the new object)
+            await fetchObjects();
+            
+            // Wait for the data sync to complete and find the new object
+            // Use a retry mechanism to find the object after the sync
+            let foundObject = null;
+            for (let i = 0; i < 10; i++) {
+              await new Promise(resolve => setTimeout(resolve, 150));
+              
+              // Check apiObjects from the hook (should be updated after fetchObjects)
+              if (apiObjects && Array.isArray(apiObjects)) {
+                foundObject = apiObjects.find((obj: any) => obj.id === newObjectId);
+                if (foundObject) break;
+              }
+            }
+            
+            // If found in apiObjects, use it (it will be synced to data by useEffect)
+            if (foundObject) {
+              // Parse driver for grid display fields
+              const parsed = parseDriverString(foundObject.driver || '');
+              const parsedObject = {
+                ...foundObject,
+                sector: parsed.sector.length > 0 ? parsed.sector[0] : (foundObject.sector || ''),
+                domain: parsed.domain.length > 0 ? parsed.domain[0] : (foundObject.domain || ''),
+                country: parsed.country.length > 0 ? parsed.country[0] : (foundObject.country || '')
+              };
+              
+              // Update selected row with the new object (without clone flags)
+              setSelectedRowForMetadata(parsedObject);
+              setSelectedRows([parsedObject]);
+            } else {
+              // Fallback: get fresh data from API and ensure it's in the data array
+              const freshObjectData = await apiService.getObject(newObjectId) as any;
+              // Parse driver for grid display
+              const parsed = parseDriverString(freshObjectData.driver || '');
+              const parsedObject = {
+                ...freshObjectData,
+                sector: parsed.sector.length > 0 ? parsed.sector[0] : '',
+                domain: parsed.domain.length > 0 ? parsed.domain[0] : '',
+                country: parsed.country.length > 0 ? parsed.country[0] : ''
+              };
+              
+              // Ensure it's in the data array
+              setData(prev => {
+                const exists = prev.find(obj => obj.id === parsedObject.id);
+                if (!exists) {
+                  return [...prev, parsedObject];
+                }
+                return prev.map(obj => obj.id === parsedObject.id ? parsedObject : obj);
+              });
+              
+              setSelectedRowForMetadata(parsedObject);
+              setSelectedRows([parsedObject]);
+            }
           } catch (error: any) {
             console.error('Error saving cloned object:', error);
             const errorMessage = error?.message || 'Failed to save clone. Please try again.';
@@ -1314,6 +1443,37 @@ function App() {
           if (!updatedData.variable || !updatedData.variable.trim()) {
             alert('Please define a new Variable name to save this clone.');
             throw new Error('Variable name is required');
+          }
+          
+          // Check for duplicate variable name (case-insensitive)
+          // A variable is unique by: sector, domain, country, variableClarifier, part, group, variable
+          const driverParts = (updatedData.driver || selectedRowForMetadata.driver || 'ALL, ALL, ALL, None').split(', ').map((p: string) => p.trim());
+          const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
+          const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
+          const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
+          const variableClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
+          
+          // Check if a variable with the same combination already exists
+          const duplicateVariable = variableData.find(v => {
+            if (v.id === selectedRowForMetadata.id) return false; // Don't check against self
+            const vDriverParts = (v.driver || '').split(', ').map((p: string) => p.trim());
+            const vSector = vDriverParts[0] === 'ALL' ? ['ALL'] : [vDriverParts[0]];
+            const vDomain = vDriverParts[1] === 'ALL' ? ['ALL'] : [vDriverParts[1]];
+            const vCountry = vDriverParts[2] === 'ALL' ? ['ALL'] : [vDriverParts[2]];
+            const vClarifier = vDriverParts[3] === 'None' ? 'None' : vDriverParts[3];
+            
+            return v.part === (updatedData.part || selectedRowForMetadata.part) &&
+                   v.group === (updatedData.group || selectedRowForMetadata.group) &&
+                   v.variable?.toLowerCase() === updatedData.variable?.toLowerCase() &&
+                   JSON.stringify(vSector) === JSON.stringify(sector) &&
+                   JSON.stringify(vDomain) === JSON.stringify(domain) &&
+                   JSON.stringify(vCountry) === JSON.stringify(country) &&
+                   vClarifier === variableClarifier;
+          });
+          
+          if (duplicateVariable) {
+            alert(`Cannot save: A variable with the same combination of Sector, Domain, Country, Variable Clarifier, Part, Group, and Variable name already exists. Please change the Variable name or modify other fields to make it unique.`);
+            throw new Error('Duplicate variable detected');
           }
           
           try {

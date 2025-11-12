@@ -1291,17 +1291,19 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         ontologyViewType="identifiers"
         actions={
           <div className="flex items-center gap-2">
-            {/* Clone Identifiers Button */}
-            <button
-              onClick={() => setIsCloneIdentifiersModalOpen(true)}
-              disabled={!isPanelEnabled || hasIdentifiers()}
-              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                !isPanelEnabled || hasIdentifiers() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
-              }`}
-              title={hasIdentifiers() ? "Please delete existing identifiers to use clone" : "Clone identifiers from another object"}
-            >
-              <Copy className="w-5 h-5" />
-            </button>
+            {/* Clone Identifiers Button - Hide for cloned objects (they already have identifiers) */}
+            {!(selectedObject?._isCloned && !selectedObject?._isSaved) && (
+              <button
+                onClick={() => setIsCloneIdentifiersModalOpen(true)}
+                disabled={!isPanelEnabled || hasIdentifiers()}
+                className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                  !isPanelEnabled || hasIdentifiers() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                }`}
+                title={hasIdentifiers() ? "Please delete existing identifiers to use clone" : "Clone identifiers from another object"}
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+            )}
           </div>
         }
       >
@@ -1505,24 +1507,32 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         ontologyViewType="relationships"
         actions={
           <div className="flex items-center gap-2">
-            {/* Clone Relationships Button */}
-            <button
-              onClick={() => setIsCloneRelationshipsModalOpen(true)}
-              disabled={!isPanelEnabled || relationships.length > 0}
-              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                !isPanelEnabled || relationships.length > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
-              }`}
-              title={relationships.length > 0 ? "Please delete existing relationships to use clone" : "Clone relationships from another object"}
-            >
-              <Copy className="w-5 h-5" />
-            </button>
+            {/* Clone Relationships Button - Hide for cloned objects (they already have relationships) */}
+            {!(selectedObject?._isCloned && !selectedObject?._isSaved) && (
+              <button
+                onClick={() => setIsCloneRelationshipsModalOpen(true)}
+                disabled={!isPanelEnabled || relationships.length > 0}
+                className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                  !isPanelEnabled || relationships.length > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                }`}
+                title={relationships.length > 0 ? "Please delete existing relationships to use clone" : "Clone relationships from another object"}
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={onEnterRelationshipView}
-              disabled={!isPanelEnabled}
+              disabled={!isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved)}
               className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved) ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              title={selectedCount > 1 ? "View relationships (bulk edit not yet supported)" : "View and manage relationships"}
+              title={
+                selectedObject?._isCloned && !selectedObject?._isSaved 
+                  ? "Please save the cloned object before viewing relationships graph" 
+                  : selectedCount > 1 
+                    ? "View relationships (bulk edit not yet supported)" 
+                    : "View and manage relationships"
+              }
             >
               View Relationships
             </button>
