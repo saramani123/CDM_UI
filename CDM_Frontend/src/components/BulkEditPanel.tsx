@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye } from 'lucide-react';
+import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye, Copy } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { RelationshipModal } from './RelationshipModal';
+import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { listFieldOptions } from '../data/listsData';
@@ -41,6 +42,7 @@ interface BulkEditPanelProps {
   allData?: any[];
   activeTab?: string;
   selectedObjects?: any[]; // Array of selected objects for bulk ontology view
+  onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
 }
 
 export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
@@ -50,7 +52,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   selectedCount,
   allData = [],
   activeTab = 'objects',
-  selectedObjects = []
+  selectedObjects = [],
+  onObjectsRefresh
 }) => {
   // Basic form data - Objects
   const [formData, setFormData] = useState({
@@ -139,6 +142,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
+  const [isCloneRelationshipsModalOpen, setIsCloneRelationshipsModalOpen] = useState(false);
+  
+  // Check if any selected objects have relationships
+  const [hasExistingRelationships, setHasExistingRelationships] = useState(false);
+  const [objectsWithRelationships, setObjectsWithRelationships] = useState<string[]>([]);
   
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
@@ -633,6 +641,29 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     // Note: onClose() is called automatically when selection changes via useEffect in App.tsx
     // No need to call it here explicitly as the panel closes when selection becomes single
   };
+
+  // Check if any selected objects have existing relationships
+  useEffect(() => {
+    const checkRelationships = async () => {
+      if (activeTab !== 'objects' || selectedObjects.length === 0) {
+        setHasExistingRelationships(false);
+        setObjectsWithRelationships([]);
+        return;
+      }
+
+      const objectsWithRels: string[] = [];
+      for (const obj of selectedObjects) {
+        if (obj.relationships && obj.relationships > 0) {
+          objectsWithRels.push(obj.object || obj.id);
+        }
+      }
+
+      setHasExistingRelationships(objectsWithRels.length > 0);
+      setObjectsWithRelationships(objectsWithRels);
+    };
+
+    checkRelationships();
+  }, [selectedObjects, activeTab]);
 
   // Multi-select component
   const MultiSelect: React.FC<{
@@ -1437,16 +1468,35 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="relationships"
         actions={
-          <button
-            onClick={() => setIsRelationshipModalOpen(true)}
-            disabled={selectedObjects.length === 0}
-            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-              selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            title={selectedObjects.length === 0 ? "Select objects to view relationships" : "View and manage relationships"}
-          >
-            View Relationships
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Clone Relationships Button */}
+            <button
+              onClick={() => setIsCloneRelationshipsModalOpen(true)}
+              disabled={selectedObjects.length === 0 || hasExistingRelationships}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedObjects.length === 0 || hasExistingRelationships ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={
+                selectedObjects.length === 0 
+                  ? "Select objects to clone relationships" 
+                  : hasExistingRelationships 
+                    ? `Please delete existing relationships for: ${objectsWithRelationships.join(', ')}` 
+                    : "Clone relationships from another object"
+              }
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsRelationshipModalOpen(true)}
+              disabled={selectedObjects.length === 0}
+              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+                selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={selectedObjects.length === 0 ? "Select objects to view relationships" : "View and manage relationships"}
+            >
+              View Relationships
+            </button>
+          </div>
         }
       >
         <div className="mb-6">
@@ -1676,6 +1726,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           }
           viewType={listsOntologyModalOpen.viewType}
           isBulkMode={true}
+        />
+      )}
+
+      {/* Clone Relationships Modal - Only for objects tab */}
+      {activeTab === 'objects' && selectedObjects.length > 0 && (
+        <CloneRelationshipsModal
+          isOpen={isCloneRelationshipsModalOpen}
+          onClose={() => setIsCloneRelationshipsModalOpen(false)}
+          targetObjects={selectedObjects}
+          allObjects={allData}
+          onCloneSuccess={async () => {
+            // Refresh objects data to update the relationships count immediately
+            if (onObjectsRefresh) {
+              await onObjectsRefresh();
+            }
+          }}
         />
       )}
     </div>

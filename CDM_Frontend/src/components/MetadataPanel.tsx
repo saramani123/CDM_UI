@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, Info } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, Info, Copy } from 'lucide-react';
 import { getAvatarOptions, concatenateDrivers, parseDriverString } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
+import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
 
@@ -46,6 +47,7 @@ interface MetadataPanelProps {
   affectedObjectIds?: Set<string>;
   deletedDriverType?: string | null;
   onEnterRelationshipView?: () => void;
+  onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
 }
 
 export const MetadataPanel: React.FC<MetadataPanelProps> = ({
@@ -57,7 +59,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   selectedCount = 0,
   affectedObjectIds = new Set(),
   deletedDriverType = null,
-  onEnterRelationshipView
+  onEnterRelationshipView,
+  onObjectsRefresh
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     // Initialize form data from selected object if available
@@ -200,6 +203,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
+  
+  // Clone relationships modal state
+  const [isCloneRelationshipsModalOpen, setIsCloneRelationshipsModalOpen] = useState(false);
 
   // Load relationships when selectedObject changes
   React.useEffect(() => {
@@ -1460,6 +1466,17 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         ontologyViewType="relationships"
         actions={
           <div className="flex items-center gap-2">
+            {/* Clone Relationships Button */}
+            <button
+              onClick={() => setIsCloneRelationshipsModalOpen(true)}
+              disabled={!isPanelEnabled || relationships.length > 0}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled || relationships.length > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={relationships.length > 0 ? "Please delete existing relationships to use clone" : "Clone relationships from another object"}
+            >
+              <Copy className="w-5 h-5" />
+            </button>
             <button
               onClick={onEnterRelationshipView}
               disabled={!isPanelEnabled}
@@ -1699,6 +1716,33 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             'Variants'
           }
           viewType={ontologyModalOpen.viewType}
+        />
+      )}
+
+      {/* Clone Relationships Modal */}
+      {selectedObject && (
+        <CloneRelationshipsModal
+          isOpen={isCloneRelationshipsModalOpen}
+          onClose={() => setIsCloneRelationshipsModalOpen(false)}
+          targetObject={selectedObject}
+          allObjects={allData}
+          onCloneSuccess={async () => {
+            // Refresh relationships after cloning
+            if (selectedObject?.id) {
+              try {
+                const relationshipData = await apiService.getObjectRelationships(selectedObject.id) as any;
+                const relationshipsList = relationshipData?.relationshipsList || [];
+                setRelationships(relationshipsList);
+                
+                // Refresh objects data to update the relationships count immediately
+                if (onObjectsRefresh) {
+                  await onObjectsRefresh();
+                }
+              } catch (error) {
+                console.error('Failed to refresh relationships after cloning:', error);
+              }
+            }
+          }}
         />
       )}
 

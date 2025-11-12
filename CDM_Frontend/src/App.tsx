@@ -2692,6 +2692,7 @@ function App() {
                 allData={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
                 activeTab={activeTab}
                 selectedObjects={selectedRows}
+                onObjectsRefresh={activeTab === 'objects' ? fetchObjects : undefined}
               />
             </div>
           ) : (isBulkEditVariablesOpen && activeTab === 'variables') ? (
@@ -2760,6 +2761,7 @@ function App() {
                   affectedObjectIds={affectedObjectIds}
                   deletedDriverType={deletedDriverType}
                   onEnterRelationshipView={handleEnterRelationshipView}
+                  onObjectsRefresh={fetchObjects}
                 />
               )}
             </div>

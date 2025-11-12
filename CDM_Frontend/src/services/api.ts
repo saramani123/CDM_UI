@@ -346,6 +346,19 @@ class ApiService {
     return this.request(`/objects/${objectId}`);
   }
 
+  async cloneRelationships(targetObjectId: string, sourceObjectId: string) {
+    return this.request(`/objects/${targetObjectId}/clone-relationships/${sourceObjectId}`, {
+      method: 'POST',
+    });
+  }
+
+  async bulkCloneRelationships(sourceObjectId: string, targetObjectIds: string[]) {
+    return this.request(`/objects/bulk-clone-relationships/${sourceObjectId}`, {
+      method: 'POST',
+      body: JSON.stringify(targetObjectIds),
+    });
+  }
+
   async bulkCreateRelationships(relationships: Array<{
     sourceObjectId: string;
     targetObject: any;

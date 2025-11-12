@@ -1860,6 +1860,420 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
         print(f"Error creating bulk relationships: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create bulk relationships: {e}")
 
+@router.post("/objects/{target_object_id}/clone-relationships/{source_object_id}", response_model=Dict[str, Any])
+async def clone_relationships(target_object_id: str, source_object_id: str):
+    """
+    Clone all relationships from a source object to a target object.
+    Only works if the target object has no existing relationships.
+    Handles intra-table relationships (self-referential) correctly.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Check if target object exists
+            target_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=target_object_id).single()
+            
+            if not target_check:
+                raise HTTPException(status_code=404, detail=f"Target object with ID {target_object_id} not found")
+            
+            # Check if source object exists
+            source_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=source_object_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
+            
+            # Check if target object already has relationships
+            existing_rels_count = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
+            """, object_id=target_object_id).single()
+            
+            if existing_rels_count and existing_rels_count["rel_count"] > 0:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Target object already has relationships. Please delete existing relationships before cloning."
+                )
+            
+            # Get all relationships from source object
+            source_relationships = session.run("""
+                MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                RETURN r.id as relationship_id, r.type as type, r.role as role,
+                       r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject,
+                       target.id as target_object_id, target.being as target_being,
+                       target.avatar as target_avatar, target.object as target_object
+            """, source_id=source_object_id).data()
+            
+            if not source_relationships:
+                return {
+                    "message": "Source object has no relationships to clone",
+                    "cloned_count": 0
+                }
+            
+            print(f"DEBUG: Found {len(source_relationships)} relationships to clone from source object {source_object_id}")
+            for i, rel in enumerate(source_relationships, 1):
+                role_value = rel.get('role')
+                role_type = type(role_value).__name__
+                role_repr = repr(role_value)
+                print(f"DEBUG: Relationship {i}/{len(source_relationships)}: {rel['type']} -> {rel['target_being']} - {rel['target_avatar']} - {rel['target_object']} (ID: {rel['target_object_id']})")
+                print(f"DEBUG:   Role value: {role_repr} (type: {role_type}, is None: {role_value is None}, is empty string: {role_value == ''})")
+            
+            # Clone relationships
+            cloned_count = 0
+            failed_relationships = []
+            for rel in source_relationships:
+                relationship_type = rel["type"]
+                role = rel.get("role") or ""  # Handle None/empty roles
+                to_being = rel["toBeing"]
+                to_avatar = rel["toAvatar"]
+                to_object = rel["toObject"]
+                target_obj_id = rel["target_object_id"]
+                
+                # Debug log to see role value
+                print(f"DEBUG: Processing relationship with role: '{role}' (type: {type(role)}, is_empty: {not role})")
+                
+                # Check if this is an intra-table relationship (source relates to itself)
+                is_intra_table = (source_object_id == target_obj_id)
+                
+                if is_intra_table:
+                    # For intra-table relationships, create a self-referential relationship for the target object
+                    relationship_id = str(uuid.uuid4())
+                    try:
+                        session.run("""
+                            MATCH (target:Object {id: $target_id})
+                            CREATE (target)-[:RELATES_TO {
+                                id: $relationship_id,
+                                type: $relationship_type,
+                                role: $role,
+                                toBeing: $to_being,
+                                toAvatar: $to_avatar,
+                                toObject: $to_object
+                            }]->(target)
+                        """, target_id=target_object_id, relationship_id=relationship_id,
+                            relationship_type=relationship_type, role=role,
+                            to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                        cloned_count += 1
+                    except Exception as e:
+                        print(f"DEBUG: Error cloning intra-table relationship: {e}")
+                else:
+                    # For non-intra-table relationships, create relationship from target to the same target object
+                    relationship_id = str(uuid.uuid4())
+                    try:
+                        # First verify both objects exist
+                        target_check = session.run("""
+                            MATCH (target:Object {id: $target_id})
+                            RETURN target.id as id, target.object as object_name
+                        """, target_id=target_object_id).single()
+                        
+                        if not target_check:
+                            print(f"DEBUG: Target object {target_object_id} not found, skipping relationship")
+                            continue
+                        
+                        target_obj_check = session.run("""
+                            MATCH (target_obj:Object {id: $target_obj_id})
+                            RETURN target_obj.id as id, target_obj.being as being, target_obj.avatar as avatar, target_obj.object as object_name
+                        """, target_obj_id=target_obj_id).single()
+                        
+                        if not target_obj_check:
+                            error_msg = f"Target object {target_obj_id} ({to_being} - {to_avatar} - {to_object}) not found, skipping relationship"
+                            print(f"DEBUG: {error_msg}")
+                            failed_relationships.append({
+                                "target": f"{to_being} - {to_avatar} - {to_object}",
+                                "reason": "Target object not found in database"
+                            })
+                            continue
+                        
+                        # Create the relationship and verify it was created
+                        result = session.run("""
+                            MATCH (target:Object {id: $target_id})
+                            MATCH (target_obj:Object {id: $target_obj_id})
+                            CREATE (target)-[r:RELATES_TO {
+                                id: $relationship_id,
+                                type: $relationship_type,
+                                role: $role,
+                                toBeing: $to_being,
+                                toAvatar: $to_avatar,
+                                toObject: $to_object
+                            }]->(target_obj)
+                            RETURN r.id as relationship_id
+                        """, target_id=target_object_id, target_obj_id=target_obj_id,
+                            relationship_id=relationship_id, relationship_type=relationship_type,
+                            role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                        
+                        created_rel = result.single()
+                        if created_rel and created_rel.get("relationship_id"):
+                            cloned_count += 1
+                            print(f"DEBUG: Successfully cloned relationship from {target_object_id} to {target_obj_id} ({to_being} - {to_avatar} - {to_object}) with role '{role}'")
+                        else:
+                            error_msg = f"Failed to create relationship from {target_object_id} to {target_obj_id} ({to_being} - {to_avatar} - {to_object}) - CREATE returned no result"
+                            print(f"DEBUG: {error_msg}")
+                            failed_relationships.append({
+                                "target": f"{to_being} - {to_avatar} - {to_object}",
+                                "reason": "CREATE query returned no result"
+                            })
+                    except Exception as e:
+                        error_msg = f"Error cloning relationship to {target_obj_id} ({to_being} - {to_avatar} - {to_object}): {e}"
+                        print(f"DEBUG: {error_msg}")
+                        failed_relationships.append({
+                            "target": f"{to_being} - {to_avatar} - {to_object}",
+                            "reason": str(e)
+                        })
+                        import traceback
+                        traceback.print_exc()
+            
+            # Update relationship count for target object
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(other) as rel_count
+            """, object_id=target_object_id).single()
+            
+            rel_count = count_result["rel_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=target_object_id, rel_count=rel_count)
+            
+            response = {
+                "message": f"Successfully cloned {cloned_count} relationship(s)",
+                "cloned_count": cloned_count,
+                "total_source_relationships": len(source_relationships)
+            }
+            
+            if failed_relationships:
+                response["failed_relationships"] = failed_relationships
+                response["message"] += f" ({len(failed_relationships)} failed)"
+            
+            return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cloning relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clone relationships: {e}")
+
+@router.post("/objects/bulk-clone-relationships/{source_object_id}", response_model=Dict[str, Any])
+async def bulk_clone_relationships(source_object_id: str, target_object_ids: List[str] = Body(...)):
+    """
+    Clone all relationships from a source object to multiple target objects.
+    Only works if all target objects have no existing relationships.
+    Handles intra-table relationships (self-referential) correctly for each target.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Check if source object exists
+            source_check = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.id as id, o.object as object_name
+            """, object_id=source_object_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
+            
+            if not target_object_ids:
+                raise HTTPException(status_code=400, detail="At least one target object ID must be provided")
+            
+            # Check if all target objects exist and have no relationships
+            target_objects_info = []
+            for target_id in target_object_ids:
+                target_check = session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    RETURN o.id as id, o.object as object_name
+                """, object_id=target_id).single()
+                
+                if not target_check:
+                    raise HTTPException(status_code=404, detail=f"Target object with ID {target_id} not found")
+                
+                # Check if target object already has relationships
+                existing_rels_count = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                    RETURN count(other) as rel_count
+                """, object_id=target_id).single()
+                
+                if existing_rels_count and existing_rels_count["rel_count"] > 0:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Target object '{target_check['object_name']}' (ID: {target_id}) already has relationships. Please delete existing relationships before cloning."
+                    )
+                
+                target_objects_info.append({
+                    "id": target_id,
+                    "name": target_check["object_name"]
+                })
+            
+            # Get all relationships from source object
+            source_relationships = session.run("""
+                MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                RETURN r.id as relationship_id, r.type as type, r.role as role,
+                       r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject,
+                       target.id as target_object_id, target.being as target_being,
+                       target.avatar as target_avatar, target.object as target_object
+            """, source_id=source_object_id).data()
+            
+            if not source_relationships:
+                return {
+                    "message": "Source object has no relationships to clone",
+                    "cloned_count": 0,
+                    "total_targets": len(target_object_ids)
+                }
+            
+            print(f"DEBUG: Bulk cloning {len(source_relationships)} relationships from source {source_object_id} to {len(target_object_ids)} target objects")
+            
+            # Clone relationships to each target object
+            total_cloned = 0
+            failed_relationships = []
+            results_by_target = {}
+            
+            for target_info in target_objects_info:
+                target_object_id = target_info["id"]
+                target_name = target_info["name"]
+                cloned_count = 0
+                target_failed = []
+                
+                for rel in source_relationships:
+                    relationship_type = rel["type"]
+                    role = rel.get("role") or ""
+                    to_being = rel["toBeing"]
+                    to_avatar = rel["toAvatar"]
+                    to_object = rel["toObject"]
+                    target_obj_id = rel["target_object_id"]
+                    
+                    # Check if this is an intra-table relationship (source relates to itself)
+                    is_intra_table = (source_object_id == target_obj_id)
+                    
+                    if is_intra_table:
+                        # For intra-table relationships, create a self-referential relationship for each target object
+                        relationship_id = str(uuid.uuid4())
+                        try:
+                            result = session.run("""
+                                MATCH (target:Object {id: $target_id})
+                                CREATE (target)-[r:RELATES_TO {
+                                    id: $relationship_id,
+                                    type: $relationship_type,
+                                    role: $role,
+                                    toBeing: $to_being,
+                                    toAvatar: $to_avatar,
+                                    toObject: $to_object
+                                }]->(target)
+                                RETURN r.id as relationship_id
+                            """, target_id=target_object_id, relationship_id=relationship_id,
+                                relationship_type=relationship_type, role=role,
+                                to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                            
+                            created_rel = result.single()
+                            if created_rel and created_rel.get("relationship_id"):
+                                cloned_count += 1
+                            else:
+                                target_failed.append({
+                                    "target": f"{to_being} - {to_avatar} - {to_object}",
+                                    "reason": "CREATE returned no result (intra-table)"
+                                })
+                        except Exception as e:
+                            target_failed.append({
+                                "target": f"{to_being} - {to_avatar} - {to_object}",
+                                "reason": str(e)
+                            })
+                            print(f"DEBUG: Error cloning intra-table relationship for {target_name}: {e}")
+                    else:
+                        # For non-intra-table relationships, create relationship from target to the same target object
+                        relationship_id = str(uuid.uuid4())
+                        try:
+                            # Verify target object exists
+                            target_obj_check = session.run("""
+                                MATCH (target_obj:Object {id: $target_obj_id})
+                                RETURN target_obj.id as id
+                            """, target_obj_id=target_obj_id).single()
+                            
+                            if not target_obj_check:
+                                target_failed.append({
+                                    "target": f"{to_being} - {to_avatar} - {to_object}",
+                                    "reason": "Target object not found in database"
+                                })
+                                continue
+                            
+                            result = session.run("""
+                                MATCH (target:Object {id: $target_id})
+                                MATCH (target_obj:Object {id: $target_obj_id})
+                                CREATE (target)-[r:RELATES_TO {
+                                    id: $relationship_id,
+                                    type: $relationship_type,
+                                    role: $role,
+                                    toBeing: $to_being,
+                                    toAvatar: $to_avatar,
+                                    toObject: $to_object
+                                }]->(target_obj)
+                                RETURN r.id as relationship_id
+                            """, target_id=target_object_id, target_obj_id=target_obj_id,
+                                relationship_id=relationship_id, relationship_type=relationship_type,
+                                role=role, to_being=to_being, to_avatar=to_avatar, to_object=to_object)
+                            
+                            created_rel = result.single()
+                            if created_rel and created_rel.get("relationship_id"):
+                                cloned_count += 1
+                            else:
+                                target_failed.append({
+                                    "target": f"{to_being} - {to_avatar} - {to_object}",
+                                    "reason": "CREATE returned no result"
+                                })
+                        except Exception as e:
+                            target_failed.append({
+                                "target": f"{to_being} - {to_avatar} - {to_object}",
+                                "reason": str(e)
+                            })
+                            print(f"DEBUG: Error cloning relationship for {target_name}: {e}")
+                
+                # Update relationship count for this target object
+                count_result = session.run("""
+                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                    RETURN count(other) as rel_count
+                """, object_id=target_object_id).single()
+                
+                rel_count = count_result["rel_count"] if count_result else 0
+                
+                session.run("""
+                    MATCH (o:Object {id: $object_id})
+                    SET o.relationships = $rel_count
+                """, object_id=target_object_id, rel_count=rel_count)
+                
+                total_cloned += cloned_count
+                results_by_target[target_name] = {
+                    "cloned_count": cloned_count,
+                    "failed_count": len(target_failed)
+                }
+                
+                if target_failed:
+                    failed_relationships.extend([{**f, "target_object": target_name} for f in target_failed])
+            
+            response = {
+                "message": f"Successfully cloned relationships to {len(target_object_ids)} object(s). Total relationships created: {total_cloned}",
+                "cloned_count": total_cloned,
+                "total_targets": len(target_object_ids),
+                "total_source_relationships": len(source_relationships),
+                "results_by_target": results_by_target
+            }
+            
+            if failed_relationships:
+                response["failed_relationships"] = failed_relationships
+                response["message"] += f" ({len(failed_relationships)} failed)"
+            
+            return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bulk cloning relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to bulk clone relationships: {e}")
+
 # Variant Management Endpoints
 @router.post("/objects/{object_id}/variants", response_model=Dict[str, Any])
 async def create_variant(object_id: str, request: VariantCreateRequest = Body(...)):
