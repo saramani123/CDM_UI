@@ -2853,86 +2853,92 @@ function App() {
             </div>
           ) : isBulkEditOpen ? (
             <div className="lg:col-span-1">
-              <BulkEditPanel
-                isOpen={isBulkEditOpen}
-                onClose={() => {}} // Not used - panel closes automatically when selection changes
-                onSave={handleBulkEdit}
-                selectedCount={selectedRows.length}
-                allData={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
-                activeTab={activeTab}
-                selectedObjects={selectedRows}
-                onObjectsRefresh={activeTab === 'objects' ? fetchObjects : undefined}
-              />
+              <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
+                <BulkEditPanel
+                  isOpen={isBulkEditOpen}
+                  onClose={() => {}} // Not used - panel closes automatically when selection changes
+                  onSave={handleBulkEdit}
+                  selectedCount={selectedRows.length}
+                  allData={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : data}
+                  activeTab={activeTab}
+                  selectedObjects={selectedRows}
+                  onObjectsRefresh={activeTab === 'objects' ? fetchObjects : undefined}
+                />
+              </div>
             </div>
           ) : (isBulkEditVariablesOpen && activeTab === 'variables') ? (
             <div className="lg:col-span-1">
-              <BulkEditVariablesPanel
-                isOpen={isBulkEditVariablesOpen}
-                onClose={() => setIsBulkEditVariablesOpen(false)}
-                onSave={handleBulkEdit}
-                selectedCount={selectedRows.length}
-                allData={variableData}
-                objectsData={data}
-                selectedVariableIds={selectedRows.map(row => row.id).filter(Boolean) as string[]}
-                selectedVariableNames={selectedRows.map(row => row.variable).filter(Boolean) as string[]}
-              />
+              <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
+                <BulkEditVariablesPanel
+                  isOpen={isBulkEditVariablesOpen}
+                  onClose={() => setIsBulkEditVariablesOpen(false)}
+                  onSave={handleBulkEdit}
+                  selectedCount={selectedRows.length}
+                  allData={variableData}
+                  objectsData={data}
+                  selectedVariableIds={selectedRows.map(row => row.id).filter(Boolean) as string[]}
+                  selectedVariableNames={selectedRows.map(row => row.variable).filter(Boolean) as string[]}
+                />
+              </div>
             </div>
           ) : (
             <div className="lg:col-span-1">
-              {/* View Neo4j Knowledge Graph button (for Objects, Variables, and Lists tabs) */}
-              {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                <div className="mb-3">
-                  <button
-                    onClick={() => {
-                      if (activeTab === 'objects') {
-                        setIsNeo4jGraphModalOpen(true);
-                      } else if (activeTab === 'variables') {
-                        setIsNeo4jVariablesGraphModalOpen(true);
-                      } else if (activeTab === 'lists') {
-                        setIsNeo4jListsGraphModalOpen(true);
-                      }
-                    }}
-                    className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
-                    title="View Knowledge Graph"
-                  >
-                    <Network className="w-4 h-4" />
-                    View Knowledge Graph
-                  </button>
-                </div>
-              )}
-              {activeTab === 'lists' ? (
-                <ListMetadataPanel
-                  title="List Metadata"
-                  fields={currentMetadataFields}
-                  onSave={handleMetadataSave}
-                  selectedList={selectedRowForMetadata}
-                  allData={listData}
-                  selectedCount={selectedRows.length}
-                />
-              ) : activeTab === 'variables' ? (
-                <VariableMetadataPanel
-                  title="Variable Metadata"
-                  fields={currentMetadataFields}
-                  onSave={handleMetadataSave}
-                  selectedVariable={selectedRowForMetadata}
-                  allData={variableData}
-                  objectsData={data}
-                  selectedCount={selectedRows.length}
-                  onObjectsRefresh={fetchObjects}
-                />
-              ) : (
-                <MetadataPanel
-                  fields={currentMetadataFields}
-                  onSave={handleMetadataSave}
-                  selectedObject={selectedRowForMetadata}
-                  allData={data}
-                  selectedCount={selectedRows.length}
-                  affectedObjectIds={affectedObjectIds}
-                  deletedDriverType={deletedDriverType}
-                  onEnterRelationshipView={handleEnterRelationshipView}
-                  onObjectsRefresh={fetchObjects}
-                />
-              )}
+              <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
+                {/* View Neo4j Knowledge Graph button (for Objects, Variables, and Lists tabs) */}
+                {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
+                  <div className="mb-3">
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'objects') {
+                          setIsNeo4jGraphModalOpen(true);
+                        } else if (activeTab === 'variables') {
+                          setIsNeo4jVariablesGraphModalOpen(true);
+                        } else if (activeTab === 'lists') {
+                          setIsNeo4jListsGraphModalOpen(true);
+                        }
+                      }}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
+                      title="View Knowledge Graph"
+                    >
+                      <Network className="w-4 h-4" />
+                      View Knowledge Graph
+                    </button>
+                  </div>
+                )}
+                {activeTab === 'lists' ? (
+                  <ListMetadataPanel
+                    title="List Metadata"
+                    fields={currentMetadataFields}
+                    onSave={handleMetadataSave}
+                    selectedList={selectedRowForMetadata}
+                    allData={listData}
+                    selectedCount={selectedRows.length}
+                  />
+                ) : activeTab === 'variables' ? (
+                  <VariableMetadataPanel
+                    title="Variable Metadata"
+                    fields={currentMetadataFields}
+                    onSave={handleMetadataSave}
+                    selectedVariable={selectedRowForMetadata}
+                    allData={variableData}
+                    objectsData={data}
+                    selectedCount={selectedRows.length}
+                    onObjectsRefresh={fetchObjects}
+                  />
+                ) : (
+                  <MetadataPanel
+                    fields={currentMetadataFields}
+                    onSave={handleMetadataSave}
+                    selectedObject={selectedRowForMetadata}
+                    allData={data}
+                    selectedCount={selectedRows.length}
+                    affectedObjectIds={affectedObjectIds}
+                    deletedDriverType={deletedDriverType}
+                    onEnterRelationshipView={handleEnterRelationshipView}
+                    onObjectsRefresh={fetchObjects}
+                  />
+                )}
+              </div>
             </div>
           )}
         </div>
