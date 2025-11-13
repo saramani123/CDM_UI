@@ -866,8 +866,16 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     // Click-to-select mode for relationship data
                     onRelationshipRowClick(row.id);
                   } else if (selectionMode === 'row' && !relationshipData) {
-                    const currentlySelected = isRowSelected(row);
-                    handleRowSelection(row, !currentlySelected);
+                    // Excel-like selection: Shift+click for multi-select, normal click for single select
+                    if (e.shiftKey) {
+                      // Shift+click: toggle/add to selection (multi-select)
+                      const currentlySelected = isRowSelected(row);
+                      handleRowSelection(row, !currentlySelected);
+                    } else {
+                      // Normal click: single select (replace selection with just this row)
+                      setLocalSelectedRows([row]);
+                      onRowSelect?.([row]);
+                    }
                   }
                 }}
                 className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer min-w-full ${
