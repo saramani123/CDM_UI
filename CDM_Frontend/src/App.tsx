@@ -1633,8 +1633,12 @@ function App() {
           
           console.log('objectRelationshipsList:', objectRelationshipsList);
           console.log('variableUpdateData:', variableUpdateData);
+          console.log('Validation field in update:', variableUpdateData.validation);
           
           const result = await updateVariable(selectedRowForMetadata.id, variableUpdateData);
+          
+          console.log('Update result from API:', result);
+          console.log('Validation field in result:', result?.validation);
           
           // Handle object relationships if they exist
           if (objectRelationshipsList && objectRelationshipsList.length > 0) {
@@ -1666,14 +1670,26 @@ function App() {
             console.log('No object relationships to create');
           }
           
-          // Update local state
-          setVariableData(prev => prev.map(item => 
-            item.id === selectedRowForMetadata.id 
-              ? { ...item, ...variableUpdateData }
-              : item
-          ));
-          
-          setSelectedRowForMetadata({ ...selectedRowForMetadata, ...gridData });
+          // Update local state with the result from API (which includes all updated fields like validation)
+          if (result) {
+            setVariableData(prev => prev.map(item => 
+              item.id === selectedRowForMetadata.id 
+                ? { ...item, ...result }
+                : item
+            ));
+            
+            // Update selectedRowForMetadata with the API response to ensure all fields (including validation) are synced
+            setSelectedRowForMetadata({ ...selectedRowForMetadata, ...result });
+          } else {
+            // Fallback: update with variableUpdateData if result is not available
+            setVariableData(prev => prev.map(item => 
+              item.id === selectedRowForMetadata.id 
+                ? { ...item, ...variableUpdateData }
+                : item
+            ));
+            
+            setSelectedRowForMetadata({ ...selectedRowForMetadata, ...gridData });
+          }
           
           // Clear highlighting for this item if it was affected by driver deletion
           if (affectedVariableIds.has(selectedRowForMetadata.id)) {
@@ -1686,6 +1702,16 @@ function App() {
           
           // Refresh variables list to get updated relationship counts
           await fetchVariables();
+          
+          // After fetchVariables, sync selectedRowForMetadata with the latest data from apiVariables
+          // The result from updateVariable should already have the correct data, but we sync again
+          // to ensure consistency after the full refresh
+          if (apiVariables && Array.isArray(apiVariables)) {
+            const freshVariable = apiVariables.find((v: any) => v.id === selectedRowForMetadata.id);
+            if (freshVariable) {
+              setSelectedRowForMetadata(freshVariable);
+            }
+          }
           
           // Return success to indicate the save was successful
           return result;

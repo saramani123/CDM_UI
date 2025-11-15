@@ -494,7 +494,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                     ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
                     : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
                 }`}
-                title={isListSelected ? "View Variable-List Relationships Graph" : "Select a list to view relationships graph"}
+                title={isListSelected ? "View Variable-List Applicability Graph" : "Select a list to view applicability graph"}
               >
                 <Network className="w-4 h-4" />
               </button>
@@ -769,9 +769,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* Relationships Section */}
+      {/* Applicability Section */}
       <CollapsibleSection 
-        title="Relationships" 
+        title="Applicability" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         showRelationshipsGraph={true}
@@ -782,9 +782,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
               !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
             }`}
-            title={!isPanelEnabled ? "Select a list to view relationships" : "View and manage relationships"}
+            title={!isPanelEnabled ? "Select a list to view applicability" : "View and manage applicability"}
           >
-            View Relationships
+            View Applicability
           </button>
         }
       >
@@ -792,7 +792,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           {selectedVariables.length === 0 ? (
             <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
               <div className="text-sm text-ag-dark-text-secondary">
-                <span className="font-medium">No variables selected:</span> Click "View Relationships" to select variables from the variables grid.
+                <span className="font-medium">No variables selected:</span> Click "View Applicability" to select variables from the variables grid.
               </div>
             </div>
           ) : (
@@ -940,7 +940,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onUpload={handleListValuesCsvUpload}
       />
 
-      {/* Variable List Relationship Modal */}
+      {/* Variable List Applicability Modal */}
       <VariableListRelationshipModal
         isOpen={isVariableRelationshipModalOpen}
         onClose={() => setIsVariableRelationshipModalOpen(false)}
@@ -970,7 +970,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         />
       )}
 
-      {/* Variable-List Relationships Graph Modal */}
+      {/* Variable-List Applicability Graph Modal */}
       {relationshipsGraphModalOpen && selectedList && (
         <VariableListRelationshipsGraphModal
           isOpen={relationshipsGraphModalOpen}

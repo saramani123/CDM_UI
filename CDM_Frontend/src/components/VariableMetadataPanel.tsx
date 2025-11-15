@@ -6,6 +6,7 @@ import { apiService } from '../services/api';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
+import { AddGroupValueModal } from './AddGroupValueModal';
 import { OntologyModal } from './OntologyModal';
 
 interface VariableMetadataField {
@@ -79,6 +80,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // State for add field value modal
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
+  
+  // State for add group value modal
+  const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
+  
+  // Storage key for part-group associations
+  const PART_GROUP_STORAGE_KEY = 'cdm_variable_part_group_associations';
 
   // Fetch field options from API on mount and when allData changes
   useEffect(() => {
@@ -112,6 +119,56 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     fetchFieldOptions();
   }, [allData]);
 
+  // Helper functions for part-group associations
+  const getPartGroupAssociations = (): Record<string, string[]> => {
+    try {
+      const stored = localStorage.getItem(PART_GROUP_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Error loading part-group associations:', error);
+    }
+    return {};
+  };
+
+  const savePartGroupAssociation = (part: string, group: string) => {
+    try {
+      const associations = getPartGroupAssociations();
+      if (!associations[part]) {
+        associations[part] = [];
+      }
+      if (!associations[part].includes(group)) {
+        associations[part].push(group);
+        associations[part].sort();
+        localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
+      }
+    } catch (error) {
+      console.error('Error saving part-group association:', error);
+    }
+  };
+
+  // Get groups filtered by part
+  const getGroupsForPart = (part: string): string[] => {
+    if (!part) return [];
+    
+    // Get groups from existing variables data for this part
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const groupsFromData = [...new Set(
+      variablesData
+        .filter((item: any) => item.part === part && item.group)
+        .map((item: any) => item.group)
+    )].filter(Boolean) as string[];
+    
+    // Get groups from localStorage associations
+    const associations = getPartGroupAssociations();
+    const groupsFromStorage = associations[part] || [];
+    
+    // Combine and deduplicate
+    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
+    return allGroups;
+  };
+
   const handleAddFieldValue = async (value: string) => {
     if (!selectedFieldForAdd) return;
     
@@ -139,6 +196,27 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     } catch (error) {
       throw error;
     }
+  };
+
+  const handleAddGroupValue = async (part: string, groupValue: string) => {
+    // Save to localStorage
+    savePartGroupAssociation(part, groupValue);
+    
+    // Update dynamic field options if the current part is selected
+    // This will trigger a re-render and the Group dropdown will update via getGroupsForPart
+    if (formData.part === part) {
+      setDynamicFieldOptions(prev => ({
+        ...prev,
+        group: [...new Set([...prev.group, groupValue])].sort()
+      }));
+    }
+  };
+
+  // Get distinct parts from variables data
+  const getDistinctParts = (): string[] => {
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
+    return parts.length > 0 ? parts : dynamicFieldOptions.part;
   };
 
   // Collapsible sections state
@@ -256,10 +334,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const handleChange = React.useCallback((key: string, value: string | number) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    setFormData(prev => {
+      const newData = { ...prev, [key]: value };
+      
+      // When part changes, clear group (groups are part-specific)
+      if (key === 'part' && value !== prev.part) {
+        newData.group = '';
+      }
+      
+      return newData;
+    });
   }, []);
 
   const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
@@ -668,15 +752,28 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Group
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Group
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddGroupValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Group value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.group}
               onChange={(e) => handleChange('group', e.target.value)}
-              disabled={!isPanelEnabled}
+              disabled={!isPanelEnabled || !formData.part}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || !formData.part ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -686,11 +783,19 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Group</option>
-              {dynamicFieldOptions.group.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {formData.part ? (
+                getGroupsForPart(formData.part).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              ) : (
+                dynamicFieldOptions.group.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -1020,6 +1125,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           onSave={handleAddFieldValue}
         />
       )}
+
+      {/* Add Group Value Modal */}
+      <AddGroupValueModal
+        isOpen={isAddGroupValueModalOpen}
+        onClose={() => {
+          setIsAddGroupValueModalOpen(false);
+        }}
+        onSave={handleAddGroupValue}
+        availableParts={getDistinctParts()}
+      />
 
       {/* Ontology Modal */}
       {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && (selectedVariable?.id || selectedVariable?.variable) && (

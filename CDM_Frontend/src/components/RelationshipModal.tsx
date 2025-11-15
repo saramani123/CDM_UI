@@ -188,13 +188,18 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             relationshipType = 'Inter-Table';
           }
           
-          // Determine frequency (use first one if all are the same, otherwise default to Critical)
-          let frequency: 'Critical' | 'Likely' | 'Possible' = 'Critical';
+          // Determine frequency (use first one if all are the same, otherwise default to Possible)
+          // Exception: Blood relationships MUST always be Critical
+          let frequency: 'Critical' | 'Likely' | 'Possible' = relationshipType === 'Blood' ? 'Critical' : 'Possible';
           if (frequencies.size === 1) {
             const freqValue = frequencies.values().next().value;
             if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
-              frequency = freqValue as 'Critical' | 'Likely' | 'Possible';
+              // Blood relationships must always be Critical, regardless of stored value
+              frequency = relationshipType === 'Blood' ? 'Critical' : (freqValue as 'Critical' | 'Likely' | 'Possible');
             }
+          } else if (relationshipType === 'Blood') {
+            // If multiple frequencies exist but type is Blood, force Critical
+            frequency = 'Critical';
           }
           
           // Convert roles set to comma-separated string, deduplicated
@@ -222,7 +227,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             isSelected: false,
             relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
             roles: defaultRoles,
-            frequency: 'Critical'
+            frequency: 'Possible'
           };
         }
       }
@@ -250,7 +255,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: combinedRoles,
-              frequency: 'Critical',
+              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
               hasMixedTypes: false
             };
           } else {
@@ -260,7 +265,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: initialRel.role,
-              frequency: 'Critical',
+              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
               hasMixedTypes: false
             };
           }
@@ -281,7 +286,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           isSelected: false,
           relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
           roles: defaultRoles,
-          frequency: 'Critical'
+          frequency: 'Possible'
         };
       }
       
@@ -295,7 +300,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               isSelected: true,
               relationshipType: initialRel.relationshipType,
               roles: initialRel.role,
-              frequency: 'Critical',
+              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
               hasMixedTypes: false
             };
           }
@@ -320,6 +325,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         ? '' 
         : (!currentlySelected ? (sourceObjects[0]?.object || '') : '');
       
+      const currentType = prev[objectId]?.relationshipType || (sourceObjects.some(so => so.id === objectId) ? 'Intra-Table' : 'Inter-Table');
+      // If selecting a row and relationship type is Blood, frequency must be Critical
+      // Otherwise, use existing frequency or default to Possible
+      const defaultFrequency = currentType === 'Blood' ? 'Critical' : (prev[objectId]?.frequency || 'Possible');
+      
       return {
         ...prev,
         [objectId]: {
@@ -327,7 +337,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           isSelected: !currentlySelected,
           roles: !currentlySelected 
             ? (prev[objectId]?.roles || defaultRole) 
-            : prev[objectId]?.roles || ''
+            : prev[objectId]?.roles || '',
+          // Ensure frequency is set correctly when selecting (Blood must be Critical)
+          frequency: !currentlySelected ? defaultFrequency : prev[objectId]?.frequency
         }
       };
     });
@@ -338,7 +350,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       ...prev,
       [objectId]: {
         ...prev[objectId],
-        relationshipType: type
+        relationshipType: type,
+        // If changing to Blood, automatically set frequency to Critical
+        // If changing away from Blood and frequency was Critical, set to Possible
+        frequency: type === 'Blood' 
+          ? 'Critical' 
+          : (prev[objectId]?.relationshipType === 'Blood' && prev[objectId]?.frequency === 'Critical')
+            ? 'Possible'
+            : (prev[objectId]?.frequency || 'Possible')
       }
     }));
   };
@@ -408,7 +427,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               id: Date.now().toString() + Math.random(),
               type: relData.relationshipType,
               role: role,
-              frequency: relData.frequency || 'Critical',
+              // Blood relationships MUST always be Critical
+              frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
               toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
               toAvatar: targetObject.avatar || 'ALL',
               toObject: targetObject.object || 'ALL'
@@ -562,7 +582,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 targetObject,
                 relationshipType: finalType,
                 roles: validRoles,
-                frequency: relData.frequency || 'Critical'
+                // Blood relationships MUST always be Critical
+                frequency: finalType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible')
               });
             }
           }
@@ -660,7 +681,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                   await apiService.createRelationship(selectedObject.id, {
                     type: relData.relationshipType,
                     role: role,
-                    frequency: relData.frequency || 'Critical',
+                    // Blood relationships MUST always be Critical
+                    frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
                     toBeing: targetObject.being,
                     toAvatar: targetObject.avatar,
                     toObject: targetObject.object
@@ -774,7 +796,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const parsed = parseDriverField(row.driver || '');
         const sectorValue = row.sector || parsed.sector || '';
         return (
-          <span className="text-sm text-ag-dark-text">
+          <span 
+            className="text-sm text-ag-dark-text"
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+              display: 'block'
+            }}
+          >
             {getGridDriverDisplayValue('sector', sectorValue)}
           </span>
         );
@@ -788,7 +819,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const parsed = parseDriverField(row.driver || '');
         const domainValue = row.domain || parsed.domain || '';
         return (
-          <span className="text-sm text-ag-dark-text">
+          <span 
+            className="text-sm text-ag-dark-text"
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+              display: 'block'
+            }}
+          >
             {getGridDriverDisplayValue('domain', domainValue)}
           </span>
         );
@@ -802,7 +842,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const parsed = parseDriverField(row.driver || '');
         const countryValue = row.country || parsed.country || '';
         return (
-          <span className="text-sm text-ag-dark-text">
+          <span 
+            className="text-sm text-ag-dark-text"
+            style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+              display: 'block'
+            }}
+          >
             {getGridDriverDisplayValue('country', countryValue)}
           </span>
         );
@@ -867,13 +916,20 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       title: 'Frequency',
       width: 150,
       render: (row: any) => {
-        const currentFrequency = relationshipData[row.id]?.frequency || 'Critical';
+        const currentType = relationshipData[row.id]?.relationshipType || (sourceObjects.some(so => so.id === row.id) ? 'Intra-Table' : 'Inter-Table');
+        const currentFrequency = relationshipData[row.id]?.frequency || 'Possible';
+        // Disable frequency dropdown if relationship type is 'Blood' (must be Critical)
+        const isFrequencyDisabled = currentType === 'Blood';
+        
         return (
           <div className="relative w-full" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
             <select
-              value={currentFrequency}
+              value={isFrequencyDisabled ? 'Critical' : currentFrequency}
               onChange={(e) => handleFrequencyChange(row.id, e.target.value as 'Critical' | 'Likely' | 'Possible')}
-              className="w-full px-3 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent pr-8 appearance-none"
+              disabled={isFrequencyDisabled}
+              className={`w-full px-3 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent pr-8 appearance-none ${
+                isFrequencyDisabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 8px center',

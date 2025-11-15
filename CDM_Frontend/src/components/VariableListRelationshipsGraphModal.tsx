@@ -346,7 +346,7 @@ RETURN v, r, l`;
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
           <div>
-            <h2 className="text-xl font-semibold text-ag-dark-text">Variable-List Relationships</h2>
+            <h2 className="text-xl font-semibold text-ag-dark-text">Variable-List Applicability</h2>
             <p className="text-sm text-ag-dark-text-secondary mt-1">
               List: {displayListName} | Instance: {envInfo.instanceName}
             </p>

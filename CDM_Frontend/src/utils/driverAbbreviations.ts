@@ -114,10 +114,15 @@ export const getDriverDisplayValue = (type: ColumnType, fullName: string): strin
 
 // Get display value for grid cells (sector, domain, country columns)
 // Handles comma-separated values like "Finance, Healthcare, Retail"
-// Shows "ALL" if all possible values are selected
+// Shows "All" if all possible values are selected
 export const getGridDriverDisplayValue = (columnKey: string, fullName: string): string => {
-  if (!fullName || fullName === 'ALL' || fullName === '-') {
+  if (!fullName || fullName === '-') {
     return fullName || '-';
+  }
+  
+  // Handle 'ALL' case - display as 'All' in the grid
+  if (fullName === 'ALL') {
+    return 'All';
   }
   
   // Map column keys to ColumnType
@@ -148,7 +153,7 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
                            [...selectedSet].every(val => allSet.has(val));
       
       if (isAllSelected) {
-        return 'ALL';
+        return 'All';
       }
       
       // Not all values selected - show formatted comma-separated string

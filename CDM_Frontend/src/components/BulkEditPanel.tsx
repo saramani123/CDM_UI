@@ -866,7 +866,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                     ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
                     : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
                 }`}
-                title={hasSelectedObjects ? "View Variable-List Relationships Graph" : "Select lists to view relationships graph"}
+                title={hasSelectedObjects ? "View Variable-List Applicability Graph" : "Select lists to view applicability graph"}
               >
                 <Network className="w-4 h-4" />
               </button>
@@ -1136,9 +1136,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </div>
           </CollapsibleSection>
 
-          {/* Relationships Section - Lists */}
+          {/* Applicability Section - Lists */}
           <CollapsibleSection 
-            title="Relationships" 
+            title="Applicability" 
             sectionKey="relationships"
             icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
             showRelationshipsGraph={true}
@@ -1146,9 +1146,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               <button
                 onClick={() => setIsVariableRelationshipModalOpen(true)}
                 className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                title="View and manage relationships"
+                title="View and manage applicability"
               >
-                View Relationships
+                View Applicability
               </button>
             }
           >
@@ -1156,7 +1156,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               {selectedVariables.length === 0 ? (
                 <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
                   <div className="text-sm text-ag-dark-text-secondary">
-                    <span className="font-medium">No variables selected:</span> Click "View Relationships" to select variables from the variables grid.
+                    <span className="font-medium">No variables selected:</span> Click "View Applicability" to select variables from the variables grid.
                   </div>
                 </div>
               ) : (
@@ -1732,7 +1732,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         />
       )}
 
-      {/* Variable List Relationship Modal - Lists */}
+      {/* Variable List Applicability Modal - Lists */}
       {activeTab === 'lists' && (
         <VariableListRelationshipModal
           isOpen={isVariableRelationshipModalOpen}
@@ -1750,7 +1750,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         />
       )}
 
-      {/* Variable-List Relationships Graph Modal - Lists */}
+      {/* Variable-List Applicability Graph Modal - Lists */}
       {activeTab === 'lists' && relationshipsGraphModalOpen && selectedObjects.length > 0 && (
         <VariableListRelationshipsGraphModal
           isOpen={relationshipsGraphModalOpen}

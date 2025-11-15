@@ -323,8 +323,8 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
             <Link className="w-5 h-5 text-ag-dark-text-secondary" />
             <h2 className="text-xl font-semibold text-ag-dark-text">
               {isBulkMode 
-                ? `Configuring Variable Relationships (${sourceLists.length} lists)` 
-                : `Configuring Variable Relationships for ${sourceLists[0]?.list || 'List'}`}
+                ? `Configuring Variable Applicability (${sourceLists.length} lists)` 
+                : `Configuring Variable Applicability for ${sourceLists[0]?.list || 'List'}`}
             </h2>
           </div>
           <button

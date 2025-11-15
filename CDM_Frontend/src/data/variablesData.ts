@@ -49,7 +49,7 @@ export const variableColumns = [
   { key: 'formatI', title: 'Format I', sortable: true, filterable: true, width: '120px' },
   { key: 'formatII', title: 'Format II', sortable: true, filterable: true, width: '140px' },
   { key: 'gType', title: 'G-Type', sortable: true, filterable: true, width: '120px' },
-  { key: 'objectRelationships', title: 'Relationships', sortable: true, filterable: false, width: '150px' }
+  { key: 'validation', title: 'Validation', sortable: true, filterable: true, width: '150px' }
 ];
 
 // Function to get distinct values from existing variables data

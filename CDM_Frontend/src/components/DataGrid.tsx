@@ -715,6 +715,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
       return '-';
     }
     
+    // Display 'All' instead of 'ALL' in the grid
+    if (value === 'ALL') {
+      return 'All';
+    }
+    
     return value;
   }
 
@@ -925,7 +930,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 box-border ${
                       colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
                     } ${
-                      ['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
+                      ['relationships', 'variants', 'variables'].includes(column.key) 
                         ? 'justify-end' 
                         : 'justify-start'
                     }`}
@@ -970,7 +975,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               }
                               return getGridDriverDisplayValue(column.key, value || '');
                             })() : 
-                            (['relationships', 'variants', 'variables', 'objectRelationships'].includes(column.key) 
+                            (['relationships', 'variants', 'variables'].includes(column.key) 
                               ? (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined ? '-' : row[column.key])
                               : (row[column.key] || '-'))
                         }
