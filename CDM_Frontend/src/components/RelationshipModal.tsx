@@ -174,8 +174,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             }
             
             relationshipTypes.add(rel.type);
-            // Collect frequencies, defaulting to Critical if not present
-            frequencies.add(rel.frequency || 'Critical');
+            // Collect frequencies, defaulting to Possible if not present (changed from Critical)
+            frequencies.add(rel.frequency || 'Possible');
           }
           
           // Determine relationship type
@@ -188,14 +188,21 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             relationshipType = 'Inter-Table';
           }
           
-          // Determine frequency (use first one if all are the same, otherwise default to Possible)
+          // Determine frequency - default to Possible for all relationships except Blood
           // Exception: Blood relationships MUST always be Critical
+          // Note: We ignore stored 'Critical' values from old data and default to 'Possible'
           let frequency: 'Critical' | 'Likely' | 'Possible' = relationshipType === 'Blood' ? 'Critical' : 'Possible';
           if (frequencies.size === 1) {
             const freqValue = frequencies.values().next().value;
             if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
               // Blood relationships must always be Critical, regardless of stored value
-              frequency = relationshipType === 'Blood' ? 'Critical' : (freqValue as 'Critical' | 'Likely' | 'Possible');
+              if (relationshipType === 'Blood') {
+                frequency = 'Critical';
+              } else {
+                // For non-Blood relationships, use stored value if it's 'Likely' or 'Possible'
+                // If stored value is 'Critical', default to 'Possible' (old data migration)
+                frequency = freqValue === 'Critical' ? 'Possible' : (freqValue as 'Likely' | 'Possible');
+              }
             }
           } else if (relationshipType === 'Blood') {
             // If multiple frequencies exist but type is Blood, force Critical
@@ -616,7 +623,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                   await apiService.createRelationship(rel.sourceObjectId, {
                     type: rel.relationshipType,
                     role: role || '',
-                    frequency: rel.frequency || 'Critical',
+                    frequency: rel.frequency || 'Possible',
                     toBeing: rel.targetObject.being,
                     toAvatar: rel.targetObject.avatar,
                     toObject: rel.targetObject.object
