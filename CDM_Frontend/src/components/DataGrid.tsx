@@ -703,24 +703,38 @@ export const DataGrid: React.FC<DataGridProps> = ({
     return isAffectedByIds || hasSpecificDeleted;
   }
 
-  function formatDriverWithDeletedSector(value: string, deletedDriverType: string | null, columnKey: string) {
+  function formatDriverWithDeletedSector(value: string | string[], deletedDriverType: string | null, columnKey: string) {
     if (!value) return value;
     
+    // Handle Lists data where value might be an array
+    let stringValue: string;
+    if (Array.isArray(value)) {
+      if (value.length === 1 && value[0] === 'ALL') {
+        stringValue = 'ALL';
+      } else if (value.includes('ALL')) {
+        stringValue = 'ALL';
+      } else {
+        stringValue = value.join(', ');
+      }
+    } else {
+      stringValue = value;
+    }
+    
     // Only show '-' for the specific field that was deleted
-    if (deletedDriverType === 'sectors' && columnKey === 'sector' && value !== 'ALL') {
+    if (deletedDriverType === 'sectors' && columnKey === 'sector' && stringValue !== 'ALL') {
       return '-';
-    } else if (deletedDriverType === 'domains' && columnKey === 'domain' && value !== 'ALL') {
+    } else if (deletedDriverType === 'domains' && columnKey === 'domain' && stringValue !== 'ALL') {
       return '-';
-    } else if (deletedDriverType === 'countries' && columnKey === 'country' && value !== 'ALL') {
+    } else if (deletedDriverType === 'countries' && columnKey === 'country' && stringValue !== 'ALL') {
       return '-';
     }
     
     // Display 'All' instead of 'ALL' in the grid
-    if (value === 'ALL') {
+    if (stringValue === 'ALL') {
       return 'All';
     }
     
-    return value;
+    return stringValue;
   }
 
   function hasDeletedDriver(driverString: string) {
@@ -963,6 +977,20 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               // Always parse from driver string if available - it's the source of truth
                               // This ensures values persist even after updates when parsed values might be missing
                               let value = row[column.key] || '';
+                              
+                              // Handle Lists data where sector/domain/country might be arrays
+                              if (Array.isArray(value)) {
+                                // If array contains "ALL" or all values, convert to "ALL"
+                                if (value.length === 1 && value[0] === 'ALL') {
+                                  value = 'ALL';
+                                } else if (value.includes('ALL')) {
+                                  value = 'ALL';
+                                } else {
+                                  // Join multiple values with comma
+                                  value = value.join(', ');
+                                }
+                              }
+                              
                               if ((!value || value === '-') && row.driver) {
                                 const parsed = parseDriverField(row.driver);
                                 if (column.key === 'sector') {

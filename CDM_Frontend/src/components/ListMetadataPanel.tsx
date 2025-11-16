@@ -133,15 +133,62 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     newFormData.list = selectedList.list || '';
     
     // Update driver selections from selectedList
-    const sectors = selectedList.sector 
-      ? (Array.isArray(selectedList.sector) ? selectedList.sector : [selectedList.sector])
-      : [];
-    const domains = selectedList.domain 
-      ? (Array.isArray(selectedList.domain) ? selectedList.domain : [selectedList.domain])
-      : [];
-    const countries = selectedList.country 
-      ? (Array.isArray(selectedList.country) ? selectedList.country : [selectedList.country])
-      : [];
+    // Helper function to process driver values and detect if ALL is selected
+    const processDriverValues = (value: string | string[] | undefined, allPossibleValues: string[]): string[] => {
+      if (!value) return [];
+      
+      let valuesArray: string[];
+      if (Array.isArray(value)) {
+        // If it's an array, check if it contains a single comma-separated string
+        if (value.length === 1 && typeof value[0] === 'string' && value[0].includes(',')) {
+          // Single element that's a comma-separated string - split it
+          if (value[0] === 'ALL') {
+            valuesArray = ['ALL'];
+          } else {
+            valuesArray = value[0].split(',').map(v => v.trim()).filter(Boolean);
+          }
+        } else {
+          // Use array as-is
+          valuesArray = value;
+        }
+      } else if (typeof value === 'string') {
+        // If it's a string, check if it's "ALL" or a comma-separated list
+        if (value === 'ALL') {
+          valuesArray = ['ALL'];
+        } else {
+          // Split by comma and trim each value
+          valuesArray = value.split(',').map(v => v.trim()).filter(Boolean);
+        }
+      } else {
+        return [];
+      }
+      
+      // Check if "ALL" is already in the array
+      if (valuesArray.includes('ALL')) {
+        // Expand to include all individual values for proper multiselect display
+        return ['ALL', ...allPossibleValues];
+      }
+      
+      // Check if all possible values are selected
+      if (allPossibleValues.length > 0) {
+        const selectedSet = new Set(valuesArray);
+        const allSet = new Set(allPossibleValues);
+        const isAllSelected = selectedSet.size === allSet.size && 
+                             [...selectedSet].every(val => allSet.has(val));
+        
+        if (isAllSelected) {
+          // All values are selected, add "ALL" to the array
+          return ['ALL', ...allPossibleValues];
+        }
+      }
+      
+      // Return the array as-is if not all values are selected
+      return valuesArray;
+    };
+    
+    const sectors = processDriverValues(selectedList.sector, driversData.sectors);
+    const domains = processDriverValues(selectedList.domain, driversData.domains);
+    const countries = processDriverValues(selectedList.country, driversData.countries);
     
     setDriverSelections({ sector: sectors, domain: domains, country: countries });
     newFormData.sector = sectors;
@@ -149,7 +196,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     newFormData.country = countries;
     
     setFormData(newFormData);
-  }, [selectedList, fields]);
+  }, [selectedList, fields, driversData]);
 
   // Initialize variables attached state
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>(() => {
