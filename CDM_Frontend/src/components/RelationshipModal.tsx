@@ -757,11 +757,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   let gridData = allObjects.map(obj => {
     const relData = relationshipData[obj.id];
     const isSourceObject = sourceObjects.some(so => so.id === obj.id);
+    const currentType = relData?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table');
+    const currentFrequency = relData?.frequency || 'Possible';
     
     return {
       ...obj,
       isCurrentObject: isSourceObject, // Highlight all source objects in bulk mode
-      relationshipType: relData?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table'),
+      relationshipType: currentType,
+      frequency: currentType === 'Blood' ? 'Critical' : currentFrequency, // Blood relationships must be Critical
       roles: relData?.roles || ''
     };
   });
@@ -798,7 +801,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'sector',
       title: 'S',
-      width: 80,
+      width: '80px',
       render: (row: any) => {
         const parsed = parseDriverField(row.driver || '');
         const sectorValue = row.sector || parsed.sector || '';
@@ -821,7 +824,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'domain',
       title: 'D',
-      width: 80,
+      width: '80px',
       render: (row: any) => {
         const parsed = parseDriverField(row.driver || '');
         const domainValue = row.domain || parsed.domain || '';
@@ -844,7 +847,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'country',
       title: 'C',
-      width: 80,
+      width: '80px',
       render: (row: any) => {
         const parsed = parseDriverField(row.driver || '');
         const countryValue = row.country || parsed.country || '';
@@ -869,7 +872,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'relationshipType',
       title: 'Relationship Type',
-      width: 200, // Expanded from 150
+      width: '170px', // Narrowed to give more space to Roles column
+      filterable: true,
       render: (row: any) => {
         const isSourceObject = sourceObjects.some(so => so.id === row.id);
         const currentType = relationshipData[row.id]?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table');
@@ -921,7 +925,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'frequency',
       title: 'Frequency',
-      width: 150,
+      width: '130px', // Narrowed to give more space to Roles column
+      filterable: true,
       render: (row: any) => {
         const currentType = relationshipData[row.id]?.relationshipType || (sourceObjects.some(so => so.id === row.id) ? 'Intra-Table' : 'Inter-Table');
         const currentFrequency = relationshipData[row.id]?.frequency || 'Possible';
@@ -955,7 +960,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'roles',
       title: 'Roles',
-      width: 400, // Expanded from 250 to use freed space from removed columns
+      width: '480px', // Expanded to use freed space from narrower Relationship Type and Frequency columns
       render: (row: any) => (
         <div className="w-full h-full flex items-center" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
           <input
@@ -972,7 +977,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[95vw] h-[90vh] max-w-7xl flex flex-col">
+      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[99vw] h-[90vh] max-w-[120rem] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
           <div className="flex items-center gap-2">
