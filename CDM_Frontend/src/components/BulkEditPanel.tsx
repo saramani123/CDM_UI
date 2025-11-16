@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye, Copy } from 'lucide-react';
-import { getAvatarOptions, concatenateDrivers } from '../data/mockData';
+import { concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
 import { RelationshipModal } from './RelationshipModal';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { CloneIdentifiersModal } from './CloneIdentifiersModal';
+import { AddBeingValueModal } from './AddBeingValueModal';
+import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { listFieldOptions } from '../data/listsData';
@@ -119,6 +121,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [variantsText, setVariantsText] = useState('');
   const [variantsArray, setVariantsArray] = useState<Variant[]>([]);
+
+  // State for add being/avatar value modals
+  const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
+  const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
+  const [beingAvatarUpdateTrigger, setBeingAvatarUpdateTrigger] = useState(0);
   const variantsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isTextareaFocusedRef = useRef<boolean>(false);
   const lastChangeTimeRef = useRef<number>(0);
@@ -200,28 +207,97 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     setOntologyModalOpen({ isOpen: false, viewType: null });
   };
 
-  if (!isOpen) return null;
+  // Storage keys for Being and Avatar values
+  const BEING_STORAGE_KEY = 'cdm_object_being_values';
+  const BEING_AVATAR_STORAGE_KEY = 'cdm_object_being_avatar_associations';
 
-  // Get dynamic avatar options based on current being and driver values
-  const driverString = concatenateDrivers(
-    driverSelections.sector,
-    driverSelections.domain,
-    driverSelections.country,
-    driverSelections.objectClarifier
-  );
-  const avatarOptions = getAvatarOptions(formData.being || '', driverString, allData);
+  // Helper functions to manage Being and Avatar values in localStorage
+  const getBeingValues = (): string[] => {
+    try {
+      const stored = localStorage.getItem(BEING_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Error reading being values from localStorage:', error);
+    }
+    return [];
+  };
+
+  const saveBeingValue = (value: string): void => {
+    try {
+      const existing = getBeingValues();
+      if (!existing.includes(value)) {
+        const updated = [...existing, value].sort();
+        localStorage.setItem(BEING_STORAGE_KEY, JSON.stringify(updated));
+      }
+    } catch (error) {
+      console.error('Error saving being value to localStorage:', error);
+    }
+  };
+
+  const getBeingAvatarAssociations = (): Record<string, string[]> => {
+    try {
+      const stored = localStorage.getItem(BEING_AVATAR_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Error reading being-avatar associations from localStorage:', error);
+    }
+    return {};
+  };
+
+  const saveBeingAvatarAssociation = (being: string, avatar: string): void => {
+    try {
+      const associations = getBeingAvatarAssociations();
+      if (!associations[being]) {
+        associations[being] = [];
+      }
+      if (!associations[being].includes(avatar)) {
+        associations[being] = [...associations[being], avatar].sort();
+        localStorage.setItem(BEING_AVATAR_STORAGE_KEY, JSON.stringify(associations));
+      }
+    } catch (error) {
+      console.error('Error saving being-avatar association to localStorage:', error);
+    }
+  };
 
   // Get distinct values from data for relationships
   const getDistinctBeings = () => {
-    const beings = [...new Set(allData.map(item => item.being))];
-    return ['ALL', ...beings];
+    const beingsFromData = [...new Set(allData.map(item => item.being))];
+    const beingsFromStorage = getBeingValues();
+    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage])];
+    return ['ALL', ...allBeings];
   };
 
   const getDistinctAvatarsForBeing = (being: string) => {
     if (being === 'ALL') return ['ALL'];
-    const avatars = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
-    return ['ALL', ...avatars];
+    const avatarsFromData = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
+    const associations = getBeingAvatarAssociations();
+    const avatarsFromStorage = associations[being] || [];
+    const allAvatars = [...new Set([...avatarsFromData, ...avatarsFromStorage])];
+    return ['ALL', ...allAvatars];
   };
+
+  // Handlers for adding Being and Avatar values
+  const handleAddBeingValue = async (value: string): Promise<void> => {
+    saveBeingValue(value);
+    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
+  };
+
+  const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
+    saveBeingAvatarAssociation(being, avatar);
+    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
+  };
+
+  if (!isOpen) return null;
+
+  // Get dynamic avatar options based on current being from grid data
+  // Include beingAvatarUpdateTrigger dependency to force re-render when values are added
+  const avatarOptions = React.useMemo(() => {
+    return getDistinctAvatarsForBeing(formData.being || '');
+  }, [formData.being, beingAvatarUpdateTrigger, allData]);
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
     if (being === 'ALL' || avatar === 'ALL') return ['ALL'];
@@ -290,10 +366,19 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         [key]: value
       }));
     } else {
-      setFormData(prev => ({
-        ...prev,
-        [key]: value
-      }));
+      setFormData(prev => {
+        const newFormData = {
+          ...prev,
+          [key]: value
+        };
+        
+        // If being is changed, reset avatar since avatars are specific to each being
+        if (key === 'being') {
+          newFormData.avatar = '';
+        }
+        
+        return newFormData;
+      });
     }
   };
 
@@ -721,18 +806,26 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
 
     // Close dropdown when clicking outside
     useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-          setIsOpen(false);
-        }
-      };
+      if (!isOpen) return;
 
-      if (isOpen) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
+      // Use setTimeout to ensure the listener is attached after the state update
+      // This prevents the dropdown from closing immediately when opened
+      let handleClickOutside: ((event: MouseEvent) => void) | null = null;
+      const timeoutId = setTimeout(() => {
+        handleClickOutside = (event: MouseEvent) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            setIsOpen(false);
+          }
+        };
+
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
 
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        clearTimeout(timeoutId);
+        if (handleClickOutside) {
+          document.removeEventListener('click', handleClickOutside);
+        }
       };
     }, [isOpen]);
     
@@ -1288,9 +1381,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Being
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Being
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddBeingValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Being value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.being}
               onChange={(e) => handleChange('being', e.target.value)}
@@ -1310,9 +1415,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Avatar
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Avatar
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddAvatarValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Avatar value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.avatar}
               onChange={(e) => handleChange('avatar', e.target.value)}
@@ -1325,11 +1442,17 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               }}
             >
               <option value="">Keep Current Avatar</option>
-              {avatarOptions.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {(() => {
+                // Get distinct avatars from grid data, ensuring current value is included
+                const options = avatarOptions.filter(opt => opt !== 'ALL');
+                const merged = new Set<string>(options);
+                if (formData.avatar && !merged.has(formData.avatar)) {
+                  merged.add(formData.avatar);
+                }
+                return Array.from(merged).map(option => (
+                  <option key={option} value={option}>{option}</option>
+                ));
+              })()}
             </select>
           </div>
 
@@ -1698,6 +1821,25 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           Apply to {selectedCount} {activeTab === 'lists' ? 'Lists' : 'Objects'}
         </button>
       </div>
+
+      {/* Add Being Value Modal */}
+      <AddBeingValueModal
+        isOpen={isAddBeingValueModalOpen}
+        onClose={() => {
+          setIsAddBeingValueModalOpen(false);
+        }}
+        onSave={handleAddBeingValue}
+      />
+
+      {/* Add Avatar Value Modal */}
+      <AddAvatarValueModal
+        isOpen={isAddAvatarValueModalOpen}
+        onClose={() => {
+          setIsAddAvatarValueModalOpen(false);
+        }}
+        onSave={handleAddAvatarValue}
+        availableBeings={getDistinctBeings().filter(being => being !== 'ALL')}
+      />
 
       {/* CSV Upload Modals */}
       <CsvUploadModal

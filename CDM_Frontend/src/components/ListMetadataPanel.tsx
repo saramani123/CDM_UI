@@ -410,18 +410,26 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
 
     // Close dropdown when clicking outside
     useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-          setIsOpen(false);
-        }
-      };
+      if (!isOpen) return;
 
-      if (isOpen) {
-        document.addEventListener('mousedown', handleClickOutside);
-      }
+      // Use setTimeout to ensure the listener is attached after the state update
+      // This prevents the dropdown from closing immediately when opened
+      let handleClickOutside: ((event: MouseEvent) => void) | null = null;
+      const timeoutId = setTimeout(() => {
+        handleClickOutside = (event: MouseEvent) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            setIsOpen(false);
+          }
+        };
+
+        document.addEventListener('click', handleClickOutside);
+      }, 0);
 
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        clearTimeout(timeoutId);
+        if (handleClickOutside) {
+          document.removeEventListener('click', handleClickOutside);
+        }
       };
     }, [isOpen]);
     
