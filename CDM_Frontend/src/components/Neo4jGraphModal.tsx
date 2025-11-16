@@ -12,14 +12,14 @@ interface Neo4jGraphModalProps {
   graphType?: 'objects' | 'variables' | 'lists'; // Default to 'objects' for backward compatibility
 }
 
-type GraphView = 'taxonomy' | 'model';
+type GraphView = 'taxonomy' | 'model' | 'listVariableModel';
 
 export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   isOpen,
   onClose,
   graphType = 'objects'
 }) => {
-  // For lists, only show taxonomy view
+  // For lists, default to taxonomy view
   const [activeView, setActiveView] = useState<GraphView>(graphType === 'lists' ? 'taxonomy' : 'taxonomy');
   const [isLoading, setIsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
@@ -56,7 +56,10 @@ export const Neo4jGraphModal: React.FC<Neo4jGraphModalProps> = ({
   // Cypher queries for each view - different for objects vs variables vs lists
   const cypherQueries = graphType === 'lists' ? {
     taxonomy: `MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List)
-RETURN s, r1, g, r2, l`
+RETURN s, r1, g, r2, l`,
+    listVariableModel: `MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List)
+OPTIONAL MATCH (v:Variable)-[r3:HAS_LIST]->(l)
+RETURN s, r1, g, r2, l, r3, v`
   } : graphType === 'variables' ? {
     taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
 RETURN p, r1, g, r2, v`,
@@ -120,7 +123,8 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       const labelColors: Record<string, { background: string; border: string; highlight: { background: string; border: string } }> = graphType === 'lists' ? {
         Set: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
         Grouping: { background: '#F59E0B', border: '#D97706', highlight: { background: '#FBBF24', border: '#F59E0B' } },
-        List: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } }
+        List: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+        Variable: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } }
       } : graphType === 'variables' ? {
         Part: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
         Group: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
@@ -389,9 +393,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         networkRef.current = null;
       }
 
-      // For lists, only use taxonomy query
+      // Select query based on graph type and active view
       const query = graphType === 'lists' 
-        ? cypherQueries.taxonomy 
+        ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
         : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
       // Small delay to ensure DOM is ready and previous viz is cleared
       const timeoutId = setTimeout(() => {
@@ -428,7 +432,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
   }, [activeView]);
 
   const handleRefresh = () => {
-    const query = activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model;
+    const query = graphType === 'lists'
+      ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
+      : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
     runGraphQuery(query);
   };
 
@@ -548,6 +554,18 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
             >
               {graphType === 'lists' ? 'List Taxonomy' : graphType === 'variables' ? 'Variable Taxonomy' : 'Object Taxonomy'}
             </button>
+            {graphType === 'lists' && (
+              <button
+                onClick={() => setActiveView('listVariableModel')}
+                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
+                  activeView === 'listVariableModel'
+                    ? 'text-ag-dark-accent border-ag-dark-accent'
+                    : 'text-ag-dark-text-secondary hover:text-ag-dark-text border-transparent'
+                }`}
+              >
+                List-Variable Model
+              </button>
+            )}
             {graphType !== 'lists' && (
               <button
                 onClick={() => setActiveView('model')}
@@ -823,7 +841,12 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                     Cypher Query
                   </label>
                   <button
-                    onClick={() => copyQueryToClipboard(activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model)}
+                    onClick={() => {
+                      const query = graphType === 'lists'
+                        ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
+                        : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
+                      copyQueryToClipboard(query);
+                    }}
                     className={`text-xs transition-colors px-2 py-1 rounded ${
                       copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-surface'
                     }`}
@@ -832,7 +855,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   </button>
                 </div>
                 <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto overflow-y-auto border border-ag-dark-border whitespace-pre-wrap break-words">
-                  {activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model}
+                  {graphType === 'lists'
+                    ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
+                    : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model)}
                 </pre>
               </div>
             )}

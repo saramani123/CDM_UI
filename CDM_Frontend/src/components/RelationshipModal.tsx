@@ -960,15 +960,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     {
       key: 'roles',
       title: 'Roles',
-      width: '480px', // Expanded to use freed space from narrower Relationship Type and Frequency columns
+      width: '9999px', // Very large width to make it take remaining space and extend to right edge
       render: (row: any) => (
-        <div className="w-full h-full flex items-center" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
+        <div className="w-full h-full flex items-center" style={{ marginLeft: '-12px', marginRight: '-16px', width: 'calc(100% + 28px)', paddingRight: 0 }}>
           <input
             type="text"
             value={relationshipData[row.id]?.roles || ''}
             onChange={(e) => handleRolesChange(row.id, e.target.value)}
             placeholder="Enter roles (comma-separated)"
             className="w-full px-2 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+            style={{ width: '100%', marginRight: 0 }}
           />
         </div>
       )

@@ -812,7 +812,47 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 const minWidth = isShortColumn ? 60 : 80;
                 
                 // Calculate column width - use same calculation as data cells for consistency
-                const columnWidth = columnWidths[column.key] || parseInt(column.width) || 140;
+                const parsedWidth = parseInt(column.width) || 140;
+                const columnWidth = columnWidths[column.key] || parsedWidth;
+                
+                // Check if this column should be flexible (width >= 9999 indicates flexible)
+                const isFlexibleColumn = parsedWidth >= 9999;
+                const isLastColumn = colIndex === columns.length - 1 && !showActionsColumn && !onReorder;
+                
+                // For flexible columns, render a regular div instead of ResizableColumn
+                if (isFlexibleColumn && isLastColumn) {
+                  return (
+                    <div
+                      key={`${gridType}-${column.key}`}
+                      className={`flex items-center justify-between px-4 py-2 box-border ${
+                        colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                      } whitespace-nowrap ${getColumnHeaderClass(column)} flex-1`}
+                      style={{ flex: '1 1 auto', minWidth: 0 }}
+                    >
+                      <span className="text-ag-dark-text font-medium text-xs pr-2 flex-1" style={{
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0
+                      }}>
+                        {column.title}
+                        {columnFilters[column.key]?.length > 0 && (
+                          <span className="ml-1 text-xs text-ag-dark-accent">
+                            ({columnFilters[column.key].length})
+                          </span>
+                        )}
+                      </span>
+                      {(column.sortable || column.filterable) && (
+                        <button
+                          onClick={(e) => handleColumnHeaderClick(column, e)}
+                          className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0 ml-2 mr-1"
+                        >
+                          {getColumnIcon(column)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
                 
                 return (
                 <ResizableColumn
@@ -933,10 +973,18 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 )}
                 {columns.map((column, colIndex) => {
                   // Calculate cell width - use same calculation as header for consistency
-                  const columnWidth = columnWidths[column.key] || parseInt(column.width) || 140;
-                  const cellWidth = isLargeGrid 
-                    ? `var(--column-width-${column.key}, ${columnWidth}px)`
-                    : `${columnWidth}px`;
+                  const parsedWidth = parseInt(column.width) || 140;
+                  const columnWidth = columnWidths[column.key] || parsedWidth;
+                  
+                  // Check if this column should be flexible (width >= 9999 indicates flexible)
+                  const isFlexibleColumn = parsedWidth >= 9999;
+                  const isLastColumn = colIndex === columns.length - 1 && !showActionsColumn && !onReorder;
+                  
+                  const cellWidth = isFlexibleColumn && isLastColumn
+                    ? undefined // Let flex handle it
+                    : (isLargeGrid 
+                      ? `var(--column-width-${column.key}, ${columnWidth}px)`
+                      : `${columnWidth}px`);
                   
                   return (
                   <div
@@ -947,8 +995,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       ['relationships', 'variants', 'variables'].includes(column.key) 
                         ? 'justify-end' 
                         : 'justify-start'
-                    }`}
-                    style={{ width: cellWidth, boxSizing: 'border-box' }}
+                    } ${isFlexibleColumn && isLastColumn ? 'flex-1' : ''}`}
+                    style={{ 
+                      ...(cellWidth ? { width: cellWidth } : { flex: '1 1 auto', minWidth: 0 }), 
+                      boxSizing: 'border-box' 
+                    }}
                   >
                     {column.render ? (
                       column.render(row)
