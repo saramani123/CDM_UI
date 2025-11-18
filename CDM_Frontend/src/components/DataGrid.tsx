@@ -187,10 +187,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
     });
     setOpenDropdown(column.key);
     
-    // Trigger column sort callback if provided
-    if (onColumnSort) {
-      onColumnSort();
-    }
+    // Don't trigger column sort callback here - only trigger when actually applying a sort
+    // Opening the dropdown should not activate sorting
   };
 
   const handleColumnFilter = (columnKey: string, filterValues: string[]) => {
@@ -201,6 +199,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleColumnSort = (columnKey: string, type: 'custom' | 'none') => {
+    // Trigger column sort callback when actually applying a sort (not when opening dropdown)
+    if (onColumnSort && type !== 'none') {
+      onColumnSort();
+    }
+    
     // If custom sort is active, clear it before applying column sort (mutual exclusivity)
     if (isCustomSortActive && type !== 'none') {
       onClearCustomSort?.();
@@ -260,17 +263,19 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleClearAllFilters = () => {
-    // Only clear filters, preserve sorting
+    // Only clear filters, preserve ALL sorting (including predefined sort order)
+    // This should NOT touch predefined sort order at all - it's "sacred"
     setFilters({});
     setColumnFilters({});
     // Don't clear sortConfig - filters and sorts should coexist
-    // Don't call onClearCustomSort - preserve sorting
+    // Don't call onClearCustomSort - preserve sorting (including predefined sort)
     // Clear only filter-related localStorage
     const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
                      gridType === 'lists' ? 'cdm_lists_column_filters' : 
                      'cdm_objects_column_filters';
     localStorage.removeItem(filterKey);
-    // Note: Sorting state is preserved
+    // Note: Sorting state is preserved - this includes predefined sort order which is "sacred"
+    // Reset Filters should ONLY clear filtering logic, never sorting
   };
 
   const handleResetSorting = () => {
@@ -833,26 +838,36 @@ export const DataGrid: React.FC<DataGridProps> = ({
         {/* Grid Container with Horizontal Scroll */}
         <div className="overflow-x-auto">
           {/* Clear Filters and Reset Sorting Buttons */}
-          {(Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0 || sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive) && (
-            <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2 flex gap-4">
-              {(Object.keys(filters).length > 0 || Object.keys(columnFilters).length > 0) && (
-                <button
-                  onClick={handleClearAllFilters}
-                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-                >
-                  Reset Filters
-                </button>
-              )}
-              {(sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive) && (
-                <button
-                  onClick={handleResetSorting}
-                  className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-                >
-                  Reset Sorting
-                </button>
-              )}
-            </div>
-          )}
+          {(() => {
+            // Check if there are any active filters (non-empty text filters or non-empty column filter arrays)
+            const hasActiveFilters = Object.keys(filters).length > 0 || 
+              Object.keys(columnFilters).some(key => columnFilters[key] && columnFilters[key].length > 0);
+            // Check if there's any active sorting
+            const hasActiveSorting = sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
+            
+            if (!hasActiveFilters && !hasActiveSorting) return null;
+            
+            return (
+              <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2 flex gap-4">
+                {hasActiveFilters && (
+                  <button
+                    onClick={handleClearAllFilters}
+                    className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0"
+                  >
+                    Reset Filters
+                  </button>
+                )}
+                {hasActiveSorting && (
+                  <button
+                    onClick={handleResetSorting}
+                    className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0"
+                  >
+                    Reset Sorting
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
