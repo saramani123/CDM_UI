@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye, Copy } from 'lucide-react';
+import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye, Copy, Grid3x3 } from 'lucide-react';
 import { concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
@@ -1758,12 +1758,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             <button
               onClick={() => setIsRelationshipModalOpen(true)}
               disabled={selectedObjects.length === 0}
-              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-                selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
               }`}
               title={selectedObjects.length === 0 ? "Select objects to view relationships" : "View and manage relationships"}
             >
-              View Relationships
+              <Grid3x3 className="w-5 h-5" />
             </button>
           </div>
         }

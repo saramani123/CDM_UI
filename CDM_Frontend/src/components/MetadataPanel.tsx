@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, Info, Copy } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, Info, Copy, Grid3x3 } from 'lucide-react';
 import { concatenateDrivers, parseDriverString } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
@@ -1652,8 +1652,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             <button
               onClick={onEnterRelationshipView}
               disabled={!isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved)}
-              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-                !isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved) ? 'opacity-50 cursor-not-allowed' : ''
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
               }`}
               title={
                 selectedObject?._isCloned && !selectedObject?._isSaved 
@@ -1663,7 +1663,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                     : "View and manage relationships"
               }
             >
-              View Relationships
+              <Grid3x3 className="w-5 h-5" />
             </button>
           </div>
         }
