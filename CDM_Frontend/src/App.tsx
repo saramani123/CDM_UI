@@ -1257,7 +1257,36 @@ function App() {
     });
 
     if (activeTab === 'lists') {
-      setListData(updateFunction);
+      // Update lists via API
+      try {
+        console.log('🔄 Bulk edit lists - selectedIds:', selectedIds);
+        console.log('🔄 Bulk edit lists - updatedData:', updatedData);
+        
+        // Update each selected list via API
+        for (const listId of selectedIds) {
+          // Prepare the update data for this list
+          const listUpdateData = { ...updatedData };
+          console.log(`🔄 Bulk edit - updating list ${listId} with data:`, listUpdateData);
+          
+          // Call the updateList API for each list
+          await apiService.updateList(listId, listUpdateData);
+        }
+        
+        console.log('✅ Bulk edit lists completed successfully');
+        
+        // Force refresh the data to ensure UI shows updated values
+        await fetchLists();
+        
+        // Close modal and clear selections
+        setIsBulkEditOpen(false);
+        setSelectedRows([]);
+        setSelectedRowForMetadata(null);
+        return;
+      } catch (error) {
+        console.error('❌ Failed to bulk update lists:', error);
+        alert('Failed to update lists. Please try again.');
+        return;
+      }
     } else {
       setData(updateFunction);
     }
@@ -1967,6 +1996,7 @@ function App() {
         graph: list.graph || '',
         origin: list.origin || '',
         status: list.status || 'Active',
+        variables: list.variables || 0, // Include variables count from API
         variablesAttachedList: list.variablesAttachedList || [],
         listValuesList: list.listValuesList || []
       }));

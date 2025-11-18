@@ -62,7 +62,7 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
     return null;
   };
 
-  // Load persisted keyword filter when modal opens
+  // Load persisted keyword filter when modal opens or list changes
   useEffect(() => {
     if (isOpen && sourceLists.length > 0) {
       const storageKey = getKeywordStorageKey();
@@ -72,6 +72,20 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         if (savedKeywordValue && savedKeywordValue.trim()) {
           setKeywordFilter(savedKeywordValue);
           setSelectionMode('keyword');
+        } else {
+          // If no saved keyword filter, check for saved keyword (from previous save)
+          // This ensures the keyword field always shows the last used keyword
+          if (savedKeywordKey) {
+            const lastSavedKeyword = localStorage.getItem(savedKeywordKey);
+            if (lastSavedKeyword && lastSavedKeyword.trim()) {
+              setKeywordFilter(lastSavedKeyword);
+              setSelectionMode('keyword');
+            } else {
+              // Clear keyword if nothing is saved
+              setKeywordFilter('');
+              setSelectionMode('manual');
+            }
+          }
         }
       }
       // Load the last saved keyword
@@ -83,9 +97,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, sourceLists.length]);
+  }, [isOpen, sourceLists.length, sourceLists[0]?.id]); // Add list ID to dependencies
 
-  // Initialize selected variables when modal opens
+  // Initialize selected variables when modal opens or list changes
   useEffect(() => {
     if (isOpen && sourceLists.length > 0 && allVariables.length > 0) {
       initializeSelectedVariables();
@@ -96,13 +110,29 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       // Don't reset selectionMode and keywordFilter - they're persisted
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, sourceLists.length, allVariables.length]);
+  }, [isOpen, sourceLists.length, sourceLists[0]?.id, allVariables.length]); // Add list ID to dependencies
 
   const initializeSelectedVariables = async () => {
     if (sourceLists.length === 0) return;
 
     setLoading(true);
     try {
+      // Get current keyword from localStorage (in case state hasn't updated yet)
+      const storageKey = getKeywordStorageKey();
+      const savedKeywordKey = getSavedKeywordStorageKey();
+      let currentKeyword = keywordFilter;
+      if (storageKey) {
+        const savedKeywordValue = localStorage.getItem(storageKey);
+        if (savedKeywordValue && savedKeywordValue.trim()) {
+          currentKeyword = savedKeywordValue;
+        } else if (savedKeywordKey) {
+          const lastSavedKeyword = localStorage.getItem(savedKeywordKey);
+          if (lastSavedKeyword && lastSavedKeyword.trim()) {
+            currentKeyword = lastSavedKeyword;
+          }
+        }
+      }
+      
       let allExistingRelationships: any[] = [];
       
       if (!isBulkMode && sourceLists.length === 1) {
@@ -130,42 +160,59 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       // Initialize selection data for all variables
       const initialData: Record<string, SelectedVariableData> = {};
       
-      for (const variable of allVariables) {
-        // Check if this variable has a relationship with any of the source lists
-        const hasRelationship = allExistingRelationships.some((rel: any) => {
-          // Match by variable ID or by composite key (part, group, section, variable)
-          if (rel.id === variable.id) return true;
-          if (rel.variableId === variable.id) return true;
-          if (rel.part === variable.part && 
-              rel.group === variable.group && 
-              rel.section === variable.section && 
-              rel.variable === variable.variable) {
-            return true;
-          }
-          return false;
-        });
-        
-        initialData[variable.id] = {
-          variableId: variable.id,
-          isSelected: hasRelationship
-        };
+      // If keyword mode is active, use keyword to determine selection
+      // Otherwise, use existing relationships
+      if (selectionMode === 'keyword' && currentKeyword && currentKeyword.trim()) {
+        // Apply keyword filter to determine selection
+        const keywordParts = currentKeyword.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+        for (const variable of allVariables) {
+          const searchableText = [
+            variable.variable || '',
+            variable.part || '',
+            variable.group || '',
+            variable.section || ''
+          ].join(' ').toLowerCase();
+          
+          const matches = keywordParts.every(keyword => searchableText.includes(keyword));
+          
+          initialData[variable.id] = {
+            variableId: variable.id,
+            isSelected: matches
+          };
+        }
+      } else if (selectionMode === 'any') {
+        // Select all variables
+        for (const variable of allVariables) {
+          initialData[variable.id] = {
+            variableId: variable.id,
+            isSelected: true
+          };
+        }
+      } else {
+        // Manual mode: use existing relationships
+        for (const variable of allVariables) {
+          // Check if this variable has a relationship with any of the source lists
+          const hasRelationship = allExistingRelationships.some((rel: any) => {
+            // Match by variable ID or by composite key (part, group, section, variable)
+            if (rel.id === variable.id) return true;
+            if (rel.variableId === variable.id) return true;
+            if (rel.part === variable.part && 
+                rel.group === variable.group && 
+                rel.section === variable.section && 
+                rel.variable === variable.variable) {
+              return true;
+            }
+            return false;
+          });
+          
+          initialData[variable.id] = {
+            variableId: variable.id,
+            isSelected: hasRelationship
+          };
+        }
       }
       
       setSelectedVariables(initialData);
-      
-      // If keyword mode is active, apply it after initialization
-      // This ensures keyword selection overrides existing relationship-based selection
-      if (selectionMode === 'keyword' && keywordFilter.trim()) {
-        // Use setTimeout to ensure this runs after state update
-        setTimeout(() => {
-          applySelectionMode();
-        }, 0);
-      } else if (selectionMode === 'any') {
-        // Apply 'any' mode after initialization
-        setTimeout(() => {
-          applySelectionMode();
-        }, 0);
-      }
     } finally {
       setLoading(false);
     }
@@ -222,21 +269,23 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
   const handleAnyButtonClick = () => {
     setSelectionMode('any');
-    setKeywordFilter(''); // Clear keyword when switching to Any
-    const storageKey = getKeywordStorageKey();
-    if (storageKey) {
-      localStorage.removeItem(storageKey);
-    }
+    // Don't clear keyword filter - keep it visible so user can see what was last used
+    // The keyword will remain in the input field but won't be applied in "Any" mode
   };
 
   const handleKeywordChange = (value: string) => {
     setKeywordFilter(value);
     const storageKey = getKeywordStorageKey();
+    const savedKeywordKey = getSavedKeywordStorageKey();
     if (value.trim()) {
       setSelectionMode('keyword');
-      // Persist keyword filter
+      // Persist keyword filter (for immediate use)
       if (storageKey) {
         localStorage.setItem(storageKey, value);
+      }
+      // Also save to saved keyword (for persistence across sessions)
+      if (savedKeywordKey) {
+        localStorage.setItem(savedKeywordKey, value);
       }
     } else {
       // If keyword is cleared, revert to manual mode and remove from storage
@@ -244,6 +293,8 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       if (storageKey) {
         localStorage.removeItem(storageKey);
       }
+      // Don't remove savedKeyword - keep it so user can see what was last used
+      // Only remove it if user explicitly clears it via the clear button
     }
   };
 
@@ -251,8 +302,14 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
     setKeywordFilter('');
     setSelectionMode('manual');
     const storageKey = getKeywordStorageKey();
+    const savedKeywordKey = getSavedKeywordStorageKey();
     if (storageKey) {
       localStorage.removeItem(storageKey);
+    }
+    // Also clear saved keyword when user explicitly clears it
+    if (savedKeywordKey) {
+      localStorage.removeItem(savedKeywordKey);
+      setSavedKeyword('');
     }
   };
 
@@ -468,20 +525,21 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         }
       }
 
-      // Update saved keyword - only save if in keyword mode
+      // Update saved keyword - always save the current keyword if it exists
+      // This ensures the keyword persists even if user switches modes
       const savedKeywordKey = getSavedKeywordStorageKey();
-      if (selectionMode === 'keyword' && currentKeyword) {
+      const storageKey = getKeywordStorageKey();
+      if (currentKeyword && currentKeyword.trim()) {
         setSavedKeyword(currentKeyword);
         if (savedKeywordKey) {
           localStorage.setItem(savedKeywordKey, currentKeyword);
         }
-      } else {
-        // Clear saved keyword when switching to manual or "any" mode
-        setSavedKeyword('');
-        if (savedKeywordKey) {
-          localStorage.removeItem(savedKeywordKey);
+        // Also update the filter key to keep it in sync
+        if (storageKey) {
+          localStorage.setItem(storageKey, currentKeyword);
         }
       }
+      // Don't clear saved keyword when switching modes - keep it for persistence
 
       // Call the callback to refresh main data
       if (onSave) {

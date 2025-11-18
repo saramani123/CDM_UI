@@ -15,6 +15,7 @@ export interface ListData {
   origin?: string;
   // Parsed metadata fields
   status?: string;
+  variables?: number; // Count of variables with HAS_LIST relationships (applicability)
   variablesAttachedList?: VariableAttached[];
   listValuesList?: ListValue[];
 }

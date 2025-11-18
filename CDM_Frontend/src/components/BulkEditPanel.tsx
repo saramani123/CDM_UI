@@ -10,7 +10,6 @@ import { AddBeingValueModal } from './AddBeingValueModal';
 import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
-import { listFieldOptions } from '../data/listsData';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
@@ -361,12 +360,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     }));
   };
 
+  // Get distinct Set values from actual lists data
+  const getDistinctSets = (): string[] => {
+    if (activeTab !== 'lists') return [];
+    const listsData = allData as any[];
+    const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
+    return sets;
+  };
+
+  // Get groupings for a specific set from lists data
+  const getGroupingsForSet = (set: string): string[] => {
+    if (!set || activeTab !== 'lists') return [];
+    
+    // Get groupings from existing lists data for this set
+    const listsData = allData as any[];
+    const groupings = [...new Set(
+      listsData
+        .filter((list: any) => list.set === set && list.grouping)
+        .map((list: any) => list.grouping)
+    )].filter(Boolean) as string[];
+    
+    return groupings;
+  };
+
   const handleChange = (key: string, value: string) => {
     if (activeTab === 'lists') {
-      setListFormData(prev => ({
-        ...prev,
-        [key]: value
-      }));
+      setListFormData(prev => {
+        const newData = {
+          ...prev,
+          [key]: value
+        };
+        
+        // If set is changed, reset grouping if it doesn't belong to the new set
+        if (key === 'set') {
+          const groupingsForNewSet = getGroupingsForSet(value);
+          if (prev.grouping && !groupingsForNewSet.includes(prev.grouping)) {
+            newData.grouping = '';
+          }
+        }
+        
+        return newData;
+      });
     } else {
       setFormData(prev => {
         const newFormData = {
@@ -1122,7 +1156,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   }}
                 >
                   <option value="">Keep Current Set</option>
-                  {listFieldOptions.set.map((option) => (
+                  {getDistinctSets().map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -1137,20 +1171,33 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                 <select
                   value={listFormData.grouping}
                   onChange={(e) => handleChange('grouping', e.target.value)}
-                  className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                  disabled={!listFormData.set || listFormData.set.trim() === ''}
+                  className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                    !listFormData.set || listFormData.set.trim() === '' 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : ''
+                  }`}
                   style={{
                     backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                     backgroundPosition: 'right 12px center',
                     backgroundRepeat: 'no-repeat',
                     backgroundSize: '16px'
                   }}
+                  title={!listFormData.set || listFormData.set.trim() === '' 
+                    ? 'Please select a Set first' 
+                    : ''}
                 >
                   <option value="">Keep Current Grouping</option>
-                  {listFieldOptions.grouping.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
+                  {(() => {
+                    const groupingsForSet = listFormData.set 
+                      ? getGroupingsForSet(listFormData.set)
+                      : [];
+                    return groupingsForSet.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ));
+                  })()}
                 </select>
               </div>
             </div>
