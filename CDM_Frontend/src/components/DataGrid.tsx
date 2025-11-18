@@ -1115,8 +1115,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                                 } else if (value.includes('ALL')) {
                                   value = 'ALL';
                                 } else {
-                                  // Join multiple values with comma
-                                  value = value.join(', ');
+                                  // Join multiple values with comma (getGridDriverDisplayValue will handle trimming)
+                                  // Use comma without space to match the format expected by getGridDriverDisplayValue
+                                  value = value.join(',');
                                 }
                               }
                               
