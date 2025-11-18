@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info } from 'lucide-react';
+import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info, Copy } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
@@ -8,6 +8,7 @@ import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { OntologyModal } from './OntologyModal';
+import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 
 interface VariableMetadataField {
   key: string;
@@ -307,6 +308,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // Variable-object relationship modal state
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
+  const [isCloneVariableRelationshipsModalOpen, setIsCloneVariableRelationshipsModalOpen] = useState(false);
 
   // Ontology modal state
   const [ontologyModalOpen, setOntologyModalOpen] = useState<{
@@ -1055,6 +1057,19 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         ontologyViewType="objectRelationships"
         actions={
           <div className="flex items-center gap-2">
+            {/* Clone Relationships Button - Only show if variable has no relationships */}
+            {!(selectedVariable?._isCloned && !selectedVariable?._isSaved) && (
+              <button
+                onClick={() => setIsCloneVariableRelationshipsModalOpen(true)}
+                disabled={!isPanelEnabled || (selectedVariable?.objectRelationships || 0) > 0}
+                className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                  !isPanelEnabled || (selectedVariable?.objectRelationships || 0) > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                }`}
+                title={(selectedVariable?.objectRelationships || 0) > 0 ? "Please delete existing relationships to use clone" : "Clone object relationships from another variable"}
+              >
+                <Copy className="w-5 h-5" />
+              </button>
+            )}
             <button
               onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
               disabled={!isPanelEnabled}
@@ -1086,6 +1101,26 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </button>
         </div>
       )}
+
+      {/* Clone Variable Relationships Modal */}
+      <CloneVariableRelationshipsModal
+        isOpen={isCloneVariableRelationshipsModalOpen}
+        onClose={() => setIsCloneVariableRelationshipsModalOpen(false)}
+        targetVariable={selectedVariable}
+        allVariables={allData}
+        onCloneSuccess={async () => {
+          // Refresh the variable to get updated relationship count
+          if (selectedVariable?.id && onSave) {
+            await onSave({ _refreshRelationships: true });
+          }
+          // Refresh objects data to update the variables count
+          if (onObjectsRefresh) {
+            await onObjectsRefresh();
+          }
+          // Open the relationship modal to show the cloned relationships
+          setIsVariableObjectRelationshipModalOpen(true);
+        }}
+      />
 
       {/* Variable-Object Relationship Modal */}
       <VariableObjectRelationshipModal

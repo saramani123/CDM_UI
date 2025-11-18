@@ -113,18 +113,24 @@ function App() {
       const savedVariablesCustomSortRules = localStorage.getItem('cdm_variables_custom_sort_rules');
       const savedVariablesCustomSortActive = localStorage.getItem('cdm_variables_custom_sort_active');
       const savedVariablesColumnSortActive = localStorage.getItem('cdm_variables_column_sort_active');
+      const savedPredefinedSortEnabled = localStorage.getItem('cdm_variables_predefined_sort_enabled');
+      const savedPredefinedSortOrder = localStorage.getItem('cdm_variables_predefined_sort_order');
       
       return {
         variablesCustomSortRules: savedVariablesCustomSortRules ? JSON.parse(savedVariablesCustomSortRules) : [],
         isVariablesCustomSortActive: savedVariablesCustomSortActive === 'true',
-        isVariablesColumnSortActive: savedVariablesColumnSortActive === 'true'
+        isVariablesColumnSortActive: savedVariablesColumnSortActive === 'true',
+        isPredefinedSortEnabled: savedPredefinedSortEnabled === 'true',
+        predefinedSortOrder: savedPredefinedSortOrder ? JSON.parse(savedPredefinedSortOrder) : undefined
       };
     } catch (error) {
       console.error('Error loading persisted variables state:', error);
       return {
         variablesCustomSortRules: [],
         isVariablesCustomSortActive: false,
-        isVariablesColumnSortActive: false
+        isVariablesColumnSortActive: false,
+        isPredefinedSortEnabled: false,
+        predefinedSortOrder: undefined
       };
     }
   };
@@ -139,6 +145,12 @@ function App() {
   }>>(variablesPersistedState.variablesCustomSortRules);
   const [isVariablesCustomSortActive, setIsVariablesCustomSortActive] = useState(variablesPersistedState.isVariablesCustomSortActive);
   const [isVariablesColumnSortActive, setIsVariablesColumnSortActive] = useState(variablesPersistedState.isVariablesColumnSortActive);
+  const [isVariablesPredefinedSortEnabled, setIsVariablesPredefinedSortEnabled] = useState(variablesPersistedState.isPredefinedSortEnabled);
+  const [variablesPredefinedSortOrder, setVariablesPredefinedSortOrder] = useState<{
+    partOrder: string[];
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  } | undefined>(variablesPersistedState.predefinedSortOrder);
 
   // Lists Custom Sort state - load from localStorage
   const loadListsPersistedState = () => {
@@ -2436,6 +2448,13 @@ function App() {
     sortOn: string;
     order: 'asc' | 'desc';
   }>) => {
+    // If predefined sort is enabled, turn it off (but preserve the order)
+    if (isVariablesPredefinedSortEnabled) {
+      setIsVariablesPredefinedSortEnabled(false);
+      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
+      // Preserve the order - don't clear it!
+    }
+    
     setVariablesCustomSortRules(sortRules);
     setIsVariablesCustomSortActive(sortRules.length > 0);
     setIsVariablesColumnSortActive(false); // Clear column sort when grid sort is applied
@@ -2446,7 +2465,14 @@ function App() {
   };
 
   const handleVariablesColumnSort = () => {
-    // When a column sort is applied, clear grid-level sort
+    // If predefined sort is enabled, turn it off (but preserve the order)
+    if (isVariablesPredefinedSortEnabled) {
+      setIsVariablesPredefinedSortEnabled(false);
+      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
+      // Preserve the order - don't clear it!
+    }
+    
+    // When a column sort is applied, clear grid-level custom sort
     if (isVariablesCustomSortActive) {
       setVariablesCustomSortRules([]);
       setIsVariablesCustomSortActive(false);
@@ -2454,17 +2480,58 @@ function App() {
       localStorage.removeItem('cdm_variables_custom_sort_rules');
       localStorage.removeItem('cdm_variables_custom_sort_active');
     }
+    
     setIsVariablesColumnSortActive(true);
   };
 
+  const handleVariablesPredefinedSortApply = (enabled: boolean, order: {
+    partOrder: string[];
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  }) => {
+    // ALWAYS save the order, even when disabled - the order is sacred
+    setVariablesPredefinedSortOrder(order);
+    localStorage.setItem('cdm_variables_predefined_sort_order', JSON.stringify(order));
+    
+    setIsVariablesPredefinedSortEnabled(enabled);
+    localStorage.setItem('cdm_variables_predefined_sort_enabled', enabled.toString());
+    
+    // If enabling predefined sort, clear column sort (any column, not just Part/Group/Variable)
+    if (enabled) {
+      try {
+        const savedSortConfig = localStorage.getItem('cdm_variables_sort_config');
+        if (savedSortConfig) {
+          const sortConfig = JSON.parse(savedSortConfig);
+          // Clear column sort if it's for Part, Group, or Variable
+          if (sortConfig && ['part', 'group', 'variable'].includes(sortConfig.key)) {
+            localStorage.removeItem('cdm_variables_sort_config');
+            setIsVariablesColumnSortActive(false);
+            localStorage.removeItem('cdm_variables_column_sort_active');
+          }
+        }
+      } catch (error) {
+        console.error('Error clearing column sort:', error);
+      }
+    }
+    console.log('Variables predefined sort applied:', { enabled, order });
+  };
+
   const handleClearVariablesSorts = () => {
+    // Clear custom sort and column sort, but PRESERVE predefined sort order
     setVariablesCustomSortRules([]);
     setIsVariablesCustomSortActive(false);
     setIsVariablesColumnSortActive(false);
-    // Clear localStorage
+    setIsVariablesPredefinedSortEnabled(false);
+    // DO NOT clear predefined sort order - it's sacred!
+    // setVariablesPredefinedSortOrder(undefined); // REMOVED
+    // localStorage.removeItem('cdm_variables_predefined_sort_order'); // REMOVED
+    
+    // Clear localStorage for active sorts only
     localStorage.removeItem('cdm_variables_custom_sort_rules');
     localStorage.removeItem('cdm_variables_custom_sort_active');
     localStorage.removeItem('cdm_variables_column_sort_active');
+    localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
+    // Note: predefined sort order is preserved in localStorage
   };
 
   const handleListsCustomSortApply = (sortRules: Array<{
@@ -2845,6 +2912,8 @@ function App() {
               isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : activeTab === 'lists' ? isListsCustomSortActive : false}
               isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : activeTab === 'lists' ? isListsColumnSortActive : false}
               gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
+              isPredefinedSortEnabled={activeTab === 'variables' ? isVariablesPredefinedSortEnabled : false}
+              predefinedSortOrder={activeTab === 'variables' ? variablesPredefinedSortOrder : undefined}
             />
           </div>
 
@@ -3040,8 +3109,20 @@ function App() {
         isOpen={isVariablesCustomSortOpen}
         onClose={() => setIsVariablesCustomSortOpen(false)}
         onApplySort={handleVariablesCustomSortApply}
+        onApplyPredefinedSort={handleVariablesPredefinedSortApply}
         columns={variableColumns}
         currentSortRules={variablesCustomSortRules}
+        variableData={variableData}
+        sortConfig={(() => {
+          try {
+            const savedSortConfig = localStorage.getItem('cdm_variables_sort_config');
+            return savedSortConfig ? JSON.parse(savedSortConfig) : null;
+          } catch {
+            return null;
+          }
+        })()}
+        isPredefinedSortEnabled={isVariablesPredefinedSortEnabled}
+        predefinedSortOrder={variablesPredefinedSortOrder}
       />
 
       {/* Views Modal - Objects */}

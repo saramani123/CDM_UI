@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy } from 'lucide-react';
 import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
+import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 
 interface ObjectRelationship {
   id: string;
@@ -68,6 +69,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   // Modal state for object relationships
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
+  const [isCloneVariableRelationshipsModalOpen, setIsCloneVariableRelationshipsModalOpen] = useState(false);
   
   // Confirmation dialog state
   const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
@@ -107,6 +109,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const hasSelectedVariables = selectedCount > 0 && (getSelectedVariableIds() || getSelectedVariableNames());
+  
+  // Get selected variables for clone modal
+  const selectedVariables = useMemo(() => {
+    if (!selectedVariableIds || selectedVariableIds.length === 0) return [];
+    return allData.filter(v => selectedVariableIds.includes(v.id));
+  }, [selectedVariableIds, allData]);
+
+  // Check if all selected variables have no object relationships
+  const hasExistingRelationships = useMemo(() => {
+    if (selectedVariables.length === 0) return false;
+    return selectedVariables.some(v => (v.objectRelationships || 0) > 0);
+  }, [selectedVariables]);
+
+  // Get list of variables with relationships for error message
+  const variablesWithRelationships = useMemo(() => {
+    return selectedVariables
+      .filter(v => (v.objectRelationships || 0) > 0)
+      .map(v => v.variable)
+      .filter(Boolean);
+  }, [selectedVariables]);
   
   // Get objects data - use hook if not provided as prop
   const { objects: objectsFromHook } = useObjects();
@@ -848,16 +870,35 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="objectRelationships"
         actions={
-          <button
-            onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
-            disabled={selectedCount === 0}
-            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-              selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            title={selectedCount === 0 ? "Select variables to view relationships" : "View and manage relationships"}
-          >
-            View Relationships
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Clone Relationships Button */}
+            <button
+              onClick={() => setIsCloneVariableRelationshipsModalOpen(true)}
+              disabled={selectedCount === 0 || hasExistingRelationships}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedCount === 0 || hasExistingRelationships ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={
+                selectedCount === 0 
+                  ? "Select variables to clone relationships" 
+                  : hasExistingRelationships 
+                    ? `Please delete existing relationships for: ${variablesWithRelationships.join(', ')}` 
+                    : "Clone object relationships from another variable"
+              }
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
+              disabled={selectedCount === 0}
+              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={selectedCount === 0 ? "Select variables to view relationships" : "View and manage relationships"}
+            >
+              View Relationships
+            </button>
+          </div>
         }
       >
         <div className="py-4">
@@ -880,6 +921,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           Apply to {selectedCount} Variables
         </button>
       </div>
+
+      {/* Clone Variable Relationships Modal */}
+      <CloneVariableRelationshipsModal
+        isOpen={isCloneVariableRelationshipsModalOpen}
+        onClose={() => setIsCloneVariableRelationshipsModalOpen(false)}
+        targetVariables={selectedVariables}
+        allVariables={allData}
+        onCloneSuccess={async () => {
+          // Refresh data after cloning relationships
+          if (onSave) {
+            await onSave({ _refreshRelationships: true });
+          }
+          // Open the relationship modal to show the cloned relationships
+          setIsVariableObjectRelationshipModalOpen(true);
+        }}
+      />
 
       {/* Variable-Object Relationship Modal */}
       <VariableObjectRelationshipModal

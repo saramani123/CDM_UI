@@ -1986,3 +1986,280 @@ async def delete_variable_list_relationship(variable_id: str, list_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to delete variable-list relationship: {str(e)}")
+
+@router.post("/variables/{target_variable_id}/clone-object-relationships/{source_variable_id}")
+async def clone_variable_object_relationships(target_variable_id: str, source_variable_id: str):
+    """
+    Clone all object relationships from a source variable to a target variable.
+    Only works if the target variable has no existing relationships.
+    Creates HAS_SPECIFIC_VARIABLE relationships from objects to the target variable.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if target variable exists
+            target_check = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id, v.variable as variable_name
+            """, variable_id=target_variable_id).single()
+            
+            if not target_check:
+                raise HTTPException(status_code=404, detail=f"Target variable with ID {target_variable_id} not found")
+            
+            # Check if source variable exists
+            source_check = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id, v.variable as variable_name
+            """, variable_id=source_variable_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source variable with ID {source_variable_id} not found")
+            
+            # Check if target variable already has relationships
+            existing_rels_count = session.run("""
+                MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                RETURN count(o) as rel_count
+            """, variable_id=target_variable_id).single()
+            
+            has_variable_count = session.run("""
+                MATCH (o:Object)-[:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                RETURN count(DISTINCT o) as rel_count
+            """, variable_id=target_variable_id).single()
+            
+            total_existing = (existing_rels_count["rel_count"] if existing_rels_count else 0) + (has_variable_count["rel_count"] if has_variable_count else 0)
+            
+            if total_existing > 0:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Target variable already has object relationships. Please delete existing relationships before cloning."
+                )
+            
+            # Get all objects that have relationships to source variable
+            # Get HAS_SPECIFIC_VARIABLE relationships
+            specific_relationships = session.run("""
+                MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $source_id})
+                RETURN DISTINCT o.id as object_id, o.being as being, o.avatar as avatar, o.object as object
+            """, source_id=source_variable_id).data()
+            
+            # Get HAS_VARIABLE relationships (one relationship that applies to all objects)
+            has_variable_exists = session.run("""
+                MATCH (o:Object)-[:HAS_VARIABLE]->(v:Variable {id: $source_id})
+                RETURN count(DISTINCT o) as count
+            """, source_id=source_variable_id).single()
+            
+            has_variable_relationship = (has_variable_exists["count"] if has_variable_exists else 0) > 0
+            
+            if not specific_relationships and not has_variable_relationship:
+                return {
+                    "message": "Source variable has no object relationships to clone",
+                    "cloned_count": 0
+                }
+            
+            cloned_count = 0
+            
+            # Clone HAS_SPECIFIC_VARIABLE relationships
+            for rel in specific_relationships:
+                object_id = rel["object_id"]
+                try:
+                    # Create HAS_SPECIFIC_VARIABLE relationship from object to target variable
+                    result = session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        MATCH (v:Variable {id: $target_id})
+                        MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                        ON CREATE SET r.createdBy = "clone"
+                        RETURN r
+                    """, object_id=object_id, target_id=target_variable_id)
+                    
+                    if result.single():
+                        cloned_count += 1
+                        print(f"✅ Cloned HAS_SPECIFIC_VARIABLE relationship: Object {object_id} -> Variable {target_variable_id}")
+                except Exception as e:
+                    print(f"⚠️ Error cloning relationship for object {object_id}: {e}")
+            
+            # Clone HAS_VARIABLE relationship if it exists
+            if has_variable_relationship:
+                # Get all objects and create HAS_VARIABLE relationship to target variable
+                all_objects = session.run("""
+                    MATCH (o:Object)
+                    RETURN o.id as object_id
+                """).data()
+                
+                for obj in all_objects:
+                    object_id = obj["object_id"]
+                    try:
+                        result = session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            MATCH (v:Variable {id: $target_id})
+                            MERGE (o)-[r:HAS_VARIABLE]->(v)
+                            ON CREATE SET r.createdBy = "clone"
+                            RETURN r
+                        """, object_id=object_id, target_id=target_variable_id)
+                        
+                        if result.single():
+                            cloned_count += 1
+                    except Exception as e:
+                        print(f"⚠️ Error cloning HAS_VARIABLE relationship for object {object_id}: {e}")
+            
+            # Update the target variable's objectRelationships count
+            final_count = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+                RETURN v.objectRelationships as count
+            """, variable_id=target_variable_id).single()
+            
+            return {
+                "message": f"Successfully cloned {cloned_count} object relationship(s)",
+                "cloned_count": cloned_count
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cloning variable object relationships: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to clone variable object relationships: {str(e)}")
+
+@router.post("/variables/bulk-clone-object-relationships/{source_variable_id}")
+async def bulk_clone_variable_object_relationships(source_variable_id: str, target_variable_ids: List[str] = Body(...)):
+    """
+    Clone all object relationships from a source variable to multiple target variables.
+    Only works if all target variables have no existing relationships.
+    Creates HAS_SPECIFIC_VARIABLE relationships from objects to each target variable.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if source variable exists
+            source_check = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id, v.variable as variable_name
+            """, variable_id=source_variable_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source variable with ID {source_variable_id} not found")
+            
+            # Check if all target variables exist and have no relationships
+            for target_id in target_variable_ids:
+                target_check = session.run("""
+                    MATCH (v:Variable {id: $variable_id})
+                    RETURN v.id as id, v.variable as variable_name
+                """, variable_id=target_id).single()
+                
+                if not target_check:
+                    raise HTTPException(status_code=404, detail=f"Target variable with ID {target_id} not found")
+                
+                # Check if target variable already has relationships
+                existing_rels_count = session.run("""
+                    MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+                    RETURN count(o) as rel_count
+                """, variable_id=target_id).single()
+                
+                has_variable_count = session.run("""
+                    MATCH (o:Object)-[:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                    RETURN count(DISTINCT o) as rel_count
+                """, variable_id=target_id).single()
+                
+                total_existing = (existing_rels_count["rel_count"] if existing_rels_count else 0) + (has_variable_count["rel_count"] if has_variable_count else 0)
+                
+                if total_existing > 0:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Target variable {target_id} already has object relationships. Please delete existing relationships before cloning."
+                    )
+            
+            # Get all objects that have relationships to source variable
+            # Get HAS_SPECIFIC_VARIABLE relationships
+            specific_relationships = session.run("""
+                MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $source_id})
+                RETURN DISTINCT o.id as object_id, o.being as being, o.avatar as avatar, o.object as object
+            """, source_id=source_variable_id).data()
+            
+            # Get HAS_VARIABLE relationships
+            has_variable_exists = session.run("""
+                MATCH (o:Object)-[:HAS_VARIABLE]->(v:Variable {id: $source_id})
+                RETURN count(DISTINCT o) as count
+            """, source_id=source_variable_id).single()
+            
+            has_variable_relationship = (has_variable_exists["count"] if has_variable_exists else 0) > 0
+            
+            if not specific_relationships and not has_variable_relationship:
+                return {
+                    "message": "Source variable has no object relationships to clone",
+                    "cloned_count": 0,
+                    "targets_processed": len(target_variable_ids)
+                }
+            
+            total_cloned = 0
+            
+            # Clone to each target variable
+            for target_id in target_variable_ids:
+                target_cloned = 0
+                
+                # Clone HAS_SPECIFIC_VARIABLE relationships
+                for rel in specific_relationships:
+                    object_id = rel["object_id"]
+                    try:
+                        result = session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            MATCH (v:Variable {id: $target_id})
+                            MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                            ON CREATE SET r.createdBy = "clone"
+                            RETURN r
+                        """, object_id=object_id, target_id=target_id)
+                        
+                        if result.single():
+                            target_cloned += 1
+                    except Exception as e:
+                        print(f"⚠️ Error cloning relationship for object {object_id} to variable {target_id}: {e}")
+                
+                # Clone HAS_VARIABLE relationship if it exists
+                if has_variable_relationship:
+                    all_objects = session.run("""
+                        MATCH (o:Object)
+                        RETURN o.id as object_id
+                    """).data()
+                    
+                    for obj in all_objects:
+                        object_id = obj["object_id"]
+                        try:
+                            result = session.run("""
+                                MATCH (o:Object {id: $object_id})
+                                MATCH (v:Variable {id: $target_id})
+                                MERGE (o)-[r:HAS_VARIABLE]->(v)
+                                ON CREATE SET r.createdBy = "clone"
+                                RETURN r
+                            """, object_id=object_id, target_id=target_id)
+                            
+                            if result.single():
+                                target_cloned += 1
+                        except Exception as e:
+                            print(f"⚠️ Error cloning HAS_VARIABLE relationship for object {object_id} to variable {target_id}: {e}")
+                
+                # Update the target variable's objectRelationships count
+                session.run("""
+                    MATCH (v:Variable {id: $variable_id})
+                    SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+                """, variable_id=target_id)
+                
+                total_cloned += target_cloned
+            
+            return {
+                "message": f"Successfully cloned relationships to {len(target_variable_ids)} variable(s)",
+                "cloned_count": total_cloned,
+                "targets_processed": len(target_variable_ids)
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bulk cloning variable object relationships: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to bulk clone variable object relationships: {str(e)}")

@@ -14,6 +14,12 @@ interface Column {
   render?: (row: any) => React.ReactNode;
 }
 
+interface PredefinedSortOrder {
+  partOrder: string[];
+  groupOrders: Record<string, string[]>; // key: part, value: array of groups
+  variableOrders: Record<string, string[]>; // key: "part|group", value: array of variables
+}
+
 interface DataGridProps {
   columns: Column[];
   data: Record<string, any>[];
@@ -42,6 +48,8 @@ interface DataGridProps {
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
   gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
+  isPredefinedSortEnabled?: boolean;
+  predefinedSortOrder?: PredefinedSortOrder;
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -66,7 +74,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
   relationshipData,
   onRelationshipCheckboxChange,
   onRelationshipRowClick,
-  gridType = 'objects' // Default to 'objects' for backward compatibility
+  gridType = 'objects', // Default to 'objects' for backward compatibility
+  isPredefinedSortEnabled = false,
+  predefinedSortOrder
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
@@ -413,7 +423,60 @@ export const DataGrid: React.FC<DataGridProps> = ({
       console.log('🔍 DataGrid - affected items:', affectedItems.map(item => ({ id: item.id, object: item.object, driver: item.driver })));
     }
 
+    // Apply predefined sort for Variables (Part, Group, Variable) - this is applied BEFORE custom sort
+    if (gridType === 'variables' && isPredefinedSortEnabled && predefinedSortOrder) {
+      console.log('🎯 APPLYING PREDEFINED SORT:', predefinedSortOrder);
+      
+      processedData.sort((a, b) => {
+        // First sort by Part
+        const aPart = String(a.part || '');
+        const bPart = String(b.part || '');
+        const aPartIndex = predefinedSortOrder.partOrder.indexOf(aPart);
+        const bPartIndex = predefinedSortOrder.partOrder.indexOf(bPart);
+        
+        // If parts are different, sort by part order
+        if (aPartIndex !== bPartIndex) {
+          // If either part is not in the order, put it at the end
+          if (aPartIndex === -1) return 1;
+          if (bPartIndex === -1) return -1;
+          return aPartIndex - bPartIndex;
+        }
+        
+        // If parts are the same, sort by Group
+        const aGroup = String(a.group || '');
+        const bGroup = String(b.group || '');
+        const groupOrder = predefinedSortOrder.groupOrders[aPart] || [];
+        const aGroupIndex = groupOrder.indexOf(aGroup);
+        const bGroupIndex = groupOrder.indexOf(bGroup);
+        
+        if (aGroupIndex !== bGroupIndex) {
+          if (aGroupIndex === -1) return 1;
+          if (bGroupIndex === -1) return -1;
+          return aGroupIndex - bGroupIndex;
+        }
+        
+        // If groups are the same, sort by Variable
+        const aVariable = String(a.variable || '');
+        const bVariable = String(b.variable || '');
+        const key = `${aPart}|${aGroup}`;
+        const variableOrder = predefinedSortOrder.variableOrders[key] || [];
+        const aVariableIndex = variableOrder.indexOf(aVariable);
+        const bVariableIndex = variableOrder.indexOf(bVariable);
+        
+        if (aVariableIndex !== bVariableIndex) {
+          if (aVariableIndex === -1) return 1;
+          if (bVariableIndex === -1) return -1;
+          return aVariableIndex - bVariableIndex;
+        }
+        
+        return 0; // All are equal
+      });
+      
+      console.log('✅ PREDEFINED SORT APPLIED');
+    }
+
     // Apply custom sort rules (grid-level sort) - this takes priority over individual column sorts
+    // Custom sort is applied AFTER predefined sort, so it can sort by Sector, Domain, Country
     if (customSortRules.length > 0) {
       console.log('🎯 APPLYING CUSTOM SORT RULES:', customSortRules);
       
@@ -507,7 +570,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     }
 
     return processedData;
-  }, [data, filters, columnFilters, sortConfig, affectedIds, customSortRules]);
+  }, [data, filters, columnFilters, sortConfig, affectedIds, customSortRules, gridType, isPredefinedSortEnabled, predefinedSortOrder]);
 
   // Calculate available filter options for each column based on current filters
   const getAvailableFilterOptions = useMemo(() => {

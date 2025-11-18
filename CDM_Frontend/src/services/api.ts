@@ -683,6 +683,22 @@ class ApiService {
     });
   }
 
+  async cloneVariableRelationships(targetVariableId: string, sourceVariableId: string) {
+    return this.request(`/variables/${targetVariableId}/clone-object-relationships/${sourceVariableId}`, {
+      method: 'POST',
+    });
+  }
+
+  async bulkCloneVariableRelationships(sourceVariableId: string, targetVariableIds: string[]) {
+    return this.request(`/variables/bulk-clone-object-relationships/${sourceVariableId}`, {
+      method: 'POST',
+      body: JSON.stringify(targetVariableIds),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
   async bulkUploadVariables(file: File) {
     const formData = new FormData();
     formData.append('file', file);
