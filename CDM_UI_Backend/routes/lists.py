@@ -161,15 +161,17 @@ async def get_lists():
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(sector:Sector)
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(domain:Domain)
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(country:Country)
+                OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
                      collect(DISTINCT domain.name) as domains,
-                     collect(DISTINCT country.name) as countries
+                     collect(DISTINCT country.name) as countries,
+                     count(DISTINCT v) as variables_count
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
                        s.name as set_name, g.name as grouping_name,
-                       sectors, domains, countries
+                       sectors, domains, countries, variables_count
                 ORDER BY l.id
             """)
 
@@ -198,6 +200,7 @@ async def get_lists():
                     "graph": record["graph"] or "",
                     "origin": record["origin"] or "",
                     "status": record["status"] or "Active",
+                    "variables": record["variables_count"] or 0,
                     "variablesAttachedList": [],
                     "listValuesList": []
                 }
@@ -534,14 +537,16 @@ async def get_list(list_id: str):
                 OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (d:Domain)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
+                OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
-                     collect(DISTINCT c.name) as countries
+                     collect(DISTINCT c.name) as countries,
+                     count(DISTINCT v) as variables_count
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries
+                       sectors, domains, countries, variables_count
             """, {"id": list_id})
             
             record = result.single()
@@ -570,6 +575,7 @@ async def get_list(list_id: str):
                 "graph": record["graph"] or "",
                 "origin": record["origin"] or "",
                 "status": record["status"] or "Active",
+                "variables": record["variables_count"] or 0,
                 "variablesAttachedList": [],
                 "listValuesList": []
             }
