@@ -1580,7 +1580,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </div>
             <div className="border border-ag-dark-border rounded">
               {/* Table Header */}
-              <div className="grid grid-cols-3 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="grid grid-cols-[0.7fr_0.7fr_1.6fr] gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
@@ -1588,7 +1588,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               {/* Table Rows - Multiple entries */}
               <div className="divide-y divide-ag-dark-border">
                 {uniqueIdEntries.map((entry, index) => (
-                  <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[1fr_1fr_1fr_auto]' : 'grid-cols-3'}`}>
+                  <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[0.7fr_0.7fr_1.6fr_auto]' : 'grid-cols-[0.7fr_0.7fr_1.6fr]'}`}>
                     <input
                       type="text"
                       value="Identifier"
@@ -1639,7 +1639,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </div>
             <div className="border border-ag-dark-border rounded">
               {/* Table Header */}
-              <div className="grid grid-cols-[25px_0.9fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
@@ -1653,7 +1653,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                     : [];
                   
                   return (
-                    <div key={compositeKey.id} className="grid grid-cols-[25px_0.9fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
+                    <div key={compositeKey.id} className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
                       {/* Row Label */}
                       <div className="flex items-center">
                         <span className="text-[10px] font-medium text-ag-dark-text">{compositeKey.id}</span>

@@ -289,7 +289,6 @@ function App() {
     { id: 'objects', label: 'Objects', count: objectsCount },
     { id: 'variables', label: 'Variables', count: variablesCount },
     { id: 'lists', label: 'Lists', count: 45 }, // Keep lists as static for now
-    { id: 'functions', label: 'Functions' },
     { id: 'ledgers', label: 'Ledgers' },
     { id: 'sources', label: 'Sources' }
   ], [driversCount, objectsCount, variablesCount]);
@@ -2653,7 +2652,7 @@ function App() {
       {/* Main Content */}
       <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
-        {['functions', 'ledgers', 'sources'].includes(activeTab) ? (
+        {['ledgers', 'sources'].includes(activeTab) ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
               <div className="text-6xl mb-4">🚧</div>
