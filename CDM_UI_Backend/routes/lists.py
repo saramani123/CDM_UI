@@ -624,3 +624,200 @@ async def get_list_variable_relationships(list_id: str):
         print(f"Error fetching list variable relationships: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch list variable relationships: {str(e)}")
 
+@router.post("/lists/{target_list_id}/clone-applicability/{source_list_id}")
+async def clone_list_applicability(target_list_id: str, source_list_id: str):
+    """
+    Clone all variable applicability from a source list to a target list.
+    Only works if the target list has no existing applicability.
+    Creates HAS_LIST relationships from variables to the target list.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if target list exists
+            target_check = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id, l.list as list_name
+            """, list_id=target_list_id).single()
+            
+            if not target_check:
+                raise HTTPException(status_code=404, detail=f"Target list with ID {target_list_id} not found")
+            
+            # Check if source list exists
+            source_check = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id, l.list as list_name
+            """, list_id=source_list_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source list with ID {source_list_id} not found")
+            
+            # Check if target list already has applicability
+            existing_rels_count = session.run("""
+                MATCH (v:Variable)-[:HAS_LIST]->(l:List {id: $list_id})
+                RETURN count(v) as rel_count
+            """, list_id=target_list_id).single()
+            
+            if existing_rels_count and existing_rels_count["rel_count"] > 0:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Target list already has applicability. Please delete existing applicability before cloning."
+                )
+            
+            # Get all variables that have relationships to source list
+            source_variables = session.run("""
+                MATCH (v:Variable)-[:HAS_LIST]->(l:List {id: $source_id})
+                RETURN DISTINCT v.id as variable_id
+            """, source_id=source_list_id).data()
+            
+            if not source_variables:
+                return {
+                    "message": "Source list has no applicability to clone",
+                    "cloned_count": 0
+                }
+            
+            cloned_count = 0
+            
+            # Clone relationships
+            for var_record in source_variables:
+                variable_id = var_record["variable_id"]
+                try:
+                    # Create HAS_LIST relationship from variable to target list
+                    result = session.run("""
+                        MATCH (v:Variable {id: $variable_id})
+                        MATCH (l:List {id: $target_id})
+                        MERGE (v)-[r:HAS_LIST]->(l)
+                        ON CREATE SET r.createdBy = "clone"
+                        RETURN r
+                    """, variable_id=variable_id, target_id=target_list_id)
+                    
+                    if result.single():
+                        cloned_count += 1
+                        print(f"✅ Cloned HAS_LIST relationship: Variable {variable_id} -> List {target_list_id}")
+                except Exception as e:
+                    print(f"⚠️ Error cloning relationship for variable {variable_id}: {e}")
+            
+            # Update the target list's variables count
+            final_count = session.run("""
+                MATCH (l:List {id: $list_id})
+                SET l.variables = size([(v:Variable)-[:HAS_LIST]->(l) | v])
+                RETURN l.variables as count
+            """, list_id=target_list_id).single()
+            
+            return {
+                "message": f"Successfully cloned {cloned_count} variable relationship(s)",
+                "cloned_count": cloned_count
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error cloning list applicability: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to clone list applicability: {str(e)}")
+
+@router.post("/lists/bulk-clone-applicability/{source_list_id}")
+async def bulk_clone_list_applicability(source_list_id: str, target_list_ids: List[str] = Body(...)):
+    """
+    Clone all variable applicability from a source list to multiple target lists.
+    Only works if all target lists have no existing applicability.
+    Creates HAS_LIST relationships from variables to each target list.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if source list exists
+            source_check = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id, l.list as list_name
+            """, list_id=source_list_id).single()
+            
+            if not source_check:
+                raise HTTPException(status_code=404, detail=f"Source list with ID {source_list_id} not found")
+            
+            # Check if all target lists exist and have no relationships
+            for target_id in target_list_ids:
+                target_check = session.run("""
+                    MATCH (l:List {id: $list_id})
+                    RETURN l.id as id, l.list as list_name
+                """, list_id=target_id).single()
+                
+                if not target_check:
+                    raise HTTPException(status_code=404, detail=f"Target list with ID {target_id} not found")
+                
+                # Check if target list already has applicability
+                existing_rels_count = session.run("""
+                    MATCH (v:Variable)-[:HAS_LIST]->(l:List {id: $list_id})
+                    RETURN count(v) as rel_count
+                """, list_id=target_id).single()
+                
+                if existing_rels_count and existing_rels_count["rel_count"] > 0:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Target list {target_id} already has applicability. Please delete existing applicability before cloning."
+                    )
+            
+            # Get all variables that have relationships to source list
+            source_variables = session.run("""
+                MATCH (v:Variable)-[:HAS_LIST]->(l:List {id: $source_id})
+                RETURN DISTINCT v.id as variable_id
+            """, source_id=source_list_id).data()
+            
+            if not source_variables:
+                return {
+                    "message": "Source list has no applicability to clone",
+                    "cloned_count": 0,
+                    "targets_processed": len(target_list_ids)
+                }
+            
+            total_cloned = 0
+            
+            # Clone to each target list
+            for target_id in target_list_ids:
+                target_cloned = 0
+                
+                for var_record in source_variables:
+                    variable_id = var_record["variable_id"]
+                    try:
+                        result = session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (l:List {id: $target_id})
+                            MERGE (v)-[r:HAS_LIST]->(l)
+                            ON CREATE SET r.createdBy = "clone"
+                            RETURN r
+                        """, variable_id=variable_id, target_id=target_id)
+                        
+                        if result.single():
+                            target_cloned += 1
+                    except Exception as e:
+                        print(f"⚠️ Error cloning relationship for variable {variable_id} to list {target_id}: {e}")
+                
+                # Update the target list's variables count
+                session.run("""
+                    MATCH (l:List {id: $list_id})
+                    SET l.variables = size([(v:Variable)-[:HAS_LIST]->(l) | v])
+                """, list_id=target_id)
+                
+                total_cloned += target_cloned
+            
+            return {
+                "message": f"Successfully cloned applicability to {len(target_list_ids)} list(s)",
+                "cloned_count": total_cloned,
+                "targets_processed": len(target_list_ids)
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error bulk cloning list applicability: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to bulk clone list applicability: {str(e)}")
+

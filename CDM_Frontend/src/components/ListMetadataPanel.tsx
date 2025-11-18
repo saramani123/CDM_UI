@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Network, Eye } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Network, Eye, Copy } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
@@ -7,6 +7,7 @@ import { useVariables } from '../hooks/useVariables';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
+import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { apiService } from '../services/api';
 
 interface ListMetadataField {
@@ -214,6 +215,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+  const [isCloneListApplicabilityModalOpen, setIsCloneListApplicabilityModalOpen] = useState(false);
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
   const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
   
@@ -831,16 +833,29 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         showRelationshipsGraph={true}
         actions={
-          <button
-            onClick={() => setIsVariableRelationshipModalOpen(true)}
-            disabled={!isPanelEnabled}
-            className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-            title={!isPanelEnabled ? "Select a list to view applicability" : "View and manage applicability"}
-          >
-            View Applicability
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Clone Applicability Button - Only show if list has no applicability */}
+            <button
+              onClick={() => setIsCloneListApplicabilityModalOpen(true)}
+              disabled={!isPanelEnabled || (selectedList?.variables || 0) > 0}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled || (selectedList?.variables || 0) > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={(selectedList?.variables || 0) > 0 ? "Please delete existing applicability to use clone" : "Clone applicability from another list"}
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariableRelationshipModalOpen(true)}
+              disabled={!isPanelEnabled}
+              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={!isPanelEnabled ? "Select a list to view applicability" : "View and manage applicability"}
+            >
+              View Applicability
+            </button>
+          </div>
         }
       >
         <div className="mb-6">
@@ -993,6 +1008,24 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onClose={() => setIsListValuesUploadOpen(false)}
         type="list-values"
         onUpload={handleListValuesCsvUpload}
+      />
+
+      {/* Clone List Applicability Modal */}
+      <CloneListApplicabilityModal
+        isOpen={isCloneListApplicabilityModalOpen}
+        onClose={() => setIsCloneListApplicabilityModalOpen(false)}
+        targetList={selectedList}
+        allLists={allData}
+        onCloneSuccess={async () => {
+          // Reload relationships after cloning
+          await loadRelationships();
+          // Refresh data after cloning
+          if (onSave) {
+            await onSave({ _refreshRelationships: true });
+          }
+          // Open the applicability modal to show the cloned relationships
+          setIsVariableRelationshipModalOpen(true);
+        }}
       />
 
       {/* Variable List Applicability Modal */}

@@ -545,6 +545,22 @@ class ApiService {
     });
   }
 
+  async cloneListApplicability(targetListId: string, sourceListId: string) {
+    return this.request(`/lists/${targetListId}/clone-applicability/${sourceListId}`, {
+      method: 'POST',
+    });
+  }
+
+  async bulkCloneListApplicability(sourceListId: string, targetListIds: string[]) {
+    return this.request(`/lists/bulk-clone-applicability/${sourceListId}`, {
+      method: 'POST',
+      body: JSON.stringify(targetListIds),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
   // Drivers API
   async getDrivers(type: string) {
     return this.request(`/drivers/${type}`);

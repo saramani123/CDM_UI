@@ -14,6 +14,7 @@ import { listFieldOptions } from '../data/listsData';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
+import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { apiService } from '../services/api';
 
 interface CompositeKey {
@@ -166,6 +167,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
+  const [isCloneListApplicabilityModalOpen, setIsCloneListApplicabilityModalOpen] = useState(false);
   const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
   
   // Lists ontology modal state
@@ -1236,13 +1238,42 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
             showRelationshipsGraph={true}
             actions={
-              <button
-                onClick={() => setIsVariableRelationshipModalOpen(true)}
-                className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                title="View and manage applicability"
-              >
-                View Applicability
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Clone Applicability Button - Only show if no selected lists have applicability */}
+                {(() => {
+                  const hasExistingApplicability = activeTab === 'lists' && selectedObjects.length > 0 && 
+                    selectedObjects.some((list: any) => (list.variables || 0) > 0);
+                  const listsWithApplicability = activeTab === 'lists' && selectedObjects.length > 0
+                    ? selectedObjects.filter((list: any) => (list.variables || 0) > 0).map((list: any) => list.list).filter(Boolean)
+                    : [];
+                  
+                  return (
+                    <button
+                      onClick={() => setIsCloneListApplicabilityModalOpen(true)}
+                      disabled={selectedCount === 0 || hasExistingApplicability}
+                      className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                        selectedCount === 0 || hasExistingApplicability ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                      }`}
+                      title={
+                        selectedCount === 0 
+                          ? "Select lists to clone applicability" 
+                          : hasExistingApplicability 
+                            ? `Please delete existing applicability for: ${listsWithApplicability.join(', ')}` 
+                            : "Clone applicability from another list"
+                      }
+                    >
+                      <Copy className="w-5 h-5" />
+                    </button>
+                  );
+                })()}
+                <button
+                  onClick={() => setIsVariableRelationshipModalOpen(true)}
+                  className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                  title="View and manage applicability"
+                >
+                  View Applicability
+                </button>
+              </div>
             }
           >
             <div className="mb-6">
@@ -1876,20 +1907,36 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
 
       {/* Variable List Applicability Modal - Lists */}
       {activeTab === 'lists' && (
-        <VariableListRelationshipModal
-          isOpen={isVariableRelationshipModalOpen}
-          onClose={() => setIsVariableRelationshipModalOpen(false)}
-          selectedList={null}
-          selectedLists={selectedObjects}
-          allVariables={variablesData}
-          onSave={async () => {
-            // Refresh data after saving relationships
-            if (onSave) {
-              onSave({});
-            }
-          }}
-          isBulkMode={true}
-        />
+        <>
+          <CloneListApplicabilityModal
+            isOpen={isCloneListApplicabilityModalOpen}
+            onClose={() => setIsCloneListApplicabilityModalOpen(false)}
+            targetLists={selectedObjects}
+            allLists={allData}
+            onCloneSuccess={async () => {
+              // Refresh data after cloning
+              if (onSave) {
+                await onSave({ _refreshRelationships: true });
+              }
+              // Open the applicability modal to show the cloned relationships
+              setIsVariableRelationshipModalOpen(true);
+            }}
+          />
+          <VariableListRelationshipModal
+            isOpen={isVariableRelationshipModalOpen}
+            onClose={() => setIsVariableRelationshipModalOpen(false)}
+            selectedList={null}
+            selectedLists={selectedObjects}
+            allVariables={variablesData}
+            onSave={async () => {
+              // Refresh data after saving relationships
+              if (onSave) {
+                onSave({});
+              }
+            }}
+            isBulkMode={true}
+          />
+        </>
       )}
 
       {/* Variable-List Applicability Graph Modal - Lists */}
