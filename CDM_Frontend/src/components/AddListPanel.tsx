@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
@@ -68,7 +68,12 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
   // Variables attached and list values
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>([]);
-  const [listValues, setListValues] = useState<ListValue[]>([]);
+  const [listValuesText, setListValuesText] = useState<string>('');
+  
+  // Refs for textarea management
+  const listValuesTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isListValuesTextareaFocusedRef = useRef(false);
+  const lastListValuesChangeTimeRef = useRef(0);
 
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
@@ -173,22 +178,30 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setVariablesAttached(prev => prev.filter(variable => variable.id !== id));
   };
 
-  const handleListValueChange = (id: string, value: string) => {
-    setListValues(prev => prev.map(listValue => 
-      listValue.id === id ? { ...listValue, value } : listValue
-    ));
+  // Handle list values textarea changes
+  const handleListValuesTextChange = (text: string) => {
+    const textarea = listValuesTextareaRef.current;
+    const cursorPosition = textarea?.selectionStart || 0;
+    lastListValuesChangeTimeRef.current = Date.now();
+    setListValuesText(text);
+    // Restore cursor position after state update
+    requestAnimationFrame(() => {
+      if (listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
+        listValuesTextareaRef.current.focus();
+        const maxPos = listValuesTextareaRef.current.value.length;
+        const safePos = Math.min(cursorPosition, maxPos);
+        listValuesTextareaRef.current.setSelectionRange(safePos, safePos);
+      }
+    });
   };
 
-  const addListValue = () => {
-    const newListValue: ListValue = {
-      id: Date.now().toString(),
-      value: ''
-    };
-    setListValues(prev => [...prev, newListValue]);
-  };
-
-  const deleteListValue = (id: string) => {
-    setListValues(prev => prev.filter(listValue => listValue.id !== id));
+  // Sort list values A-Z or Z-A
+  const handleSortListValues = (direction: 'asc' | 'desc') => {
+    const lines = listValuesText.split('\n').filter(line => line.trim());
+    const sorted = direction === 'asc' 
+      ? lines.sort((a, b) => a.trim().localeCompare(b.trim()))
+      : lines.sort((a, b) => b.trim().localeCompare(a.trim()));
+    setListValuesText(sorted.join('\n'));
   };
 
   const handleVariableAttachedCsvUpload = (uploadedVariables: VariableAttached[]) => {
@@ -196,7 +209,23 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   };
 
   const handleListValuesCsvUpload = (uploadedValues: ListValue[]) => {
-    setListValues(prev => [...prev, ...uploadedValues]);
+    // Append uploaded values to existing textarea text
+    const existingLines = listValuesText.split('\n').filter(line => line.trim());
+    const existingSet = new Set(existingLines.map(line => line.trim().toLowerCase()));
+    
+    // Filter out duplicates (case-insensitive)
+    const newValues = uploadedValues
+      .map(lv => lv.value.trim())
+      .filter(val => val && !existingSet.has(val.toLowerCase()));
+    
+    if (newValues.length < uploadedValues.length) {
+      const skippedCount = uploadedValues.length - newValues.length;
+      alert(`Uploaded ${newValues.length} new list values. Skipped ${skippedCount} duplicates.`);
+    }
+    
+    // Append new values to textarea
+    const newLines = newValues.join('\n');
+    setListValuesText(prev => prev ? `${prev}\n${newLines}` : newLines);
   };
 
   // Helper function to check if a list already exists
@@ -257,6 +286,27 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       return;
     }
 
+    // Convert textarea text to list values array
+    const listValuesArray = listValuesText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((value, index) => ({
+        id: (Date.now() + index).toString(),
+        value
+      }));
+    
+    // Check for duplicate values (case-insensitive) within the same list
+    const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
+    if (listValuesArray.length !== uniqueValues.size) {
+      const duplicateValues = listValuesArray.filter((lv, index) => 
+        listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
+      ).map(lv => lv.value);
+      
+      alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+
     const newList = {
       id: `list-${Date.now()}`,
       ...formData,
@@ -265,7 +315,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       country: driverSelections.country.length === 1 && driverSelections.country[0] === 'ALL' ? 'ALL' : driverSelections.country.join(','),
       status: 'Active',
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
-      listValuesList: listValues
+      listValuesList: listValuesArray
     };
 
     onAdd(newList);
@@ -287,7 +337,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       country: []
     });
     setVariablesAttached([]);
-    setListValues([]);
+    setListValuesText('');
     setSelectedVariables([]);
     
     onClose();
@@ -682,65 +732,84 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={() => handleSortListValues('asc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortListValues('desc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => setIsListValuesUploadOpen(true)}
               className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
               title="Upload List Values CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
-            <button
-              onClick={addListValue}
-              className="text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-              title="Add List Value"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
           </div>
         </div>
         
-        {listValues.length === 0 ? (
-          <div className="text-center py-6 text-ag-dark-text-secondary">
-            <div className="text-sm">No list values defined</div>
-            <button
-              onClick={addListValue}
-              className="mt-2 text-ag-dark-accent hover:text-ag-dark-accent-hover text-sm"
-            >
-              Add your first list value
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {listValues.map((listValue, index) => (
-              <div key={listValue.id} className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-ag-dark-text">
-                    List Value #{index + 1}
-                  </span>
-                  <button
-                    onClick={() => deleteListValue(listValue.id)}
-                    className="text-ag-dark-error hover:text-red-400 transition-colors"
-                    title="Delete List Value"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-medium text-ag-dark-text-secondary mb-1">
-                    Value
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Enter value..."
-                    value={listValue.value}
-                    onChange={(e) => handleListValueChange(listValue.id, e.target.value)}
-                    className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <textarea
+          ref={listValuesTextareaRef}
+          value={listValuesText}
+          onChange={(e) => {
+            handleListValuesTextChange(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            // Prevent Enter key from propagating to parent components
+            e.stopPropagation();
+            // Prevent default only for Escape, not Enter
+            if (e.key === 'Escape') {
+              listValuesTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isListValuesTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            // Only restore focus if blur happened very recently after typing (likely accidental)
+            const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+            
+            // Check if blur was intentional (user clicked on another focusable element)
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            // Only restore focus if it was recent typing and user didn't click on another input
+            if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
+              // Restore focus after a brief delay to let React finish its render cycle
+              setTimeout(() => {
+                if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
+                  listValuesTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              // User intentionally blurred, don't restore
+              isListValuesTextareaFocusedRef.current = false;
+            }
+          }}
+          placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
+          rows={8}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+        />
       </div>
 
       {/* Add List Button */}

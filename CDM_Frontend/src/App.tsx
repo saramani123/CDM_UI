@@ -1870,6 +1870,8 @@ function App() {
           if (gridData.graph !== undefined) apiListData.graph = gridData.graph;
           if (gridData.origin !== undefined) apiListData.origin = gridData.origin;
           if (gridData.status !== undefined) apiListData.status = gridData.status;
+          if (gridData.listValuesList !== undefined) apiListData.listValuesList = gridData.listValuesList;
+          if (gridData.variablesAttachedList !== undefined) apiListData.variablesAttachedList = gridData.variablesAttachedList;
           
           // Only update if there are fields to update
           if (Object.keys(apiListData).length > 0) {
@@ -1903,6 +1905,16 @@ function App() {
             
             // Update selected row
             setSelectedRowForMetadata(listDataFormat);
+            
+            // Show success message if list values were updated
+            if (apiListData.listValuesList !== undefined) {
+              const valueCount = Array.isArray(apiListData.listValuesList) ? apiListData.listValuesList.length : 0;
+              if (valueCount > 0) {
+                alert(`List values saved successfully! ${valueCount} value${valueCount !== 1 ? 's' : ''} saved.`);
+              } else {
+                alert('List values cleared successfully!');
+              }
+            }
           }
         } catch (error) {
           console.error('Error updating list:', error);
@@ -2140,7 +2152,7 @@ function App() {
   const handleAddList = async (newListData: ListData) => {
     try {
       // Convert to API format
-      const apiListData = {
+      const apiListData: any = {
         sector: Array.isArray(newListData.sector) 
           ? (newListData.sector.length === 1 && newListData.sector[0] === 'ALL' 
               ? 'ALL' 
@@ -2167,6 +2179,11 @@ function App() {
         status: newListData.status || 'Active'
       };
       
+      // Include listValuesList if provided
+      if (newListData.listValuesList !== undefined) {
+        apiListData.listValuesList = newListData.listValuesList;
+      }
+      
         const createdList = await apiService.createList(apiListData) as any;
         
         // Convert API response to ListData format
@@ -2187,6 +2204,14 @@ function App() {
           variablesAttachedList: createdList.variablesAttachedList || [],
           listValuesList: createdList.listValuesList || []
         };
+        
+        // Show success message if list values were included
+        if (newListData.listValuesList !== undefined && Array.isArray(newListData.listValuesList)) {
+          const valueCount = newListData.listValuesList.length;
+          if (valueCount > 0) {
+            alert(`List created successfully! ${valueCount} list value${valueCount !== 1 ? 's' : ''} saved.`);
+          }
+        }
         
         setListData(prev => [...prev, listDataFormat]);
       setIsAddListOpen(false);

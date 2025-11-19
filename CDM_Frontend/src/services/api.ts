@@ -162,7 +162,7 @@ export const getBulkVariableOntologyView = async (
 export const getListOntologyView = async (
   listId: string | null,
   listName: string | null,
-  view: 'drivers' | 'ontology' | 'metadata'
+  view: 'drivers' | 'ontology' | 'metadata' | 'listValues'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build query params - prefer list_id if available, otherwise fall back to list_name
   const params = new URLSearchParams();
@@ -194,7 +194,7 @@ export const getListOntologyView = async (
 export const getBulkListOntologyView = async (
   listIds: string[] | null,
   listNames: string[] | null,
-  viewType: 'drivers' | 'ontology' | 'metadata'
+  viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build request body - prefer list_ids if available, otherwise fall back to list_names
   const body: any = { view: viewType };

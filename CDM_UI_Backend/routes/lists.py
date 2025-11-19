@@ -7,6 +7,10 @@ from db import get_driver
 
 router = APIRouter()
 
+class ListValueRequest(BaseModel):
+    id: Optional[str] = None
+    value: str
+
 class ListCreateRequest(BaseModel):
     sector: str  # Can be "ALL" or comma-separated values
     domain: str  # Can be "ALL" or comma-separated values
@@ -20,6 +24,7 @@ class ListCreateRequest(BaseModel):
     graph: Optional[str] = ""
     origin: Optional[str] = ""
     status: Optional[str] = "Active"
+    listValuesList: Optional[List[ListValueRequest]] = []
 
 class ListUpdateRequest(BaseModel):
     sector: Optional[str] = None
@@ -34,6 +39,7 @@ class ListUpdateRequest(BaseModel):
     graph: Optional[str] = None
     origin: Optional[str] = None
     status: Optional[str] = None
+    listValuesList: Optional[List[ListValueRequest]] = None
 
 async def create_list_driver_relationships(session, list_id: str, sector_str: str, domain_str: str, country_str: str):
     """
@@ -145,6 +151,79 @@ async def create_list_driver_relationships(session, list_id: str, sector_str: st
         print(f"Error creating driver relationships for list {list_id}: {e}")
         raise
 
+async def create_list_values(session, list_id: str, list_values: List[Any], replace: bool = False):
+    """
+    Create list value nodes and HAS_LIST_VALUE relationships from List to ListValue nodes.
+    Prevents duplicate values within the same list (case-insensitive).
+    
+    Args:
+        session: Neo4j session
+        list_id: ID of the list
+        list_values: List of dicts with 'value' key
+        replace: If True, replace all existing list values. If False, append only new values.
+    """
+    try:
+        print(f"Creating list values for list {list_id} (replace={replace})")
+        
+        # If replacing, delete all existing relationships first
+        if replace:
+            session.run("""
+                MATCH (l:List {id: $list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                DELETE r
+            """, list_id=list_id)
+            print(f"Deleted all existing list value relationships for list {list_id}")
+        
+        # Get existing list values for this list to check for duplicates (if not replacing)
+        if not replace:
+            existing_values_result = session.run("""
+                MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue)
+                RETURN lv.value as value
+            """, list_id=list_id)
+            existing_values = {record["value"].lower() for record in existing_values_result}
+        else:
+            existing_values = set()
+        
+        created_count = 0
+        skipped_duplicates = 0
+        
+        for list_value in list_values:
+            # Handle both dict and Pydantic model (ListValueRequest)
+            if isinstance(list_value, dict):
+                value = list_value.get("value", "").strip()
+            else:
+                # Pydantic model - access as attribute
+                # ListValueRequest has a 'value' attribute
+                value = getattr(list_value, "value", "").strip() if hasattr(list_value, "value") else ""
+            
+            if not value:
+                continue
+            
+            # Check for duplicate (case-insensitive) within the same list
+            if value.lower() in existing_values:
+                print(f"⚠️ Skipping duplicate list value '{value}' for list {list_id}")
+                skipped_duplicates += 1
+                continue
+            
+            # Create ListValue node and relationship
+            result = session.run("""
+                MATCH (l:List {id: $list_id})
+                MERGE (lv:ListValue {value: $value})
+                MERGE (l)-[:HAS_LIST_VALUE]->(lv)
+                RETURN lv.value as value
+            """, list_id=list_id, value=value)
+            
+            if result.single():
+                existing_values.add(value.lower())
+                created_count += 1
+                print(f"✅ Created list value '{value}' for list {list_id}")
+        
+        print(f"Created {created_count} list values, skipped {skipped_duplicates} duplicates")
+        return created_count
+        
+    except Exception as e:
+        print(f"Error creating list values for list {list_id}: {e}")
+        raise
+
 @router.get("/lists", response_model=List[Dict[str, Any]])
 async def get_lists():
     """
@@ -162,16 +241,18 @@ async def get_lists():
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(domain:Domain)
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(country:Country)
                 OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
+                OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
                      collect(DISTINCT domain.name) as domains,
                      collect(DISTINCT country.name) as countries,
-                     count(DISTINCT v) as variables_count
+                     count(DISTINCT v) as variables_count,
+                     collect(DISTINCT lv.value) as list_values
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
                        s.name as set_name, g.name as grouping_name,
-                       sectors, domains, countries, variables_count
+                       sectors, domains, countries, variables_count, list_values
                 ORDER BY l.id
             """)
 
@@ -185,6 +266,10 @@ async def get_lists():
                 sector_str = "ALL" if "ALL" in sectors else (", ".join(sectors) if sectors else "ALL")
                 domain_str = "ALL" if "ALL" in domains else (", ".join(domains) if domains else "ALL")
                 country_str = "ALL" if "ALL" in countries else (", ".join(countries) if countries else "ALL")
+                
+                # Convert list values to ListValue format
+                list_values = record.get("list_values") or []
+                listValuesList = [{"id": str(i), "value": val} for i, val in enumerate(list_values) if val]
                 
                 list_item = {
                     "id": record["id"],
@@ -202,7 +287,7 @@ async def get_lists():
                     "status": record["status"] or "Active",
                     "variables": record["variables_count"] or 0,
                     "variablesAttachedList": [],
-                    "listValuesList": []
+                    "listValuesList": listValuesList
                 }
                 lists.append(list_item)
 
@@ -284,6 +369,10 @@ async def create_list(list_data: ListCreateRequest):
                 list_data.country
             )
 
+            # Create list values as nodes with HAS_LIST_VALUE relationships (replace all)
+            if list_data.listValuesList is not None:
+                await create_list_values(session, list_id, list_data.listValuesList, replace=True)
+
             return {
                 "id": record["id"],
                 "sector": list_data.sector,
@@ -299,7 +388,7 @@ async def create_list(list_data: ListCreateRequest):
                 "origin": record["origin"],
                 "status": record["status"],
                 "variablesAttachedList": [],
-                "listValuesList": []
+                "listValuesList": list_data.listValuesList if list_data.listValuesList else []
             }
 
     except Exception as e:
@@ -389,6 +478,11 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                     MERGE (g)-[:HAS_LIST]->(l)
                 """, {"id": list_id, "set": set_name, "grouping": grouping_name})
             
+            # Update list values if provided (replace all existing with new ones)
+            # Note: Even if listValuesList is an empty array, we still want to replace (clear all values)
+            if list_data.listValuesList is not None:
+                await create_list_values(session, list_id, list_data.listValuesList, replace=True)
+            
             # Update driver relationships if sector, domain, or country changed
             if list_data.sector is not None or list_data.domain is not None or list_data.country is not None:
                 current_result = session.run("""
@@ -416,14 +510,16 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (d:Domain)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
+                OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
-                     collect(DISTINCT c.name) as countries
+                     collect(DISTINCT c.name) as countries,
+                     collect(DISTINCT lv.value) as list_values
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries
+                       sectors, domains, countries, list_values
             """, {"id": list_id})
             
             record = result.single()
@@ -437,6 +533,10 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
             sector_str = "ALL" if "ALL" in sectors else (", ".join(sectors) if sectors else "ALL")
             domain_str = "ALL" if "ALL" in domains else (", ".join(domains) if domains else "ALL")
             country_str = "ALL" if "ALL" in countries else (", ".join(countries) if countries else "ALL")
+            
+            # Convert list values to ListValue format
+            list_values = record.get("list_values") or []
+            listValuesList = [{"id": str(i), "value": val} for i, val in enumerate(list_values) if val]
             
             return {
                 "id": record["id"],
@@ -453,7 +553,7 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 "origin": record["origin"] or "",
                 "status": record["status"] or "Active",
                 "variablesAttachedList": [],
-                "listValuesList": []
+                "listValuesList": listValuesList
             }
 
     except HTTPException:
@@ -538,15 +638,17 @@ async def get_list(list_id: str):
                 OPTIONAL MATCH (d:Domain)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
+                OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
                      collect(DISTINCT c.name) as countries,
-                     count(DISTINCT v) as variables_count
+                     count(DISTINCT v) as variables_count,
+                     collect(DISTINCT lv.value) as list_values
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries, variables_count
+                       sectors, domains, countries, variables_count, list_values
             """, {"id": list_id})
             
             record = result.single()
@@ -560,6 +662,10 @@ async def get_list(list_id: str):
             sector_str = "ALL" if "ALL" in sectors else (", ".join(sectors) if sectors else "ALL")
             domain_str = "ALL" if "ALL" in domains else (", ".join(domains) if domains else "ALL")
             country_str = "ALL" if "ALL" in countries else (", ".join(countries) if countries else "ALL")
+            
+            # Convert list values to ListValue format
+            list_values = record.get("list_values") or []
+            listValuesList = [{"id": str(i), "value": val} for i, val in enumerate(list_values) if val]
             
             return {
                 "id": record["id"],
@@ -577,7 +683,7 @@ async def get_list(list_id: str):
                 "status": record["status"] or "Active",
                 "variables": record["variables_count"] or 0,
                 "variablesAttachedList": [],
-                "listValuesList": []
+                "listValuesList": listValuesList
             }
 
     except HTTPException:

@@ -824,21 +824,23 @@ async def get_list_ontology_view(
         queries = {
             'drivers': """
                 MATCH (l:List {id: $list_id})
-                WITH l
                 OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
-                RETURN s, r1, d, r2, c, r3, l
+                RETURN l, s, r1, d, r2, c, r3
             """,
             'ontology': """
-                MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List {id: $list_id})
-                RETURN s, r1, g, r2, l
+                MATCH (l:List {id: $list_id})
+                OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
+                RETURN l, s, r1, g, r2
             """,
             'metadata': """
                 MATCH (l:List {id: $list_id})
                 RETURN l
+            """,
+            'listValues': """
+                MATCH (l:List {id: $list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                RETURN l, r, lv
             """
         }
         param_name = 'list_id'
@@ -847,28 +849,30 @@ async def get_list_ontology_view(
         queries = {
             'drivers': """
                 MATCH (l:List {name: $list_name})
-                WITH l
                 OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
-                RETURN s, r1, d, r2, c, r3, l
+                RETURN l, s, r1, d, r2, c, r3
             """,
             'ontology': """
-                MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l:List {name: $list_name})
-                RETURN s, r1, g, r2, l
+                MATCH (l:List {name: $list_name})
+                OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
+                RETURN l, s, r1, g, r2
             """,
             'metadata': """
                 MATCH (l:List {name: $list_name})
                 RETURN l
+            """,
+            'listValues': """
+                MATCH (l:List {name: $list_name})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                RETURN l, r, lv
             """
         }
         param_name = 'list_name'
         param_value = list_name
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues")
     
     try:
         with driver.session() as session:
@@ -880,6 +884,8 @@ async def get_list_ontology_view(
             edge_ids = set()
             
             for record in result:
+                # Process list node first to ensure it's always included
+                list_node = None
                 for key, value in record.items():
                     if value is None:
                         continue
@@ -887,12 +893,18 @@ async def get_list_ontology_view(
                     # Handle nodes
                     if isinstance(value, Node):
                         node_id = str(value.id)
+                        labels = list(value.labels) if value.labels else []
+                        label = labels[0] if labels else 'Unknown'
+                        
+                        # Track the list node separately
+                        if label == 'List':
+                            list_node = value
+                        
                         if node_id not in node_ids:
                             node_ids.add(node_id)
-                            labels = list(value.labels) if value.labels else []
-                            label = labels[0] if labels else 'Unknown'
                             props = dict(value.items()) if hasattr(value, 'items') else {}
-                            name = props.get('name', node_id)
+                            # For ListValue nodes, use 'value' property; for others, use 'name'
+                            name = props.get('value') if label == 'ListValue' else props.get('name', node_id)
                             
                             nodes[node_id] = {
                                 'id': node_id,
@@ -917,6 +929,19 @@ async def get_list_ontology_view(
                                 'label': value.type,
                                 'properties': props
                             })
+                
+                # Ensure list node is always included even if no relationships
+                if list_node and str(list_node.id) not in node_ids:
+                    node_id = str(list_node.id)
+                    node_ids.add(node_id)
+                    props = dict(list_node.items()) if hasattr(list_node, 'items') else {}
+                    name = props.get('name', node_id)
+                    nodes[node_id] = {
+                        'id': node_id,
+                        'label': name,
+                        'group': 'List',
+                        'properties': props
+                    }
             
             return {
                 'nodes': list(nodes.values()),
@@ -972,24 +997,26 @@ async def get_bulk_list_ontology_view(
             'drivers': """
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
-                WITH l
                 OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
-                RETURN s, r1, d, r2, c, r3, l
+                RETURN l, s, r1, d, r2, c, r3
             """,
             'ontology': """
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN s, r1, g, r2, l
+                RETURN l, s, r1, g, r2
             """,
             'metadata': """
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
                 RETURN l
+            """,
+            'listValues': """
+                MATCH (l:List)-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                WHERE l.id IN $list_ids
+                RETURN l, r, lv
             """
         }
         param_name = 'list_ids'
@@ -998,30 +1025,32 @@ async def get_bulk_list_ontology_view(
             'drivers': """
                 MATCH (l:List)
                 WHERE l.name IN $list_names
-                WITH l
                 OPTIONAL MATCH (s:Sector)-[r1:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1
                 OPTIONAL MATCH (d:Domain)-[r2:IS_RELEVANT_TO]->(l)
-                WITH l, s, r1, d, r2
                 OPTIONAL MATCH (c:Country)-[r3:IS_RELEVANT_TO]->(l)
-                RETURN s, r1, d, r2, c, r3, l
+                RETURN l, s, r1, d, r2, c, r3
             """,
             'ontology': """
                 MATCH (l:List)
                 WHERE l.name IN $list_names
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN s, r1, g, r2, l
+                RETURN l, s, r1, g, r2
             """,
             'metadata': """
                 MATCH (l:List)
                 WHERE l.name IN $list_names
                 RETURN l
+            """,
+            'listValues': """
+                MATCH (l:List)-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                WHERE l.name IN $list_names
+                RETURN l, r, lv
             """
         }
         param_name = 'list_names'
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues")
     
     try:
         with driver.session() as session:
@@ -1033,6 +1062,8 @@ async def get_bulk_list_ontology_view(
             edge_ids = set()
             
             for record in result:
+                # Process list nodes first to ensure they're always included
+                list_nodes = []
                 for key, value in record.items():
                     if value is None:
                         continue
@@ -1040,12 +1071,18 @@ async def get_bulk_list_ontology_view(
                     # Handle nodes
                     if isinstance(value, Node):
                         node_id = str(value.id)
+                        labels = list(value.labels) if value.labels else []
+                        label = labels[0] if labels else 'Unknown'
+                        
+                        # Track list nodes separately
+                        if label == 'List':
+                            list_nodes.append(value)
+                        
                         if node_id not in node_ids:
                             node_ids.add(node_id)
-                            labels = list(value.labels) if value.labels else []
-                            label = labels[0] if labels else 'Unknown'
                             props = dict(value.items()) if hasattr(value, 'items') else {}
-                            name = props.get('name', node_id)
+                            # For ListValue nodes, use 'value' property; for others, use 'name'
+                            name = props.get('value') if label == 'ListValue' else props.get('name', node_id)
                             
                             nodes[node_id] = {
                                 'id': node_id,
@@ -1070,6 +1107,20 @@ async def get_bulk_list_ontology_view(
                                 'label': value.type,
                                 'properties': props
                             })
+                
+                # Ensure list nodes are always included even if no relationships
+                for list_node in list_nodes:
+                    if str(list_node.id) not in node_ids:
+                        node_id = str(list_node.id)
+                        node_ids.add(node_id)
+                        props = dict(list_node.items()) if hasattr(list_node, 'items') else {}
+                        name = props.get('name', node_id)
+                        nodes[node_id] = {
+                            'id': node_id,
+                            'label': name,
+                            'group': 'List',
+                            'properties': props
+                        }
             
             return {
                 'nodes': list(nodes.values()),

@@ -49,12 +49,39 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
         return;
       }
 
+      // Parse header row
+      const headerRow = lines[0].toLowerCase().trim();
+      
+      if (type === 'list-values') {
+        // For list values, check that header contains "Values" (case-insensitive)
+        if (!headerRow.includes('value')) {
+          alert('CSV header must contain "Values" column. Please check the format.');
+          return;
+        }
+      }
+
       // Skip header row and parse data rows
       const dataRows = lines.slice(1);
       const parsedData: any[] = [];
 
       dataRows.forEach((line, index) => {
-        const values = line.split(',').map(val => val.trim().replace(/"/g, ''));
+        // Handle CSV parsing more robustly (handles quoted values with commas)
+        const values: string[] = [];
+        let currentValue = '';
+        let inQuotes = false;
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            values.push(currentValue.trim().replace(/^"|"$/g, ''));
+            currentValue = '';
+          } else {
+            currentValue += char;
+          }
+        }
+        values.push(currentValue.trim().replace(/^"|"$/g, '')); // Add last value
         
         if (type === 'variables-attached') {
           if (values.length >= 4) {
@@ -67,10 +94,12 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
             });
           }
         } else if (type === 'list-values') {
-          if (values.length >= 1 && values[0]) {
+          // For list values, use the first column (Values column)
+          const value = values[0] || '';
+          if (value.trim()) {
             parsedData.push({
               id: Date.now().toString() + index,
-              value: values[0]
+              value: value.trim()
             });
           }
         }
@@ -197,6 +226,9 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
             <p>• Columns must be in the exact order shown above</p>
             {type === 'variables-attached' && (
               <p>• All fields (Part, Section, Group, Variable) are required</p>
+            )}
+            {type === 'list-values' && (
+              <p>• Header must contain "Values" column (case-insensitive)</p>
             )}
           </div>
         </div>
