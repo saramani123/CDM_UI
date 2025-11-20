@@ -737,7 +737,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
 
       {/* Object Relationships Section */}
       <CollapsibleSection 
-        title="Object Relationships" 
+        title="Relevance" 
         sectionKey="objectRelationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={

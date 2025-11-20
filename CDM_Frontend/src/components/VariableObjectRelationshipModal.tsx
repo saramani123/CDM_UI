@@ -755,8 +755,8 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
               <Link className="w-5 h-5 text-ag-dark-text-secondary" />
               <h2 className="text-xl font-semibold text-ag-dark-text">
                 {isBulkMode 
-                  ? `Configuring Object Relationships (${sourceVariables.length} variables)` 
-                  : `Configuring Object Relationships for ${sourceVariables[0]?.variable || 'Variable'}`}
+                  ? `Configuring Relevance (${sourceVariables.length} variables)` 
+                  : `Configuring Relevance for ${sourceVariables[0]?.variable || 'Variable'}`}
               </h2>
             </div>
             <div className="flex items-center gap-3">

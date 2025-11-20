@@ -6,7 +6,7 @@ import { ListData } from '../data/listsData';
 interface BulkListUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (lists: ListData[]) => void;
+  onUpload: (lists: ListData[]) => Promise<void>;
   existingData?: ListData[];
 }
 
@@ -18,6 +18,7 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [parsedListsCount, setParsedListsCount] = useState(0);
 
   if (!isOpen) return null;
 
@@ -38,10 +39,10 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
     ]
   };
 
-  const handleFileUpload = (file: File) => {
+  const handleFileUpload = async (file: File) => {
     setIsLoading(true);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         const csv = e.target?.result as string;
         const lines = csv.split('\n').filter(line => line.trim());
@@ -176,45 +177,53 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
         }
 
         if (parsedLists.length > 0) {
-          // Small delay to show loading animation
-          setTimeout(() => {
-            onUpload(parsedLists);
+          // Keep modal open and show loading animation while backend processes
+          // onUpload is async and will handle closing the modal when done
+          setParsedListsCount(parsedLists.length);
+          try {
+            await onUpload(parsedLists);
+            // Modal will be closed by parent component after upload completes
+          } catch (error) {
+            // Error handling is done in parent, just reset loading state
             setIsLoading(false);
-            onClose();
-          }, 500);
+            setParsedListsCount(0);
+          }
         } else {
           alert('No valid lists found in CSV. Please check the format.');
           setIsLoading(false);
+          setParsedListsCount(0);
         }
       } catch (error) {
         console.error('Error processing CSV:', error);
         alert('Error processing CSV file. Please try again.');
         setIsLoading(false);
+        setParsedListsCount(0);
       }
     };
     reader.onerror = () => {
       alert('Error reading file. Please try again.');
       setIsLoading(false);
+      setParsedListsCount(0);
     };
     reader.readAsText(file);
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file && file.type === 'text/csv') {
-      handleFileUpload(file);
+      await handleFileUpload(file);
     } else {
       alert('Please select a valid CSV file');
     }
   };
 
-  const handleDrop = (event: React.DragEvent) => {
+  const handleDrop = async (event: React.DragEvent) => {
     event.preventDefault();
     setIsDragOver(false);
     
     const file = event.dataTransfer.files[0];
     if (file && file.type === 'text/csv') {
-      handleFileUpload(file);
+      await handleFileUpload(file);
     } else {
       alert('Please drop a valid CSV file');
     }
@@ -291,10 +300,14 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
                   </div>
                   <div className="space-y-2">
                     <p className="text-sm font-medium text-ag-dark-text">
-                      Processing CSV file...
+                      {parsedListsCount > 0 
+                        ? `Creating ${parsedListsCount} list${parsedListsCount !== 1 ? 's' : ''} in Neo4j...`
+                        : 'Processing CSV file...'}
                     </p>
                     <p className="text-xs text-ag-dark-text-secondary">
-                      Please wait while we load your data
+                      {parsedListsCount > 0
+                        ? 'Please wait while we create the data in the database'
+                        : 'Please wait while we load your data'}
                     </p>
                   </div>
                 </div>

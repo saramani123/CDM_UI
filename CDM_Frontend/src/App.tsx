@@ -2264,6 +2264,7 @@ function App() {
           setSelectedRowForMetadata(firstCreatedList);
         }
       }
+      // Close modal after upload completes
       setIsBulkListUploadOpen(false);
     } catch (error: any) {
       console.error('Error uploading lists:', error);

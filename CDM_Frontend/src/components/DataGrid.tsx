@@ -192,10 +192,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
 
   const handleColumnFilter = (columnKey: string, filterValues: string[]) => {
+    // Preserve sort when applying filters - filters and sorts should coexist
     setColumnFilters(prev => ({
       ...prev,
       [columnKey]: filterValues
     }));
+    // Explicitly preserve sortConfig - do not clear it when filters change
   };
 
   const handleColumnSort = (columnKey: string, type: 'custom' | 'none') => {

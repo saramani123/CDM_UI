@@ -1051,7 +1051,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
       {/* Object Relationships Section */}
       <CollapsibleSection 
-        title="Object Relationships" 
+        title="Relevance" 
         sectionKey="objectRelationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="objectRelationships"
@@ -1199,7 +1199,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
             ontologyModalOpen.viewType === 'metadata' ? 'Metadata' :
-            'Object Relationships'
+            'Relevance'
           }
           viewType={ontologyModalOpen.viewType}
           mode="variable"

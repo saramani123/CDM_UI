@@ -865,7 +865,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
       {/* Object Relationships Section */}
       <CollapsibleSection 
-        title="Object Relationships" 
+        title="Relevance" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="objectRelationships"
@@ -1001,7 +1001,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             ontologyModalOpen.viewType === 'drivers' ? 'Drivers' :
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
             ontologyModalOpen.viewType === 'metadata' ? 'Metadata' :
-            'Object Relationships'
+            'Relevance'
           }
           viewType={ontologyModalOpen.viewType}
           mode="variable"
