@@ -489,35 +489,37 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
           </div>
         )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-ag-dark-border">
-          <div className="flex gap-2">
+        {/* Footer with Cypher Query Section */}
+        <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface flex flex-col min-h-0" style={{ maxHeight: showCypherQuery ? '40vh' : 'auto' }}>
+          {/* Action Buttons - Side by side */}
+          <div className="px-6 py-3 flex gap-3 flex-shrink-0">
             <button
               onClick={() => setShowCypherQuery(!showCypherQuery)}
-              className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
             >
-              View Cypher Query
-              {showCypherQuery ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              {showCypherQuery ? (
+                <>
+                  <ChevronUp className="w-4 h-4" />
+                  Hide Cypher Query
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4" />
+                  View Cypher Query
+                </>
+              )}
             </button>
-            {showCypherQuery && (
-              <button
-                onClick={copyCypherToClipboard}
-                className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
-                title="Copy Cypher Query"
-              >
-                <Copy className="w-4 h-4" />
-                {copySuccess ? 'Copied!' : 'Copy'}
-              </button>
-            )}
-          </div>
-          <div className="flex gap-2">
+            
             <button
               onClick={openNeo4jConsole}
-              className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-accent text-ag-dark-accent rounded text-sm font-medium hover:bg-ag-dark-accent hover:text-white transition-colors"
             >
               <ExternalLink className="w-4 h-4" />
               View in Neo4j Console
             </button>
+
+            <div className="flex-1" /> {/* Spacer */}
+
             <button
               onClick={onClose}
               className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
@@ -525,16 +527,32 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
               Close
             </button>
           </div>
-        </div>
 
-        {/* Cypher Query Display */}
-        {showCypherQuery && (
-          <div className="border-t border-ag-dark-border p-4 bg-ag-dark-bg max-h-48 overflow-y-auto">
-            <pre className="text-sm text-ag-dark-text font-mono whitespace-pre-wrap">
-              {getCypherQuery()}
-            </pre>
-          </div>
-        )}
+          {/* Cypher Query - Expandable below buttons with scrolling */}
+          {showCypherQuery && (
+            <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto flex-1 min-h-0">
+              <div className="flex items-center justify-between mb-2 pt-4">
+                <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
+                  Cypher Query
+                </label>
+                <button
+                  onClick={() => {
+                    const query = getCypherQuery();
+                    copyCypherToClipboard();
+                  }}
+                  className={`text-xs transition-colors px-2 py-1 rounded ${
+                    copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-surface'
+                  }`}
+                >
+                  {copySuccess ? 'Copied!' : 'Copy Query'}
+                </button>
+              </div>
+              <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto overflow-y-auto border border-ag-dark-border whitespace-pre-wrap break-words">
+                {getCypherQuery()}
+              </pre>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

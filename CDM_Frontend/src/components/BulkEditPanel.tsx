@@ -224,6 +224,13 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isCloneListApplicabilityModalOpen, setIsCloneListApplicabilityModalOpen] = useState(false);
   const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
   
+  // Check if any selected lists are part of a tiered structure
+  const hasTieredLists = activeTab === 'lists' && allData.some((list: any) => {
+    if (!list) return false;
+    // Check if list is a parent (has tieredListsList) or child (hasIncomingTier)
+    return (list.tieredListsList && list.tieredListsList.length > 0) || list.hasIncomingTier;
+  });
+  
   // Lists ontology modal state
   const [listsOntologyModalOpen, setListsOntologyModalOpen] = useState<{
     isOpen: boolean;

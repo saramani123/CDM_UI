@@ -839,7 +839,8 @@ async def get_list_ontology_view(
                 RETURN l
             """,
             'listValues': """
-                MATCH (l:List {id: $list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                MATCH (l:List {id: $list_id})
+                OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
             """
         }
@@ -864,7 +865,8 @@ async def get_list_ontology_view(
                 RETURN l
             """,
             'listValues': """
-                MATCH (l:List {name: $list_name})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                MATCH (l:List {name: $list_name})
+                OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
             """
         }
@@ -876,7 +878,65 @@ async def get_list_ontology_view(
     
     try:
         with driver.session() as session:
-            result = session.run(queries[view], {param_name: param_value})
+            # For listValues view, check if it's a tiered list and build appropriate query
+            if view == 'listValues':
+                # First check if this is a parent or child list
+                check_result = session.run("""
+                    MATCH (l:List {id: $list_id})
+                    OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                    OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                    WITH l, count(DISTINCT tiered) as child_count, count(DISTINCT parent) as parent_count,
+                         collect(DISTINCT type(parent_tier_rel))[0] as parent_tier_type
+                    RETURN child_count > 0 as is_parent, parent_count > 0 as is_child, parent_tier_type
+                """, {param_name: param_value})
+                
+                check_record = check_result.single()
+                is_parent = check_record.get("is_parent", False) if check_record else False
+                is_child = check_record.get("is_child", False) if check_record else False
+                parent_tier_type = check_record.get("parent_tier_type") if check_record else None
+                
+                # Determine max tier for child lists
+                max_tier = 1
+                if is_child and parent_tier_type:
+                    tier_num_str = parent_tier_type.replace('HAS_TIER_', '')
+                    try:
+                        max_tier = int(tier_num_str)
+                    except:
+                        max_tier = 1
+                
+                if is_parent:
+                    # Parent list: Show tier hierarchy AND tiered values
+                    query = """
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        OPTIONAL MATCH (l)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        OPTIONAL MATCH (lv1)-[r2]->(lv2:ListValue)
+                        WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
+                          AND type(r2) <> 'HAS_LIST_VALUE'
+                        OPTIONAL MATCH (tiered)-[r3:HAS_LIST_VALUE]->(lv2)
+                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, r3
+                    """
+                elif is_child:
+                    # Child list: Show parent, tier hierarchy, and tiered values up to this tier
+                    # For tier 2, show up to tier 2 values (1 level of tiered values)
+                    # For tier 3, show up to tier 3 values (2 levels of tiered values), etc.
+                    query = """
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                        OPTIONAL MATCH (parent)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        OPTIONAL MATCH (lv1)-[r2]->(lv2:ListValue)
+                        WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
+                          AND type(r2) <> 'HAS_LIST_VALUE'
+                        OPTIONAL MATCH (l)-[r3:HAS_LIST_VALUE]->(lv2)
+                        RETURN l, parent, parent_tier_rel, lv1, r1, lv2, r2, r3
+                    """
+                else:
+                    # Normal list: Just show direct list values
+                    query = queries['listValues']
+                
+                result = session.run(query, {param_name: param_value})
+            else:
+                result = session.run(queries[view], {param_name: param_value})
             
             nodes = {}
             edges = []

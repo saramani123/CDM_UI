@@ -689,6 +689,14 @@ function App() {
     setSelectedRows(rows as ObjectData[]);
     if (rows.length === 1) {
       const selectedRow = rows[0];
+      // For lists, always use the latest data from listData to ensure hasIncomingTier is up to date
+      if (activeTab === 'lists') {
+        const latestListData = listData.find(l => l.id === selectedRow.id);
+        if (latestListData) {
+          setSelectedRowForMetadata(latestListData);
+          return;
+        }
+      }
       // Clear clone flags if this is not actually a clone (doesn't have temporary clone ID)
       // This prevents the clone panel from showing for saved variables
       if (selectedRow.id && !selectedRow.id.startsWith('clone-')) {
@@ -1872,6 +1880,8 @@ function App() {
           if (gridData.status !== undefined) apiListData.status = gridData.status;
           if (gridData.listValuesList !== undefined) apiListData.listValuesList = gridData.listValuesList;
           if (gridData.variablesAttachedList !== undefined) apiListData.variablesAttachedList = gridData.variablesAttachedList;
+          if (gridData.tieredListsList !== undefined) apiListData.tieredListsList = gridData.tieredListsList;
+          if (gridData.tieredListValues !== undefined) apiListData.tieredListValues = gridData.tieredListValues;
           
           // Only update if there are fields to update
           if (Object.keys(apiListData).length > 0) {
@@ -1893,7 +1903,10 @@ function App() {
               origin: updatedList.origin || '',
               status: updatedList.status || 'Active',
               variablesAttachedList: updatedList.variablesAttachedList || [],
-              listValuesList: updatedList.listValuesList || []
+              listValuesList: updatedList.listValuesList || [],
+              tieredListsList: updatedList.tieredListsList || [],
+              tiers: (updatedList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
+              hasIncomingTier: updatedList.hasIncomingTier || false
             };
             
             // Update local state
@@ -1906,13 +1919,63 @@ function App() {
             // Update selected row
             setSelectedRowForMetadata(listDataFormat);
             
-            // Show success message if list values were updated
-            if (apiListData.listValuesList !== undefined) {
+            // If tiered lists were updated, refresh all lists to update hasIncomingTier flags
+            if (apiListData.tieredListsList !== undefined) {
+              // Refresh all lists to update hasIncomingTier flags for child lists
+              const refreshedLists = await fetchLists();
+              setListData(refreshedLists);
+              
+              // Update the selected row with refreshed data (if it still exists)
+              const refreshedSelectedList = refreshedLists.find(l => l.id === selectedRowForMetadata.id);
+              if (refreshedSelectedList) {
+                setSelectedRowForMetadata(refreshedSelectedList);
+              }
+            }
+            
+            // Track what was actually changed (only for ListData)
+            const isListData = selectedRowForMetadata && 'list' in selectedRowForMetadata;
+            const tieredListsChanged = isListData && apiListData.tieredListsList !== undefined && 
+              JSON.stringify((selectedRowForMetadata as any)?.tieredListsList || []) !== JSON.stringify(apiListData.tieredListsList);
+            
+            const listValuesChanged = isListData && apiListData.listValuesList !== undefined && 
+              JSON.stringify(((selectedRowForMetadata as any)?.listValuesList || []).map((lv: any) => lv.value).sort()) !== 
+              JSON.stringify((apiListData.listValuesList || []).map((lv: any) => lv.value).sort());
+            
+            // Show success message if tiered lists were updated
+            if (tieredListsChanged) {
+              const tieredCount = Array.isArray(apiListData.tieredListsList) ? apiListData.tieredListsList.length : 0;
+              if (tieredCount > 0) {
+                const tierNumbers = apiListData.tieredListsList.map((_: any, index: number) => index + 2).join(', ');
+                alert(`Tier ${tierNumbers} created for the list "${listDataFormat.list}" successfully!`);
+              } else {
+                alert(`Tiered lists cleared for the list "${listDataFormat.list}" successfully!`);
+              }
+            }
+            
+            // Show success message if list values were updated (only if tiered lists weren't updated)
+            if (listValuesChanged && !tieredListsChanged) {
               const valueCount = Array.isArray(apiListData.listValuesList) ? apiListData.listValuesList.length : 0;
               if (valueCount > 0) {
                 alert(`List values saved successfully! ${valueCount} value${valueCount !== 1 ? 's' : ''} saved.`);
               } else {
                 alert('List values cleared successfully!');
+              }
+            }
+            
+            // Show success message if both tiered lists and list values were updated
+            if (tieredListsChanged && listValuesChanged) {
+              const tieredCount = Array.isArray(apiListData.tieredListsList) ? apiListData.tieredListsList.length : 0;
+              const valueCount = Array.isArray(apiListData.listValuesList) ? apiListData.listValuesList.length : 0;
+              const messages = [];
+              if (tieredCount > 0) {
+                const tierNumbers = apiListData.tieredListsList.map((_: any, index: number) => index + 2).join(', ');
+                messages.push(`Tier ${tierNumbers} created`);
+              }
+              if (valueCount > 0) {
+                messages.push(`${valueCount} list value${valueCount !== 1 ? 's' : ''} saved`);
+              }
+              if (messages.length > 0) {
+                alert(`${messages.join(' and ')} for the list "${listDataFormat.list}" successfully!`);
               }
             }
           }
@@ -1993,27 +2056,88 @@ function App() {
     try {
       const lists = await apiService.getLists() as any[];
       // Convert API response to ListData format
-      const listsDataFormat: ListData[] = lists.map((list: any) => ({
-        id: list.id,
-        sector: Array.isArray(list.sector) ? list.sector : [list.sector || 'ALL'],
-        domain: Array.isArray(list.domain) ? list.domain : [list.domain || 'ALL'],
-        country: Array.isArray(list.country) ? list.country : [list.country || 'ALL'],
-        set: list.set,
-        grouping: list.grouping,
-        list: list.list,
-        format: list.format || '',
-        source: list.source || '',
-        upkeep: list.upkeep || '',
-        graph: list.graph || '',
-        origin: list.origin || '',
-        status: list.status || 'Active',
-        variables: list.variables || 0, // Include variables count from API
-        variablesAttachedList: list.variablesAttachedList || [],
-        listValuesList: list.listValuesList || []
-      }));
+      const listsDataFormat: ListData[] = lists.map((list: any) => {
+        // Calculate tiers string (comma-separated child lists)
+        const tieredLists = list.tieredListsList || [];
+        const tiersString = tieredLists.map((tier: any) => tier.list).join(', ');
+        
+        return {
+          id: list.id,
+          sector: Array.isArray(list.sector) ? list.sector : [list.sector || 'ALL'],
+          domain: Array.isArray(list.domain) ? list.domain : [list.domain || 'ALL'],
+          country: Array.isArray(list.country) ? list.country : [list.country || 'ALL'],
+          set: list.set,
+          grouping: list.grouping,
+          list: list.list,
+          format: list.format || '',
+          source: list.source || '',
+          upkeep: list.upkeep || '',
+          graph: list.graph || '',
+          origin: list.origin || '',
+          status: list.status || 'Active',
+          variables: list.variables || 0, // Include variables count from API
+          variablesAttachedList: list.variablesAttachedList || [],
+          listValuesList: list.listValuesList || [],
+          tieredListsList: list.tieredListsList || [],
+          tiers: tiersString, // Add tiers column value
+          hasIncomingTier: list.hasIncomingTier || false
+        };
+      });
+      
+      // Reorder lists so tiered lists appear beneath their parent
+      // Build a map of parent list ID to tiered list IDs
+      const parentToChildren = new Map<string, string[]>();
+      const allListIds = new Set(listsDataFormat.map(l => l.id));
+      
+      listsDataFormat.forEach(list => {
+        if (list.tieredListsList && list.tieredListsList.length > 0) {
+          const childIds = list.tieredListsList.map(tier => tier.listId).filter((id): id is string => id !== undefined && allListIds.has(id));
+          if (childIds.length > 0) {
+            parentToChildren.set(list.id, childIds);
+          }
+        }
+      });
+      
+      // Build ordered list: parents first, then their children in order
+      const ordered: ListData[] = [];
+      const added = new Set<string>();
+      
+      // First pass: add all lists that are not children of any other list
+      listsDataFormat.forEach(list => {
+        // Check if this list is a child of any other list
+        const isChild = Array.from(parentToChildren.values()).some(children => children.includes(list.id));
+        if (!isChild) {
+          ordered.push(list);
+          added.add(list.id);
+          
+          // Add children recursively
+          const addChildren = (parentId: string) => {
+            const children = parentToChildren.get(parentId) || [];
+            children.forEach(childId => {
+              if (!added.has(childId)) {
+                const childList = listsDataFormat.find(l => l.id === childId);
+                if (childList) {
+                  ordered.push(childList);
+                  added.add(childId);
+                  // Recursively add grandchildren
+                  addChildren(childId);
+                }
+              }
+            });
+          };
+          addChildren(list.id);
+        }
+      });
+      
+      // Add any remaining lists that weren't added (shouldn't happen, but just in case)
+      listsDataFormat.forEach(list => {
+        if (!added.has(list.id)) {
+          ordered.push(list);
+        }
+      });
       
       // Deduplicate by ID (in case API returns duplicates)
-      const uniqueLists = listsDataFormat.filter((list, index, self) => 
+      const uniqueLists = ordered.filter((list, index, self) => 
         index === self.findIndex(l => l.id === list.id)
       );
       
@@ -2184,6 +2308,11 @@ function App() {
         apiListData.listValuesList = newListData.listValuesList;
       }
       
+      // Include tieredListsList if provided
+      if (newListData.tieredListsList !== undefined) {
+        apiListData.tieredListsList = newListData.tieredListsList;
+      }
+      
         const createdList = await apiService.createList(apiListData) as any;
         
         // Convert API response to ListData format
@@ -2202,7 +2331,10 @@ function App() {
           origin: createdList.origin || '',
           status: createdList.status || 'Active',
           variablesAttachedList: createdList.variablesAttachedList || [],
-          listValuesList: createdList.listValuesList || []
+          listValuesList: createdList.listValuesList || [],
+          tieredListsList: createdList.tieredListsList || [],
+          tiers: (createdList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
+          hasIncomingTier: createdList.hasIncomingTier || false
         };
         
         // Show success message if list values were included

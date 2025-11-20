@@ -158,6 +158,23 @@ export const getBulkVariableOntologyView = async (
   return response.json();
 };
 
+// Get tiered list values
+export const getTieredListValues = async (listId: string): Promise<Record<string, string[][]>> => {
+  const response = await fetch(`${API_BASE_URL}/lists/${listId}/tiered-values`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `Failed to get tiered list values: ${response.statusText}` }));
+    throw new Error(error.detail || 'Failed to get tiered list values');
+  }
+
+  return await response.json();
+};
+
 // List ontology view function
 export const getListOntologyView = async (
   listId: string | null,

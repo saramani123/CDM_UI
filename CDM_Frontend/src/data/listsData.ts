@@ -18,6 +18,9 @@ export interface ListData {
   variables?: number; // Count of variables with HAS_LIST relationships (applicability)
   variablesAttachedList?: VariableAttached[];
   listValuesList?: ListValue[];
+  tieredListsList?: TieredList[]; // Lists that are tiered under this list
+  tiers?: string; // Comma-separated string of child tiered lists (for display in grid)
+  hasIncomingTier?: boolean; // True if this list is already a child of another list
 }
 
 export interface VariableAttached {
@@ -31,6 +34,14 @@ export interface VariableAttached {
 export interface ListValue {
   id: string;
   value: string;
+}
+
+export interface TieredList {
+  id: string;
+  set: string;
+  grouping: string;
+  list: string;
+  listId?: string; // ID of the tiered list node
 }
 
 export const mockListData: ListData[] = [
@@ -182,7 +193,8 @@ export const listColumns = [
   { key: 'country', title: 'C', sortable: true, filterable: true, width: '80px' },
   { key: 'set', title: 'Set', sortable: true, filterable: true, width: '140px' },
   { key: 'grouping', title: 'Grouping', sortable: true, filterable: true, width: '120px' },
-  { key: 'list', title: 'List', sortable: true, filterable: true, width: '180px' }
+  { key: 'list', title: 'List', sortable: true, filterable: true, width: '180px' },
+  { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' }
 ];
 
 // Dropdown options for list fields
