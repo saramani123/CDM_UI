@@ -46,7 +46,7 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
       <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">

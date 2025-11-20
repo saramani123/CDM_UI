@@ -845,7 +845,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     } : undefined;
 
     const saveData = {
-      ...formData,
+      ...(formData.being && formData.being.trim() !== '' && { being: formData.being }),
+      ...(formData.avatar && formData.avatar.trim() !== '' && { avatar: formData.avatar }),
+      ...(formData.objectName && formData.objectName.trim() !== '' && { objectName: formData.objectName }),
       ...(driverString && { driver: driverString }),
       ...(identifierData && { identifier: identifierData }),
       relationshipsList: uniqueRelationships,

@@ -780,6 +780,40 @@ async def update_object(
                         print(f"DEBUG: Verification - Being: {verify_result['being']}, Avatar: {verify_result['avatar']}, Object: {verify_result['object']}")
                     else:
                         print("DEBUG: Verification failed - object not found")
+                    
+                    # Update taxonomy relationships if being or avatar changed
+                    being_changed = 'being' in request_data and request_data['being']
+                    avatar_changed = 'avatar' in request_data and request_data['avatar']
+                    object_changed = ('object' in request_data and request_data['object']) or ('objectName' in request_data and request_data['objectName'])
+                    
+                    if being_changed or avatar_changed or object_changed:
+                        # Get the final values (after update)
+                        final_result = session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            RETURN o.being as being, o.avatar as avatar, o.object as object
+                        """, object_id=object_id).single()
+                        
+                        if final_result:
+                            final_being = final_result['being']
+                            final_avatar = final_result['avatar']
+                            final_object = final_result['object']
+                            
+                            # Delete old taxonomy relationships
+                            session.run("""
+                                MATCH (b:Being)-[:HAS_AVATAR]->(a:Avatar)-[r:HAS_OBJECT]->(o:Object {id: $object_id})
+                                DELETE r
+                            """, object_id=object_id)
+                            
+                            # Create new taxonomy relationships
+                            if final_being and final_avatar:
+                                session.run("""
+                                    MATCH (o:Object {id: $object_id})
+                                    MERGE (b:Being {name: $being})
+                                    MERGE (a:Avatar {name: $avatar})
+                                    MERGE (b)-[:HAS_AVATAR]->(a)
+                                    MERGE (a)-[:HAS_OBJECT]->(o)
+                                """, object_id=object_id, being=final_being, avatar=final_avatar)
+                                print(f"DEBUG: Updated taxonomy relationships - Being: {final_being}, Avatar: {final_avatar}")
 
             # Handle relationships and variants bulk update
             print(f"DEBUG: request_data={request_data}")
@@ -1361,7 +1395,17 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     """, being=csv_row.Being, avatar=csv_row.Avatar, object_id=new_id)
 
                     # Create driver relationships
-                    if "ALL" not in sector:
+                    # Sector relationships
+                    if "ALL" in sector:
+                        # Create relationships to ALL existing sectors
+                        session.run("""
+                            MATCH (s:Sector)
+                            MATCH (o:Object {id: $object_id})
+                            WITH s, o
+                            CREATE (s)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
+                        # Create relationships to selected sectors only
                         for sector_name in sector:
                             session.run("""
                                 MATCH (s:Sector {name: $sector})
@@ -1370,7 +1414,17 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 CREATE (s)-[:RELEVANT_TO]->(o)
                             """, sector=sector_name, object_id=new_id)
 
-                    if "ALL" not in domain:
+                    # Domain relationships
+                    if "ALL" in domain:
+                        # Create relationships to ALL existing domains
+                        session.run("""
+                            MATCH (d:Domain)
+                            MATCH (o:Object {id: $object_id})
+                            WITH d, o
+                            CREATE (d)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
+                        # Create relationships to selected domains only
                         for domain_name in domain:
                             session.run("""
                                 MATCH (d:Domain {name: $domain})
@@ -1379,7 +1433,17 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 CREATE (d)-[:RELEVANT_TO]->(o)
                             """, domain=domain_name, object_id=new_id)
 
-                    if "ALL" not in country:
+                    # Country relationships
+                    if "ALL" in country:
+                        # Create relationships to ALL existing countries
+                        session.run("""
+                            MATCH (c:Country)
+                            MATCH (o:Object {id: $object_id})
+                            WITH c, o
+                            CREATE (c)-[:RELEVANT_TO]->(o)
+                        """, object_id=new_id)
+                    else:
+                        # Create relationships to selected countries only
                         for country_name in country:
                             session.run("""
                                 MATCH (c:Country {name: $country})

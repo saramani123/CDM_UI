@@ -1,225 +1,340 @@
 #!/usr/bin/env python3
 """
-Script to fix Object-Driver relationships in Neo4j.
-This script ensures all objects have proper RELEVANT_TO relationships 
-to their corresponding Sectors, Domains, Countries, and Object Clarifiers.
+Script to fix driver relationships for objects in Neo4j.
+
+This script:
+1. Checks all objects and their driver strings (sector, domain, country)
+2. Verifies that the correct RELEVANT_TO relationships exist in Neo4j
+3. Creates missing relationships based on the driver string
+4. Handles "All" specially - creates relationships to ALL sectors/domains/countries instead of creating an "All" node
+
+Usage:
+    python fix_object_driver_relationships.py [--dry-run] [--instance prod|dev]
 """
 
 import os
 import sys
+import argparse
+from typing import List, Set, Dict, Any
 from neo4j import GraphDatabase
-from dotenv import load_dotenv
 
-# Load environment variables
-if os.getenv("VERCEL") is None:
-    load_dotenv(".env.dev")
-else:
-    pass
+# Add parent directory to path to import db module
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-class Neo4jRelationshipFixer:
-    def __init__(self):
-        self.uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        self.username = os.getenv("NEO4J_USERNAME", "neo4j")
-        self.password = os.getenv("NEO4J_PASSWORD", "password")
-        self.driver = None
+from db import get_driver
 
-    def connect(self):
-        """Connect to Neo4j database"""
-        try:
-            # Use neo4j+ssc scheme for self-signed certificates
-            working_uri = self.uri.replace("neo4j+s://", "neo4j+ssc://")
-            print(f"Connecting to Neo4j at {working_uri}")
-            
-            self.driver = GraphDatabase.driver(
-                working_uri,
-                auth=(self.username, self.password),
-                max_connection_lifetime=30 * 60,
-                max_connection_pool_size=50,
-                connection_acquisition_timeout=60,
-                connection_timeout=30,
-                keep_alive=True
-            )
-            
-            # Test connection
-            with self.driver.session() as session:
-                result = session.run("RETURN 1 as test")
-                record = result.single()
-                print(f"✅ Connected to Neo4j! Test result: {record['test']}")
-                return True
-                
-        except Exception as e:
-            print(f"❌ Failed to connect to Neo4j: {e}")
-            return False
+def parse_driver_string(driver_string: str) -> Dict[str, List[str]]:
+    """
+    Parse driver string to extract sector, domain, country, and clarifier.
+    
+    Format: "sector, domain, country, clarifier"
+    Can handle multiple values separated by commas, or "ALL"
+    
+    Returns:
+        Dict with keys: 'sector', 'domain', 'country', 'clarifier'
+    """
+    parts = driver_string.split(', ')
+    
+    if len(parts) >= 4:
+        if len(parts) == 4:
+            # Normal case: exactly 4 parts
+            sector_str = parts[0].strip()
+            domain_str = parts[1].strip()
+            country_str = parts[2].strip()
+            clarifier_str = parts[3].strip()
+        else:
+            # Complex case: one of the first parts contains commas
+            # The last part is always the object clarifier
+            clarifier_str = parts[-1].strip()
+            # The second to last part is always the country
+            country_str = parts[-2].strip()
+            # The third to last part is always the domain
+            domain_str = parts[-3].strip()
+            # Everything before that is the sector
+            sector_str = ', '.join(parts[:-3]).strip()
+    else:
+        # Fallback: try to parse with fewer parts
+        sector_str = parts[0].strip() if len(parts) > 0 else ""
+        domain_str = parts[1].strip() if len(parts) > 1 else ""
+        country_str = parts[2].strip() if len(parts) > 2 else ""
+        clarifier_str = parts[3].strip() if len(parts) > 3 else "None"
+    
+    # Parse each part into a list (handle multiple values or "ALL")
+    # If "ALL" is present anywhere in the list, treat the entire category as "ALL"
+    sector_list = [s.strip() for s in sector_str.split(',') if s.strip()] if sector_str else []
+    domain_list = [d.strip() for d in domain_str.split(',') if d.strip()] if domain_str else []
+    country_list = [c.strip() for c in country_str.split(',') if c.strip()] if country_str else []
+    
+    # If "ALL" is in the list, replace the entire list with just ["ALL"]
+    if "ALL" in sector_list:
+        sector_list = ["ALL"]
+    if "ALL" in domain_list:
+        domain_list = ["ALL"]
+    if "ALL" in country_list:
+        country_list = ["ALL"]
+    
+    return {
+        'sector': sector_list,
+        'domain': domain_list,
+        'country': country_list,
+        'clarifier': clarifier_str
+    }
 
-    def get_all_objects(self):
-        """Get all objects with their driver information"""
-        with self.driver.session() as session:
-            result = session.run("""
-                MATCH (o:Object)
-                RETURN o.id as id, o.driver as driver, o.being as being, 
-                       o.avatar as avatar, o.object as object
-            """)
-            return [record for record in result]
+def get_expected_relationships(driver_data: Dict[str, List[str]], session) -> Dict[str, Set[str]]:
+    """
+    Get the expected driver node names that should have relationships to the object.
+    
+    Returns:
+        Dict with keys: 'sectors', 'domains', 'countries', 'clarifiers'
+        Values are sets of node names
+    """
+    expected = {
+        'sectors': set(),
+        'domains': set(),
+        'countries': set(),
+        'clarifiers': set()
+    }
+    
+    # Handle sectors
+    if "ALL" in driver_data['sector']:
+        # Get all sector names (exclude "ALL" as a literal node name)
+        result = session.run("MATCH (s:Sector) WHERE s.name <> 'ALL' RETURN s.name as name")
+        expected['sectors'] = {record['name'] for record in result}
+    else:
+        # Filter out "ALL" from the list if it somehow got in there
+        expected['sectors'] = {s for s in driver_data['sector'] if s != "ALL"}
+    
+    # Handle domains
+    if "ALL" in driver_data['domain']:
+        # Get all domain names (exclude "ALL" as a literal node name)
+        result = session.run("MATCH (d:Domain) WHERE d.name <> 'ALL' RETURN d.name as name")
+        expected['domains'] = {record['name'] for record in result}
+    else:
+        # Filter out "ALL" from the list if it somehow got in there
+        expected['domains'] = {d for d in driver_data['domain'] if d != "ALL"}
+    
+    # Handle countries
+    if "ALL" in driver_data['country']:
+        # Get all country names (exclude "ALL" as a literal node name)
+        result = session.run("MATCH (c:Country) WHERE c.name <> 'ALL' RETURN c.name as name")
+        expected['countries'] = {record['name'] for record in result}
+    else:
+        # Filter out "ALL" from the list if it somehow got in there
+        expected['countries'] = {c for c in driver_data['country'] if c != "ALL"}
+    
+    # Handle clarifier
+    if driver_data['clarifier'] and driver_data['clarifier'] != "None":
+        expected['clarifiers'].add(driver_data['clarifier'])
+    
+    return expected
 
-    def parse_driver_string(self, driver_string):
-        """Parse driver string to extract sector, domain, country, clarifier"""
-        if not driver_string:
-            return None
-            
-        parts = driver_string.split(', ')
-        if len(parts) < 4:
-            return None
-            
-        return {
-            'sector': parts[0] if parts[0] != '-' else None,
-            'domain': parts[1] if parts[1] != '-' else None,
-            'country': parts[2] if parts[2] != '-' else None,
-            'clarifier': parts[3] if parts[3] != '-' and parts[3] != 'None' else None
-        }
+def get_actual_relationships(object_id: str, session) -> Dict[str, Set[str]]:
+    """
+    Get the actual driver relationships that exist in Neo4j for an object.
+    
+    Returns:
+        Dict with keys: 'sectors', 'domains', 'countries', 'clarifiers'
+        Values are sets of node names
+    """
+    actual = {
+        'sectors': set(),
+        'domains': set(),
+        'countries': set(),
+        'clarifiers': set()
+    }
+    
+    # Get sector relationships
+    result = session.run("""
+        MATCH (s:Sector)-[:RELEVANT_TO]->(o:Object {id: $object_id})
+        RETURN s.name as name
+    """, object_id=object_id)
+    actual['sectors'] = {record['name'] for record in result}
+    
+    # Get domain relationships
+    result = session.run("""
+        MATCH (d:Domain)-[:RELEVANT_TO]->(o:Object {id: $object_id})
+        RETURN d.name as name
+    """, object_id=object_id)
+    actual['domains'] = {record['name'] for record in result}
+    
+    # Get country relationships
+    result = session.run("""
+        MATCH (c:Country)-[:RELEVANT_TO]->(o:Object {id: $object_id})
+        RETURN c.name as name
+    """, object_id=object_id)
+    actual['countries'] = {record['name'] for record in result}
+    
+    # Get clarifier relationships
+    result = session.run("""
+        MATCH (oc:ObjectClarifier)-[:RELEVANT_TO]->(o:Object {id: $object_id})
+        RETURN oc.name as name
+    """, object_id=object_id)
+    actual['clarifiers'] = {record['name'] for record in result}
+    
+    return actual
 
-    def create_driver_node_if_not_exists(self, session, driver_type, name):
-        """Create driver node if it doesn't exist"""
-        # Check if node exists
-        result = session.run(f"MATCH (d:{driver_type} {{name: $name}}) RETURN d", name=name)
-        if result.single():
-            return True
-            
-        # Create node if it doesn't exist
-        try:
-            session.run(f"CREATE (d:{driver_type} {{name: $name}})", name=name)
-            print(f"✅ Created {driver_type}: {name}")
-            return True
-        except Exception as e:
-            print(f"❌ Failed to create {driver_type} '{name}': {e}")
-            return False
-
-    def create_relevant_to_relationship(self, session, driver_type, driver_name, object_id):
-        """Create RELEVANT_TO relationship between driver and object"""
-        try:
-            # Check if relationship already exists
-            result = session.run("""
-                MATCH (d)-[r:RELEVANT_TO]->(o:Object {id: $object_id})
-                WHERE d.name = $driver_name AND labels(d) = [$driver_type]
-                RETURN r
-            """, driver_type=driver_type, driver_name=driver_name, object_id=object_id)
-            
-            if result.single():
-                return True  # Relationship already exists
-                
-            # Create the relationship
-            session.run("""
-                MATCH (d), (o:Object {id: $object_id})
-                WHERE d.name = $driver_name AND labels(d) = [$driver_type]
-                CREATE (d)-[:RELEVANT_TO]->(o)
-            """, driver_type=driver_type, driver_name=driver_name, object_id=object_id)
-            
-            print(f"✅ Created RELEVANT_TO: {driver_type} '{driver_name}' -> Object {object_id}")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Failed to create RELEVANT_TO relationship: {e}")
-            return False
-
-    def fix_object_relationships(self):
-        """Fix all object-driver relationships"""
-        print("🔍 Getting all objects...")
-        objects = self.get_all_objects()
-        print(f"Found {len(objects)} objects")
+def fix_object_relationships(object_id: str, object_name: str, driver_string: str, session, dry_run: bool = False) -> Dict[str, Any]:
+    """
+    Fix driver relationships for a single object.
+    
+    Returns:
+        Dict with information about what was fixed
+    """
+    result_info = {
+        'object_id': object_id,
+        'object_name': object_name,
+        'driver_string': driver_string,
+        'fixed': False,
+        'missing_sectors': [],
+        'missing_domains': [],
+        'missing_countries': [],
+        'missing_clarifiers': [],
+        'created_relationships': 0
+    }
+    
+    # Parse driver string
+    driver_data = parse_driver_string(driver_string)
+    
+    # Get expected and actual relationships
+    expected = get_expected_relationships(driver_data, session)
+    actual = get_actual_relationships(object_id, session)
+    
+    # Find missing relationships
+    missing_sectors = expected['sectors'] - actual['sectors']
+    missing_domains = expected['domains'] - actual['domains']
+    missing_countries = expected['countries'] - actual['countries']
+    missing_clarifiers = expected['clarifiers'] - actual['clarifiers']
+    
+    result_info['missing_sectors'] = list(missing_sectors)
+    result_info['missing_domains'] = list(missing_domains)
+    result_info['missing_countries'] = list(missing_countries)
+    result_info['missing_clarifiers'] = list(missing_clarifiers)
+    
+    # If there are missing relationships, create them
+    if missing_sectors or missing_domains or missing_countries or missing_clarifiers:
+        result_info['fixed'] = True
         
-        with self.driver.session() as session:
-            for obj in objects:
-                print(f"\n📝 Processing Object: {obj['object']} (ID: {obj['id']})")
-                print(f"   Driver string: {obj['driver']}")
-                
-                # Parse driver string
-                driver_parts = self.parse_driver_string(obj['driver'])
-                if not driver_parts:
-                    print(f"   ⚠️  Skipping - invalid driver string")
-                    continue
-                
-                # Process each driver type
-                driver_types = [
-                    ('Sector', driver_parts['sector']),
-                    ('Domain', driver_parts['domain']),
-                    ('Country', driver_parts['country']),
-                    ('ObjectClarifier', driver_parts['clarifier'])
-                ]
-                
-                for driver_type, driver_name in driver_types:
-                    if driver_name:
-                        print(f"   🔗 Processing {driver_type}: {driver_name}")
-                        
-                        # Create driver node if it doesn't exist
-                        if self.create_driver_node_if_not_exists(session, driver_type, driver_name):
-                            # Create RELEVANT_TO relationship
-                            self.create_relevant_to_relationship(session, driver_type, driver_name, obj['id'])
-                        else:
-                            print(f"   ❌ Failed to create {driver_type} node")
-                    else:
-                        print(f"   ⏭️  Skipping {driver_type} (empty)")
-
-    def verify_relationships(self):
-        """Verify that relationships were created correctly"""
-        print("\n🔍 Verifying relationships...")
-        
-        with self.driver.session() as session:
-            # Check total relationships
-            result = session.run("""
-                MATCH ()-[r:RELEVANT_TO]->()
-                RETURN count(r) as total_relationships
-            """)
-            total = result.single()['total_relationships']
-            print(f"Total RELEVANT_TO relationships: {total}")
+        if not dry_run:
+            # Create missing sector relationships
+            for sector_name in missing_sectors:
+                session.run("""
+                    MATCH (s:Sector {name: $sector})
+                    MATCH (o:Object {id: $object_id})
+                    WITH s, o
+                    CREATE (s)-[:RELEVANT_TO]->(o)
+                """, sector=sector_name, object_id=object_id)
+                result_info['created_relationships'] += 1
             
-            # Check relationships by type
-            driver_types = ['Sector', 'Domain', 'Country', 'ObjectClarifier']
-            for driver_type in driver_types:
-                result = session.run(f"""
-                    MATCH (d:{driver_type})-[r:RELEVANT_TO]->(o:Object)
-                    RETURN count(r) as count
-                """)
-                count = result.single()['count']
-                print(f"{driver_type} -> Object relationships: {count}")
+            # Create missing domain relationships
+            for domain_name in missing_domains:
+                session.run("""
+                    MATCH (d:Domain {name: $domain})
+                    MATCH (o:Object {id: $object_id})
+                    WITH d, o
+                    CREATE (d)-[:RELEVANT_TO]->(o)
+                """, domain=domain_name, object_id=object_id)
+                result_info['created_relationships'] += 1
             
-            # Show some examples
-            print("\n📋 Sample relationships:")
-            result = session.run("""
-                MATCH (d)-[r:RELEVANT_TO]->(o:Object)
-                RETURN labels(d)[0] as driver_type, d.name as driver_name, o.object as object_name
-                LIMIT 10
-            """)
-            for record in result:
-                print(f"   {record['driver_type']} '{record['driver_name']}' -> Object '{record['object_name']}'")
-
-    def close(self):
-        """Close database connection"""
-        if self.driver:
-            self.driver.close()
+            # Create missing country relationships
+            for country_name in missing_countries:
+                session.run("""
+                    MATCH (c:Country {name: $country})
+                    MATCH (o:Object {id: $object_id})
+                    WITH c, o
+                    CREATE (c)-[:RELEVANT_TO]->(o)
+                """, country=country_name, object_id=object_id)
+                result_info['created_relationships'] += 1
+            
+            # Create missing clarifier relationships
+            for clarifier_name in missing_clarifiers:
+                session.run("""
+                    MATCH (oc:ObjectClarifier {name: $clarifier})
+                    MATCH (o:Object {id: $object_id})
+                    WITH oc, o
+                    CREATE (oc)-[:RELEVANT_TO]->(o)
+                """, clarifier=clarifier_name, object_id=object_id)
+                result_info['created_relationships'] += 1
+    
+    return result_info
 
 def main():
-    print("🚀 Starting Object-Driver Relationship Fixer")
-    print("=" * 50)
+    parser = argparse.ArgumentParser(description='Fix driver relationships for objects in Neo4j')
+    parser.add_argument('--dry-run', action='store_true', help='Show what would be fixed without making changes')
+    parser.add_argument('--instance', choices=['prod', 'dev'], default='prod', help='Neo4j instance to use (default: prod)')
+    args = parser.parse_args()
     
-    fixer = Neo4jRelationshipFixer()
-    
-    if not fixer.connect():
-        print("❌ Failed to connect to Neo4j. Exiting.")
+    # Get driver connection
+    driver = get_driver()
+    if not driver:
+        print("ERROR: Failed to connect to Neo4j database")
         sys.exit(1)
+    
+    print(f"Connected to Neo4j ({args.instance} instance)")
+    if args.dry_run:
+        print("DRY RUN MODE - No changes will be made")
+    print()
     
     try:
-        # Fix relationships
-        fixer.fix_object_relationships()
-        
-        # Verify results
-        fixer.verify_relationships()
-        
-        print("\n✅ Relationship fixing completed!")
-        
+        with driver.session() as session:
+            # Get all objects
+            result = session.run("""
+                MATCH (o:Object)
+                RETURN o.id as id, o.name as name, o.object as object_name, o.driver as driver
+                ORDER BY o.object
+            """)
+            
+            objects = list(result)
+            print(f"Found {len(objects)} objects to check")
+            print()
+            
+            fixed_count = 0
+            total_relationships_created = 0
+            results = []
+            
+            for record in objects:
+                object_id = record['id']
+                object_name = record.get('object_name') or record.get('name') or 'Unknown'
+                driver_string = record.get('driver') or ''
+                
+                if not driver_string:
+                    print(f"⚠️  Skipping {object_name} (ID: {object_id}) - no driver string")
+                    continue
+                
+                result_info = fix_object_relationships(object_id, object_name, driver_string, session, dry_run=args.dry_run)
+                results.append(result_info)
+                
+                if result_info['fixed']:
+                    fixed_count += 1
+                    total_relationships_created += result_info['created_relationships']
+                    
+                    print(f"✅ Fixed {object_name} (ID: {object_id})")
+                    if result_info['missing_sectors']:
+                        print(f"   - Created {len(result_info['missing_sectors'])} sector relationship(s): {', '.join(result_info['missing_sectors'][:5])}{'...' if len(result_info['missing_sectors']) > 5 else ''}")
+                    if result_info['missing_domains']:
+                        print(f"   - Created {len(result_info['missing_domains'])} domain relationship(s): {', '.join(result_info['missing_domains'][:5])}{'...' if len(result_info['missing_domains']) > 5 else ''}")
+                    if result_info['missing_countries']:
+                        print(f"   - Created {len(result_info['missing_countries'])} country relationship(s): {', '.join(result_info['missing_countries'][:5])}{'...' if len(result_info['missing_countries']) > 5 else ''}")
+                    if result_info['missing_clarifiers']:
+                        print(f"   - Created {len(result_info['missing_clarifiers'])} clarifier relationship(s): {', '.join(result_info['missing_clarifiers'])}")
+            
+            print()
+            print("=" * 60)
+            print(f"Summary:")
+            print(f"  Total objects checked: {len(objects)}")
+            print(f"  Objects fixed: {fixed_count}")
+            print(f"  Total relationships created: {total_relationships_created}")
+            if args.dry_run:
+                print()
+                print("This was a DRY RUN - no changes were made")
+                print("Run without --dry-run to apply changes")
+            
     except Exception as e:
-        print(f"❌ Error during relationship fixing: {e}")
+        print(f"ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
     finally:
-        fixer.close()
+        driver.close()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

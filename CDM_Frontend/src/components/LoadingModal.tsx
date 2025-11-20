@@ -57,7 +57,7 @@ const LoadingModal: React.FC<LoadingModalProps> = ({
   const config = getLoadingConfig();
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
       <div className="bg-ag-dark-surface border border-ag-dark-border rounded-xl p-8 max-w-md mx-4 shadow-2xl">
         {/* Header with icon and title */}
         <div className="text-center mb-6">

@@ -1090,7 +1090,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                           : column.key === 'variable'
                             ? 'font-bold text-green-400 text-base'
                             : (column.key === 'list') 
-                              ? 'font-semibold' 
+                              ? 'font-bold text-purple-400 text-base' 
                               : ''
                       } ${
                         (column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 'text-red-400' : ''

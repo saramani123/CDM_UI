@@ -154,7 +154,7 @@ export const CloneListApplicabilityModal: React.FC<CloneListApplicabilityModalPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-50">
       <div className="bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-xl w-full max-w-6xl h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">

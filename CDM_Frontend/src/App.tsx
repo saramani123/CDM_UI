@@ -1186,6 +1186,13 @@ function App() {
         for (const objectId of selectedIds) {
           // Prepare the update data for this object
           const objectUpdateData = { ...updatedData };
+          
+          // Map objectName to object for backend compatibility
+          if (objectUpdateData.objectName) {
+            objectUpdateData.object = objectUpdateData.objectName;
+            delete objectUpdateData.objectName;
+          }
+          
           console.log(`🔄 Bulk edit - updating object ${objectId} with data:`, objectUpdateData);
           console.log(`🔄 Bulk edit - variantsList field:`, objectUpdateData.variantsList);
           
