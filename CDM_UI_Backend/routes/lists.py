@@ -1,10 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, Body
+from fastapi import APIRouter, HTTPException, status, Body, UploadFile, File
 from typing import List, Dict, Any, Optional
 import uuid
 import re
 from pydantic import BaseModel
 from neo4j import WRITE_ACCESS
 from db import get_driver
+from schema import CSVUploadResponse
 
 router = APIRouter()
 
@@ -35,6 +36,7 @@ class ListCreateRequest(BaseModel):
     listValuesList: Optional[List[ListValueRequest]] = []
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Dict[str, List[List[str]]]] = None  # Dict mapping tier 1 value to list of tiered value arrays
+    variationsList: Optional[List[dict]] = None  # List of variations to create for the list
 
 class ListUpdateRequest(BaseModel):
     sector: Optional[str] = None
@@ -52,6 +54,7 @@ class ListUpdateRequest(BaseModel):
     listValuesList: Optional[List[ListValueRequest]] = None
     tieredListsList: Optional[List[TieredListRequest]] = None
     tieredListValues: Optional[Dict[str, List[List[str]]]] = None  # Dict mapping tier 1 value to list of tiered value arrays
+    variationsList: Optional[List[dict]] = None  # List of variations to append to the list
 
 async def create_list_driver_relationships(session, list_id: str, sector_str: str, domain_str: str, country_str: str):
     """
@@ -518,6 +521,7 @@ async def get_lists():
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
                 OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:Variation)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
                      collect(DISTINCT domain.name) as domains,
@@ -525,12 +529,15 @@ async def get_lists():
                      count(DISTINCT v) as variables_count,
                      collect(DISTINCT lv.value) as list_values,
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
-                     count(DISTINCT parent) > 0 as has_incoming_tier
+                     count(DISTINCT parent) > 0 as has_incoming_tier,
+                     count(DISTINCT var) as variations_count,
+                     collect(DISTINCT {id: var.id, name: var.name}) as variations
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
                        s.name as set_name, g.name as grouping_name,
-                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier
+                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
+                       variations_count, variations
                 ORDER BY l.id
             """)
 
@@ -562,6 +569,9 @@ async def get_lists():
                             "listId": tier.get("listId")
                         })
                 
+                variations_list = record.get("variations") or []
+                variations_count = record.get("variations_count") or 0
+                
                 list_item = {
                     "id": record["id"],
                     "sector": sector_str if sector_str != "ALL" else ["ALL"],
@@ -580,7 +590,9 @@ async def get_lists():
                     "variablesAttachedList": [],
                     "listValuesList": listValuesList,
                     "tieredListsList": tieredListsList,
-                    "hasIncomingTier": record.get("has_incoming_tier", False)
+                    "hasIncomingTier": record.get("has_incoming_tier", False),
+                    "variations": variations_count,
+                    "variationsList": variations_list
                 }
                 lists.append(list_item)
 
@@ -674,6 +686,75 @@ async def create_list(list_data: ListCreateRequest):
             if list_data.tieredListValues is not None and list_data.tieredListsList:
                 await create_tiered_list_values(session, list_id, list_data.tieredListsList, list_data.tieredListValues)
 
+            # Handle variationsList if provided
+            has_variations_list = list_data.variationsList is not None and len(list_data.variationsList) > 0
+            if has_variations_list:
+                parsed_variations_list = list_data.variationsList
+                print(f"DEBUG: Processing {len(parsed_variations_list)} variations for new list")
+                
+                for var in parsed_variations_list:
+                    variation_name = var.get("name", "").strip()
+                    if not variation_name:
+                        continue
+                    
+                    print(f"DEBUG: Processing variation: {variation_name}")
+                    
+                    # Check if variation already exists for this list (case-insensitive)
+                    existing_variation_for_list = session.run("""
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, list_id=list_id, variation_name=variation_name).single()
+                    
+                    if existing_variation_for_list:
+                        print(f"DEBUG: Variation '{variation_name}' already exists for list {list_id}, skipping")
+                        continue
+                    
+                    # Check if variation exists globally (case-insensitive)
+                    existing_variation = session.run("""
+                        MATCH (var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, variation_name=variation_name).single()
+                    
+                    if existing_variation:
+                        # Variation exists globally, connect it to this list
+                        variation_id = existing_variation["id"]
+                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to list {list_id}")
+                        
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+                    else:
+                        # Create new variation
+                        variation_id = str(uuid.uuid4())
+                        print(f"DEBUG: Creating new variation '{variation_name}' for list {list_id}")
+                        
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+
+            # Get variations count and list for the newly created list
+            variations_result = session.run("""
+                MATCH (l:List {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
+            """, {"id": list_id})
+
+            variations_record = variations_result.single()
+            variations_count = variations_record["count"] if variations_record else 0
+            variations_list = variations_record["variations"] if variations_record and variations_record["variations"] else []
+
             return {
                 "id": record["id"],
                 "sector": list_data.sector,
@@ -689,7 +770,9 @@ async def create_list(list_data: ListCreateRequest):
                 "origin": record["origin"],
                 "status": record["status"],
                 "variablesAttachedList": [],
-                "listValuesList": list_data.listValuesList if list_data.listValuesList else []
+                "listValuesList": list_data.listValuesList if list_data.listValuesList else [],
+                "variations": variations_count,
+                "variationsList": variations_list
             }
 
     except Exception as e:
@@ -832,6 +915,65 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                     # Create new tiered value relationships
                     await create_tiered_list_values(session, list_id, current_tiered_lists, list_data.tieredListValues)
             
+            # Handle variationsList if provided (append variations to the list)
+            has_variations_list = list_data.variationsList is not None and len(list_data.variationsList) > 0
+            if has_variations_list:
+                parsed_variations_list = list_data.variationsList
+                print(f"DEBUG: Processing {len(parsed_variations_list)} variations for list {list_id}")
+                
+                for var in parsed_variations_list:
+                    variation_name = var.get("name", "").strip()
+                    if not variation_name:
+                        continue
+                    
+                    print(f"DEBUG: Processing variation: {variation_name}")
+                    
+                    # Check if variation already exists for this list (case-insensitive)
+                    existing_variation_for_list = session.run("""
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, list_id=list_id, variation_name=variation_name).single()
+                    
+                    if existing_variation_for_list:
+                        print(f"DEBUG: Variation '{variation_name}' already exists for list {list_id}, skipping")
+                        continue
+                    
+                    # Check if variation exists globally (case-insensitive)
+                    existing_variation = session.run("""
+                        MATCH (var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, variation_name=variation_name).single()
+                    
+                    if existing_variation:
+                        # Variation exists globally, connect it to this list
+                        variation_id = existing_variation["id"]
+                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to list {list_id}")
+                        
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+                    else:
+                        # Create new variation
+                        variation_id = str(uuid.uuid4())
+                        print(f"DEBUG: Creating new variation '{variation_name}' for list {list_id}")
+                        
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+            
             # Update driver relationships if sector, domain, or country changed
             if list_data.sector is not None or list_data.domain is not None or list_data.country is not None:
                 current_result = session.run("""
@@ -861,16 +1003,19 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:Variation)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
                      collect(DISTINCT c.name) as countries,
                      collect(DISTINCT lv.value) as list_values,
-                     collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists
+                     collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
+                     count(DISTINCT var) as variations_count,
+                     collect(DISTINCT {id: var.id, name: var.name}) as variations
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries, list_values, tiered_lists
+                       sectors, domains, countries, list_values, tiered_lists, variations_count, variations
             """, {"id": list_id})
             
             record = result.single()
@@ -902,6 +1047,9 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                         "listId": tier.get("listId")
                     })
             
+            variations_list = record.get("variations") or []
+            variations_count = record.get("variations_count") or 0
+            
             return {
                 "id": record["id"],
                 "sector": sector_str if sector_str != "ALL" else ["ALL"],
@@ -918,7 +1066,9 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 "status": record["status"] or "Active",
                 "variablesAttachedList": [],
                 "listValuesList": listValuesList,
-                "tieredListsList": tieredListsList
+                "tieredListsList": tieredListsList,
+                "variations": variations_count,
+                "variationsList": variations_list
             }
 
     except HTTPException:
@@ -1412,4 +1562,231 @@ async def bulk_clone_list_applicability(source_list_id: str, target_list_ids: Li
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to bulk clone list applicability: {str(e)}")
+
+@router.get("/lists/{list_id}/variations")
+async def get_list_variations(list_id: str):
+    """Get all variations for a list"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if list exists
+            list_check = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id
+            """, list_id=list_id).single()
+            
+            if not list_check:
+                raise HTTPException(status_code=404, detail="List not found")
+
+            # Get variations
+            variations_result = session.run("""
+                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN var.id as id, var.name as name
+                ORDER BY var.name
+            """, list_id=list_id)
+
+            variations = []
+            for var_record in variations_result:
+                variations.append({
+                    "id": var_record["id"],
+                    "name": var_record["name"]
+                })
+
+            return {
+                "variationsList": variations,
+                "variations": len(variations)
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching list variations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch list variations: {str(e)}")
+
+@router.post("/lists/{list_id}/variations/upload", response_model=CSVUploadResponse)
+async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)):
+    """Bulk upload variations for a list from CSV file"""
+    print(f"DEBUG: bulk_upload_list_variations called with list_id={list_id}, file={file.filename}")
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        # Read CSV content and parse it robustly
+        content = await file.read()
+        print(f"CSV content length: {len(content)}")
+        
+        # Decode content and handle BOM
+        try:
+            text_content = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text_content = content.decode('utf-8')
+        
+        # Parse CSV manually to handle unquoted fields with spaces
+        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        lines = text_content.strip().split('\n')
+        if not lines:
+            raise HTTPException(status_code=400, detail="Empty CSV file")
+        
+        # Get headers from first line
+        headers = [h.strip() for h in lines[0].split(',')]
+        
+        # Parse data rows
+        rows = []
+        for i, line in enumerate(lines[1:], start=2):
+            if not line.strip():
+                continue
+            
+            values = [v.strip() for v in line.split(',')]
+            
+            row = {}
+            for j, header in enumerate(headers):
+                row[header] = values[j] if j < len(values) else ""
+            rows.append(row)
+                    
+        print(f"Successfully parsed {len(rows)} rows from CSV")
+    except Exception as e:
+        print(f"Error in CSV parsing: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+    
+    created_variations = []
+    errors = []
+    skipped_count = 0
+    
+    try:
+        with driver.session() as session:
+            print(f"DEBUG: Starting session for list {list_id}")
+            # Check if list exists
+            list_check = session.run("""
+                MATCH (l:List {id: $list_id})
+                RETURN l.id as id
+            """, list_id=list_id).single()
+            
+            if not list_check:
+                raise HTTPException(status_code=404, detail="List not found")
+
+            # Get existing variations for this list to check for duplicates
+            existing_variations_result = session.run("""
+                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN var.name as name
+            """, list_id=list_id)
+            
+            existing_variation_names = {record["name"].lower() for record in existing_variations_result}
+            
+            # Get all global variations to check for existing ones
+            global_variations_result = session.run("""
+                MATCH (var:Variation)
+                RETURN var.name as name, var.id as id
+            """)
+            
+            global_variations = {record["name"].lower(): {"id": record["id"], "original_name": record["name"]} for record in global_variations_result}
+            print(f"DEBUG: Found {len(global_variations)} global variations")
+            
+            # Track variations within this CSV upload to detect duplicates within the file
+            csv_variation_names = set()
+            
+            for row_num, row in enumerate(rows, start=2):
+                # Get variation name from the row
+                variation_name = row.get('Variation', '').strip()
+                if not variation_name:
+                    errors.append(f"Row {row_num}: Variation name is required")
+                    continue
+                
+                # Check for duplicates within the CSV file itself (case-insensitive)
+                if variation_name.lower() in csv_variation_names:
+                    errors.append(f"Row {row_num}: Duplicate variation name '{variation_name}' found within the CSV file")
+                    continue
+                
+                # Check for duplicates (case-insensitive) - only for this specific list
+                if variation_name.lower() in existing_variation_names:
+                    skipped_count += 1
+                    print(f"Skipping duplicate variation for this list: {variation_name}")
+                    continue
+                
+                # Add to CSV tracking set
+                csv_variation_names.add(variation_name.lower())
+                
+                # Check if variation exists globally using our pre-loaded data (case-insensitive)
+                if variation_name.lower() in global_variations:
+                    # Variation exists globally, just connect it to this list
+                    print(f"Connecting existing global variation to list: {variation_name}")
+                    
+                    variation_id = global_variations[variation_name.lower()]["id"]
+                    
+                    # Check if this variation is already connected to this list
+                    already_connected = session.run("""
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation {id: $variation_id})
+                        RETURN var.id as id
+                    """, list_id=list_id, variation_id=variation_id).single()
+                    
+                    if not already_connected:
+                        # Connect existing variation to list (MERGE to avoid duplicate relationships)
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            MERGE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+                        
+                        existing_variation_names.add(variation_name.lower())
+                        
+                        created_variations.append({
+                            "id": variation_id,
+                            "name": variation_name
+                        })
+                    else:
+                        print(f"Variation {variation_name} already connected to this list, skipping")
+                        skipped_count += 1
+                else:
+                    # Create new variation
+                    print(f"Creating new variation: {variation_name}")
+                    variation_id = str(uuid.uuid4())
+                    
+                    try:
+                        # Create variation node
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        # Connect variation to list
+                        session.run("""
+                            MATCH (l:List {id: $list_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (l)-[:HAS_VARIATION]->(var)
+                        """, list_id=list_id, variation_id=variation_id)
+                        
+                        existing_variation_names.add(variation_name.lower())
+                        
+                        created_variations.append({
+                            "id": variation_id,
+                            "name": variation_name
+                        })
+                    except Exception as create_error:
+                        print(f"Error creating variation {variation_name}: {create_error}")
+                        errors.append(f"Row {row_num}: Failed to create variation '{variation_name}': {str(create_error)}")
+    
+    except HTTPException:
+        raise
+    except Exception as session_error:
+        print(f"DEBUG: Session error: {str(session_error)}")
+        errors.append(f"Database session error: {str(session_error)}")
+
+    return CSVUploadResponse(
+        success=True,
+        message=f"Successfully created {len(created_variations)} variations. Skipped {skipped_count} duplicates.",
+        created_count=len(created_variations),
+        error_count=len(errors),
+        errors=errors
+    )
 

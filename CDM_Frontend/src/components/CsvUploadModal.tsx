@@ -4,7 +4,7 @@ import { X, Upload, FileText } from 'lucide-react';
 interface CsvUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  type: 'relationships' | 'variants' | 'object-relationships' | 'variable-object-relationships';
+  type: 'relationships' | 'variants' | 'variations' | 'object-relationships' | 'variable-object-relationships';
   onUpload: (data: any[] | File) => void;
 }
 
@@ -33,6 +33,12 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
       title: 'Upload Variants',
       columns: [
         { number: 1, name: 'Variant' }
+      ]
+    },
+    variations: {
+      title: 'Upload Variations',
+      columns: [
+        { number: 1, name: 'Variation' }
       ]
     },
     'object-relationships': {
@@ -108,6 +114,13 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
               name: values[0]
             });
           }
+        } else if (type === 'variations') {
+          if (values.length >= 1 && values[0]) {
+            parsedData.push({
+              id: Date.now().toString() + index,
+              name: values[0]
+            });
+          }
         } else if (type === 'object-relationships') {
           if (values.length >= 3) {
             parsedData.push({
@@ -133,8 +146,8 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
         }
       });
 
-      if (type === 'variants') {
-        // For variants, pass the file directly to the API handler
+      if (type === 'variants' || type === 'variations') {
+        // For variants and variations, pass the file directly to the API handler
         onUpload(file);
         onClose();
       } else if (parsedData.length > 0) {
@@ -257,6 +270,7 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
             <p>• Each subsequent row represents one {
               type === 'relationships' ? 'relationship' : 
               type === 'variants' ? 'variant' : 
+              type === 'variations' ? 'variation' :
               type === 'object-relationships' ? 'object relationship' :
               'variable-object relationship'
             }</p>

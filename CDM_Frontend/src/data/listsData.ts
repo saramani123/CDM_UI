@@ -20,6 +20,8 @@ export interface ListData {
   listValuesList?: ListValue[];
   tieredListsList?: TieredList[]; // Lists that are tiered under this list
   tiers?: string; // Comma-separated string of child tiered lists (for display in grid)
+  variations?: number; // Count of variations
+  variationsList?: Array<{ id?: string; name: string }>; // List of variations
   hasIncomingTier?: boolean; // True if this list is already a child of another list
 }
 

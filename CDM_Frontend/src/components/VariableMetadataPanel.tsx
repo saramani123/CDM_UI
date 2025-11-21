@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info, Copy } from 'lucide-react';
+import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info, Copy, Upload, Layers, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
@@ -225,7 +225,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     drivers: false,
     ontology: false,
     metadata: false,
-    objectRelationships: false
+    objectRelationships: false,
+    variations: false
   });
 
   // Track previous selected variable ID to detect actual variable changes
@@ -310,6 +311,48 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
   const [isCloneVariableRelationshipsModalOpen, setIsCloneVariableRelationshipsModalOpen] = useState(false);
 
+  // Variations state - using string for multiline input
+  const [variationsText, setVariationsText] = useState('');
+  const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isTextareaFocusedRef = useRef<boolean>(false);
+  const lastChangeTimeRef = useRef<number>(0);
+  const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
+  const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
+
+  // Load variations when selectedVariable changes
+  React.useEffect(() => {
+    if (selectedVariable?.id) {
+      console.log('VariableMetadataPanel: Loading variations for variable:', selectedVariable.variable, 'id:', selectedVariable.id);
+      
+      // If this is a cloned unsaved variable, use the variations from the cloned data
+      if (selectedVariable._isCloned && !selectedVariable._isSaved) {
+        console.log('VariableMetadataPanel: Using variations from cloned variable data:', selectedVariable.variationsList);
+        const variationsTextContent = (selectedVariable.variationsList || []).map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+        setVariationsText(variationsTextContent);
+        return;
+      }
+      
+      const loadVariations = async () => {
+        try {
+          const variationData = await apiService.getVariableVariations(selectedVariable.id);
+          console.log('VariableMetadataPanel: API variation data:', variationData);
+          const variationsList = variationData?.variationsList || [];
+          console.log('VariableMetadataPanel: loaded variations from API:', variationsList);
+          // Convert variations array to multiline text
+          const variationsTextContent = variationsList.map(v => v.name).join('\n');
+          setVariationsText(variationsTextContent);
+        } catch (error) {
+          console.error('VariableMetadataPanel: failed to load variations:', error);
+          setVariationsText('');
+        }
+      };
+      
+      loadVariations();
+    } else {
+      setVariationsText('');
+    }
+  }, [selectedVariable?.id, selectedVariable?._isCloned, selectedVariable?._isSaved, selectedVariable?.variationsList]);
+
   // Ontology modal state
   const [ontologyModalOpen, setOntologyModalOpen] = useState<{
     isOpen: boolean;
@@ -363,6 +406,69 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
 
+  const handleSortVariations = (direction: 'asc' | 'desc') => {
+    const lines = variationsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariationsText(sortedLines.join('\n') + (variationsText.endsWith('\n') ? '\n' : ''));
+  };
+
+  const handleVariationCsvUpload = async (data: any[] | File) => {
+    if (!selectedVariable?.id) {
+      alert('No variable selected for variation upload');
+      return;
+    }
+
+    // Check if it's a File (new API-based upload) or array (old client-side parsing)
+    if (data instanceof File) {
+      try {
+        const result = await apiService.bulkUploadVariations(selectedVariable.id, data);
+        console.log('Bulk variations upload result:', result);
+        
+        // Show success message
+        const response = result as any;
+        alert(response.message || `Successfully uploaded ${response.created_count} variations`);
+        
+        // Refresh the variations list by fetching the updated variations
+        try {
+          const variationData = await apiService.getVariableVariations(selectedVariable.id);
+          const variationsList = variationData?.variationsList || [];
+          // Convert variations array to multiline text
+          const variationsTextContent = variationsList.map(v => v.name).join('\n');
+          setVariationsText(variationsTextContent);
+          console.log('VariableMetadataPanel: refreshed variations after upload:', variationsList);
+        } catch (error) {
+          console.error('VariableMetadataPanel: failed to refresh variations after upload:', error);
+        }
+      } catch (error) {
+        console.error('Bulk variations upload failed:', error);
+        alert(`Variations upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    } else {
+      // Old client-side parsing logic - append to textarea
+      const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariations = data.filter((variation: any) => 
+        !existingNames.has(variation.name.toLowerCase())
+      );
+      
+      if (newVariations.length < data.length) {
+        const skippedCount = data.length - newVariations.length;
+        alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      // Append new variations to textarea
+      const newLines = newVariations.map((v: any) => v.name).join('\n');
+      setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
   const handleSave = async () => {
     try {
       // Generate driver string from selections
@@ -373,9 +479,32 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         driverSelections.variableClarifier
       );
 
+      // Convert multiline text to variations array
+      const variationsList = variationsText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map((name, index) => ({
+          id: (Date.now() + index).toString(),
+          name
+        }));
+      
+      // Check for duplicate variation names (case-insensitive)
+      const uniqueVariationNames = new Set(variationsList.map(v => v.name.toLowerCase()));
+      
+      if (variationsList.length !== uniqueVariationNames.size) {
+        const duplicateNames = variationsList.filter((variation, index) => 
+          variationsList.findIndex(v => v.name.toLowerCase() === variation.name.toLowerCase()) !== index
+        ).map(v => v.name);
+        
+        alert(`Cannot save: Duplicate variation names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+        return;
+      }
+
       const saveData = {
         ...formData,
-        driver: driverString
+        driver: driverString,
+        variationsList: variationsList
       };
 
       // Call the main save operation (which will handle object relationships)
@@ -1086,6 +1215,129 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         <div></div>
       </CollapsibleSection>
 
+      {/* Variations Section */}
+      <CollapsibleSection 
+        title="Variations" 
+        sectionKey="variations"
+        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariations('asc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariations('desc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariationUploadOpen(true)}
+              disabled={!isPanelEnabled}
+              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="Upload Variations CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsVariationsGraphModalOpen(true)}
+              disabled={!isPanelEnabled || !selectedVariable?.id}
+              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                !isPanelEnabled || !selectedVariable?.id ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="View Variations Graph"
+            >
+              <Network className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <textarea
+          ref={variationsTextareaRef}
+          value={variationsText}
+          onChange={(e) => {
+            const textarea = e.target as HTMLTextAreaElement;
+            const cursorPosition = textarea.selectionStart;
+            lastChangeTimeRef.current = Date.now();
+            setVariationsText(e.target.value);
+            // Restore cursor position and focus after state update
+            requestAnimationFrame(() => {
+              if (variationsTextareaRef.current && isTextareaFocusedRef.current) {
+                variationsTextareaRef.current.focus();
+                // Try to restore cursor position, but if it's out of bounds, put it at the end
+                const maxPos = variationsTextareaRef.current.value.length;
+                const safePos = Math.min(cursorPosition, maxPos);
+                variationsTextareaRef.current.setSelectionRange(safePos, safePos);
+              }
+            });
+          }}
+          onKeyDown={(e) => {
+            // Prevent Enter key from propagating to parent components
+            e.stopPropagation();
+            // Prevent default only for Escape, not Enter
+            if (e.key === 'Escape') {
+              variationsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            // Only restore focus if blur happened very recently after typing (likely accidental)
+            const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+            
+            // Check if blur was intentional (user clicked on another focusable element)
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            // Only restore focus if it was recent typing and user didn't click on another input
+            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isTextareaFocusedRef.current) {
+              // Restore focus after a brief delay to let React finish its render cycle
+              setTimeout(() => {
+                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                  variationsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              // User intentionally blurred, don't restore
+              isTextareaFocusedRef.current = false;
+            }
+          }}
+          disabled={!isPanelEnabled}
+          placeholder="Type one variation per line. Press Enter to add more."
+          rows={8}
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
+      </CollapsibleSection>
+
       {/* Actions */}
       {onSave && (
         <div className="mt-8 pt-6 border-t border-ag-dark-border">
@@ -1154,6 +1406,35 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       />
 
       {/* CSV Upload Modal removed - moved to VariableObjectRelationshipModal */}
+
+      {/* Variations CSV Upload Modal */}
+      <CsvUploadModal
+        isOpen={isVariationUploadOpen}
+        onClose={() => setIsVariationUploadOpen(false)}
+        type="variations"
+        onUpload={handleVariationCsvUpload}
+      />
+
+      {/* Variations Graph Modal */}
+      <OntologyModal
+        isOpen={isVariationsGraphModalOpen}
+        onClose={() => setIsVariationsGraphModalOpen(false)}
+        variableId={
+          // For cloned unsaved variables, don't use the temporary ID - it won't exist in Neo4j
+          (selectedVariable?.id?.startsWith('clone-') || (selectedVariable?._isCloned && !selectedVariable?._isSaved))
+            ? undefined
+            : selectedVariable?.id
+        }
+        variableName={
+          // For cloned unsaved variables, use the variable name
+          (selectedVariable?.id?.startsWith('clone-') || (selectedVariable?._isCloned && !selectedVariable?._isSaved))
+            ? selectedVariable?.variable
+            : undefined
+        }
+        sectionName="Variations"
+        viewType="variations"
+        mode="variable"
+      />
 
       {/* Add Field Value Modal */}
       {selectedFieldForAdd && (

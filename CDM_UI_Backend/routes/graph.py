@@ -453,7 +453,7 @@ async def get_bulk_ontology_view(
 async def get_variable_ontology_view(
     variable_id: Optional[str] = Query(None, description="ID of the variable (preferred)"),
     variable_name: Optional[str] = Query(None, description="Name of the variable (fallback)"),
-    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships")
+    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships, variations")
 ):
     """
     Get ontology view for a specific variable and section.
@@ -499,6 +499,12 @@ async def get_variable_ontology_view(
                 WITH v, o, r1, g, r2
                 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
                 RETURN v, o, r1, g, r2, p, r3
+            """,
+            'variations': """
+                MATCH (v:Variable {id: $variable_id})
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN v, r, var
+                ORDER BY var.name
             """
         }
         query_param = variable_id
@@ -534,13 +540,19 @@ async def get_variable_ontology_view(
                 WITH v, o, r1, g, r2
                 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
                 RETURN v, o, r1, g, r2, p, r3
+            """,
+            'variations': """
+                MATCH (v:Variable {name: $variable_name})
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN v, r, var
+                ORDER BY var.name
             """
         }
         query_param = variable_name
         param_name = 'variable_name'
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships, variations")
     
     try:
         cypher_query = queries[view]
@@ -615,7 +627,7 @@ async def get_variable_ontology_view(
 async def get_bulk_variable_ontology_view(
     variable_ids: Optional[List[str]] = Body(None, description="List of variable IDs (preferred)"),
     variable_names: Optional[List[str]] = Body(None, description="List of variable names (fallback)"),
-    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships")
+    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata, objectRelationships, variations")
 ):
     """
     Get ontology view for multiple variables and section.
@@ -686,6 +698,13 @@ async def get_bulk_variable_ontology_view(
                 WITH v, o, r1, g, r2
                 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
                 RETURN v, o, r1, g, r2, p, r3
+            """,
+            'variations': """
+                MATCH (v:Variable)
+                WHERE v.id IN $variable_ids
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN v, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'variable_ids'
@@ -725,12 +744,19 @@ async def get_bulk_variable_ontology_view(
                 WITH v, o, r1, g, r2
                 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
                 RETURN v, o, r1, g, r2, p, r3
+            """,
+            'variations': """
+                MATCH (v:Variable)
+                WHERE v.name IN $variable_names
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN v, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'variable_names'
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, objectRelationships, variations")
     
     try:
         cypher_query = queries[view]
@@ -805,7 +831,7 @@ async def get_bulk_variable_ontology_view(
 async def get_list_ontology_view(
     list_id: Optional[str] = Query(None, description="ID of the list (preferred)"),
     list_name: Optional[str] = Query(None, description="Name of the list (fallback)"),
-    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata")
+    view: str = Query(..., description="Type of ontology view: drivers, ontology, metadata, listValues, variations")
 ):
     """
     Get ontology view for a specific list and section.
@@ -842,6 +868,12 @@ async def get_list_ontology_view(
                 MATCH (l:List {id: $list_id})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
+            """,
+            'variations': """
+                MATCH (l:List {id: $list_id})
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN l, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'list_id'
@@ -868,13 +900,19 @@ async def get_list_ontology_view(
                 MATCH (l:List {name: $list_name})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
+            """,
+            'variations': """
+                MATCH (l:List {name: $list_name})
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN l, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'list_name'
         param_value = list_name
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues, variations")
     
     try:
         with driver.session() as session:
@@ -1017,7 +1055,7 @@ async def get_list_ontology_view(
 async def get_bulk_list_ontology_view(
     list_ids: Optional[List[str]] = Body(None, description="List of list IDs (preferred)"),
     list_names: Optional[List[str]] = Body(None, description="List of list names (fallback)"),
-    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata")
+    view: str = Body(..., description="Type of ontology view: drivers, ontology, metadata, listValues, variations")
 ):
     """
     Get ontology view for multiple lists and section.
@@ -1074,9 +1112,17 @@ async def get_bulk_list_ontology_view(
                 RETURN l
             """,
             'listValues': """
-                MATCH (l:List)-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                MATCH (l:List)
                 WHERE l.id IN $list_ids
+                OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
+            """,
+            'variations': """
+                MATCH (l:List)
+                WHERE l.id IN $list_ids
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN l, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'list_ids'
@@ -1102,15 +1148,23 @@ async def get_bulk_list_ontology_view(
                 RETURN l
             """,
             'listValues': """
-                MATCH (l:List)-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                MATCH (l:List)
                 WHERE l.name IN $list_names
+                OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 RETURN l, r, lv
+            """,
+            'variations': """
+                MATCH (l:List)
+                WHERE l.name IN $list_names
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                RETURN l, r, var
+                ORDER BY var.name
             """
         }
         param_name = 'list_names'
     
     if view not in queries:
-        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues")
+        raise HTTPException(status_code=400, detail=f"Invalid view type: {view}. Must be one of: drivers, ontology, metadata, listValues, variations")
     
     try:
         with driver.session() as session:

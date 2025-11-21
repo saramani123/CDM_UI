@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA, Layers } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
+import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
@@ -75,16 +76,24 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   const isListValuesTextareaFocusedRef = useRef(false);
   const lastListValuesChangeTimeRef = useRef(0);
 
+  // Variations state
+  const [variationsText, setVariationsText] = useState<string>('');
+  const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isVariationsTextareaFocusedRef = useRef(false);
+  const lastVariationsChangeTimeRef = useRef(0);
+
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
+  const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
     ontology: false,
     metadata: false,
-    relationships: false
+    relationships: false,
+    variations: false
   });
 
   if (!isOpen) return null;
@@ -228,6 +237,54 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setListValuesText(prev => prev ? `${prev}\n${newLines}` : newLines);
   };
 
+  // Variations handlers
+  const handleSortVariations = (direction: 'asc' | 'desc') => {
+    const lines = variationsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariationsText(sortedLines.join('\n') + (variationsText.endsWith('\n') ? '\n' : ''));
+  };
+
+  const handleVariationsTextChange = (text: string) => {
+    const textarea = variationsTextareaRef.current;
+    const cursorPosition = textarea?.selectionStart || 0;
+    lastVariationsChangeTimeRef.current = Date.now();
+    setVariationsText(text);
+    requestAnimationFrame(() => {
+      if (variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+        variationsTextareaRef.current.focus();
+        const maxPos = variationsTextareaRef.current.value.length;
+        const safePos = Math.min(cursorPosition, maxPos);
+        variationsTextareaRef.current.setSelectionRange(safePos, safePos);
+      }
+    });
+  };
+
+  const handleVariationCsvUpload = (data: any[] | File) => {
+    if (Array.isArray(data)) {
+      // Handle array of variations - append to textarea
+      const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariations = data.filter((variation: any) => 
+        !existingNames.has((typeof variation === 'string' ? variation : variation.name).toLowerCase())
+      );
+      
+      if (newVariations.length < data.length) {
+        const skippedCount = data.length - newVariations.length;
+        alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      const newLines = newVariations.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+      setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
   // Helper function to check if a list already exists
   const checkDuplicate = (sector: string[], domain: string[], country: string[], set: string, grouping: string, list: string): boolean => {
     // Normalize new values to strings for comparison
@@ -307,6 +364,29 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       return;
     }
 
+    // Convert variations text to variationsList array
+    let variationsList: Array<{ name: string }> = [];
+    if (variationsText.trim() !== '') {
+      const variationsArray = variationsText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map((name) => ({ name }));
+      
+      // Check for duplicate variations (case-insensitive)
+      const uniqueVariations = new Set(variationsArray.map(v => v.name.toLowerCase()));
+      if (variationsArray.length !== uniqueVariations.size) {
+        const duplicateVariations = variationsArray.filter((v, index) => 
+          variationsArray.findIndex(v2 => v2.name.toLowerCase() === v.name.toLowerCase()) !== index
+        ).map(v => v.name);
+        
+        alert(`Cannot add list: Duplicate variations found: ${duplicateVariations.join(', ')}. Please remove duplicates before adding.`);
+        return;
+      }
+      
+      variationsList = variationsArray;
+    }
+
     const newList = {
       id: `list-${Date.now()}`,
       ...formData,
@@ -315,7 +395,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       country: driverSelections.country.length === 1 && driverSelections.country[0] === 'ALL' ? 'ALL' : driverSelections.country.join(','),
       status: 'Active',
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
-      listValuesList: listValuesArray
+      listValuesList: listValuesArray,
+      variationsList: variationsList
     };
 
     onAdd(newList);
@@ -338,6 +419,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     });
     setVariablesAttached([]);
     setListValuesText('');
+    setVariationsText('');
     setSelectedVariables([]);
     
     onClose();
@@ -812,6 +894,86 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         />
       </div>
 
+      {/* Variations Section */}
+      <CollapsibleSection 
+        title="Variations" 
+        sectionKey="variations"
+        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariations('asc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariations('desc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariationUploadOpen(true)}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+              title="Upload Variations CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <textarea
+          ref={variationsTextareaRef}
+          value={variationsText}
+          onChange={(e) => {
+            handleVariationsTextChange(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              variationsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isVariationsTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            const timeSinceLastChange = Date.now() - lastVariationsChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200;
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+              setTimeout(() => {
+                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                  variationsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              isVariationsTextareaFocusedRef.current = false;
+            }
+          }}
+          placeholder={variationsText.trim() === '' ? "Type one variation per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
+          rows={8}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+        />
+      </CollapsibleSection>
+
       {/* Add List Button */}
       <div className="mt-8 pt-6 border-t border-ag-dark-border">
         <button
@@ -841,6 +1003,13 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         onClose={() => setIsListValuesUploadOpen(false)}
         type="list-values"
         onUpload={handleListValuesCsvUpload}
+      />
+
+      <CsvUploadModal
+        isOpen={isVariationUploadOpen}
+        onClose={() => setIsVariationUploadOpen(false)}
+        type="variations"
+        onUpload={handleVariationCsvUpload}
       />
 
       {/* Variable Relationship Modal */}

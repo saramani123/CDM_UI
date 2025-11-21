@@ -62,7 +62,8 @@ OPTIONAL MATCH (v:Variable)-[r3:HAS_LIST]->(l)
 RETURN s, r1, g, r2, l, r3, v`
   } : graphType === 'variables' ? {
     taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
-RETURN p, r1, g, r2, v`,
+OPTIONAL MATCH (v)-[r3:HAS_VARIATION]->(var:Variation)
+RETURN p, r1, g, r2, v, r3, var`,
     model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
 MATCH (a)-[r2:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[r3:HAS_SPECIFIC_VARIABLE]->(v:Variable)
@@ -129,6 +130,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         Part: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
         Group: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
         Variable: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+        Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } },
         Being: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } },
         Avatar: { background: '#F59E0B', border: '#D97706', highlight: { background: '#FBBF24', border: '#F59E0B' } },
         Object: { background: '#14B8A6', border: '#0D9488', highlight: { background: '#5EEAD4', border: '#14B8A6' } }

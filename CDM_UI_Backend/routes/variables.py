@@ -214,7 +214,9 @@ async def get_variables():
                 OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(d:Domain)
                 OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(c:Country)
                 OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(vc:VariableClarifier)
+                OPTIONAL MATCH (v)-[:HAS_VARIATION]->(var:Variation)
                 WITH v, p, g, count(DISTINCT o) as objectRelationships,
+                     count(DISTINCT var) as variations,
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
                      collect(DISTINCT c.name) as countries,
@@ -223,7 +225,7 @@ async def get_variables():
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
                        v.status as status, p.name as part, g.name as group,
-                       objectRelationships, sectors, domains, countries, variableClarifiers
+                       objectRelationships, variations, sectors, domains, countries, variableClarifiers
                 ORDER BY v.id
             """)
 
@@ -261,7 +263,8 @@ async def get_variables():
                     "graph": record["graph"] or "Yes",
                     "status": record["status"] or "Active",
                     "objectRelationships": record["objectRelationships"],
-                    "objectRelationshipsList": []
+                    "objectRelationshipsList": [],
+                    "variations": record["variations"] or 0
                 }
                 variables.append(var)
 
@@ -275,6 +278,7 @@ async def get_variables():
 async def create_variable(variable_data: VariableCreateRequest):
     """
     Create a new variable in the CDM with proper taxonomy structure.
+    Also handles variationsList for variations management.
     """
     driver = get_driver()
     if not driver:
@@ -344,6 +348,64 @@ async def create_variable(variable_data: VariableCreateRequest):
             await create_driver_relationships(session, variable_id, variable_data.driver)
             print(f"Driver relationships creation completed for variable {variable_id}")
 
+            # Handle variationsList if provided
+            has_variations_list = variable_data.variationsList is not None and len(variable_data.variationsList) > 0
+            if has_variations_list:
+                parsed_variations_list = variable_data.variationsList
+                print(f"DEBUG: Processing {len(parsed_variations_list)} variations for new variable")
+                
+                for var in parsed_variations_list:
+                    variation_name = var.get("name", "").strip()
+                    if not variation_name:
+                        continue
+                    
+                    print(f"DEBUG: Processing variation: {variation_name}")
+                    
+                    # Check if variation exists globally (case-insensitive)
+                    existing_variation = session.run("""
+                        MATCH (var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, variation_name=variation_name).single()
+                    
+                    if existing_variation:
+                        # Variation exists globally, connect it to this variable
+                        variation_id = existing_variation["id"]
+                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
+                        
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+                    else:
+                        # Create new variation
+                        variation_id = str(uuid.uuid4())
+                        print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
+                        
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+
+            # Get variations count and list for the newly created variable
+            variations_result = session.run("""
+                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
+            """, {"id": record["id"]})
+
+            variations_record = variations_result.single()
+            variations_count = variations_record["count"] if variations_record else 0
+            variations_list = variations_record["variations"] if variations_record and variations_record["variations"] else []
+
             return VariableResponse(
                 id=record["id"],
                 driver=variable_data.driver,
@@ -359,7 +421,9 @@ async def create_variable(variable_data: VariableCreateRequest):
                 graph=record["graph"],
                 status=record["status"],
                 objectRelationships=0,
-                objectRelationshipsList=[]
+                objectRelationshipsList=[],
+                variations=variations_count,
+                variationsList=variations_list
             )
 
     except Exception as e:
@@ -489,6 +553,62 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                 print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
                                 errors.append(f"Failed to create object relationship for variable {variable_id}: {str(e)}")
 
+                    # Handle variationsList if provided (append variations to each variable)
+                    if bulk_data.variationsList is not None and len(bulk_data.variationsList) > 0:
+                        print(f"Processing {len(bulk_data.variationsList)} variations for variable {variable_id}")
+                        for var in bulk_data.variationsList:
+                            variation_name = var.get("name", "").strip()
+                            if not variation_name:
+                                continue
+                            
+                            print(f"DEBUG: Processing variation: {variation_name}")
+                            
+                            # Check if variation already exists for this variable (case-insensitive)
+                            existing_variation_for_variable = session.run("""
+                                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                                WHERE toLower(var.name) = toLower($variation_name)
+                                RETURN var.id as id, var.name as name
+                            """, variable_id=variable_id, variation_name=variation_name).single()
+                            
+                            if existing_variation_for_variable:
+                                print(f"DEBUG: Variation '{variation_name}' already exists for variable {variable_id}, skipping")
+                                continue
+                            
+                            # Check if variation exists globally (case-insensitive)
+                            existing_variation = session.run("""
+                                MATCH (var:Variation)
+                                WHERE toLower(var.name) = toLower($variation_name)
+                                RETURN var.id as id, var.name as name
+                            """, variation_name=variation_name).single()
+                            
+                            if existing_variation:
+                                # Variation exists globally, connect it to this variable
+                                variation_id = existing_variation["id"]
+                                print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
+                                
+                                session.run("""
+                                    MATCH (v:Variable {id: $variable_id})
+                                    MATCH (var:Variation {id: $variation_id})
+                                    CREATE (v)-[:HAS_VARIATION]->(var)
+                                """, variable_id=variable_id, variation_id=variation_id)
+                            else:
+                                # Create new variation
+                                variation_id = str(uuid.uuid4())
+                                print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
+                                
+                                session.run("""
+                                    CREATE (var:Variation {
+                                        id: $variation_id,
+                                        name: $variation_name
+                                    })
+                                """, variation_id=variation_id, variation_name=variation_name)
+                                
+                                session.run("""
+                                    MATCH (v:Variable {id: $variable_id})
+                                    MATCH (var:Variation {id: $variation_id})
+                                    CREATE (v)-[:HAS_VARIATION]->(var)
+                                """, variable_id=variable_id, variation_id=variation_id)
+
                     updated_count += 1
 
                 except Exception as e:
@@ -513,12 +633,19 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
     """
     Update an existing variable in the CDM with proper taxonomy structure.
     Supports partial updates - only updates fields that are provided.
+    Also handles variationsList for variations management.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
+        print(f"DEBUG: Updating variable {variable_id}")
+        print(f"DEBUG: variable_data type: {type(variable_data)}")
+        print(f"DEBUG: variable_data: {variable_data}")
+        print(f"DEBUG: variationsList: {variable_data.variationsList}")
+        print(f"DEBUG: variationsList type: {type(variable_data.variationsList)}")
+        
         with driver.session() as session:
             # First, get the current variable data
             current_result = session.run("""
@@ -602,6 +729,65 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             if variable_data.driver is not None:
                 await create_driver_relationships(session, variable_id, variable_data.driver)
 
+            # Handle variationsList if provided
+            has_variations_list = variable_data.variationsList is not None and len(variable_data.variationsList) > 0
+            if has_variations_list:
+                parsed_variations_list = variable_data.variationsList
+                print(f"DEBUG: Processing {len(parsed_variations_list)} variations")
+                
+                for var in parsed_variations_list:
+                    variation_name = var.get("name", "").strip()
+                    if not variation_name:
+                        continue
+                    
+                    print(f"DEBUG: Processing variation: {variation_name}")
+                    
+                    # Check if variation already exists for this variable (case-insensitive)
+                    existing_variation_for_variable = session.run("""
+                        MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, variable_id=variable_id, variation_name=variation_name).single()
+                    
+                    if existing_variation_for_variable:
+                        print(f"DEBUG: Variation '{variation_name}' already exists for variable {variable_id}, skipping")
+                        continue
+                    
+                    # Check if variation exists globally (case-insensitive)
+                    existing_variation = session.run("""
+                        MATCH (var:Variation)
+                        WHERE toLower(var.name) = toLower($variation_name)
+                        RETURN var.id as id, var.name as name
+                    """, variation_name=variation_name).single()
+                    
+                    if existing_variation:
+                        # Variation exists globally, connect it to this variable
+                        variation_id = existing_variation["id"]
+                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
+                        
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+                    else:
+                        # Create new variation
+                        variation_id = str(uuid.uuid4())
+                        print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
+                        
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+
             # Get object relationships count
             relationships_result = session.run("""
                 MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $id})
@@ -610,6 +796,16 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
 
             relationships_record = relationships_result.single()
             relationships_count = relationships_record["count"] if relationships_record else 0
+
+            # Get variations count and list
+            variations_result = session.run("""
+                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
+            """, {"id": variable_id})
+
+            variations_record = variations_result.single()
+            variations_count = variations_record["count"] if variations_record else 0
+            variations_list = variations_record["variations"] if variations_record and variations_record["variations"] else []
 
             # Use provided values or fall back to current values
             final_part = variable_data.part if variable_data.part is not None else current_part
@@ -631,7 +827,9 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                 graph=record["graph"],
                 status=record["status"],
                 objectRelationships=relationships_count,
-                objectRelationshipsList=[]
+                objectRelationshipsList=[],
+                variations=variations_count,
+                variationsList=variations_list
             )
 
     except Exception as e:
@@ -2263,3 +2461,230 @@ async def bulk_clone_variable_object_relationships(source_variable_id: str, targ
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to bulk clone variable object relationships: {str(e)}")
+
+@router.get("/variables/{variable_id}/variations")
+async def get_variable_variations(variable_id: str):
+    """Get all variations for a variable"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            # Check if variable exists
+            var_check = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id
+            """, variable_id=variable_id).single()
+            
+            if not var_check:
+                raise HTTPException(status_code=404, detail="Variable not found")
+
+            # Get variations
+            variations_result = session.run("""
+                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN var.id as id, var.name as name
+                ORDER BY var.name
+            """, variable_id=variable_id)
+
+            variations = []
+            for var_record in variations_result:
+                variations.append({
+                    "id": var_record["id"],
+                    "name": var_record["name"]
+                })
+
+            return {
+                "variationsList": variations,
+                "variations": len(variations)
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching variable variations: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch variable variations: {str(e)}")
+
+@router.post("/variables/{variable_id}/variations/upload", response_model=CSVUploadResponse)
+async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...)):
+    """Bulk upload variations for a variable from CSV file"""
+    print(f"DEBUG: bulk_upload_variations called with variable_id={variable_id}, file={file.filename}")
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="File must be a CSV file")
+
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        # Read CSV content and parse it robustly
+        content = await file.read()
+        print(f"CSV content length: {len(content)}")
+        
+        # Decode content and handle BOM
+        try:
+            text_content = content.decode('utf-8-sig')
+        except UnicodeDecodeError:
+            text_content = content.decode('utf-8')
+        
+        # Parse CSV manually to handle unquoted fields with spaces
+        text_content = text_content.replace('\r\n', '\n').replace('\r', '\n')
+        
+        lines = text_content.strip().split('\n')
+        if not lines:
+            raise HTTPException(status_code=400, detail="Empty CSV file")
+        
+        # Get headers from first line
+        headers = [h.strip() for h in lines[0].split(',')]
+        
+        # Parse data rows
+        rows = []
+        for i, line in enumerate(lines[1:], start=2):
+            if not line.strip():
+                continue
+            
+            values = [v.strip() for v in line.split(',')]
+            
+            row = {}
+            for j, header in enumerate(headers):
+                row[header] = values[j] if j < len(values) else ""
+            rows.append(row)
+                    
+        print(f"Successfully parsed {len(rows)} rows from CSV")
+    except Exception as e:
+        print(f"Error in CSV parsing: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
+    
+    created_variations = []
+    errors = []
+    skipped_count = 0
+    
+    try:
+        with driver.session() as session:
+            print(f"DEBUG: Starting session for variable {variable_id}")
+            # Check if variable exists
+            var_check = session.run("""
+                MATCH (v:Variable {id: $variable_id})
+                RETURN v.id as id
+            """, variable_id=variable_id).single()
+            
+            if not var_check:
+                raise HTTPException(status_code=404, detail="Variable not found")
+
+            # Get existing variations for this variable to check for duplicates
+            existing_variations_result = session.run("""
+                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                RETURN var.name as name
+            """, variable_id=variable_id)
+            
+            existing_variation_names = {record["name"].lower() for record in existing_variations_result}
+            
+            # Get all global variations to check for existing ones
+            global_variations_result = session.run("""
+                MATCH (var:Variation)
+                RETURN var.name as name, var.id as id
+            """)
+            
+            global_variations = {record["name"].lower(): {"id": record["id"], "original_name": record["name"]} for record in global_variations_result}
+            print(f"DEBUG: Found {len(global_variations)} global variations")
+            
+            # Track variations within this CSV upload to detect duplicates within the file
+            csv_variation_names = set()
+            
+            for row_num, row in enumerate(rows, start=2):
+                # Get variation name from the row
+                variation_name = row.get('Variation', '').strip()
+                if not variation_name:
+                    errors.append(f"Row {row_num}: Variation name is required")
+                    continue
+                
+                # Check for duplicates within the CSV file itself (case-insensitive)
+                if variation_name.lower() in csv_variation_names:
+                    errors.append(f"Row {row_num}: Duplicate variation name '{variation_name}' found within the CSV file")
+                    continue
+                
+                # Check for duplicates (case-insensitive) - only for this specific variable
+                if variation_name.lower() in existing_variation_names:
+                    skipped_count += 1
+                    print(f"Skipping duplicate variation for this variable: {variation_name}")
+                    continue
+                
+                # Add to CSV tracking set
+                csv_variation_names.add(variation_name.lower())
+                
+                # Check if variation exists globally using our pre-loaded data (case-insensitive)
+                if variation_name.lower() in global_variations:
+                    # Variation exists globally, just connect it to this variable
+                    print(f"Connecting existing global variation to variable: {variation_name}")
+                    
+                    variation_id = global_variations[variation_name.lower()]["id"]
+                    
+                    # Check if this variation is already connected to this variable
+                    already_connected = session.run("""
+                        MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation {id: $variation_id})
+                        RETURN var.id as id
+                    """, variable_id=variable_id, variation_id=variation_id).single()
+                    
+                    if not already_connected:
+                        # Connect existing variation to variable (MERGE to avoid duplicate relationships)
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            MERGE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+                        
+                        existing_variation_names.add(variation_name.lower())
+                        
+                        created_variations.append({
+                            "id": variation_id,
+                            "name": variation_name
+                        })
+                    else:
+                        print(f"Variation {variation_name} already connected to this variable, skipping")
+                        skipped_count += 1
+                else:
+                    # Create new variation
+                    print(f"Creating new variation: {variation_name}")
+                    variation_id = str(uuid.uuid4())
+                    
+                    try:
+                        # Create variation node
+                        session.run("""
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                        """, variation_id=variation_id, variation_name=variation_name)
+                        
+                        # Connect variation to variable
+                        session.run("""
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                        """, variable_id=variable_id, variation_id=variation_id)
+                        
+                        existing_variation_names.add(variation_name.lower())
+                        
+                        created_variations.append({
+                            "id": variation_id,
+                            "name": variation_name
+                        })
+                    except Exception as create_error:
+                        print(f"Error creating variation {variation_name}: {create_error}")
+                        errors.append(f"Row {row_num}: Failed to create variation '{variation_name}': {str(create_error)}")
+    
+    except HTTPException:
+        raise
+    except Exception as session_error:
+        print(f"DEBUG: Session error: {str(session_error)}")
+        errors.append(f"Database session error: {str(session_error)}")
+
+    return CSVUploadResponse(
+        success=True,
+        message=f"Successfully created {len(created_variations)} variations. Skipped {skipped_count} duplicates.",
+        created_count=len(created_variations),
+        error_count=len(errors),
+        errors=errors
+    )

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Network, Eye, Copy, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Network, Eye, Copy, ArrowUpAZ, ArrowDownZA, Grid3x3, Layers } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
+import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
@@ -232,6 +233,14 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [listValuesGraphModalOpen, setListValuesGraphModalOpen] = useState(false);
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
   
+  // Variations state - using string for multiline input
+  const [variationsText, setVariationsText] = useState('');
+  const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isVariationsTextareaFocusedRef = useRef<boolean>(false);
+  const lastVariationsChangeTimeRef = useRef<number>(0);
+  const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
+  const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
+  
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
   const [isCloneListApplicabilityModalOpen, setIsCloneListApplicabilityModalOpen] = useState(false);
@@ -257,6 +266,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     drivers: false,
     ontology: false,
     metadata: false,
+    variations: false,
     tiered: false,
     relationships: false
   });
@@ -275,6 +285,36 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     }
     return [];
   });
+
+  // Load variations when selectedList changes
+  React.useEffect(() => {
+    if (selectedList?.id) {
+      console.log('ListMetadataPanel: Loading variations for list:', selectedList.list, 'id:', selectedList.id);
+      
+      // If variationsList is available in selectedList, use it
+      if (selectedList.variationsList && selectedList.variationsList.length > 0) {
+        const variationsTextContent = selectedList.variationsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+        setVariationsText(variationsTextContent);
+      } else {
+        // Otherwise, fetch from API
+        apiService.getListVariations(selectedList.id)
+          .then((response: any) => {
+            if (response && response.variationsList && response.variationsList.length > 0) {
+              const variationsTextContent = response.variationsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+              setVariationsText(variationsTextContent);
+            } else {
+              setVariationsText('');
+            }
+          })
+          .catch((error) => {
+            console.error('Error loading variations:', error);
+            setVariationsText('');
+          });
+      }
+    } else {
+      setVariationsText('');
+    }
+  }, [selectedList?.id]);
 
   // Update states when selectedList changes
   React.useEffect(() => {
@@ -591,6 +631,55 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     setListValuesText(prev => prev ? `${prev}\n${uploadedText}` : uploadedText);
   };
 
+  const handleSortVariations = (direction: 'asc' | 'desc') => {
+    const lines = variationsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariationsText(sortedLines.join('\n') + (variationsText.endsWith('\n') ? '\n' : ''));
+  };
+
+  const handleVariationsTextChange = (text: string) => {
+    setVariationsText(text);
+  };
+
+  const handleVariationCsvUpload = async (data: any[] | File) => {
+    if (data instanceof File && selectedList?.id) {
+      try {
+        await apiService.bulkUploadListVariations(selectedList.id, data);
+        // Refresh variations text after upload
+        const variationsResponse: any = await apiService.getListVariations(selectedList.id);
+        if (variationsResponse && variationsResponse.variationsList) {
+          const variationsTextContent = variationsResponse.variationsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+          setVariationsText(variationsTextContent);
+        }
+      } catch (error) {
+        console.error('Error uploading variations CSV:', error);
+        alert('Failed to upload variations CSV. Please try again.');
+      }
+    } else if (Array.isArray(data)) {
+      // Handle array of variations - append to textarea
+      const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariations = data.filter((variation: any) => 
+        !existingNames.has((typeof variation === 'string' ? variation : variation.name).toLowerCase())
+      );
+      
+      if (newVariations.length < data.length) {
+        const skippedCount = data.length - newVariations.length;
+        alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      const newLines = newVariations.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+      setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
   const handleSave = () => {
     // Only include list values if no tiered lists exist
     let listValuesArray: ListValue[] = [];
@@ -644,6 +733,28 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     } else if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
       // If tiered lists were removed, send empty array
       saveData.tieredListsList = [];
+    }
+    
+    // Handle variationsList - parse from textarea and check for duplicates
+    const variationsArray = variationsText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((name) => ({ name }));
+    
+    // Check for duplicate variations (case-insensitive) within the same list
+    const uniqueVariations = new Set(variationsArray.map(v => v.name.toLowerCase()));
+    if (variationsArray.length !== uniqueVariations.size) {
+      const duplicateVariations = variationsArray.filter((v, index) => 
+        variationsArray.findIndex(v2 => v2.name.toLowerCase() === v.name.toLowerCase()) !== index
+      ).map(v => v.name);
+      
+      alert(`Cannot save: Duplicate variations found: ${duplicateVariations.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+    
+    if (variationsArray.length > 0) {
+      saveData.variationsList = variationsArray;
     }
     
     onSave?.(saveData);
@@ -1082,6 +1193,119 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         </div>
       </CollapsibleSection>
 
+      {/* Variations Section */}
+      <CollapsibleSection 
+        title="Variations" 
+        sectionKey="variations"
+        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariations('asc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariations('desc')}
+              disabled={!isPanelEnabled}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariationUploadOpen(true)}
+              disabled={!isPanelEnabled}
+              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="Upload Variations CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsVariationsGraphModalOpen(true)}
+              disabled={!isPanelEnabled || !selectedList?.id}
+              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                !isPanelEnabled || !selectedList?.id ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title="View Variations Graph"
+            >
+              <Network className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <textarea
+          ref={variationsTextareaRef}
+          value={variationsText}
+          onChange={(e) => {
+            const textarea = e.target as HTMLTextAreaElement;
+            const cursorPosition = textarea.selectionStart;
+            lastVariationsChangeTimeRef.current = Date.now();
+            handleVariationsTextChange(e.target.value);
+            // Restore cursor position and focus after state update
+            requestAnimationFrame(() => {
+              if (variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+                variationsTextareaRef.current.focus();
+                const maxPos = variationsTextareaRef.current.value.length;
+                const safePos = Math.min(cursorPosition, maxPos);
+                variationsTextareaRef.current.setSelectionRange(safePos, safePos);
+              }
+            });
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              variationsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isVariationsTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            const timeSinceLastChange = Date.now() - lastVariationsChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200;
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               relatedTarget.tagName !== 'BUTTON');
+            
+            if (wasRecentTyping && clickedOutside) {
+              setTimeout(() => {
+                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                  variationsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else {
+              isVariationsTextareaFocusedRef.current = false;
+            }
+          }}
+          disabled={!isPanelEnabled}
+          placeholder="Enter variations, one per line..."
+          className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent min-h-[120px] resize-y ${
+            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
+        />
+      </CollapsibleSection>
+
       {/* Tiered Section */}
       <CollapsibleSection 
         title="Tiered" 
@@ -1483,6 +1707,14 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onUpload={handleListValuesCsvUpload}
       />
 
+      {/* Variations CSV Upload Modal */}
+      <CsvUploadModal
+        isOpen={isVariationUploadOpen}
+        onClose={() => setIsVariationUploadOpen(false)}
+        type="variations"
+        onUpload={handleVariationCsvUpload}
+      />
+
       {/* Clone List Applicability Modal */}
       <CloneListApplicabilityModal
         isOpen={isCloneListApplicabilityModalOpen}
@@ -1527,6 +1759,19 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           listName={selectedList.list}
           sectionName={ontologyModalOpen.viewType === 'drivers' ? 'Drivers' : ontologyModalOpen.viewType === 'ontology' ? 'Ontology' : 'Metadata'}
           viewType={ontologyModalOpen.viewType}
+          isBulkMode={false}
+        />
+      )}
+
+      {/* Variations Graph Modal */}
+      {isVariationsGraphModalOpen && selectedList && (
+        <ListsOntologyModal
+          isOpen={isVariationsGraphModalOpen}
+          onClose={() => setIsVariationsGraphModalOpen(false)}
+          listId={selectedList.id}
+          listName={selectedList.list}
+          sectionName="Variations"
+          viewType="variations"
           isBulkMode={false}
         />
       )}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
@@ -134,12 +134,21 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const { objects: objectsFromHook } = useObjects();
   const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
   
+  // Variations - using string for multiline input
+  const [variationsText, setVariationsText] = useState('');
+  const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isTextareaFocusedRef = useRef<boolean>(false);
+  const lastChangeTimeRef = useRef<number>(0);
+  const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
+  const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
     ontology: false,
     metadata: false,
-    relationships: false
+    relationships: false,
+    variations: false
   });
 
   if (!isOpen) return null;
@@ -284,6 +293,104 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     setSelectedObjectRelationships(selectedObjectIds);
   };
 
+  const handleSortVariations = (direction: 'asc' | 'desc') => {
+    const lines = variationsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariationsText(sortedLines.join('\n') + (variationsText.endsWith('\n') ? '\n' : ''));
+  };
+
+  const handleVariationsTextChange = (text: string) => {
+    setVariationsText(text);
+  };
+
+  const handleVariationCsvUpload = async (data: any[] | File) => {
+    // For bulk edit, we parse CSV client-side and append to textarea
+    if (data instanceof File) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        let csv = e.target?.result as string;
+        
+        // Remove BOM if present
+        if (csv.charCodeAt(0) === 0xFEFF) {
+          csv = csv.slice(1);
+        }
+        
+        const lines = csv.split('\n').filter(line => line.trim());
+        
+        if (lines.length < 2) {
+          alert('CSV must contain at least a header row and one data row');
+          return;
+        }
+
+        // Skip header row and parse data rows
+        const dataRows = lines.slice(1);
+        const parsedData: any[] = [];
+
+        dataRows.forEach((line, index) => {
+          // Try different separators: comma, semicolon, tab
+          let values = line.split(',').map(val => val.trim().replace(/"/g, ''));
+          if (values.length === 1 && line.includes(';')) {
+            values = line.split(';').map(val => val.trim().replace(/"/g, ''));
+          }
+          if (values.length === 1 && line.includes('\t')) {
+            values = line.split('\t').map(val => val.trim().replace(/"/g, ''));
+          }
+          
+          if (values.length >= 1 && values[0]) {
+            parsedData.push({
+              id: Date.now().toString() + index,
+              name: values[0]
+            });
+          }
+        });
+
+        if (parsedData.length > 0) {
+          // We'll parse the CSV client-side and add to the variations textarea
+          const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+          const newVariations = parsedData.filter((variation: any) => 
+            !existingNames.has(variation.name.toLowerCase())
+          );
+          
+          if (newVariations.length < parsedData.length) {
+            const skippedCount = parsedData.length - newVariations.length;
+            alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+          } else {
+            alert(`Successfully added ${newVariations.length} variations from CSV`);
+          }
+          
+          // Append new variations to textarea
+          const newLines = newVariations.map(v => v.name).join('\n');
+          setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+        } else {
+          alert('No valid variations found in CSV');
+        }
+      };
+      reader.readAsText(data);
+    } else {
+      // Handle array of variations - append to textarea
+      const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariations = data.filter((variation: any) => 
+        !existingNames.has(variation.name.toLowerCase())
+      );
+      
+      if (newVariations.length < data.length) {
+        const skippedCount = data.length - newVariations.length;
+        alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      const newLines = newVariations.map((v: any) => v.name).join('\n');
+      setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
   const handleSaveBulkEdit = () => {
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 
@@ -329,13 +436,36 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       };
     }).filter(Boolean) as any[];
 
+    // Convert multiline text to variations array
+    const variationsList = variationsText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map((name, index) => ({
+        id: (Date.now() + index).toString(),
+        name
+      }));
+    
+    // Check for duplicate variation names (case-insensitive)
+    const uniqueVariationNames = new Set(variationsList.map(v => v.name.toLowerCase()));
+    
+    if (variationsList.length !== uniqueVariationNames.size) {
+      const duplicateNames = variationsList.filter((variation, index) => 
+        variationsList.findIndex(v => v.name.toLowerCase() === variation.name.toLowerCase()) !== index
+      ).map(v => v.name);
+      
+      alert(`Cannot save: Duplicate variation names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      return;
+    }
+
     const saveData = {
       ...formData,
       ...(driverString && { driver: driverString }),
       ...metadata,
       objectRelationshipsList: objectRelationshipsList,
       selectedObjectIds: selectedObjectRelationships, // Store IDs for reference
-      shouldOverrideRelationships: true // Flag to indicate we should delete existing relationships
+      shouldOverrideRelationships: true, // Flag to indicate we should delete existing relationships
+      variationsList: variationsList.length > 0 ? variationsList : undefined
     };
     
     // If relationships are being changed, show confirmation
@@ -911,6 +1041,117 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </div>
       </CollapsibleSection>
 
+      {/* Variations Section */}
+      <CollapsibleSection 
+        title="New Variations" 
+        sectionKey="variations"
+        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariations('asc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariations('desc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariationUploadOpen(true)}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+              title="Upload Variations CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setIsVariationsGraphModalOpen(true)}
+              disabled={selectedCount === 0}
+              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={selectedCount === 0 ? "Select variables to view variations graph" : "View Variations Graph"}
+            >
+              <Network className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <textarea
+          ref={variationsTextareaRef}
+          value={variationsText}
+          onChange={(e) => {
+            const textarea = e.target as HTMLTextAreaElement;
+            const cursorPosition = textarea.selectionStart;
+            lastChangeTimeRef.current = Date.now();
+            handleVariationsTextChange(e.target.value);
+            // Restore cursor position and focus after state update
+            requestAnimationFrame(() => {
+              if (variationsTextareaRef.current && isTextareaFocusedRef.current) {
+                variationsTextareaRef.current.focus();
+                // Try to restore cursor position, but if it's out of bounds, put it at the end
+                const maxPos = variationsTextareaRef.current.value.length;
+                const safePos = Math.min(cursorPosition, maxPos);
+                variationsTextareaRef.current.setSelectionRange(safePos, safePos);
+              }
+            });
+          }}
+          onKeyDown={(e) => {
+            // Prevent Enter key from propagating to parent components
+            e.stopPropagation();
+            // Prevent default only for Escape, not Enter
+            if (e.key === 'Escape') {
+              variationsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            // Only restore focus if blur happened very recently after typing (likely accidental)
+            const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+            
+            // Check if blur was intentional (user clicked on another focusable element)
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            // Only restore focus if it was recent typing and user didn't click on another input
+            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isTextareaFocusedRef.current) {
+              // Restore focus after a brief delay to let React finish its render cycle
+              setTimeout(() => {
+                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                  variationsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              // User intentionally blurred, don't restore
+              isTextareaFocusedRef.current = false;
+            }
+          }}
+          placeholder="Type one variation per line. Press Enter to add more. Variations will be appended to existing ones for all selected variables."
+          rows={8}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+        />
+      </CollapsibleSection>
+
       {/* Apply Changes Button */}
       <div className="mt-8 pt-6 border-t border-ag-dark-border">
         <button
@@ -957,6 +1198,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           }
         }}
         initialCsvData={pendingCsvData}
+        isBulkMode={true}
+      />
+
+      {/* Variations CSV Upload Modal */}
+      <CsvUploadModal
+        isOpen={isVariationUploadOpen}
+        onClose={() => setIsVariationUploadOpen(false)}
+        type="variations"
+        onUpload={handleVariationCsvUpload}
+      />
+
+      {/* Variations Graph Modal */}
+      <OntologyModal
+        isOpen={isVariationsGraphModalOpen}
+        onClose={() => setIsVariationsGraphModalOpen(false)}
+        variableIds={getSelectedVariableIds()}
+        variableNames={getSelectedVariableNames()}
+        sectionName="Variations"
+        viewType="variations"
+        mode="variable"
         isBulkMode={true}
       />
 

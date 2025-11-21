@@ -98,7 +98,7 @@ export const getBulkOntologyView = async (
 export const getVariableOntologyView = async (
   variableId: string | null,
   variableName: string | null,
-  view: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships'
+  view: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | 'variations'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build query params - prefer variable_id if available, otherwise fall back to variable_name
   const params = new URLSearchParams();
@@ -130,7 +130,7 @@ export const getVariableOntologyView = async (
 export const getBulkVariableOntologyView = async (
   variableIds: string[] | null,
   variableNames: string[] | null,
-  viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships'
+  viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | 'variations'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build request body - prefer variable_ids if available, otherwise fall back to variable_names
   const body: any = { view: viewType };
@@ -179,7 +179,7 @@ export const getTieredListValues = async (listId: string): Promise<Record<string
 export const getListOntologyView = async (
   listId: string | null,
   listName: string | null,
-  view: 'drivers' | 'ontology' | 'metadata' | 'listValues'
+  view: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build query params - prefer list_id if available, otherwise fall back to list_name
   const params = new URLSearchParams();
@@ -211,7 +211,7 @@ export const getListOntologyView = async (
 export const getBulkListOntologyView = async (
   listIds: string[] | null,
   listNames: string[] | null,
-  viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues'
+  viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations'
 ): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
   // Build request body - prefer list_ids if available, otherwise fall back to list_names
   const body: any = { view: viewType };
@@ -283,13 +283,29 @@ class ApiService {
         let errorMessage = `API request failed: ${response.status} ${response.statusText}`;
         try {
           const errorData = await response.json();
+          console.error('API Error Response:', errorData);
           if (errorData.detail) {
-            errorMessage = errorData.detail;
+            // Handle both string and object detail
+            if (typeof errorData.detail === 'string') {
+              errorMessage = errorData.detail;
+            } else if (Array.isArray(errorData.detail)) {
+              // Pydantic validation errors come as arrays
+              errorMessage = errorData.detail.map((err: any) => {
+                if (typeof err === 'string') return err;
+                if (err.msg) return `${err.loc?.join('.') || 'field'}: ${err.msg}`;
+                return JSON.stringify(err);
+              }).join(', ');
+            } else if (typeof errorData.detail === 'object') {
+              errorMessage = JSON.stringify(errorData.detail);
+            } else {
+              errorMessage = String(errorData.detail);
+            }
           } else if (errorData.message) {
-            errorMessage = errorData.message;
+            errorMessage = typeof errorData.message === 'string' ? errorData.message : JSON.stringify(errorData.message);
           }
         } catch (e) {
           // If JSON parsing fails, use default message
+          console.error('Failed to parse error response:', e);
         }
         throw new Error(errorMessage);
       }
@@ -460,6 +476,63 @@ class ApiService {
         // Don't set Content-Type, let browser set it with boundary for FormData
       },
     });
+  }
+
+  // Variation API (for Variables)
+  async getVariableVariations(variableId: string) {
+    return this.request(`/variables/${variableId}/variations`);
+  }
+
+  async getListVariations(listId: string) {
+    return this.request(`/lists/${listId}/variations`);
+  }
+
+  async bulkUploadVariations(variableId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return this.request(`/variables/${variableId}/variations/upload`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it with boundary for FormData
+      },
+    });
+  }
+
+  async bulkUploadListVariations(listId: string, file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const url = `${API_BASE_URL}/lists/${listId}/variations/upload`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for bulk uploads
+    
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+        headers: {
+          // Don't set Content-Type, let browser set it with boundary for FormData
+        },
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: `API request failed: ${response.status} ${response.statusText}` }));
+        throw new Error(errorData.detail || `API request failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Request timeout: The server took too long to respond. This may happen with large CSV files. Please try again or upload a smaller batch.');
+      }
+      throw error;
+    }
   }
 
   // Update object with relationships and variants

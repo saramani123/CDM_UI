@@ -20,7 +20,7 @@ interface OntologyModalProps {
   variableIds?: string[]; // Optional - for bulk variable mode (preferred)
   variableNames?: string[]; // Optional - for bulk variable mode (fallback)
   sectionName: string;
-  viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata' | 'objectRelationships';
+  viewType: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata' | 'objectRelationships' | 'variations';
   isBulkMode?: boolean; // New flag to indicate bulk mode
   mode?: 'object' | 'variable'; // New flag to indicate if this is for objects or variables
 }
@@ -110,6 +110,11 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
             Object: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
             Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
             Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } }
+          };
+        case 'variations':
+          return {
+            Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
+            Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
           };
         default:
           return {};
@@ -201,9 +206,9 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       if (isVariableMode) {
         // Variable mode
         if (isBulk) {
-          graphData = await getBulkVariableOntologyView(variableIds || null, variableNames || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships');
+          graphData = await getBulkVariableOntologyView(variableIds || null, variableNames || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | 'variations');
         } else {
-          graphData = await getVariableOntologyView(variableId || null, variableName || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships');
+          graphData = await getVariableOntologyView(variableId || null, variableName || null, viewType as 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | 'variations');
         }
       } else {
         // Object mode (existing)
@@ -768,6 +773,12 @@ OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
 WITH v, o, r1, g, r2
 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
 RETURN v, o, r1, g, r2, p, r3`;
+          case 'variations':
+            return `MATCH (v:Variable)
+WHERE ${fieldName} IN ${paramValue}
+OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+RETURN v, r, var
+ORDER BY var.name`;
           default:
             return '';
         }
@@ -802,6 +813,11 @@ OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
 WITH v, o, r1, g, r2
 OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
 RETURN v, o, r1, g, r2, p, r3`;
+          case 'variations':
+            return `MATCH (v:Variable ${paramValue})
+OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+RETURN v, r, var
+ORDER BY var.name`;
           default:
             return '';
         }

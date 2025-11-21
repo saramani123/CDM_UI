@@ -1889,9 +1889,17 @@ function App() {
           if (gridData.variablesAttachedList !== undefined) apiListData.variablesAttachedList = gridData.variablesAttachedList;
           if (gridData.tieredListsList !== undefined) apiListData.tieredListsList = gridData.tieredListsList;
           if (gridData.tieredListValues !== undefined) apiListData.tieredListValues = gridData.tieredListValues;
+          if (gridData.variationsList !== undefined) apiListData.variationsList = gridData.variationsList;
           
           // Only update if there are fields to update
           if (Object.keys(apiListData).length > 0) {
+            if (!selectedRowForMetadata.id) {
+              console.error('❌ Cannot update list: No ID found in selectedRowForMetadata:', selectedRowForMetadata);
+              alert('Error: List ID is missing. Please select a list again.');
+              return;
+            }
+            
+            console.log('🔄 Updating list - ID:', selectedRowForMetadata.id, 'Name:', selectedRowForMetadata.list, 'Data keys:', Object.keys(apiListData));
             const updatedList = await apiService.updateList(selectedRowForMetadata.id, apiListData) as any;
             
             // Convert API response to ListData format
@@ -1912,6 +1920,8 @@ function App() {
               variablesAttachedList: updatedList.variablesAttachedList || [],
               listValuesList: updatedList.listValuesList || [],
               tieredListsList: updatedList.tieredListsList || [],
+              variations: updatedList.variations || 0,
+              variationsList: updatedList.variationsList || [],
               tiers: (updatedList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
               hasIncomingTier: updatedList.hasIncomingTier || false
             };
@@ -1986,9 +1996,17 @@ function App() {
               }
             }
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error updating list:', error);
-          alert('Failed to update list. Please try again.');
+          const errorMessage = error?.message || 'Unknown error';
+          if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+            alert(`Failed to update list: The list with ID "${selectedRowForMetadata?.id}" was not found. This may happen if the list was deleted. Please refresh the page and try again.`);
+            // Refresh lists to get updated data
+            await fetchLists();
+            setSelectedRowForMetadata(null);
+          } else {
+            alert(`Failed to update list: ${errorMessage}. Please try again.`);
+          }
           throw error;
         }
       } else if (activeTab === 'variables') {
@@ -2086,6 +2104,8 @@ function App() {
           variablesAttachedList: list.variablesAttachedList || [],
           listValuesList: list.listValuesList || [],
           tieredListsList: list.tieredListsList || [],
+          variations: list.variations || 0,
+          variationsList: list.variationsList || [],
           tiers: tiersString, // Add tiers column value
           hasIncomingTier: list.hasIncomingTier || false
         };

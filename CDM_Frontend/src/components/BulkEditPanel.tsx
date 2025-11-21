@@ -129,6 +129,14 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const isListValuesTextareaFocusedRef = useRef(false);
   const lastListValuesChangeTimeRef = useRef(0);
 
+  // Variations state for lists (for bulk edit - always starts empty)
+  const [variationsText, setVariationsText] = useState<string>('');
+  const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const isVariationsTextareaFocusedRef = useRef(false);
+  const lastVariationsChangeTimeRef = useRef(0);
+  const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
+  const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
+
   // State for add being/avatar value modals
   const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
   const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
@@ -198,6 +206,54 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     setListValuesText(prev => prev ? `${prev}\n${newLines}` : newLines);
   };
 
+  // Variations handlers for lists
+  const handleSortVariations = (direction: 'asc' | 'desc') => {
+    const lines = variationsText.split('\n').filter(line => line.trim() !== '');
+    const sortedLines = [...lines].sort((a, b) => {
+      const aTrimmed = a.trim().toLowerCase();
+      const bTrimmed = b.trim().toLowerCase();
+      if (direction === 'asc') {
+        return aTrimmed.localeCompare(bTrimmed);
+      } else {
+        return bTrimmed.localeCompare(aTrimmed);
+      }
+    });
+    setVariationsText(sortedLines.join('\n') + (variationsText.endsWith('\n') ? '\n' : ''));
+  };
+
+  const handleVariationsTextChange = (text: string) => {
+    const textarea = variationsTextareaRef.current;
+    const cursorPosition = textarea?.selectionStart || 0;
+    lastVariationsChangeTimeRef.current = Date.now();
+    setVariationsText(text);
+    requestAnimationFrame(() => {
+      if (variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+        variationsTextareaRef.current.focus();
+        const maxPos = variationsTextareaRef.current.value.length;
+        const safePos = Math.min(cursorPosition, maxPos);
+        variationsTextareaRef.current.setSelectionRange(safePos, safePos);
+      }
+    });
+  };
+
+  const handleVariationCsvUpload = (data: any[] | File) => {
+    if (Array.isArray(data)) {
+      // Handle array of variations - append to textarea
+      const existingNames = new Set(variationsText.split('\n').filter(line => line.trim()).map(name => name.toLowerCase()));
+      const newVariations = data.filter((variation: any) => 
+        !existingNames.has((typeof variation === 'string' ? variation : variation.name).toLowerCase())
+      );
+      
+      if (newVariations.length < data.length) {
+        const skippedCount = data.length - newVariations.length;
+        alert(`Uploaded ${newVariations.length} new variations. Skipped ${skippedCount} duplicates.`);
+      }
+      
+      const newLines = newVariations.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+      setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
@@ -234,13 +290,13 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Lists ontology modal state
   const [listsOntologyModalOpen, setListsOntologyModalOpen] = useState<{
     isOpen: boolean;
-    viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | null;
+    viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations' | null;
   }>({ isOpen: false, viewType: null });
   
   // List values graph modal state
   const [listValuesGraphModalOpen, setListValuesGraphModalOpen] = useState(false);
 
-  const openListsOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues') => {
+  const openListsOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations') => {
     setListsOntologyModalOpen({ isOpen: true, viewType });
   };
 
@@ -256,7 +312,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     relationships: false,
     variants: false,
     metadata: false,
-    listValues: false
+    listValues: false,
+    variations: false
   });
 
   // Ontology modal state
@@ -746,6 +803,28 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         saveData.listValuesList = listValuesArray;
       }
       
+      // Handle variationsList - parse from textarea and check for duplicates
+      if (variationsText.trim() !== '') {
+        const variationsArray = variationsText
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map((name) => ({ name }));
+        
+        // Check for duplicate variations (case-insensitive) within the same list
+        const uniqueVariations = new Set(variationsArray.map(v => v.name.toLowerCase()));
+        if (variationsArray.length !== uniqueVariations.size) {
+          const duplicateVariations = variationsArray.filter((v, index) => 
+            variationsArray.findIndex(v2 => v2.name.toLowerCase() === v.name.toLowerCase()) !== index
+          ).map(v => v.name);
+          
+          alert(`Cannot save: Duplicate variations found: ${duplicateVariations.join(', ')}. Please remove duplicates before saving.`);
+          return;
+        }
+        
+        saveData.variationsList = variationsArray;
+      }
+      
       console.log('🔄 BulkEditPanel (Lists) - saveData:', saveData);
       onSave(saveData);
       return;
@@ -1049,7 +1128,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     actions?: React.ReactNode;
     children: React.ReactNode;
     ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata';
-    listsOntologyViewType?: 'drivers' | 'ontology' | 'metadata';
+    listsOntologyViewType?: 'drivers' | 'ontology' | 'metadata' | 'variations';
     showRelationshipsGraph?: boolean;
   }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, listsOntologyViewType, showRelationshipsGraph }) => {
     const isExpanded = expandedSections[sectionKey];
@@ -1553,6 +1632,103 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                 }
               }}
               placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. These values will be appended to all selected lists. Use the upload icon to import from CSV." : undefined}
+              rows={8}
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+            />
+          </CollapsibleSection>
+
+          {/* Variations Section - Lists */}
+          <CollapsibleSection 
+            title="New Variations" 
+            sectionKey="variations"
+            icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+            actions={
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleSortVariations('asc')}
+                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                  title="Sort A-Z"
+                >
+                  <ArrowUpAZ className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => handleSortVariations('desc')}
+                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                  title="Sort Z-A"
+                >
+                  <ArrowDownZA className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsVariationUploadOpen(true)}
+                  className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+                  title="Upload Variations CSV"
+                >
+                  <Upload className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => setIsVariationsGraphModalOpen(true)}
+                  disabled={selectedObjects.length === 0}
+                  className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
+                    selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title={selectedObjects.length === 0 ? "Select lists to view variations graph" : "View Variations Graph"}
+                >
+                  <Network className="w-4 h-4" />
+                </button>
+              </div>
+            }
+          >
+            <div className="mb-4">
+              <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+                <div className="text-sm text-ag-dark-text-secondary">
+                  <span className="font-medium">Bulk variations editing:</span> Enter variations below to append them to all selected lists. Each variation should be on a new line.
+                </div>
+              </div>
+            </div>
+            <textarea
+              ref={variationsTextareaRef}
+              value={variationsText}
+              onChange={(e) => {
+                handleVariationsTextChange(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Escape') {
+                  variationsTextareaRef.current?.blur();
+                }
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onFocus={(e) => {
+                e.stopPropagation();
+                isVariationsTextareaFocusedRef.current = true;
+              }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastVariationsChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 200;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOutside = !relatedTarget || 
+                  (relatedTarget.tagName !== 'TEXTAREA' && 
+                   relatedTarget.tagName !== 'INPUT' && 
+                   !relatedTarget.isContentEditable);
+                
+                if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+                  setTimeout(() => {
+                    if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                      variationsTextareaRef.current.focus();
+                    }
+                  }, 10);
+                } else if (!wasRecentTyping) {
+                  isVariationsTextareaFocusedRef.current = false;
+                }
+              }}
+              placeholder={variationsText.trim() === '' ? "Type one variation per line. Press Enter to add more. These variations will be appended to all selected lists. Use the upload icon to import from CSV." : undefined}
               rows={8}
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
             />
@@ -2127,6 +2303,13 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         onUpload={handleListValuesCsvUpload}
       />
 
+      <CsvUploadModal
+        isOpen={isVariationUploadOpen}
+        onClose={() => setIsVariationUploadOpen(false)}
+        type="variations"
+        onUpload={handleVariationCsvUpload}
+      />
+
       {/* Relationship Modal - Objects */}
       {activeTab === 'objects' && (
         <RelationshipModal
@@ -2235,6 +2418,18 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             'Metadata'
           }
           viewType={listsOntologyModalOpen.viewType}
+          isBulkMode={true}
+        />
+      )}
+
+      {activeTab === 'lists' && isVariationsGraphModalOpen && selectedObjects.length > 0 && (
+        <ListsOntologyModal
+          isOpen={isVariationsGraphModalOpen}
+          onClose={() => setIsVariationsGraphModalOpen(false)}
+          listIds={selectedObjects.map(list => list.id).filter(Boolean)}
+          listNames={selectedObjects.map(list => list.list || list.name).filter(Boolean)}
+          sectionName="Variations"
+          viewType="variations"
           isBulkMode={true}
         />
       )}

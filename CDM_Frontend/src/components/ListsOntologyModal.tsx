@@ -15,7 +15,7 @@ interface ListsOntologyModalProps {
   listIds?: string[]; // Optional - for bulk mode (preferred)
   listNames?: string[]; // Optional - for bulk mode (fallback)
   sectionName: string;
-  viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues';
+  viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations';
   isBulkMode?: boolean; // Flag to indicate bulk mode
 }
 
@@ -87,6 +87,11 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
           List: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
           ListValue: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } } // Purple for list values
         };
+      case 'variations':
+        return {
+          List: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
+          Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
+        };
       default:
         return {};
     }
@@ -146,8 +151,8 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
         return;
       }
 
-      // For metadata or listValues view, auto-select the first list node and expand panel
-      if ((viewType === 'metadata' || viewType === 'listValues') && graphData.nodes.length > 0) {
+      // For metadata, listValues, or variations view, auto-select the first list node and expand panel
+      if ((viewType === 'metadata' || viewType === 'listValues' || viewType === 'variations') && graphData.nodes.length > 0) {
         const firstList = graphData.nodes.find((n: any) => n.group === 'List') || graphData.nodes[0];
         if (firstList) {
           setSelectedNode({
@@ -183,8 +188,8 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
           isSelected = (listId && node.properties?.id === listId) ||
                       (listName && (node.label === listName || node.properties?.list === listName));
         }
-        const nodeColor = isSelected && (viewType === 'drivers' || viewType === 'metadata' || viewType === 'listValues') 
-          ? (viewType === 'metadata' || viewType === 'listValues'
+        const nodeColor = isSelected && (viewType === 'drivers' || viewType === 'metadata' || viewType === 'listValues' || viewType === 'variations') 
+          ? (viewType === 'metadata' || viewType === 'listValues' || viewType === 'variations'
               ? { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }
               : { background: '#EF4444', border: '#DC2626', highlight: { background: '#F87171', border: '#EF4444' } })
           : colorConfigForNode;

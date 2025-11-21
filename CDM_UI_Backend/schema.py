@@ -47,7 +47,8 @@ def create_constraints_and_indexes():
                 "CREATE CONSTRAINT group_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.name IS UNIQUE",
                 # Relationship and Variant constraints
                 "CREATE CONSTRAINT relationship_id_unique IF NOT EXISTS FOR (r:Relationship) REQUIRE r.id IS UNIQUE",
-                "CREATE CONSTRAINT variant_id_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.id IS UNIQUE"
+                "CREATE CONSTRAINT variant_id_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.id IS UNIQUE",
+                "CREATE CONSTRAINT variation_id_unique IF NOT EXISTS FOR (var:Variation) REQUIRE var.id IS UNIQUE"
             ]
             
             for constraint in constraints:
@@ -82,7 +83,8 @@ def create_constraints_and_indexes():
                 # Relationship and Variant indexes
                 "CREATE INDEX relationship_type_index IF NOT EXISTS FOR (r:Relationship) ON (r.type)",
                 "CREATE INDEX relationship_role_index IF NOT EXISTS FOR (r:Relationship) ON (r.role)",
-                "CREATE INDEX variant_name_index IF NOT EXISTS FOR (v:Variant) ON (v.name)"
+                "CREATE INDEX variant_name_index IF NOT EXISTS FOR (v:Variant) ON (v.name)",
+                "CREATE INDEX variation_name_index IF NOT EXISTS FOR (var:Variation) ON (var.name)"
             ]
             
             for index in indexes:
@@ -439,6 +441,7 @@ class VariableCreateRequest(BaseModel):
     default: Optional[str] = Field("", description="Default value")
     graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
     status: Optional[str] = Field("Active", description="Status")
+    variationsList: Optional[List[dict]] = None  # List of variations to create for the variable
 
 class VariableUpdateRequest(BaseModel):
     """Schema for updating a variable - all fields optional for partial updates"""
@@ -454,6 +457,7 @@ class VariableUpdateRequest(BaseModel):
     default: Optional[str] = None
     graph: Optional[str] = None
     status: Optional[str] = None
+    variationsList: Optional[List[dict]] = None  # List of variations to append to the variable
 
 class BulkVariableUpdateRequest(BaseModel):
     """Schema for bulk updating variables"""
@@ -472,6 +476,7 @@ class BulkVariableUpdateRequest(BaseModel):
     status: Optional[str] = None
     objectRelationshipsList: Optional[List[ObjectRelationshipCreateRequest]] = None
     shouldOverrideRelationships: Optional[bool] = False  # If true, delete existing relationships before creating new ones
+    variationsList: Optional[List[dict]] = None  # List of variations to append to each variable
 
 class BulkVariableUpdateResponse(BaseModel):
     """Schema for bulk variable update response"""
@@ -498,6 +503,8 @@ class VariableResponse(BaseModel):
     status: str
     objectRelationships: int
     objectRelationshipsList: List[dict] = []
+    variations: int = 0
+    variationsList: List[dict] = []
 
 class VariableCSVRowData(BaseModel):
     """Schema for a single CSV row for variable upload"""
