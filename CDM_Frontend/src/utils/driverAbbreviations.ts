@@ -120,9 +120,9 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
     return fullName || '-';
   }
   
-  // Handle 'ALL' case - display as 'All' in the grid
+  // Handle 'ALL' case - display as 'ALL' in the grid
   if (fullName === 'ALL') {
-    return 'All';
+    return 'ALL';
   }
   
   // Map column keys to ColumnType
@@ -137,13 +137,20 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
   
   if (type) {
     // Get all possible values for this type from driversData
+    // Filter out "ALL" as it's not an actual value, just a UI convenience
     const driversData = getDriversData();
-    const allPossibleValues: string[] = driversData[type] || [];
+    const allPossibleValues: string[] = (driversData[type] || []).filter(v => v !== 'ALL');
     
     // Check if the value contains commas (multiple values)
     if (fullName.includes(',')) {
       // Split by comma and process each value
-      const values = fullName.split(',').map(v => v.trim()).filter(Boolean);
+      // Filter out "ALL" from the values as it's not an actual value
+      const values = fullName.split(',').map(v => v.trim()).filter(Boolean).filter(v => v !== 'ALL');
+      
+      // If no values remain after filtering, return "ALL"
+      if (values.length === 0) {
+        return 'ALL';
+      }
       
       // Check if all possible values are selected (compare sets)
       const selectedSet = new Set(values);
@@ -153,7 +160,7 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
                            [...selectedSet].every(val => allSet.has(val));
       
       if (isAllSelected) {
-        return 'All';
+        return 'ALL';
       }
       
       // Not all values selected - show formatted comma-separated string
@@ -163,7 +170,10 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
       });
       return displayValues.join(', ');
     } else {
-      // Single value - just get abbreviation if available
+      // Single value - if it's "ALL", return "ALL", otherwise get abbreviation
+      if (fullName === 'ALL') {
+        return 'ALL';
+      }
       const abbreviation = getDriverAbbreviation(type, fullName);
       return abbreviation || fullName;
     }

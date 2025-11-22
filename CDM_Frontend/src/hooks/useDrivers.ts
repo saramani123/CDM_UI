@@ -39,10 +39,11 @@ const fetchDriversGlobal = async (): Promise<void> => {
         apiService.getDrivers('variableClarifiers')
       ]);
       
+      // Filter out "ALL" from drivers data as it's not an actual value, just a UI convenience
       globalDriversCache = {
-        sectors: Array.isArray(sectors) ? sectors : [],
-        domains: Array.isArray(domains) ? domains : [],
-        countries: Array.isArray(countries) ? countries : [],
+        sectors: Array.isArray(sectors) ? sectors.filter(v => v !== 'ALL') : [],
+        domains: Array.isArray(domains) ? domains.filter(v => v !== 'ALL') : [],
+        countries: Array.isArray(countries) ? countries.filter(v => v !== 'ALL') : [],
         objectClarifiers: Array.isArray(objectClarifiers) ? objectClarifiers : [],
         variableClarifiers: Array.isArray(variableClarifiers) ? variableClarifiers : []
       };

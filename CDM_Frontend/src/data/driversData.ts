@@ -21,6 +21,6 @@ export const columnLabels: Record<ColumnType, string> = {
   sectors: 'Sector',
   domains: 'Domain', 
   countries: 'Country',
-  objectClarifiers: 'Object Clarifier',
-  variableClarifiers: 'Variable Clarifier'
+  objectClarifiers: '',
+  variableClarifiers: ''
 };

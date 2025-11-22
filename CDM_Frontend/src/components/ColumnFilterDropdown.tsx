@@ -263,7 +263,7 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
       )}
 
       {/* Content */}
-      <div className="p-4 max-h-80 overflow-y-auto">
+      <div className="p-4 max-h-[500px] overflow-y-auto">
         {/* Filter Tab */}
         {!isNumericColumn && activeTab === 'filter' && (
           <div className="space-y-3">
@@ -299,7 +299,7 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
               </div>
             </div>
             
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
               {distinctValues.map((value) => (
                 <label
                   key={value}
@@ -336,7 +336,7 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
               {!isNumericColumn && (
                 <div className="border-t border-ag-dark-border pt-3">
 
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                  <div className="space-y-1 max-h-[300px] overflow-y-auto">
                     <span className="text-xs text-ag-dark-text-secondary">Drag to reorder:</span>
                     {console.log('🎨 RENDERING WORKING ORDER:', { workingSortOrder, column: column.key })}
                     {workingSortOrder.map((value, index) => (

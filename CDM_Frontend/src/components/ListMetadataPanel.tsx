@@ -714,11 +714,21 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       listId: tier.listId
     })).filter(tier => tier.set && tier.grouping && tier.list && tier.listId); // Only include complete entries
     
+    // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
+    const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
+      if (values.includes('ALL')) {
+        // If "ALL" is selected, return all individual values (excluding "ALL")
+        return allPossibleValues.filter(v => v !== 'ALL');
+      }
+      // Otherwise, filter out "ALL" if it somehow got in there
+      return values.filter(v => v !== 'ALL');
+    };
+    
     const saveData: any = {
       ...formData,
-      sector: driverSelections.sector,
-      domain: driverSelections.domain,
-      country: driverSelections.country,
+      sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
+      domain: getDriverValuesForSave(driverSelections.domain, driversData.domains),
+      country: getDriverValuesForSave(driverSelections.country, driversData.countries),
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached
     };
     

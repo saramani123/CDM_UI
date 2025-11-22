@@ -30,7 +30,8 @@ interface RelationshipData {
   objectId: string;
   isSelected: boolean;
   relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
-  roles: string;
+  roles: string; // User-added roles only (comma-separated), default role word is stored separately
+  defaultRoleWord: string; // The default role word (source object name) - not shown in UI
   frequency: 'Critical' | 'Likely' | 'Possible';
   hasMixedTypes?: boolean; // Flag to indicate mixed relationship types
 }
@@ -103,6 +104,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         clearTimeout(initializationTimerRef.current);
         initializationTimerRef.current = null;
       }
+    } else if (isOpen && customSortRules.length === 0) {
+      // Set default sorting to Being, Avatar, Object (A-Z) when modal opens
+      setCustomSortRules([
+        { id: '1', column: 'being', sortOn: 'being', order: 'asc' },
+        { id: '2', column: 'avatar', sortOn: 'avatar', order: 'asc' },
+        { id: '3', column: 'object', sortOn: 'object', order: 'asc' }
+      ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, sourceObjects.length, allObjects.length]);
@@ -143,7 +151,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       }
       
       // Initialize relationship data for all objects
+      // NEW BEHAVIOR: All objects are selected by default with default role word = source object name
       const initialData: Record<string, RelationshipData> = {};
+      const sourceObjectName = sourceObjects[0]?.object || '';
       
       for (const obj of allObjects) {
         // Check if this object is one of the source objects (for Intra-Table logic)
@@ -156,87 +166,65 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           rel.toObject === obj.object
         );
 
+        // Default values: ALL objects are selected by default
+        let relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table' = isSourceObject ? 'Intra-Table' : 'Inter-Table';
+        let frequency: 'Critical' | 'Likely' | 'Possible' = 'Possible';
+        const defaultRoleWord = sourceObjectName; // Default role word is always the source object name
+        let userAddedRoles: string[] = []; // User-added roles (excluding default role word)
+        let hasMixedTypes = false;
+
         if (existingRels.length > 0) {
-          // Handle legacy relationships with proper role fallbacks
-          const roles = new Set<string>();
+          // Load existing relationship data
           const relationshipTypes = new Set<string>();
           const frequencies = new Set<string>();
+          const allRoles = new Set<string>();
           
           for (const rel of existingRels) {
-            // Add explicit role if it exists and is not empty
+            // Collect all roles
             if (rel.role && rel.role.trim() !== '') {
-              roles.add(rel.role.trim());
+              allRoles.add(rel.role.trim());
             }
-            
-            // For legacy relationships without explicit roles, use target object name as fallback
-            if (!rel.role || rel.role.trim() === '') {
-              roles.add(obj.object);
-            }
-            
             relationshipTypes.add(rel.type);
-            // Collect frequencies, defaulting to Possible if not present (changed from Critical)
             frequencies.add(rel.frequency || 'Possible');
           }
           
           // Determine relationship type
-          let relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
-          const hasMixedTypes = relationshipTypes.size > 1;
           if (relationshipTypes.size === 1) {
             relationshipType = relationshipTypes.values().next().value;
-          } else {
-            // Mixed types - default to Inter-Table and highlight in UI
-            relationshipType = 'Inter-Table';
+          } else if (relationshipTypes.size > 1) {
+            hasMixedTypes = true;
+            relationshipType = isSourceObject ? 'Intra-Table' : 'Inter-Table'; // Default based on source
           }
           
-          // Determine frequency - default to Possible for all relationships except Blood
-          // Exception: Blood relationships MUST always be Critical
-          // Note: We ignore stored 'Critical' values from old data and default to 'Possible'
-          let frequency: 'Critical' | 'Likely' | 'Possible' = relationshipType === 'Blood' ? 'Critical' : 'Possible';
+          // Determine frequency
           if (frequencies.size === 1) {
             const freqValue = frequencies.values().next().value;
-            if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
-              // Blood relationships must always be Critical, regardless of stored value
-              if (relationshipType === 'Blood') {
-                frequency = 'Critical';
-              } else {
-                // For non-Blood relationships, use stored value if it's 'Likely' or 'Possible'
-                // If stored value is 'Critical', default to 'Possible' (old data migration)
-                frequency = freqValue === 'Critical' ? 'Possible' : (freqValue as 'Likely' | 'Possible');
-              }
+            if (relationshipType === 'Blood') {
+              frequency = 'Critical';
+            } else if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
+              frequency = freqValue === 'Critical' ? 'Possible' : (freqValue as 'Likely' | 'Possible');
             }
           } else if (relationshipType === 'Blood') {
-            // If multiple frequencies exist but type is Blood, force Critical
             frequency = 'Critical';
           }
           
-          // Convert roles set to comma-separated string, deduplicated
-          const rolesArray = Array.from(roles);
-          const rolesString = rolesArray.join(', ');
-          
-          initialData[obj.id] = {
-            objectId: obj.id,
-            isSelected: true,
-            relationshipType: relationshipType,
-            roles: rolesString,
-            frequency: frequency,
-            hasMixedTypes: hasMixedTypes
-          };
-        } else {
-          // No existing relationships
-          // In bulk mode, no default role word (per spec requirement 1)
-          // In single mode, default role = object name for self-relationships
-          const defaultRoles = isBulkMode 
-            ? '' 
-            : (isSourceObject ? sourceObjects[0]?.object || '' : '');
-          
-          initialData[obj.id] = {
-            objectId: obj.id,
-            isSelected: false,
-            relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
-            roles: defaultRoles,
-            frequency: 'Possible'
-          };
+          // Separate default role word from user-added roles
+          // The default role word should be the source object name
+          // User-added roles are all other roles
+          const allRolesArray = Array.from(allRoles);
+          userAddedRoles = allRolesArray.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase());
         }
+        
+        // ALL objects are selected by default
+        initialData[obj.id] = {
+          objectId: obj.id,
+          isSelected: true, // Always selected - users cannot deselect
+          relationshipType: relationshipType,
+          roles: userAddedRoles.join(', '), // Only user-added roles shown in UI
+          defaultRoleWord: defaultRoleWord, // Default role word stored separately
+          frequency: frequency,
+          hasMixedTypes: hasMixedTypes
+        };
       }
 
       // Apply initial relationships from CSV upload or stored relationships if any
@@ -244,34 +232,46 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         for (const initialRel of initialRelationships) {
           const targetObjId = initialRel.targetObject.id;
           if (initialData[targetObjId]) {
-            // If relationship already exists, append roles
-            const existingRoles = initialData[targetObjId].roles || '';
+            // If relationship already exists, separate default role word from user-added roles
+            const existingUserRoles = initialData[targetObjId].roles || '';
             const newRoles = initialRel.role || '';
-            // Combine roles, avoiding duplicates
+            // Combine user-added roles, avoiding duplicates and excluding default role word
             const roleSet = new Set<string>();
-            if (existingRoles) {
-              existingRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+            if (existingUserRoles) {
+              existingUserRoles.split(', ').forEach(r => { 
+                if (r.trim() && r.trim().toLowerCase() !== defaultRoleWord.toLowerCase()) {
+                  roleSet.add(r.trim());
+                }
+              });
             }
             if (newRoles) {
-              newRoles.split(', ').forEach(r => { if (r.trim()) roleSet.add(r.trim()); });
+              newRoles.split(', ').forEach(r => { 
+                if (r.trim() && r.trim().toLowerCase() !== defaultRoleWord.toLowerCase()) {
+                  roleSet.add(r.trim());
+                }
+              });
             }
-            const combinedRoles = Array.from(roleSet).join(', ');
+            const combinedUserRoles = Array.from(roleSet).join(', ');
+            
+            initialData[targetObjId] = {
+              ...initialData[targetObjId],
+              relationshipType: initialRel.relationshipType,
+              roles: combinedUserRoles, // Only user-added roles
+              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
+              hasMixedTypes: false
+            };
+          } else {
+            // New relationship - separate default role word from user-added roles
+            const userRoles = initialRel.role 
+              ? initialRel.role.split(', ').filter(r => r.trim() && r.trim().toLowerCase() !== defaultRoleWord.toLowerCase()).join(', ')
+              : '';
             
             initialData[targetObjId] = {
               objectId: targetObjId,
               isSelected: true,
               relationshipType: initialRel.relationshipType,
-              roles: combinedRoles,
-              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
-              hasMixedTypes: false
-            };
-          } else {
-            // New relationship
-            initialData[targetObjId] = {
-              objectId: targetObjId,
-              isSelected: true,
-              relationshipType: initialRel.relationshipType,
-              roles: initialRel.role,
+              roles: userRoles, // Only user-added roles
+              defaultRoleWord: defaultRoleWord,
               frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
               hasMixedTypes: false
             };
@@ -282,31 +282,36 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       setRelationshipData(initialData);
     } catch (error) {
       console.error('Failed to load existing relationships:', error);
-      // Initialize with empty data
+      // Initialize with default data: ALL objects selected
       const initialData: Record<string, RelationshipData> = {};
+      const sourceObjectName = sourceObjects[0]?.object || '';
       for (const obj of allObjects) {
         const isSourceObject = sourceObjects.some(so => so.id === obj.id);
-        // In bulk mode, no default role word
-        const defaultRoles = isBulkMode ? '' : (isSourceObject ? sourceObjects[0]?.object || '' : '');
         initialData[obj.id] = {
           objectId: obj.id,
-          isSelected: false,
+          isSelected: true, // Always selected by default
           relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
-          roles: defaultRoles,
+          roles: '', // User-added roles only (empty by default)
+          defaultRoleWord: sourceObjectName, // Default role word is source object name
           frequency: 'Possible'
         };
       }
       
       // Apply initial relationships from CSV upload if any (fallback path)
       if (initialRelationships.length > 0) {
+        const sourceObjectName = sourceObjects[0]?.object || '';
         for (const initialRel of initialRelationships) {
           const targetObjId = initialRel.targetObject.id;
           if (initialData[targetObjId]) {
+            // Separate default role word from user-added roles
+            const userRoles = initialRel.role 
+              ? initialRel.role.split(', ').filter(r => r.trim() && r.trim().toLowerCase() !== sourceObjectName.toLowerCase()).join(', ')
+              : '';
+            
             initialData[targetObjId] = {
-              objectId: targetObjId,
-              isSelected: true,
+              ...initialData[targetObjId],
               relationshipType: initialRel.relationshipType,
-              roles: initialRel.role,
+              roles: userRoles, // Only user-added roles
               frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
               hasMixedTypes: false
             };
@@ -322,37 +327,18 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   };
 
   const handleRowClick = (objectId: string) => {
-    setRelationshipData(prev => {
-      const currentData = prev[objectId];
-      const currentlySelected = currentData?.isSelected || false;
-      
-      // In bulk mode, no default role word (per spec requirement 1)
-      // In single mode, default role = object name when selecting
-      const defaultRole = isBulkMode 
-        ? '' 
-        : (!currentlySelected ? (sourceObjects[0]?.object || '') : '');
-      
-      const currentType = prev[objectId]?.relationshipType || (sourceObjects.some(so => so.id === objectId) ? 'Intra-Table' : 'Inter-Table');
-      // If selecting a row and relationship type is Blood, frequency must be Critical
-      // Otherwise, use existing frequency or default to Possible
-      const defaultFrequency = currentType === 'Blood' ? 'Critical' : (prev[objectId]?.frequency || 'Possible');
-      
-      return {
-        ...prev,
-        [objectId]: {
-          ...prev[objectId],
-          isSelected: !currentlySelected,
-          roles: !currentlySelected 
-            ? (prev[objectId]?.roles || defaultRole) 
-            : prev[objectId]?.roles || '',
-          // Ensure frequency is set correctly when selecting (Blood must be Critical)
-          frequency: !currentlySelected ? defaultFrequency : prev[objectId]?.frequency
-        }
-      };
-    });
+    // NEW BEHAVIOR: Users cannot deselect objects - all objects must remain selected
+    // This function is now a no-op for deselection, but we keep it for potential future use
+    // The checkbox will be disabled in the UI
   };
 
   const handleRelationshipTypeChange = (objectId: string, type: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table') => {
+    // Prevent changing relationship type for self-relationships (must be Intra-Table)
+    const isSourceObject = sourceObjects.some(so => so.id === objectId);
+    if (isSourceObject && type !== 'Intra-Table') {
+      return; // Don't allow changing self-relationship type
+    }
+    
     setRelationshipData(prev => ({
       ...prev,
       [objectId]: {
@@ -419,28 +405,33 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // If temporary or cloned object, store relationships locally instead of saving to API
     if ((isTemporaryObject || isClonedObject) && onRelationshipsChange) {
       const relationshipsToStore: any[] = [];
+      const sourceObjectName = sourceObjects[0]?.object || '';
       
       // Process each object's relationship data
       for (const [objectId, relData] of Object.entries(relationshipData)) {
         const targetObject = allObjects.find(obj => obj.id === objectId);
         if (!targetObject) continue;
 
-        const validRoles = validateRoles(relData.roles);
+        // All objects are selected by default
+        // Get user-added roles and combine with default role word
+        const userAddedRoles = validateRoles(relData.roles || '');
+        const defaultRoleWord = relData.defaultRoleWord || sourceObjectName;
+        const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
 
-        if (relData.isSelected && validRoles.length > 0) {
-          // Create relationship entries for each role
-          for (const role of validRoles) {
-            relationshipsToStore.push({
-              id: Date.now().toString() + Math.random(),
-              type: relData.relationshipType,
-              role: role,
-              // Blood relationships MUST always be Critical
-              frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
-              toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
-              toAvatar: targetObject.avatar || 'ALL',
-              toObject: targetObject.object || 'ALL'
-            });
-          }
+        // Create relationship entries for each role (default + user-added)
+        for (const role of allRoles) {
+          if (!role || role.trim() === '') continue;
+          
+          relationshipsToStore.push({
+            id: Date.now().toString() + Math.random(),
+            type: relData.relationshipType,
+            role: role.trim(),
+            // Blood relationships MUST always be Critical
+            frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
+            toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
+            toAvatar: targetObject.avatar || 'ALL',
+            toObject: targetObject.object || 'ALL'
+          });
         }
       }
       
@@ -454,30 +445,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     setSaving(true);
     try {
       
-      // Validation 1: Check for roles entered without checkbox selected
-      for (const [objectId, relData] of Object.entries(relationshipData)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
-
-        const hasRoles = relData.roles && relData.roles.trim().length > 0;
-        const isSelected = relData.isSelected;
-
-        // Check if user entered roles but didn't check the box
-        if (hasRoles && !isSelected) {
-          alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
-          setSaving(false);
-          return;
-        }
-        
-        // Additional check: if roles are entered but checkbox is not selected
-        if (relData.roles && relData.roles.trim() !== '' && !relData.isSelected) {
-          alert(`Please select the checkbox for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}" to establish a relationship before adding roles.`);
-          setSaving(false);
-          return;
-        }
-      }
-
-      // Validation 2: Check for improper role format
+      // Validation 1: Check for improper role format (user-added roles only)
       for (const [objectId, relData] of Object.entries(relationshipData)) {
         const targetObject = allObjects.find(obj => obj.id === objectId);
         if (!targetObject) continue;
@@ -505,56 +473,19 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
 
-      // Validation 3: Check if user deleted the auto-created role (object name) - only for single mode
-      if (!isBulkMode && sourceObjects.length === 1) {
-        for (const [objectId, relData] of Object.entries(relationshipData)) {
-          const targetObject = allObjects.find(obj => obj.id === objectId);
-          if (!targetObject) continue;
-
-          const isSelf = objectId === sourceObjects[0].id;
-          if (isSelf && relData.roles && relData.roles.trim().length > 0) {
-            const validRoles = validateRoles(relData.roles);
-            const objectName = sourceObjects[0].object;
-            
-            // Check if the object name is missing from the roles
-            if (!validRoles.includes(objectName)) {
-              alert(`Please do not delete the automatically created role name "${objectName}" which is the name of the object we are configuring relationships for.`);
-              setSaving(false);
-              return;
-            }
-          }
-        }
-      }
-
-      // Validation 4: Check for empty role list (warn but allow for bulk mode)
-      if (isBulkMode) {
-        let hasSelectedButNoRoles = false;
-        for (const [objectId, relData] of Object.entries(relationshipData)) {
-          if (relData.isSelected) {
-            const validRoles = validateRoles(relData.roles);
-            if (validRoles.length === 0) {
-              hasSelectedButNoRoles = true;
-              break;
-            }
-          }
-        }
-        if (hasSelectedButNoRoles) {
-          const proceed = window.confirm('Some selected relationships have no roles. They will be created without roles. Continue?');
-          if (!proceed) {
-            setSaving(false);
-            return;
-          }
-        }
-      }
+      // Note: All objects are selected by default, so no need to check for deselection
+      // Default role word is always the source object name and is stored separately
 
       // Process relationships
       if (isBulkMode) {
         // BULK MODE: Create relationships from each source object to each target object
+        // All objects are selected by default with default role word = source object name
         const relationshipsToCreate: Array<{
           sourceObjectId: string;
           targetObject: ObjectData;
           relationshipType: string;
           roles: string[];
+          frequency: 'Critical' | 'Likely' | 'Possible';
         }> = [];
 
         // Collect all relationships to create
@@ -562,76 +493,70 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const targetObject = allObjects.find(obj => obj.id === objectId);
           if (!targetObject) continue;
 
-          const validRoles = validateRoles(relData.roles);
           const isTargetAlsoSource = sourceObjects.some(so => so.id === objectId);
 
-          if (relData.isSelected) {
-            // Skip if no valid roles (per spec: empty role list is allowed but we need at least one role to create)
-            // If user confirmed to proceed with empty roles, we'll create with empty role
-            if (validRoles.length === 0) {
-              // User already confirmed to proceed with empty roles, so create with empty string
-              // But we need at least one role entry, so use empty string
-              validRoles.push('');
-            }
+          // All objects are selected by default
+          // Get user-added roles and combine with default role word for each source
+          const userAddedRoles = validateRoles(relData.roles || '');
 
-            // Determine relationship type based on Intra-Table logic (requirement 4)
-            // If target is also a source, use Intra-Table for that source, Inter-Table for others
-            const relationshipType = isTargetAlsoSource ? 'Intra-Table' : (relData.relationshipType || 'Inter-Table');
+          // Determine relationship type based on Intra-Table logic
+          // If target is also a source, use Intra-Table for that source, Inter-Table for others
+          const relationshipType = isTargetAlsoSource ? 'Intra-Table' : (relData.relationshipType || 'Inter-Table');
 
-            // For each source object, create relationships to this target
-            for (const sourceObject of sourceObjects) {
-              const sourceIsTarget = sourceObject.id === objectId;
-              // For self-relationships, always use Intra-Table
-              const finalType = sourceIsTarget ? 'Intra-Table' : relationshipType;
+          // For each source object, create relationships to this target
+          for (const sourceObject of sourceObjects) {
+            const sourceIsTarget = sourceObject.id === objectId;
+            // For self-relationships, always use Intra-Table
+            const finalType = sourceIsTarget ? 'Intra-Table' : relationshipType;
+            
+            // Default role word is the source object name
+            const defaultRoleWord = sourceObject.object || '';
+            
+            // Combine default role word with user-added roles (excluding default if it appears in user roles)
+            const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
 
-              relationshipsToCreate.push({
-                sourceObjectId: sourceObject.id,
-                targetObject,
-                relationshipType: finalType,
-                roles: validRoles,
-                // Blood relationships MUST always be Critical
-                frequency: finalType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible')
-              });
-            }
+            relationshipsToCreate.push({
+              sourceObjectId: sourceObject.id,
+              targetObject,
+              relationshipType: finalType,
+              roles: allRoles,
+              // Blood relationships MUST always be Critical
+              frequency: finalType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible')
+            });
           }
         }
 
-        // Filter out relationships with completely empty roles (no roles at all)
-        // But keep relationships with empty string roles if user confirmed
-        const finalRelationshipsToCreate = relationshipsToCreate.filter(rel => {
-          // Must have at least one role (even if empty string)
-          return rel.roles && rel.roles.length > 0;
-        });
-
-        if (finalRelationshipsToCreate.length === 0) {
-          alert('No relationships to create. Please select at least one target object.');
+        if (relationshipsToCreate.length === 0) {
+          alert('No relationships to create.');
           setSaving(false);
           return;
         }
 
         // Use bulk API endpoint if available, otherwise create individually
         try {
-          await apiService.bulkCreateRelationships(finalRelationshipsToCreate);
+          await apiService.bulkCreateRelationships(relationshipsToCreate);
         } catch (error: any) {
           console.error('Bulk relationship creation error:', error);
           // If bulk endpoint doesn't exist or fails, fall back to individual creation
           if (error.message?.includes('404') || error.message?.includes('not found')) {
             // Fall back to individual creation
-            for (const rel of finalRelationshipsToCreate) {
+            for (const rel of relationshipsToCreate) {
               for (const role of rel.roles) {
+                if (!role || role.trim() === '') continue; // Skip empty roles
+                
                 try {
                   await apiService.createRelationship(rel.sourceObjectId, {
                     type: rel.relationshipType,
-                    role: role || '',
+                    role: role.trim(),
                     frequency: rel.frequency || 'Possible',
                     toBeing: rel.targetObject.being,
                     toAvatar: rel.targetObject.avatar,
                     toObject: rel.targetObject.object
                   });
                 } catch (err: any) {
-                  // Check if it's a duplicate error
+                  // Check if it's a duplicate error - ignore duplicates
                   if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
-                    console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object}`);
+                    console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
                   } else {
                     throw err;
                   }
@@ -645,75 +570,60 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           }
         }
       } else {
-        // SINGLE MODE: Original logic for single object
+        // SINGLE MODE: All objects are selected by default
         const selectedObject = sourceObjects[0];
+        const defaultRoleWord = selectedObject.object || '';
+        
         for (const [objectId, relData] of Object.entries(relationshipData)) {
           const targetObject = allObjects.find(obj => obj.id === objectId);
           if (!targetObject) continue;
 
+          // All objects are selected by default - always process them
           const isSelf = objectId === selectedObject.id;
-          const validRoles = validateRoles(relData.roles);
+          
+          // Get user-added roles (excluding default role word)
+          const userAddedRoles = validateRoles(relData.roles || '');
+          
+          // Collect all roles: default role word + user-added roles
+          const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
+          
+          // First, delete ALL existing relationships for this target object to handle type/frequency changes
+          try {
+            const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
+            const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+              rel.toBeing === targetObject.being && 
+              rel.toAvatar === targetObject.avatar && 
+              rel.toObject === targetObject.object
+            );
 
-          if (relData.isSelected && validRoles.length > 0) {
-            // First, delete existing relationships for this object to handle type changes
-            try {
-              const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-              const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
-                rel.toBeing === targetObject.being && 
-                rel.toAvatar === targetObject.avatar && 
-                rel.toObject === targetObject.object
-              );
-
-              for (const rel of relationshipsToDelete) {
-                await apiService.deleteRelationship(selectedObject.id, rel.id);
-              }
-            } catch (error) {
-              console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
+            for (const rel of relationshipsToDelete) {
+              await apiService.deleteRelationship(selectedObject.id, rel.id);
             }
+          } catch (error) {
+            console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
+          }
 
-            // Create new relationships with updated type
-            for (const role of validRoles) {
-              try {
-                // Check if this role already exists in Neo4j
-                const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-                const existingRels = (existingRelationships.relationshipsList || []).filter((rel: any) => 
-                  rel.toBeing === targetObject.being && 
-                  rel.toAvatar === targetObject.avatar && 
-                  rel.toObject === targetObject.object &&
-                  rel.role === role
-                );
-                
-                // Only create if it doesn't already exist
-                if (existingRels.length === 0) {
-                  await apiService.createRelationship(selectedObject.id, {
-                    type: relData.relationshipType,
-                    role: role,
-                    // Blood relationships MUST always be Critical
-                    frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
-                    toBeing: targetObject.being,
-                    toAvatar: targetObject.avatar,
-                    toObject: targetObject.object
-                  });
-                }
-              } catch (error) {
-                console.error(`Failed to create relationship for ${targetObject.object}:`, error);
-              }
-            }
-          } else if (!relData.isSelected) {
-            // Delete all relationships for this object
+          // Create relationships: one with default role word, plus one for each user-added role
+          for (const role of allRoles) {
+            if (!role || role.trim() === '') continue; // Skip empty roles
+            
             try {
-              const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-              const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
-                rel.toBeing === targetObject.being && 
-                rel.toAvatar === targetObject.avatar && 
-                rel.toObject === targetObject.object
-              );
-
-              for (const rel of relationshipsToDelete) {
-                await apiService.deleteRelationship(selectedObject.id, rel.id);
+              await apiService.createRelationship(selectedObject.id, {
+                type: relData.relationshipType,
+                role: role.trim(),
+                // Blood relationships MUST always be Critical
+                frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
+                toBeing: targetObject.being,
+                toAvatar: targetObject.avatar,
+                toObject: targetObject.object
+              });
+            } catch (error: any) {
+              // Check if it's a duplicate error - ignore duplicates
+              if (error.message?.includes('Duplicate') || error.message?.includes('already exists')) {
+                console.warn(`Duplicate relationship skipped: ${selectedObject.object} -> ${targetObject.object} with role "${role}"`);
+              } else {
+                console.error(`Failed to create relationship for ${targetObject.object} with role "${role}":`, error);
               }
-            } catch (error) {
-              console.error(`Failed to delete relationships for ${targetObject.object}:`, error);
             }
           }
         }
@@ -879,11 +789,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const currentType = relationshipData[row.id]?.relationshipType || (isSourceObject ? 'Intra-Table' : 'Inter-Table');
         const hasMixedTypes = relationshipData[row.id]?.hasMixedTypes || false;
         
-        // In bulk mode, if target is also a source, disable type selection (will be Intra-Table)
-        // In single mode, disable for self-relationships
-        const isDisabled = isBulkMode 
-          ? isSourceObject // In bulk mode, disable if this is a source object
-          : isSourceObject && sourceObjects.length === 1; // In single mode, disable for self
+        // NEW BEHAVIOR: Always disable type selection for self-relationships (must be Intra-Table)
+        // For other objects, allow type selection
+        const isDisabled = isSourceObject; // Disable for self-relationships (must be Intra-Table)
         
         return (
           <div className="relative w-full" style={{ marginLeft: '-12px', marginRight: '-12px', width: 'calc(100% + 24px)' }}>
@@ -967,9 +875,10 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             type="text"
             value={relationshipData[row.id]?.roles || ''}
             onChange={(e) => handleRolesChange(row.id, e.target.value)}
-            placeholder="Enter roles (comma-separated)"
+            placeholder="Enter additional roles (comma-separated)"
             className="w-full px-2 py-1.5 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             style={{ width: '100%', marginRight: 0 }}
+            title="Enter additional role words. The default role word (object name) is automatically included."
           />
         </div>
       )
@@ -981,11 +890,19 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[99vw] h-[90vh] max-w-[120rem] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Link className="w-5 h-5 text-ag-dark-text-secondary" />
             <h2 className="text-xl font-semibold text-ag-dark-text">
               {isBulkMode ? `Configuring Relationships (${sourceObjects.length} objects)` : 'Configuring Relationships'}
             </h2>
+            <button
+              onClick={() => setIsCustomSortOpen(true)}
+              className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              title="Custom Sort"
+            >
+              <ArrowUpAZ className="w-4 h-4" />
+              Custom Sort
+            </button>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -995,14 +912,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             >
               <Upload className="w-4 h-4" />
               Upload CSV
-            </button>
-            <button
-              onClick={() => setIsCustomSortOpen(true)}
-              className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
-              title="Custom Sort"
-            >
-              <ArrowUpAZ className="w-4 h-4" />
-              Custom Sort
             </button>
             <button
               onClick={handleClose}

@@ -732,20 +732,25 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       }
       
       // Add driver selections if any are selected
+      // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
+      const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string => {
+        const filteredValues = values.filter(v => v !== 'ALL');
+        if (values.includes('ALL')) {
+          // If "ALL" is selected, return all individual values (excluding "ALL")
+          const allValues = allPossibleValues.filter(v => v !== 'ALL');
+          return allValues.join(',');
+        }
+        return filteredValues.join(',');
+      };
+      
       if (listDriverSelections.sector.length > 0) {
-        saveData.sector = listDriverSelections.sector.length === 1 && listDriverSelections.sector[0] === 'ALL' 
-          ? 'ALL' 
-          : listDriverSelections.sector.join(',');
+        saveData.sector = getDriverValuesForSave(listDriverSelections.sector, driversData.sectors);
       }
       if (listDriverSelections.domain.length > 0) {
-        saveData.domain = listDriverSelections.domain.length === 1 && listDriverSelections.domain[0] === 'ALL' 
-          ? 'ALL' 
-          : listDriverSelections.domain.join(',');
+        saveData.domain = getDriverValuesForSave(listDriverSelections.domain, driversData.domains);
       }
       if (listDriverSelections.country.length > 0) {
-        saveData.country = listDriverSelections.country.length === 1 && listDriverSelections.country[0] === 'ALL' 
-          ? 'ALL' 
-          : listDriverSelections.country.join(',');
+        saveData.country = getDriverValuesForSave(listDriverSelections.country, driversData.countries);
       }
       
       // Add ontology fields if changed

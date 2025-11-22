@@ -7,7 +7,7 @@ const getApiBaseUrl = () => {
     return import.meta.env.VITE_API_BASE_URL || 'https://cdm-backend.onrender.com/api/v1';
   }
   // In development, use localhost
-  return 'http://localhost:8000/api/v1';
+  return 'http://localhost:10000/api/v1';
 };
 
 const API_BASE_URL = getApiBaseUrl();

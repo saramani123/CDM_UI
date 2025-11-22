@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
 import { MetadataPanel } from './components/MetadataPanel';
@@ -190,6 +190,11 @@ function App() {
   const [isVariablesViewsOpen, setIsVariablesViewsOpen] = useState(false);
   const [isListsViewsOpen, setIsListsViewsOpen] = useState(false);
   const [activeView, setActiveView] = useState<string>('None');
+  
+  // Reset handlers state for DataGrid
+  const [objectsResetHandlers, setObjectsResetHandlers] = useState<{ clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean } | null>(null);
+  const [variablesResetHandlers, setVariablesResetHandlers] = useState<{ clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean } | null>(null);
+  const [listsResetHandlers, setListsResetHandlers] = useState<{ clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean } | null>(null);
   const [activeVariablesView, setActiveVariablesView] = useState<string>('None');
   const [activeListsView, setActiveListsView] = useState<string>('None');
 
@@ -367,18 +372,23 @@ function App() {
       const storageKey = `cdm_drivers_order_${columnType}`;
       const savedOrder = localStorage.getItem(storageKey);
       const currentItems = driversData[columnType as keyof typeof driversData] || [];
+      // Filter out "ALL" from current items as it's not an actual value
+      const currentItemsFiltered = currentItems.filter((item: string) => item !== 'ALL');
       
-      if (savedOrder && currentItems.length > 0) {
+      if (savedOrder && currentItemsFiltered.length > 0) {
         try {
           const parsedOrder = JSON.parse(savedOrder);
           
           if (Array.isArray(parsedOrder)) {
+            // Filter out "ALL" from saved order as it's not an actual value
+            const parsedOrderFiltered = parsedOrder.filter((item: string) => item !== 'ALL');
+            
             // Filter out items that no longer exist (deleted items)
-            const validSavedItems = parsedOrder.filter((item: string) => currentItems.includes(item));
+            const validSavedItems = parsedOrderFiltered.filter((item: string) => currentItemsFiltered.includes(item));
             
             // Find new items that weren't in the saved order
             // These should be added at the end to preserve existing order
-            const newItems = currentItems.filter((item: string) => !parsedOrder.includes(item));
+            const newItems = currentItemsFiltered.filter((item: string) => !parsedOrderFiltered.includes(item));
             
             // Combine: valid saved items in their saved order + new items at the end
             const finalOrder = [...validSavedItems, ...newItems];
@@ -388,7 +398,7 @@ function App() {
             if (validSavedItems.length > 0) {
               orderedDrivers[columnType as keyof typeof orderedDrivers] = finalOrder;
               
-              // Update localStorage with the new order (including new items)
+              // Update localStorage with the new order (including new items, excluding "ALL")
               localStorage.setItem(storageKey, JSON.stringify(finalOrder));
               
               console.log(`✅ Applied saved custom order for ${columnType}:`, finalOrder);
@@ -396,22 +406,22 @@ function App() {
               console.log(`  - New items added at end: ${newItems.length}`);
             } else {
               // No valid saved items, use API order and save it
-              orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
-              localStorage.setItem(storageKey, JSON.stringify(currentItems));
-              console.log(`📝 No saved order for ${columnType}, using API order:`, currentItems);
+              orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItemsFiltered;
+              localStorage.setItem(storageKey, JSON.stringify(currentItemsFiltered));
+              console.log(`📝 No saved order for ${columnType}, using API order:`, currentItemsFiltered);
             }
           }
         } catch (error) {
           console.error(`❌ Error parsing saved order for ${columnType}:`, error);
           // On error, use API order
-          orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
-          localStorage.setItem(storageKey, JSON.stringify(currentItems));
+          orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItemsFiltered;
+          localStorage.setItem(storageKey, JSON.stringify(currentItemsFiltered));
         }
-      } else if (currentItems.length > 0) {
+      } else if (currentItemsFiltered.length > 0) {
         // No saved order, use API order (which respects backend d.order property) and save it
-        orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItems;
-        localStorage.setItem(storageKey, JSON.stringify(currentItems));
-        console.log(`📝 Initial order saved for ${columnType} from API:`, currentItems);
+        orderedDrivers[columnType as keyof typeof orderedDrivers] = currentItemsFiltered;
+        localStorage.setItem(storageKey, JSON.stringify(currentItemsFiltered));
+        console.log(`📝 Initial order saved for ${columnType} from API:`, currentItemsFiltered);
       }
     });
     
@@ -434,8 +444,15 @@ function App() {
         console.log('Drivers API failed, using mock data:', driversError);
       } else if (apiDrivers) {
         // Always use API data, even if empty
+        // Filter out "ALL" from drivers data as it's not an actual value, just a UI convenience
+        const filteredDrivers = {
+          ...apiDrivers,
+          sectors: (apiDrivers.sectors || []).filter(v => v !== 'ALL'),
+          domains: (apiDrivers.domains || []).filter(v => v !== 'ALL'),
+          countries: (apiDrivers.countries || []).filter(v => v !== 'ALL')
+        };
         // Apply saved order from localStorage if available
-        const orderedDrivers = applySavedOrder(apiDrivers);
+        const orderedDrivers = applySavedOrder(filteredDrivers);
         setDriversState(orderedDrivers);
       }
     }
@@ -444,7 +461,14 @@ function App() {
   // Apply saved order when switching to drivers tab
   React.useEffect(() => {
     if (activeTab === 'drivers' && apiDrivers && !driversLoading) {
-      const orderedDrivers = applySavedOrder(apiDrivers);
+      // Filter out "ALL" from drivers data as it's not an actual value, just a UI convenience
+      const filteredDrivers = {
+        ...apiDrivers,
+        sectors: (apiDrivers.sectors || []).filter(v => v !== 'ALL'),
+        domains: (apiDrivers.domains || []).filter(v => v !== 'ALL'),
+        countries: (apiDrivers.countries || []).filter(v => v !== 'ALL')
+      };
+      const orderedDrivers = applySavedOrder(filteredDrivers);
       setDriversState(orderedDrivers);
     }
   }, [activeTab, apiDrivers, driversLoading]);
@@ -2990,6 +3014,42 @@ function App() {
                         </span>
                       )}
                     </button>
+                    
+                    {/* Reset Filter Button (small box) */}
+                    {((activeTab === 'objects' && objectsResetHandlers?.hasActiveFilters) || 
+                      (activeTab === 'variables' && variablesResetHandlers?.hasActiveFilters)) && (
+                      <button
+                        onClick={() => {
+                          if (activeTab === 'objects' && objectsResetHandlers) {
+                            objectsResetHandlers.clearFilters();
+                          } else if (activeTab === 'variables' && variablesResetHandlers) {
+                            variablesResetHandlers.clearFilters();
+                          }
+                        }}
+                        className="inline-flex items-center justify-center w-8 h-8 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                        title="Reset Filters"
+                      >
+                        <Filter className="w-4 h-4" />
+                      </button>
+                    )}
+                    
+                    {/* Reset Sort Button (small box) */}
+                    {((activeTab === 'objects' && objectsResetHandlers?.hasActiveSorting) || 
+                      (activeTab === 'variables' && variablesResetHandlers?.hasActiveSorting)) && (
+                      <button
+                        onClick={() => {
+                          if (activeTab === 'objects' && objectsResetHandlers) {
+                            objectsResetHandlers.resetSorting();
+                          } else if (activeTab === 'variables' && variablesResetHandlers) {
+                            variablesResetHandlers.resetSorting();
+                          }
+                        }}
+                        className="inline-flex items-center justify-center w-8 h-8 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                        title="Reset Sorting"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                      </button>
+                    )}
                   </>
                 )}
                 
@@ -3039,6 +3099,28 @@ function App() {
                         </span>
                       )}
                     </button>
+                    
+                    {/* Reset Filter Button (small box) */}
+                    {listsResetHandlers?.hasActiveFilters && (
+                      <button
+                        onClick={() => listsResetHandlers?.clearFilters()}
+                        className="inline-flex items-center justify-center w-8 h-8 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                        title="Reset Filters"
+                      >
+                        <Filter className="w-4 h-4" />
+                      </button>
+                    )}
+                    
+                    {/* Reset Sort Button (small box) */}
+                    {listsResetHandlers?.hasActiveSorting && (
+                      <button
+                        onClick={() => listsResetHandlers?.resetSorting()}
+                        className="inline-flex items-center justify-center w-8 h-8 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                        title="Reset Sorting"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                      </button>
+                    )}
                   </>
                 )}
                 
@@ -3053,45 +3135,41 @@ function App() {
                 )}
               </div>
               
-              {/* Right side: Views button (for Objects, Variables, and Lists tabs) */}
+              {/* Right side: Generic toggle button (for Objects, Variables, and Lists tabs) */}
               <div className="flex items-center gap-3">
                 {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
                   <button
                     onClick={() => {
                       if (activeTab === 'objects') {
-                        setIsViewsOpen(true);
+                        if (activeView === 'Generic') {
+                          handleViewsApply('None');
+                        } else {
+                          handleViewsApply('Generic');
+                        }
                       } else if (activeTab === 'variables') {
-                        setIsVariablesViewsOpen(true);
+                        if (activeVariablesView === 'Generic') {
+                          handleViewsApply('None');
+                        } else {
+                          handleViewsApply('Generic');
+                        }
                       } else if (activeTab === 'lists') {
-                        setIsListsViewsOpen(true);
+                        if (activeListsView === 'Generic') {
+                          handleViewsApply('None');
+                        } else {
+                          handleViewsApply('Generic');
+                        }
                       }
                     }}
-                    className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                      ((activeTab === 'objects' && activeView && activeView !== 'None') || 
-                       (activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None') ||
-                       (activeTab === 'lists' && activeListsView && activeListsView !== 'None'))
+                    className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
+                      ((activeTab === 'objects' && activeView === 'Generic') || 
+                       (activeTab === 'variables' && activeVariablesView === 'Generic') ||
+                       (activeTab === 'lists' && activeListsView === 'Generic'))
                         ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                         : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                     }`}
-                    title="Filter data by predefined views"
+                    title="Toggle Generic view (S/D/C = All)"
                   >
-                    <Eye className="w-4 h-4" />
-                    Views
-                    {activeTab === 'objects' && activeView && activeView !== 'None' && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        {activeView} View
-                      </span>
-                    )}
-                    {activeTab === 'variables' && activeVariablesView && activeVariablesView !== 'None' && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        {activeVariablesView} View
-                      </span>
-                    )}
-                    {activeTab === 'lists' && activeListsView && activeListsView !== 'None' && (
-                      <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                        {activeListsView} View
-                      </span>
-                    )}
+                    Generic
                   </button>
                 )}
               </div>
@@ -3128,6 +3206,7 @@ function App() {
               gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
               isPredefinedSortEnabled={activeTab === 'variables' ? isVariablesPredefinedSortEnabled : false}
               predefinedSortOrder={activeTab === 'variables' ? variablesPredefinedSortOrder : undefined}
+              onResetHandlersReady={activeTab === 'objects' ? setObjectsResetHandlers : activeTab === 'variables' ? setVariablesResetHandlers : activeTab === 'lists' ? setListsResetHandlers : undefined}
             />
           </div>
 
@@ -3193,9 +3272,45 @@ function App() {
           ) : (
             <div className="lg:col-span-1">
               <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
-                {/* View Neo4j Knowledge Graph button (for Objects, Variables, and Lists tabs) */}
+                {/* Three equal-sized buttons: Generic, Graph View, Grid View (for Objects, Variables, and Lists tabs) */}
                 {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                  <div className="mb-3">
+                  <div className="mb-3 grid grid-cols-3 gap-2">
+                    {/* Generic Button */}
+                    <button
+                      onClick={() => {
+                        if (activeTab === 'objects') {
+                          if (activeView === 'Generic') {
+                            handleViewsApply('None');
+                          } else {
+                            handleViewsApply('Generic');
+                          }
+                        } else if (activeTab === 'variables') {
+                          if (activeVariablesView === 'Generic') {
+                            handleViewsApply('None');
+                          } else {
+                            handleViewsApply('Generic');
+                          }
+                        } else if (activeTab === 'lists') {
+                          if (activeListsView === 'Generic') {
+                            handleViewsApply('None');
+                          } else {
+                            handleViewsApply('Generic');
+                          }
+                        }
+                      }}
+                      className={`inline-flex items-center justify-center gap-1 px-2 py-2 border rounded text-xs font-medium transition-colors ${
+                        ((activeTab === 'objects' && activeView === 'Generic') || 
+                         (activeTab === 'variables' && activeVariablesView === 'Generic') ||
+                         (activeTab === 'lists' && activeListsView === 'Generic'))
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
+                      title="Toggle Generic view (S/D/C = All)"
+                    >
+                      Generic
+                    </button>
+                    
+                    {/* Graph View Button */}
                     <button
                       onClick={() => {
                         if (activeTab === 'objects') {
@@ -3206,11 +3321,22 @@ function App() {
                           setIsNeo4jListsGraphModalOpen(true);
                         }
                       }}
-                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-accent rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
-                      title="View Knowledge Graph"
+                      className="inline-flex items-center justify-center gap-1 px-2 py-2 border border-ag-dark-accent rounded text-xs font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
+                      title="Graph View"
                     >
-                      <Network className="w-4 h-4" />
-                      View Knowledge Graph
+                      <Network className="w-3 h-3" />
+                      Graph View
+                    </button>
+                    
+                    {/* Grid View Button */}
+                    <button
+                      onClick={() => {
+                        // Placeholder - functionality to be implemented later
+                      }}
+                      className="inline-flex items-center justify-center gap-1 px-2 py-2 border border-ag-dark-border rounded text-xs font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                      title="Grid View"
+                    >
+                      Grid View
                     </button>
                   </div>
                 )}

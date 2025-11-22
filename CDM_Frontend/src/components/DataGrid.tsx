@@ -3,7 +3,7 @@ import { Filter, Edit, Trash2, ArrowUpDown, GripVertical, Copy } from 'lucide-re
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
-import { parseDriverField } from '../data/mockData';
+import { parseDriverField, getDriversData } from '../data/mockData';
 
 interface Column {
   key: string;
@@ -50,6 +50,7 @@ interface DataGridProps {
   gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
+  onResetHandlersReady?: (handlers: { clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean }) => void;
 }
 
 export const DataGrid: React.FC<DataGridProps> = ({
@@ -76,7 +77,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onRelationshipRowClick,
   gridType = 'objects', // Default to 'objects' for backward compatibility
   isPredefinedSortEnabled = false,
-  predefinedSortOrder
+  predefinedSortOrder,
+  onResetHandlersReady
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
@@ -289,7 +291,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
                    gridType === 'lists' ? 'cdm_lists_sort_config' : 
                    'cdm_objects_sort_config';
     localStorage.removeItem(sortKey);
-    // Note: Filter state is preserved
+    localStorage.removeItem(gridType === 'variables' ? 'cdm_variables_column_sort_active' : 
+                           gridType === 'lists' ? 'cdm_lists_column_sort_active' : 
+                           'cdm_objects_column_sort_active');
+    localStorage.removeItem(gridType === 'variables' ? 'cdm_variables_custom_sort_rules' : 
+                           gridType === 'lists' ? 'cdm_lists_custom_sort_rules' : 
+                           'cdm_objects_custom_sort_rules');
+    localStorage.removeItem(gridType === 'variables' ? 'cdm_variables_custom_sort_active' : 
+                           gridType === 'lists' ? 'cdm_lists_custom_sort_active' : 
+                           'cdm_objects_custom_sort_active');
+    setIsCustomSortActive(false);
+    setIsColumnSortActive(false);
   };
 
 
@@ -839,38 +851,6 @@ export const DataGrid: React.FC<DataGridProps> = ({
       >
         {/* Grid Container with Horizontal Scroll */}
         <div className="overflow-x-auto">
-          {/* Clear Filters and Reset Sorting Buttons */}
-          {(() => {
-            // Check if there are any active filters (non-empty text filters or non-empty column filter arrays)
-            const hasActiveFilters = Object.keys(filters).length > 0 || 
-              Object.keys(columnFilters).some(key => columnFilters[key] && columnFilters[key].length > 0);
-            // Check if there's any active sorting
-            const hasActiveSorting = sortConfig !== null || customSortRules.length > 0 || isCustomSortActive || isColumnSortActive;
-            
-            if (!hasActiveFilters && !hasActiveSorting) return null;
-            
-            return (
-              <div className="bg-ag-dark-surface border-b border-ag-dark-border px-4 py-2 flex gap-4">
-                {hasActiveFilters && (
-                  <button
-                    onClick={handleClearAllFilters}
-                    className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0"
-                  >
-                    Reset Filters
-                  </button>
-                )}
-                {hasActiveSorting && (
-                  <button
-                    onClick={handleResetSorting}
-                    className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors flex-shrink-0"
-                  >
-                    Reset Sorting
-                  </button>
-                )}
-              </div>
-            );
-          })()}
-          
           {/* Grid Header */}
           <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
             <div className="flex text-sm font-medium text-ag-dark-text min-w-full">
@@ -1111,15 +1091,41 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               
                               // Handle Lists data where sector/domain/country might be arrays
                               if (Array.isArray(value)) {
-                                // If array contains "ALL" or all values, convert to "ALL"
-                                if (value.length === 1 && value[0] === 'ALL') {
-                                  value = 'ALL';
-                                } else if (value.includes('ALL')) {
+                                // Filter out "ALL" from array as it's not an actual value
+                                const filteredArray = value.filter(v => v !== 'ALL');
+                                
+                                if (filteredArray.length === 0) {
+                                  // Empty array or only "ALL" was in array
                                   value = 'ALL';
                                 } else {
-                                  // Join multiple values with comma (getGridDriverDisplayValue will handle trimming)
-                                  // Use comma without space to match the format expected by getGridDriverDisplayValue
-                                  value = value.join(',');
+                                  // Check if all possible values are selected
+                                  const driversData = getDriversData();
+                                  let allPossibleValues: string[] = [];
+                                  if (column.key === 'sector') {
+                                    allPossibleValues = (driversData.sectors || []).filter(v => v !== 'ALL');
+                                  } else if (column.key === 'domain') {
+                                    allPossibleValues = (driversData.domains || []).filter(v => v !== 'ALL');
+                                  } else if (column.key === 'country') {
+                                    allPossibleValues = (driversData.countries || []).filter(v => v !== 'ALL');
+                                  }
+                                  
+                                  // Check if all values are selected
+                                  if (allPossibleValues.length > 0) {
+                                    const selectedSet = new Set(filteredArray);
+                                    const allSet = new Set(allPossibleValues);
+                                    const isAllSelected = selectedSet.size === allSet.size && 
+                                                         [...selectedSet].every(val => allSet.has(val));
+                                    if (isAllSelected) {
+                                      value = 'ALL';
+                                    } else {
+                                      // Join multiple values with comma (getGridDriverDisplayValue will handle trimming)
+                                      // Use comma without space to match the format expected by getGridDriverDisplayValue
+                                      value = filteredArray.join(',');
+                                    }
+                                  } else {
+                                    // No possible values to compare, just join
+                                    value = filteredArray.join(',');
+                                  }
                                 }
                               }
                               

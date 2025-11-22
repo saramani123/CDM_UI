@@ -63,7 +63,8 @@ async def get_objects():
                          toObject: other.object
                      }) as relationships,
                      collect(DISTINCT v.name) as variant_names,
-                     count(DISTINCT var) as variables_count
+                     count(DISTINCT var) as variables_count,
+                     count(DISTINCT other) as relationships_count
                 RETURN o.id as id, 
                        o.driver as driver, 
                        o.being as being,
@@ -72,7 +73,8 @@ async def get_objects():
                        o.status as status,
                        relationships,
                        variant_names,
-                       variables_count
+                       variables_count,
+                       relationships_count
                 ORDER BY o.id
             """)
             
@@ -107,13 +109,17 @@ async def get_objects():
                 # Get variables count from the query result
                 variables_count = record.get("variables_count", 0) or 0
                 
+                # Get relationships count - count distinct target objects (not all relationship edges)
+                # After migration, this should equal the total number of objects
+                relationships_count = record.get("relationships_count", 0) or 0
+                
                 obj = {
                     "id": record["id"],
                     "driver": record["driver"],
                     "being": record["being"],
                     "avatar": record["avatar"],
                     "object": record["object"],
-                    "relationships": len(relationships),
+                    "relationships": relationships_count,  # Use count of distinct target objects
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",
