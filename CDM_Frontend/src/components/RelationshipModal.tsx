@@ -6,6 +6,7 @@ import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
 import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
+import { BulkEditRelationshipsModal } from './BulkEditRelationshipsModal';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
 
 interface InitialRelationship {
@@ -65,6 +66,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     order: 'asc' | 'desc';
   }>>([]);
   const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set()); // Track selected rows for bulk editing
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false); // Bulk edit modal state
 
   // Track if initialization is in progress to prevent duplicate calls
   const isInitializingRef = useRef(false);
@@ -110,6 +113,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     if (!isOpen) {
       setRelationshipData({});
       setInitialRelationshipData({}); // Reset initial state tracking
+      setSelectedRowIds(new Set()); // Reset selected rows for bulk editing
+      setIsBulkEditOpen(false); // Close bulk edit modal if open
       // Don't reset customSortRules - keep them for next time modal opens
       // Only reset if user explicitly clears custom sort
       isInitializingRef.current = false;
@@ -221,10 +226,10 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           userAddedRoles = allRolesArray.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase());
         }
         
-        // ALL objects are selected by default
+        // All objects are deselected by default (UI only - relationships still exist)
         initialData[obj.id] = {
           objectId: obj.id,
-          isSelected: true, // Always selected - users cannot deselect
+          isSelected: false, // Deselected by default - multiselect will be used for bulk editing
           relationshipType: relationshipType,
           roles: userAddedRoles.join(', '), // Only user-added roles shown in UI
           defaultRoleWord: defaultRoleWord, // Default role word stored separately
@@ -297,7 +302,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         const isSourceObject = sourceObjects.some(so => so.id === obj.id);
         initialData[obj.id] = {
           objectId: obj.id,
-          isSelected: true, // Always selected by default
+          isSelected: false, // Deselected by default - multiselect will be used for bulk editing
           relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
           roles: '', // User-added roles only (empty by default)
           defaultRoleWord: sourceObjectName, // Default role word is source object name
@@ -337,9 +342,24 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   };
 
   const handleRowClick = (objectId: string) => {
-    // NEW BEHAVIOR: Users cannot deselect objects - all objects must remain selected
-    // This function is now a no-op for deselection, but we keep it for potential future use
-    // The checkbox will be disabled in the UI
+    // Toggle selection for bulk editing
+    setSelectedRowIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(objectId)) {
+        newSet.delete(objectId);
+      } else {
+        newSet.add(objectId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedRowIds(new Set(allObjects.map(obj => obj.id)));
+    } else {
+      setSelectedRowIds(new Set());
+    }
   };
 
   const handleRelationshipTypeChange = (objectId: string, type: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table') => {
@@ -383,6 +403,65 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         frequency: frequency
       }
     }));
+  };
+
+  const handleBulkEdit = (bulkEditData: {
+    relationshipType?: 'Inter-Table' | 'Blood' | 'Subtype';
+    frequency: 'Critical' | 'Likely' | 'Possible';
+    roles: string;
+  }) => {
+    // Update relationship data for all selected objects
+    setRelationshipData(prev => {
+      const updated = { ...prev };
+      const sourceObjectName = sourceObjects[0]?.object || '';
+      
+      for (const objectId of selectedRowIds) {
+        const isSourceObject = sourceObjects.some(so => so.id === objectId);
+        const currentData = prev[objectId] || {
+          objectId: objectId,
+          isSelected: false,
+          relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
+          roles: '',
+          defaultRoleWord: sourceObjectName,
+          frequency: 'Possible'
+        };
+        
+        // Update relationship type (only if provided and not source object)
+        let newRelationshipType = currentData.relationshipType;
+        if (bulkEditData.relationshipType && !isSourceObject) {
+          newRelationshipType = bulkEditData.relationshipType;
+        }
+        
+        // Update frequency (if Blood, must be Critical)
+        let newFrequency = bulkEditData.frequency;
+        if (newRelationshipType === 'Blood') {
+          newFrequency = 'Critical';
+        }
+        
+        // Replace role words (exclude default role word)
+        // IMPORTANT: This replaces ALL existing user-added role words with the new ones
+        const newRoles = bulkEditData.roles.trim();
+        // Filter out default role word from new roles - default role word is NEVER affected
+        const filteredRoles = newRoles
+          ? newRoles.split(',')
+              .map(r => r.trim())
+              .filter(r => r && r.toLowerCase() !== sourceObjectName.toLowerCase())
+              .join(', ')
+          : '';
+        
+        updated[objectId] = {
+          ...currentData,
+          relationshipType: newRelationshipType,
+          frequency: newFrequency,
+          roles: filteredRoles // Replace existing roles with new ones (default role word is never affected)
+        };
+      }
+      
+      return updated;
+    });
+    
+    // Close the bulk edit modal
+    setIsBulkEditOpen(false);
   };
 
   const validateRoles = (roles: string): string[] => {
@@ -741,6 +820,21 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const initialUserAddedRoles = validateRoles(initialRelData.roles || '');
           const initialUserAddedRolesLower = initialUserAddedRoles.map(r => r.toLowerCase());
           
+          // Find role words to DELETE (in initial state but not in current state)
+          // CRITICAL: Never delete the default role word - it should always exist
+          const rolesToDelete = initialUserAddedRoles.filter(role => {
+            const roleLower = role.toLowerCase();
+            const defaultRoleLower = defaultRoleWord.toLowerCase();
+            
+            // CRITICAL: Never delete default role word
+            if (roleLower === defaultRoleLower) {
+              return false;
+            }
+            
+            // Delete if it was in initial state but is not in current state
+            return !currentUserAddedRolesLower.includes(roleLower);
+          });
+          
           // Find NEW role words that were added (not in initial state and not in database)
           // CRITICAL: Never include the default role word - it already exists and should never be created/deleted
           // The default role word relationship is managed separately and always exists for all objects
@@ -764,6 +858,37 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             
             return isNew && notInDatabase;
           });
+          
+          // Delete old role words that were replaced
+          if (rolesToDelete.length > 0) {
+            console.log(`🗑️ Deleting ${rolesToDelete.length} old role(s) for ${targetObject.object}: ${rolesToDelete.join(', ')}`);
+            // Find relationships with these role words and delete them
+            const relationshipsToDelete = existingRelationships.filter((rel: any) => 
+              rel.toBeing === targetObject.being && 
+              rel.toAvatar === targetObject.avatar && 
+              rel.toObject === targetObject.object &&
+              rolesToDelete.some(role => (rel.role || '').trim().toLowerCase() === role.toLowerCase())
+            );
+            
+            for (const rel of relationshipsToDelete) {
+              try {
+                // CRITICAL: Never delete default role word relationship
+                const relRole = (rel.role || '').trim().toLowerCase();
+                if (relRole === defaultRoleWord.toLowerCase()) {
+                  console.log(`⚠️ Skipping deletion of default role word relationship for ${targetObject.object}`);
+                  continue;
+                }
+                
+                if (rel.id) {
+                  await apiService.deleteRelationship(selectedObject.id, rel.id);
+                  console.log(`✅ Deleted relationship with role "${rel.role}" for ${targetObject.object}`);
+                }
+              } catch (error) {
+                console.error(`❌ Failed to delete relationship with role "${rel.role}" for ${targetObject.object}:`, error);
+                // Continue even if deletion fails
+              }
+            }
+          }
           
           // If there are new roles to create, add them to the batch
           if (newRoles.length > 0) {
@@ -845,6 +970,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
   const handleClose = () => {
     setRelationshipData({});
+    setSelectedRowIds(new Set()); // Reset selected rows
+    setIsBulkEditOpen(false); // Close bulk edit modal if open
     onClose();
   };
 
@@ -1090,6 +1217,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               <ArrowUpAZ className="w-4 h-4" />
               Custom Sort
             </button>
+            {selectedRowIds.size >= 2 && (
+              <button
+                onClick={() => setIsBulkEditOpen(true)}
+                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-accent text-white hover:bg-ag-dark-accent-hover transition-colors flex items-center gap-2"
+                title="Edit Selected"
+              >
+                <Link className="w-4 h-4" />
+                Edit Selected ({selectedRowIds.size})
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -1120,8 +1257,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
               <DataGrid
                 columns={relationshipColumns}
                 data={gridData}
-                onRowSelect={() => {}} // No row selection needed in modal
-                selectedRows={[]}
+                onRowSelect={(rows) => {
+                  // Update selected row IDs for bulk editing
+                  setSelectedRowIds(new Set(rows.map((r: any) => r.id)));
+                }}
+                selectedRows={gridData.filter(row => selectedRowIds.has(row.id))}
                 affectedIds={new Set()}
                 deletedDriverType={null}
                 customSortRules={customSortRules}
@@ -1140,7 +1280,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 showActionsColumn={false}
                 relationshipData={relationshipData}
                 onRelationshipRowClick={handleRowClick}
-                selectionMode="row"
+                selectionMode="checkbox"
               />
             </div>
           )}
@@ -1173,6 +1313,15 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           setCustomSortRules(sortRules);
         }}
         currentSortRules={customSortRules}
+      />
+
+      {/* Bulk Edit Relationships Modal */}
+      <BulkEditRelationshipsModal
+        isOpen={isBulkEditOpen}
+        onClose={() => setIsBulkEditOpen(false)}
+        onSave={handleBulkEdit}
+        selectedCount={selectedRowIds.size}
+        includeRelationshipType={!Array.from(selectedRowIds).some(id => sourceObjects.some(so => so.id === id))}
       />
 
       {/* Relationship CSV Upload Modal */}

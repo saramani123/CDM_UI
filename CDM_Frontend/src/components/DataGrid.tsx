@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Filter, Edit, Trash2, ArrowUpDown, GripVertical, Copy } from 'lucide-react';
 import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
@@ -308,6 +308,44 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   // Initialize CSS variables for large grids
   const gridContainerRef = React.useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
+  const bodyScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Sync horizontal scroll between header and body
+  useEffect(() => {
+    const headerEl = headerScrollRef.current;
+    const bodyEl = bodyScrollRef.current;
+    
+    if (!headerEl || !bodyEl) return;
+    
+    let isSyncing = false;
+    
+    const handleBodyScroll = () => {
+      if (isSyncing) return;
+      isSyncing = true;
+      headerEl.scrollLeft = bodyEl.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncing = false;
+      });
+    };
+    
+    const handleHeaderScroll = () => {
+      if (isSyncing) return;
+      isSyncing = true;
+      bodyEl.scrollLeft = headerEl.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncing = false;
+      });
+    };
+    
+    bodyEl.addEventListener('scroll', handleBodyScroll);
+    headerEl.addEventListener('scroll', handleHeaderScroll);
+    
+    return () => {
+      bodyEl.removeEventListener('scroll', handleBodyScroll);
+      headerEl.removeEventListener('scroll', handleHeaderScroll);
+    };
+  }, []);
   const isLargeGrid = data.length > 500;
   
   // Initialize CSS variables on mount and when columnWidths change (for large grids)
@@ -867,7 +905,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
         style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
       >
         {/* Grid Header - Fixed at top */}
-        <div className="bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 overflow-x-auto">
+        <div 
+          ref={headerScrollRef}
+          className="bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 overflow-x-auto"
+          style={{ overflowY: 'hidden' }}
+        >
           <div className="flex text-sm font-medium text-ag-dark-text min-w-max">
               {selectionMode === 'checkbox' && !relationshipData && (
                 <div className="w-10 flex items-center justify-center p-2">
@@ -980,7 +1022,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
           </div>
         
         {/* Grid Body - Scrollable */}
-        <div className="flex-1 overflow-x-auto overflow-y-auto" style={{ minHeight: 0 }}>
+        <div 
+          ref={bodyScrollRef}
+          className="flex-1 overflow-x-auto overflow-y-auto" 
+          style={{ minHeight: 0 }}
+        >
           <div className="min-w-max">
             {filteredAndSortedData.map((row, index) => (
               <div
