@@ -444,3 +444,100 @@ INFO:     127.0.0.1:52079 - "GET /api/v1/objects HTTP/1.1" 200 OK
 INFO:     127.0.0.1:52071 - "GET /api/v1/variables HTTP/1.1" 200 OK
 Retrieved 113 objects from Neo4j (optimized query)
 INFO:     127.0.0.1:52072 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53771 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53774 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53776 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53771 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53774 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53778 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53776 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53780 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53774 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53771 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53778 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53781 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53776 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Error querying sectors: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53780 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Error querying domains: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53774 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Error querying countries: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53781 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53771 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying objectClarifiers: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53778 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Error fetching variables: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53807 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error fetching variables: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53807 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error fetching variables: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53807 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address si-fbb04c5f-25af.production-orch-0033.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53809 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53815 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:53817 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+[#D21C]  _: <CONNECTION> error: Failed to read from defunct connection ResolvedIPv4Address(('34.78.243.29', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Unable to retrieve routing information
+Error querying Neo4j: Unable to retrieve routing information
+INFO:     127.0.0.1:53819 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53975 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53975 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54020 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53975 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54022 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54024 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54022 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54026 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53975 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54027 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54026 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53975 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54022 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54027 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53975 - "GET /api/v1/variables HTTP/1.1" 200 OK

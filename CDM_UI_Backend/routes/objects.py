@@ -1859,16 +1859,27 @@ async def update_relationships_to_target(
     relationship_type: str = Body(...),
     frequency: str = Body(...)
 ):
-    """Update type and frequency for all relationships from source object to a specific target object"""
+    """Update type and frequency for all relationships from source object to a specific target object
+    EXCEPT the default role word relationship (which always maintains its original properties)
+    """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
     
     try:
         with driver.session() as session:
+            # Get source object name to identify default role word relationship
+            source_obj = session.run("""
+                MATCH (o:Object {id: $object_id})
+                RETURN o.object as object_name
+            """, object_id=object_id).single()
+            
+            source_object_name = source_obj["object_name"] if source_obj else ""
+            default_role_word = source_object_name  # Default role word is the source object name
+            
             # Find target object(s) matching the criteria
             where_conditions = []
-            params = {"source_id": object_id, "relationship_type": relationship_type, "frequency": frequency}
+            params = {"source_id": object_id, "relationship_type": relationship_type, "frequency": frequency, "default_role": default_role_word}
             
             if target_being != "ALL":
                 where_conditions.append("target.being = $target_being")
@@ -1885,9 +1896,11 @@ async def update_relationships_to_target(
             where_clause = " AND ".join(where_conditions) if where_conditions else "true"
             
             # Update all relationships from source to target(s) with new type and frequency
+            # CRITICAL: Exclude the default role word relationship - it should never be modified
+            # The default role word relationship always maintains its original properties
             result = session.run(f"""
                 MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
-                WHERE {where_clause}
+                WHERE {where_clause} AND r.role <> $default_role
                 SET r.type = $relationship_type, r.frequency = $frequency
                 RETURN count(r) as updated_count
             """, **params).single()

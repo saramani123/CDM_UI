@@ -582,6 +582,14 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       } else {
         // SINGLE MODE: All objects are selected by default
         // Users cannot delete relationships - only update properties and add new role words
+        // 
+        // DEFAULT ROLE WORD BEHAVIOR:
+        // - Each object has a default role word relationship to all other objects (including itself)
+        // - Default role word = source object name (e.g., "Company" for Company object)
+        // - Default role word relationship is created behind the scenes, not shown in UI
+        // - Default role word relationship is NEVER deleted or recreated
+        // - When type/frequency is changed, ALL relationships to that target are updated (including default)
+        // - New role words are ADDITIONAL relationships on top of the default
         const selectedObject = sourceObjects[0];
         const defaultRoleWord = selectedObject.object || '';
         
@@ -592,6 +600,19 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           existingRelationships = relationshipsResponse.relationshipsList || [];
         } catch (error) {
           console.error('Failed to fetch existing relationships:', error);
+        }
+        
+        // Check if initial state is available - if not, skip all updates (nothing has changed)
+        const hasInitialState = Object.keys(initialRelationshipData).length > 0;
+        const initialKeysCount = Object.keys(initialRelationshipData).length;
+        const currentKeysCount = Object.keys(relationshipData).length;
+        console.log(`🔍 Initial state check: hasInitialState=${hasInitialState}, initialKeys=${initialKeysCount}, currentKeys=${currentKeysCount}`);
+        
+        // If no initial state, something went wrong - don't update anything
+        if (!hasInitialState || initialKeysCount === 0) {
+          console.warn('⚠️ No initial state found - skipping all updates to prevent unintended changes');
+          // Don't show alert - just skip updates and only create new relationships
+          console.log('⚠️ Proceeding with relationship creation only (no updates)');
         }
         
         // Step 1: Only update relationships where type/frequency actually changed
@@ -607,7 +628,12 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
           // Get initial state for this object
           const initialRelData = initialRelationshipData[objectId];
-          if (!initialRelData) continue; // Skip if no initial data (shouldn't happen)
+          
+          // If no initial state, skip updates (this shouldn't happen, but be safe)
+          if (!initialRelData) {
+            console.log(`⚠️ No initial state for ${targetObject.object}, skipping update`);
+            continue;
+          }
 
           // All objects are selected by default - always process them
           const isSelf = objectId === selectedObject.id;
@@ -619,38 +645,56 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
           
           // Check if type or frequency changed
-          const initialType = isSelf ? 'Intra-Table' : initialRelData.relationshipType;
-          const initialFrequency = initialType === 'Blood' ? 'Critical' : (initialRelData.frequency || 'Possible');
+          // Normalize initial values the same way we normalize current values
+          const initialType = isSelf ? 'Intra-Table' : (initialRelData.relationshipType || 'Inter-Table');
+          const initialTypeNormalized = initialType === 'Blood' ? 'Blood' : (isSelf ? 'Intra-Table' : initialType);
+          const initialFrequencyNormalized = initialTypeNormalized === 'Blood' ? 'Critical' : (initialRelData.frequency || 'Possible');
           
-          const typeChanged = relationshipType !== initialType;
-          const frequencyChanged = frequency !== initialFrequency;
+          // Normalize current values
+          const currentTypeNormalized = relationshipType;
+          const currentFrequencyNormalized = frequency;
+          
+          const typeChanged = currentTypeNormalized !== initialTypeNormalized;
+          const frequencyChanged = currentFrequencyNormalized !== initialFrequencyNormalized;
           
           // Only update if something actually changed
           if (typeChanged || frequencyChanged) {
+            console.log(`📝 Change detected for ${targetObject.object}: type=${typeChanged ? `${initialTypeNormalized}→${currentTypeNormalized}` : 'unchanged'}, freq=${frequencyChanged ? `${initialFrequencyNormalized}→${currentFrequencyNormalized}` : 'unchanged'}`);
             relationshipsToUpdate.push({
               targetObject,
               relationshipType,
               frequency
             });
+          } else {
+            // Log that no change was detected (for debugging)
+            if (objectId === selectedObject.id || targetObject.object === 'Company') {
+              console.log(`✓ No change for ${targetObject.object}: type=${currentTypeNormalized}, freq=${currentFrequencyNormalized} (matches initial)`);
+            }
           }
         }
         
-        // Update only changed relationships
-        for (const update of relationshipsToUpdate) {
-          try {
-            await apiService.updateRelationshipsToTarget(
-              selectedObject.id,
-              update.targetObject.being || 'ALL',
-              update.targetObject.avatar || 'ALL',
-              update.targetObject.object || 'ALL',
-              update.relationshipType,
-              update.frequency
-            );
-            console.log(`Updated relationships to ${update.targetObject.object} with type=${update.relationshipType}, frequency=${update.frequency}`);
-          } catch (error) {
-            console.error(`Failed to update relationships to ${update.targetObject.object}:`, error);
-            // Continue to next target even if update fails
+        console.log(`🔍 Total relationships to update: ${relationshipsToUpdate.length}`);
+        
+        // Update only changed relationships (skip if no initial state)
+        if (hasInitialState && initialKeysCount > 0) {
+          for (const update of relationshipsToUpdate) {
+            try {
+              await apiService.updateRelationshipsToTarget(
+                selectedObject.id,
+                update.targetObject.being || 'ALL',
+                update.targetObject.avatar || 'ALL',
+                update.targetObject.object || 'ALL',
+                update.relationshipType,
+                update.frequency
+              );
+              console.log(`✅ Updated relationships to ${update.targetObject.object} with type=${update.relationshipType}, frequency=${update.frequency}`);
+            } catch (error) {
+              console.error(`❌ Failed to update relationships to ${update.targetObject.object}:`, error);
+              // Continue to next target even if update fails
+            }
           }
+        } else {
+          console.log(`⏭️ Skipping relationship updates (no initial state available)`);
         }
         
         // Step 2: Collect only NEW role words that were actually added (compare with initial state)
@@ -698,16 +742,32 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const initialUserAddedRolesLower = initialUserAddedRoles.map(r => r.toLowerCase());
           
           // Find NEW role words that were added (not in initial state and not in database)
+          // CRITICAL: Never include the default role word - it already exists and should never be created/deleted
+          // The default role word relationship is managed separately and always exists for all objects
           const newRoles = currentUserAddedRoles.filter(role => {
             const roleLower = role.toLowerCase();
+            const defaultRoleLower = defaultRoleWord.toLowerCase();
+            
+            // CRITICAL: Skip if it's the default role word - this relationship already exists and should never be recreated
+            if (roleLower === defaultRoleLower) {
+              console.log(`⚠️ Skipping default role word "${role}" for ${targetObject.object} - it already exists and should not be recreated`);
+              return false;
+            }
+            
             // Must be new (not in initial state) and not already in database
-            return !initialUserAddedRolesLower.includes(roleLower) && 
-                   !existingRolesForTarget.includes(roleLower) &&
-                   roleLower !== defaultRoleWord.toLowerCase();
+            const isNew = !initialUserAddedRolesLower.includes(roleLower);
+            const notInDatabase = !existingRolesForTarget.includes(roleLower);
+            
+            if (isNew && notInDatabase) {
+              console.log(`➕ New role detected for ${targetObject.object}: "${role}" (not in initial: ${!initialUserAddedRolesLower.includes(roleLower)}, not in DB: ${!existingRolesForTarget.includes(roleLower)})`);
+            }
+            
+            return isNew && notInDatabase;
           });
           
           // If there are new roles to create, add them to the batch
           if (newRoles.length > 0) {
+            console.log(`📝 Adding ${newRoles.length} new role(s) for ${targetObject.object}: ${newRoles.join(', ')}`);
             relationshipsToCreate.push({
               sourceObjectId: selectedObject.id,
               targetObject,
@@ -719,12 +779,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
         
         // Step 3: Bulk create all new relationships at once
+        console.log(`🔍 Total relationships to create: ${relationshipsToCreate.length}`);
         if (relationshipsToCreate.length > 0) {
           try {
             await apiService.bulkCreateRelationships(relationshipsToCreate);
-            console.log(`Successfully created new relationships via bulk operation for ${relationshipsToCreate.length} target(s)`);
+            console.log(`✅ Successfully created new relationships via bulk operation for ${relationshipsToCreate.length} target(s)`);
           } catch (error: any) {
-            console.error('Bulk relationship creation error:', error);
+            console.error('❌ Bulk relationship creation error:', error);
             // If bulk endpoint fails, fall back to individual creation
             if (error.message?.includes('404') || error.message?.includes('not found')) {
               // Fall back to individual creation for each new role
