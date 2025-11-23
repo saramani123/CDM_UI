@@ -376,6 +376,29 @@ class ApiService {
     });
   }
 
+  async updateRelationshipsToTarget(
+    objectId: string,
+    targetBeing: string,
+    targetAvatar: string,
+    targetObject: string,
+    relationshipType: string,
+    frequency: string
+  ) {
+    return this.request(`/objects/${objectId}/relationships/update-target`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        target_being: targetBeing,
+        target_avatar: targetAvatar,
+        target_object: targetObject,
+        relationship_type: relationshipType,
+        frequency: frequency
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
   async getObjectRelationships(objectId: string) {
     return this.request(`/objects/${objectId}`);
   }

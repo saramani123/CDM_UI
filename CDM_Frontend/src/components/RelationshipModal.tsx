@@ -78,6 +78,16 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     }
     
     if (isOpen && sourceObjects.length > 0 && allObjects.length > 0) {
+      // Set default sorting to Being, Avatar, Object (A-Z) when modal opens
+      // Only set if customSortRules is empty (user hasn't set custom sort yet)
+      if (customSortRules.length === 0) {
+        setCustomSortRules([
+          { id: '1', column: 'being', sortOn: 'being', order: 'asc' },
+          { id: '2', column: 'avatar', sortOn: 'avatar', order: 'asc' },
+          { id: '3', column: 'object', sortOn: 'object', order: 'asc' }
+        ]);
+      }
+      
       // Use a small delay to allow any pending state updates to complete
       // Only initialize if not already initializing
       if (!isInitializingRef.current) {
@@ -98,19 +108,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // Reset relationship data when modal closes
     if (!isOpen) {
       setRelationshipData({});
-      setCustomSortRules([]);
+      // Don't reset customSortRules - keep them for next time modal opens
+      // Only reset if user explicitly clears custom sort
       isInitializingRef.current = false;
       if (initializationTimerRef.current) {
         clearTimeout(initializationTimerRef.current);
         initializationTimerRef.current = null;
       }
-    } else if (isOpen && customSortRules.length === 0) {
-      // Set default sorting to Being, Avatar, Object (A-Z) when modal opens
-      setCustomSortRules([
-        { id: '1', column: 'being', sortOn: 'being', order: 'asc' },
-        { id: '2', column: 'avatar', sortOn: 'avatar', order: 'asc' },
-        { id: '3', column: 'object', sortOn: 'object', order: 'asc' }
-      ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, sourceObjects.length, allObjects.length]);
@@ -571,8 +575,59 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       } else {
         // SINGLE MODE: All objects are selected by default
+        // Users cannot delete relationships - only update properties and add new role words
         const selectedObject = sourceObjects[0];
         const defaultRoleWord = selectedObject.object || '';
+        
+        // Get all existing relationships to check which role words already exist
+        let existingRelationships: any[] = [];
+        try {
+          const relationshipsResponse = await apiService.getObjectRelationships(selectedObject.id) as any;
+          existingRelationships = relationshipsResponse.relationshipsList || [];
+        } catch (error) {
+          console.error('Failed to fetch existing relationships:', error);
+        }
+        
+        // Step 1: Update all existing relationships with new type and frequency
+        // Process each target object to update properties
+        for (const [objectId, relData] of Object.entries(relationshipData)) {
+          const targetObject = allObjects.find(obj => obj.id === objectId);
+          if (!targetObject) continue;
+
+          // All objects are selected by default - always process them
+          const isSelf = objectId === selectedObject.id;
+          
+          // Determine relationship type - self-relationships must be Intra-Table
+          const relationshipType = isSelf ? 'Intra-Table' : relData.relationshipType;
+          
+          // Blood relationships MUST always be Critical
+          const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
+          
+          // Update all existing relationships to this target with new type and frequency
+          try {
+            await apiService.updateRelationshipsToTarget(
+              selectedObject.id,
+              targetObject.being || 'ALL',
+              targetObject.avatar || 'ALL',
+              targetObject.object || 'ALL',
+              relationshipType,
+              frequency
+            );
+            console.log(`Updated relationships to ${targetObject.object} with type=${relationshipType}, frequency=${frequency}`);
+          } catch (error) {
+            console.error(`Failed to update relationships to ${targetObject.object}:`, error);
+            // Continue to next target even if update fails
+          }
+        }
+        
+        // Step 2: Collect all new relationships to create (batch operation)
+        const relationshipsToCreate: Array<{
+          sourceObjectId: string;
+          targetObject: ObjectData;
+          relationshipType: string;
+          roles: string[];
+          frequency: 'Critical' | 'Likely' | 'Possible';
+        }> = [];
         
         for (const [objectId, relData] of Object.entries(relationshipData)) {
           const targetObject = allObjects.find(obj => obj.id === objectId);
@@ -581,49 +636,76 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // All objects are selected by default - always process them
           const isSelf = objectId === selectedObject.id;
           
-          // Get user-added roles (excluding default role word)
-          const userAddedRoles = validateRoles(relData.roles || '');
+          // Determine relationship type - self-relationships must be Intra-Table
+          const relationshipType = isSelf ? 'Intra-Table' : relData.relationshipType;
           
-          // Collect all roles: default role word + user-added roles
-          const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
+          // Blood relationships MUST always be Critical
+          const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
           
-          // First, delete ALL existing relationships for this target object to handle type/frequency changes
-          try {
-            const existingRelationships = await apiService.getObjectRelationships(selectedObject.id) as any;
-            const relationshipsToDelete = (existingRelationships.relationshipsList || []).filter((rel: any) => 
+          // Get existing role words for relationships to this target
+          const existingRolesForTarget = existingRelationships
+            .filter((rel: any) => 
               rel.toBeing === targetObject.being && 
               rel.toAvatar === targetObject.avatar && 
               rel.toObject === targetObject.object
-            );
-
-            for (const rel of relationshipsToDelete) {
-              await apiService.deleteRelationship(selectedObject.id, rel.id);
-            }
-          } catch (error) {
-            console.error(`Failed to delete existing relationships for ${targetObject.object}:`, error);
+            )
+            .map((rel: any) => (rel.role || '').trim().toLowerCase())
+            .filter((role: string) => role.length > 0);
+          
+          // Get user-added roles (excluding default role word)
+          const userAddedRoles = validateRoles(relData.roles || '');
+          
+          // Collect role words that don't exist yet
+          // Always ensure default role word relationship exists
+          const allRolesToCheck = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
+          const newRoles = allRolesToCheck
+            .filter(role => role && role.trim() !== '')
+            .filter(role => !existingRolesForTarget.includes(role.trim().toLowerCase()));
+          
+          // If there are new roles to create, add them to the batch
+          if (newRoles.length > 0) {
+            relationshipsToCreate.push({
+              sourceObjectId: selectedObject.id,
+              targetObject,
+              relationshipType,
+              roles: newRoles,
+              frequency
+            });
           }
-
-          // Create relationships: one with default role word, plus one for each user-added role
-          for (const role of allRoles) {
-            if (!role || role.trim() === '') continue; // Skip empty roles
-            
-            try {
-              await apiService.createRelationship(selectedObject.id, {
-                type: relData.relationshipType,
-                role: role.trim(),
-                // Blood relationships MUST always be Critical
-                frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
-                toBeing: targetObject.being,
-                toAvatar: targetObject.avatar,
-                toObject: targetObject.object
-              });
-            } catch (error: any) {
-              // Check if it's a duplicate error - ignore duplicates
-              if (error.message?.includes('Duplicate') || error.message?.includes('already exists')) {
-                console.warn(`Duplicate relationship skipped: ${selectedObject.object} -> ${targetObject.object} with role "${role}"`);
-              } else {
-                console.error(`Failed to create relationship for ${targetObject.object} with role "${role}":`, error);
+        }
+        
+        // Step 3: Bulk create all new relationships at once
+        if (relationshipsToCreate.length > 0) {
+          try {
+            await apiService.bulkCreateRelationships(relationshipsToCreate);
+            console.log(`Successfully created new relationships via bulk operation for ${relationshipsToCreate.length} target(s)`);
+          } catch (error: any) {
+            console.error('Bulk relationship creation error:', error);
+            // If bulk endpoint fails, fall back to individual creation
+            if (error.message?.includes('404') || error.message?.includes('not found')) {
+              // Fall back to individual creation for each new role
+              for (const rel of relationshipsToCreate) {
+                for (const role of rel.roles) {
+                  try {
+                    await apiService.createRelationship(rel.sourceObjectId, {
+                      type: rel.relationshipType,
+                      role: role.trim(),
+                      frequency: rel.frequency,
+                      toBeing: rel.targetObject.being,
+                      toAvatar: rel.targetObject.avatar,
+                      toObject: rel.targetObject.object
+                    });
+                  } catch (err: any) {
+                    if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
+                      console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
+                    } else {
+                      console.error(`Failed to create relationship: ${err}`);
+                    }
+                  }
+                }
               }
+            } else {
+              throw error;
             }
           }
         }
@@ -937,10 +1019,17 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 selectedRows={[]}
                 affectedIds={new Set()}
                 deletedDriverType={null}
-                customSortRules={[]}
-                onClearCustomSort={() => {}}
+                customSortRules={customSortRules}
+                onClearCustomSort={() => {
+                  // Reset to default sort when user clears custom sort
+                  setCustomSortRules([
+                    { id: '1', column: 'being', sortOn: 'being', order: 'asc' },
+                    { id: '2', column: 'avatar', sortOn: 'avatar', order: 'asc' },
+                    { id: '3', column: 'object', sortOn: 'object', order: 'asc' }
+                  ]);
+                }}
                 onColumnSort={() => {}}
-                isCustomSortActive={false}
+                isCustomSortActive={customSortRules.length > 0}
                 isColumnSortActive={false}
                 highlightCurrentObject={true}
                 showActionsColumn={false}

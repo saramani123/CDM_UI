@@ -1848,6 +1848,71 @@ async def delete_relationship(object_id: str, relationship_id: str):
         print(f"Error deleting relationship: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete relationship: {e}")
 
+@router.put("/objects/{object_id}/relationships/update-target", response_model=Dict[str, Any])
+async def update_relationships_to_target(
+    object_id: str,
+    target_being: str = Body(...),
+    target_avatar: str = Body(...),
+    target_object: str = Body(...),
+    relationship_type: str = Body(...),
+    frequency: str = Body(...)
+):
+    """Update type and frequency for all relationships from source object to a specific target object"""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    
+    try:
+        with driver.session() as session:
+            # Find target object(s) matching the criteria
+            where_conditions = []
+            params = {"source_id": object_id, "relationship_type": relationship_type, "frequency": frequency}
+            
+            if target_being != "ALL":
+                where_conditions.append("target.being = $target_being")
+                params["target_being"] = target_being
+            
+            if target_avatar != "ALL":
+                where_conditions.append("target.avatar = $target_avatar")
+                params["target_avatar"] = target_avatar
+            
+            if target_object != "ALL":
+                where_conditions.append("target.object = $target_object")
+                params["target_object"] = target_object
+            
+            where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+            
+            # Update all relationships from source to target(s) with new type and frequency
+            result = session.run(f"""
+                MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
+                WHERE {where_clause}
+                SET r.type = $relationship_type, r.frequency = $frequency
+                RETURN count(r) as updated_count
+            """, **params).single()
+            
+            updated_count = result["updated_count"] if result else 0
+            
+            # Update relationship count
+            count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
+                RETURN count(DISTINCT other) as rel_count
+            """, object_id=object_id).single()
+            
+            rel_count = count_result["rel_count"] if count_result else 0
+            
+            session.run("""
+                MATCH (o:Object {id: $object_id})
+                SET o.relationships = $rel_count
+            """, object_id=object_id, rel_count=rel_count)
+            
+            return {
+                "message": f"Successfully updated {updated_count} relationship(s)",
+                "updated_count": updated_count
+            }
+    except Exception as e:
+        print(f"Error updating relationships to target: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update relationships: {e}")
+
 @router.post("/objects/bulk-relationships", response_model=Dict[str, Any])
 async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Body(...)):
     """Create multiple relationships for multiple source objects in bulk"""
