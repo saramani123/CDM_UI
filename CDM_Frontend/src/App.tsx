@@ -3274,10 +3274,11 @@ function App() {
             </div>
           ) : (
             <div className="lg:col-span-1">
-              <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto" style={{ marginTop: '-4rem', paddingTop: '4rem' }}>
+              <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
                 {/* Three equal-sized buttons: Generic, Graph View, Grid View (for Objects, Variables, and Lists tabs) */}
+                {/* Position buttons to align with Custom Sort/Add buttons on the left - match the grid header height */}
                 {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                  <div className="mb-3 grid grid-cols-3 gap-2" style={{ marginTop: '-3.5rem' }}>
+                  <div className="mb-4 grid grid-cols-3 gap-2 flex-shrink-0" style={{ marginTop: '0' }}>
                     {/* Generic Button */}
                     <button
                       onClick={() => {

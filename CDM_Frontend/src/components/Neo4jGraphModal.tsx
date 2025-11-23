@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Info, Network, RefreshCw, ExternalLink, AlertTriangle, Plus, Minus, ChevronDown, ChevronUp, Copy, Eye } from 'lucide-react';
+import { X, Network, RefreshCw, ExternalLink, AlertTriangle, Plus, Minus, ChevronDown, ChevronUp, Copy, Eye } from 'lucide-react';
 // @ts-ignore - vis-network doesn't have complete TypeScript definitions
 import { Network as VisNetwork } from 'vis-network/standalone';
 // @ts-ignore - vis-network types
@@ -63,12 +63,14 @@ RETURN s, r1, g, r2, l, r3, v`
   } : graphType === 'variables' ? {
     taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
 OPTIONAL MATCH (v)-[r3:HAS_VARIATION]->(var:Variation)
-RETURN p, r1, g, r2, v, r3, var`,
+RETURN p, r1, g, r2, v, r3, var
+LIMIT 1000`,
     model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
 MATCH (a)-[r2:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[r3:HAS_SPECIFIC_VARIABLE]->(v:Variable)
 OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(g:Group)<-[r5:HAS_GROUP]-(p:Part)
-RETURN b, r1, a, r2, o, r3, v, r4, g, r5, p`
+RETURN b, r1, a, r2, o, r3, v, r4, g, r5, p
+LIMIT 1000`
   } : {
     taxonomy: `MATCH (b:Being)-[ha:HAS_AVATAR]->(a:Avatar)-[ho:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[hv:HAS_VARIANT]->(v:Variant)
@@ -106,17 +108,37 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       }
 
       // Execute query via API endpoint (proxies to Neo4j)
-      console.log('Executing graph query via API...');
-      const graphData = await executeGraphQuery(query);
+      console.log('Executing graph query via API...', { graphType, activeView, query });
+      let graphData;
+      try {
+        graphData = await executeGraphQuery(query);
+      } catch (err: any) {
+        console.error('Error executing graph query:', err);
+        setError(`Failed to execute query: ${err.message || 'Unknown error'}. Please check the console for details.`);
+        setIsLoading(false);
+        setShowFallback(true);
+        return;
+      }
       
       console.log('Graph data received:', {
         nodeCount: graphData.nodeCount,
-        edgeCount: graphData.edgeCount
+        edgeCount: graphData.edgeCount,
+        nodes: graphData.nodes?.length || 0,
+        edges: graphData.edges?.length || 0,
+        sampleNodes: graphData.nodes?.slice(0, 3),
+        sampleEdges: graphData.edges?.slice(0, 3)
       });
 
-      if (graphData.nodeCount === 0) {
-        setError('No nodes found. The query may not have returned any results.');
+      if (!graphData || graphData.nodeCount === 0 || !graphData.nodes || graphData.nodes.length === 0) {
+        const errorMsg = graphType === 'variables' 
+          ? 'No variables found. The query may not have returned any results. Please check if variables exist in the database. You can verify this by checking the Variables grid view.'
+          : graphType === 'lists'
+          ? 'No lists found. The query may not have returned any results. Please check if lists exist in the database.'
+          : 'No nodes found. The query may not have returned any results.';
+        console.warn('No graph data returned:', { graphType, activeView, query, graphData });
+        setError(errorMsg);
         setIsLoading(false);
+        setShowFallback(true);
         return;
       }
 
@@ -142,17 +164,27 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       };
 
       const nodes: Node[] = graphData.nodes.map((node: any) => {
-        const group = node.group || 'Unknown';
-        const colorConfig = labelColors[group as string] || { 
+        // Get node type/group - this should be the Neo4j label (e.g., "Variable", "Part", "Group")
+        // The backend returns this as node.group
+        const nodeType = node.group || 'Unknown';
+        
+        // Get color config based on node type
+        const colorConfig = labelColors[nodeType] || { 
           background: '#6B7280', 
           border: '#4B5563', 
           highlight: { background: '#9CA3AF', border: '#6B7280' } 
         };
         
+        // Get display label - prefer node.label (set by backend from properties.name/variable/object), then fallback to id
+        // The backend sets node.label from properties.name, but for Variables it might be in properties.variable
+        const displayLabel = node.label || 
+                            (node.properties && (node.properties.name || node.properties.variable || node.properties.object || node.properties.list)) || 
+                            String(node.id);
+        
         return {
           id: String(node.id),
-          label: String(node.label || node.id),
-          group: group,
+          label: String(displayLabel),
+          group: nodeType,
           color: colorConfig,
           font: { color: '#E5E7EB', size: 14 },
           size: 16,
@@ -295,76 +327,98 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       
       // Store network reference for zoom controls and set default zoom/center
       if (networkRef.current) {
+        // Set up fallback timeout in case stabilizationEnd doesn't fire
+        let stabilizationFired = false;
+        const fallbackTimeout = setTimeout(() => {
+          if (networkRef.current && !stabilizationFired) {
+            console.log('Fallback: Clearing loading state after timeout (stabilizationEnd did not fire)');
+            setIsLoading(false);
+            // Still try to position the graph
+            try {
+              const currentScale = networkRef.current.getScale() || 1;
+              const zoomMultiplier = graphType === 'objects' ? 1.3 : 1.8;
+              const targetScale = Math.min(currentScale * zoomMultiplier, graphType === 'objects' ? 1.8 : 2.5);
+              const viewPosition = networkRef.current.getViewPosition();
+              const verticalOffset = graphType === 'objects' ? 500 : -150;
+              
+              networkRef.current.moveTo({
+                scale: targetScale,
+                position: { x: viewPosition.x, y: viewPosition.y + verticalOffset },
+                animation: false
+              });
+            } catch (e) {
+              console.warn('Error in fallback positioning:', e);
+            }
+          }
+        }, 3000); // 3 second timeout
+        
         // Wait for graph to stabilize, then zoom and center
+        // @ts-ignore - vis-network event types may not be complete
         networkRef.current.on('stabilizationEnd', () => {
-          console.log('Graph stabilized, zooming and centering...');
+          stabilizationFired = true;
+          clearTimeout(fallbackTimeout);
+          
+          console.log('Graph stabilized, zooming and centering for graphType:', graphType);
+          
+          // Ensure loading state is cleared
+          setIsLoading(false);
           
           // Force another resize to ensure canvas is correct size
           if (networkRef.current && container) {
             networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
           }
           
-          // First, fit the graph to center it
+          // First, fit the graph to center it with padding
+          // @ts-ignore - vis-network fit options may not be fully typed
           networkRef.current?.fit({
-            padding: 20, // Minimal padding for tighter fit
+            // @ts-ignore
+            padding: 50,
             animation: {
               duration: 600,
               easingFunction: 'easeInOutQuad'
             }
           });
           
-          // Then zoom in more aggressively for better visibility after a short delay
+          // Then zoom in and adjust position after fit completes
           setTimeout(() => {
             if (networkRef.current) {
               const currentScale = networkRef.current.getScale() || 1;
-              // Zoom in 2.5x for much better visibility
-              const targetScale = Math.min(currentScale * 2.5, 3);
+              // Objects: zoom out more (1.3x), others: zoom in more (1.8x)
+              const zoomMultiplier = graphType === 'objects' ? 1.3 : 1.8;
+              const targetScale = Math.min(currentScale * zoomMultiplier, graphType === 'objects' ? 1.8 : 2.5);
               
-              console.log('Zooming in from', currentScale, 'to', targetScale);
-              
-              // Get current view position to maintain center, but move up a bit
+              // Get current view position
               const viewPosition = networkRef.current.getViewPosition();
               
-              // Zoom in while maintaining the center position, but move up vertically
+              // Adjust vertical position based on graph type
+              // Objects: move down significantly more (positive Y) to show graph content
+              // Lists/Variables: move up slightly (negative Y) 
+              const verticalOffset = graphType === 'objects' ? 500 : -150;
+              
+              console.log('Final positioning:', { 
+                graphType, 
+                currentScale, 
+                targetScale, 
+                viewPosition, 
+                verticalOffset,
+                finalY: viewPosition.y + verticalOffset 
+              });
+              
+              // Apply zoom and position adjustment in one call
               networkRef.current.moveTo({
                 scale: targetScale,
-                position: { x: viewPosition.x, y: viewPosition.y - 100 }, // Move up by 100 units
+                position: { x: viewPosition.x, y: viewPosition.y + verticalOffset },
                 animation: {
-                  duration: 400,
+                  duration: 500,
                   easingFunction: 'easeInOutQuad'
                 }
               });
-              
-              // Final resize check and re-center using fit
-              setTimeout(() => {
-                if (networkRef.current && container) {
-                  networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
-                  // Re-center and adjust zoom after resize
-                  networkRef.current.fit({
-                    padding: 20,
-                    animation: {
-                      duration: 300,
-                      easingFunction: 'easeInOutQuad'
-                    }
-                  });
-                  // Then zoom in again and move up
-                  setTimeout(() => {
-                    if (networkRef.current) {
-                      const newScale = networkRef.current.getScale() || 1;
-                      const finalScale = Math.min(newScale * 2.5, 3);
-                      const finalPosition = networkRef.current.getViewPosition();
-                      networkRef.current.moveTo({
-                        scale: finalScale,
-                        position: { x: finalPosition.x, y: finalPosition.y - 100 }, // Move up by 100 units
-                        animation: false
-                      });
-                    }
-                  }, 350);
-                }
-              }, 500);
             }
-          }, 700);
+          }, 800);
         });
+      } else {
+        // If network creation failed, clear loading state immediately
+        setIsLoading(false);
       }
       
       setNodeCount(graphData.nodeCount);
@@ -375,7 +429,8 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         setError(null);
       }
       
-      setIsLoading(false);
+      // Don't set loading to false here - let stabilizationEnd handle it
+      // This ensures the graph is actually rendered before we clear the loading state
       console.log('Graph rendered successfully with', nodes.length, 'nodes and', edges.length, 'edges');
     } catch (err: any) {
       console.error('Error rendering graph:', err);
@@ -409,7 +464,16 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Render graph when view changes or modal opens
+  // Reset activeView when graphType changes
+  useEffect(() => {
+    if (graphType === 'lists') {
+      setActiveView('taxonomy');
+    } else {
+      setActiveView('taxonomy');
+    }
+  }, [graphType]);
+
+  // Render graph when view changes, modal opens, or graphType changes
   useEffect(() => {
     if (isOpen) {
       // Clean up previous visualization first
@@ -423,9 +487,26 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       }
 
       // Select query based on graph type and active view
-      const query = graphType === 'lists' 
-        ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
-        : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
+      let query: string;
+      if (graphType === 'lists') {
+        const listsQueries = cypherQueries as { taxonomy: string; listVariableModel: string };
+        query = activeView === 'taxonomy' ? listsQueries.taxonomy : listsQueries.listVariableModel;
+      } else if (graphType === 'variables') {
+        const varsQueries = cypherQueries as { taxonomy: string; model: string };
+        query = activeView === 'taxonomy' ? varsQueries.taxonomy : varsQueries.model;
+      } else {
+        const objectsQueries = cypherQueries as { taxonomy: string; model: string };
+        query = activeView === 'taxonomy' ? objectsQueries.taxonomy : objectsQueries.model;
+      }
+      
+      if (!query) {
+        console.error('No query found for:', { graphType, activeView });
+        setError(`No query configured for ${graphType} - ${activeView}`);
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('Loading graph:', { graphType, activeView, query });
       // Small delay to ensure DOM is ready and previous viz is cleared
       const timeoutId = setTimeout(() => {
         runGraphQuery(query);
@@ -453,7 +534,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         networkRef.current = null;
       }
     }
-  }, [isOpen, activeView]);
+  }, [isOpen, activeView, graphType]);
 
   // Reset copy success when switching tabs
   useEffect(() => {
@@ -461,10 +542,20 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
   }, [activeView]);
 
   const handleRefresh = () => {
-    const query = graphType === 'lists'
-      ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
-      : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
-    runGraphQuery(query);
+    let query: string;
+    if (graphType === 'lists') {
+      const listsQueries = cypherQueries as { taxonomy: string; listVariableModel: string };
+      query = activeView === 'taxonomy' ? listsQueries.taxonomy : listsQueries.listVariableModel;
+    } else if (graphType === 'variables') {
+      const varsQueries = cypherQueries as { taxonomy: string; model: string };
+      query = activeView === 'taxonomy' ? varsQueries.taxonomy : varsQueries.model;
+    } else {
+      const objectsQueries = cypherQueries as { taxonomy: string; model: string };
+      query = activeView === 'taxonomy' ? objectsQueries.taxonomy : objectsQueries.model;
+    }
+    if (query) {
+      runGraphQuery(query);
+    }
   };
 
   const copyQueryToClipboard = (query: string) => {
@@ -522,7 +613,8 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       left: 0, 
       right: 0, 
       bottom: 0,
-      width: '100%'
+      width: '100%',
+      height: 'calc(100vh - 3rem)'
     }}>
       {/* Modal Header */}
       <div className="flex items-center justify-between p-4 border-b border-ag-dark-border flex-shrink-0">
@@ -666,11 +758,12 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
 
             {/* Zoom Controls - Positioned in bottom-right corner */}
             {!isLoading && !showFallback && (
-              <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-auto">
+              <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-[100] pointer-events-auto">
                 <button
                   onClick={handleZoomIn}
                   className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
                   title="Zoom In"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -678,6 +771,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   onClick={handleZoomOut}
                   className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
                   title="Zoom Out"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   <Minus className="w-4 h-4" />
                 </button>
@@ -872,9 +966,14 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
                   </label>
                   <button
                     onClick={() => {
-                      const query = graphType === 'lists'
-                        ? (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.listVariableModel)
-                        : (activeView === 'taxonomy' ? cypherQueries.taxonomy : cypherQueries.model);
+                      let query: string;
+                      if (graphType === 'lists') {
+                        const listsQueries = cypherQueries as { taxonomy: string; listVariableModel: string };
+                        query = activeView === 'taxonomy' ? listsQueries.taxonomy : listsQueries.listVariableModel;
+                      } else {
+                        const otherQueries = cypherQueries as { taxonomy: string; model: string };
+                        query = activeView === 'taxonomy' ? otherQueries.taxonomy : otherQueries.model;
+                      }
                       copyQueryToClipboard(query);
                     }}
                     className={`text-xs transition-colors px-2 py-1 rounded ${

@@ -1282,7 +1282,13 @@ async def execute_graph_query(request: GraphQueryRequest):
                             
                             # Get node properties
                             props = dict(value.items()) if hasattr(value, 'items') else {}
-                            name = props.get('name', node_id)
+                            # Try different property names based on node type
+                            # Variables use 'variable', Lists use 'list', Objects use 'object', others use 'name'
+                            name = (props.get('name') or 
+                                   props.get('variable') or 
+                                   props.get('list') or 
+                                   props.get('object') or 
+                                   node_id)
                             
                             nodes[node_id] = {
                                 'id': node_id,
@@ -1320,7 +1326,12 @@ async def execute_graph_query(request: GraphQueryRequest):
                                 labels = list(node.labels) if node.labels else []
                                 label = labels[0] if labels else 'Unknown'
                                 props = dict(node.items()) if hasattr(node, 'items') else {}
-                                name = props.get('name', node_id)
+                                # Try different property names based on node type
+                                name = (props.get('name') or 
+                                       props.get('variable') or 
+                                       props.get('list') or 
+                                       props.get('object') or 
+                                       node_id)
                                 
                                 nodes[node_id] = {
                                     'id': node_id,
