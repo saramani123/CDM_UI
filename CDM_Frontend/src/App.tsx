@@ -2901,7 +2901,7 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden" style={{backgroundColor: '#1a1d23'}}>
+      <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden flex flex-col" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
         {['ledgers', 'sources'].includes(activeTab) ? (
           <div className="flex items-center justify-center min-h-[400px]">
@@ -2982,9 +2982,9 @@ function App() {
             </div>
           </div>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative" style={{ height: '100%' }}>
           {/* Data Grid */}
-          <div className="lg:col-span-2 flex flex-col min-h-0">
+          <div className="lg:col-span-2 flex flex-col min-h-0 h-full">
             {/* Grid Header with Actions */}
             <div className="flex items-center justify-between mb-4 flex-shrink-0">
               {/* Left side: Add, Upload, Custom Sort (for Objects and Variables tabs) */}
@@ -3203,7 +3203,7 @@ function App() {
             </div>
             
             {/* Grid Content Area - Relative container for graph modal */}
-            <div className="relative flex-1 min-h-0 overflow-hidden">
+            <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
               {/* Filter Panel */}
               <FilterPanel
                 columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
@@ -3215,6 +3215,7 @@ function App() {
               />
               
               {/* Data Grid */}
+              <div className="flex-1 min-h-0">
               <DataGrid
                 key={activeTab} // Force remount when switching tabs to prevent state bleeding
                 columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
@@ -3237,6 +3238,7 @@ function App() {
                 predefinedSortOrder={activeTab === 'variables' ? variablesOrderSortOrder : undefined}
                 onResetHandlersReady={activeTab === 'objects' ? setObjectsResetHandlers : activeTab === 'variables' ? setVariablesResetHandlers : activeTab === 'lists' ? setListsResetHandlers : undefined}
               />
+              </div>
             </div>
           </div>
 

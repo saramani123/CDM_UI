@@ -862,14 +862,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
     <>
       <div 
         ref={gridContainerRef}
-        className="bg-ag-dark-surface rounded-lg border border-ag-dark-border overflow-hidden"
+        className="bg-ag-dark-surface rounded-lg border border-ag-dark-border flex flex-col h-full"
         data-grid-container
+        style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
       >
-        {/* Grid Container with Horizontal Scroll */}
-        <div className="overflow-x-auto">
-          {/* Grid Header */}
-          <div className="bg-ag-dark-bg border-b border-ag-dark-border min-w-max">
-            <div className="flex text-sm font-medium text-ag-dark-text min-w-full">
+        {/* Grid Header - Fixed at top */}
+        <div className="bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 overflow-x-auto">
+          <div className="flex text-sm font-medium text-ag-dark-text min-w-max">
               {selectionMode === 'checkbox' && !relationshipData && (
                 <div className="w-10 flex items-center justify-center p-2">
                   <input
@@ -979,8 +978,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
               )}
             </div>
           </div>
-
-          {/* Grid Body */}
+        
+        {/* Grid Body - Scrollable */}
+        <div className="flex-1 overflow-x-auto overflow-y-auto" style={{ minHeight: 0 }}>
           <div className="min-w-max">
             {filteredAndSortedData.map((row, index) => (
               <div
@@ -1194,14 +1194,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
               </div>
             ))}
           </div>
+          
+          {filteredAndSortedData.length === 0 && (
+            <div className="p-8 text-center text-ag-dark-text-secondary">
+              <div className="text-lg font-medium mb-2">No data found</div>
+              <div className="text-sm">Try adjusting your filters or add some data</div>
+            </div>
+          )}
         </div>
-
-        {filteredAndSortedData.length === 0 && (
-          <div className="p-8 text-center text-ag-dark-text-secondary">
-            <div className="text-lg font-medium mb-2">No data found</div>
-            <div className="text-sm">Try adjusting your filters or add some data</div>
-          </div>
-        )}
       </div>
 
       {/* Column Filter Dropdown */}

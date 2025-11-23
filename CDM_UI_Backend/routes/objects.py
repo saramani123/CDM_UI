@@ -1948,7 +1948,8 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                 source_object_ids.add(rel.source_object_id)
             
             # Check for duplicates before creating
-            # Duplicate = same (source object + target object) pair, regardless of role or relationship type
+            # Duplicate = same (source object + target object + role word) combination
+            # Multiple role words to the same target are allowed (each role word = separate relationship)
             for rel in request.relationships:
                 # Find target objects matching the criteria
                 where_conditions = []
@@ -1968,34 +1969,38 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                 
                 where_clause = " AND ".join(where_conditions) if where_conditions else "true"
                 
-                # Check for existing relationships (any relationship between source and target)
-                # Per spec: duplicate = same (source object + target object) pair, regardless of role or type
-                check_query = f"""
-                    MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
-                    WHERE {where_clause}
-                    RETURN source.id as source_id, target.object as target_object, target.being as target_being, 
-                           target.avatar as target_avatar, collect(DISTINCT r.role) as existing_roles
-                    LIMIT 1
-                """
-                params_check = {**params, "source_id": rel.source_object_id}
-                existing = session.run(check_query, **params_check).single()
-                
-                if existing:
-                    duplicates.append({
-                        "source_object_id": rel.source_object_id,
-                        "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}",
-                        "existing_roles": existing.get("existing_roles", [])
-                    })
+                # Check for existing relationships with the SAME role words
+                # We need to check each role word individually
+                for role in rel.roles:
+                    if not role or not role.strip():
+                        continue
+                    
+                    check_query = f"""
+                        MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
+                        WHERE {where_clause} AND r.role = $role
+                        RETURN source.id as source_id, target.object as target_object, target.being as target_being, 
+                               target.avatar as target_avatar, r.role as existing_role
+                        LIMIT 1
+                    """
+                    params_check = {**params, "source_id": rel.source_object_id, "role": role.strip()}
+                    existing = session.run(check_query, **params_check).single()
+                    
+                    if existing:
+                        duplicates.append({
+                            "source_object_id": rel.source_object_id,
+                            "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}",
+                            "duplicate_role": existing.get("existing_role", role)
+                        })
             
             # If duplicates found, return error with full list
             if duplicates:
                 duplicate_messages = [
-                    f"{dup['source_object_id']} → {dup['target_object']} (existing roles: {', '.join(dup.get('existing_roles', []))})"
+                    f"{dup['source_object_id']} → {dup['target_object']} (duplicate role: '{dup.get('duplicate_role', 'Unknown')}')"
                     for dup in duplicates
                 ]
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Duplicate relationship detected. The following source-target pairs already exist:\n" + "\n".join(duplicate_messages)
+                    detail=f"Duplicate relationship detected. The following relationships already exist:\n" + "\n".join(duplicate_messages)
                 )
             
             # Validate that all target objects exist
