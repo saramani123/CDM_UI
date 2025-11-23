@@ -2947,7 +2947,7 @@ function App() {
                   onDeleteItem={(item) => handleDriverDeleteClick(item, 'countries')}
                 />
                 <DriversColumn
-                  title="Object Clarifier"
+                  title=""
                   items={driversState.objectClarifiers}
                   onHeaderClick={() => handleColumnHeaderClick('objectClarifiers')}
                   onItemClick={(item) => handleItemClick('objectClarifiers', item)}
@@ -2957,7 +2957,7 @@ function App() {
                   onDeleteItem={(item) => handleDriverDeleteClick(item, 'objectClarifiers')}
                 />
                 <DriversColumn
-                  title="Variable Clarifier"
+                  title=""
                   items={driversState.variableClarifiers}
                   onHeaderClick={() => handleColumnHeaderClick('variableClarifiers')}
                   onItemClick={(item) => handleItemClick('variableClarifiers', item)}

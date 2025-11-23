@@ -267,7 +267,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     ontology: false,
     metadata: false,
     variations: false,
-    tiered: false,
     relationships: false
   });
   
@@ -280,20 +279,26 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     return 'Single';
   });
   
-  // Number of levels for Multi-Level lists (2-10)
+  // Number of tiers for Multi-Level lists (1-10)
   const [numberOfLevels, setNumberOfLevels] = useState<number>(() => {
+    if (selectedList?.tierNames && selectedList.tierNames.length > 0) {
+      return selectedList.tierNames.length;
+    }
     if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
-      return selectedList.tieredListsList.length + 1; // +1 for parent list
+      return selectedList.tieredListsList.length;
     }
     return 2;
   });
   
-  // Tier names for Multi-Level lists (Tier 2, Tier 3, etc.)
+  // Tier names for Multi-Level lists (Tier 1, Tier 2, etc.)
   const [tierNames, setTierNames] = useState<string[]>(() => {
+    if (selectedList?.tierNames && selectedList.tierNames.length > 0) {
+      return selectedList.tierNames;
+    }
     if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
       return selectedList.tieredListsList.map((tier: any) => tier.list || '');
     }
-    return [];
+    return ['', ''];
   });
 
   // Load variations when selectedList changes
@@ -342,14 +347,16 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         setListType('Multi-Level');
         // If we have tierNames from the new structure, use those; otherwise use old tieredListsList
         if (selectedList.tierNames && selectedList.tierNames.length > 0) {
-          setNumberOfLevels(selectedList.tierNames.length + 1);
+          // numberOfLevels now equals the number of tier names (Tier 1, Tier 2, etc.)
+          setNumberOfLevels(selectedList.tierNames.length);
           setTierNames(selectedList.tierNames);
         } else if (selectedList.tieredListsList && selectedList.tieredListsList.length > 0) {
-          setNumberOfLevels(selectedList.tieredListsList.length + 1);
+          // For old structure, convert to new structure (old had parent as tier 1, so subtract 1)
+          setNumberOfLevels(selectedList.tieredListsList.length);
           setTierNames(selectedList.tieredListsList.map((tier: any) => tier.list || ''));
         } else {
           setNumberOfLevels(2);
-          setTierNames([]);
+          setTierNames(['', '']);
         }
       } else {
         setListType('Single');
@@ -667,8 +674,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     } else if (listType === 'Multi-Level') {
       // Multi-Level list - validate tier names and prepare for backend
       const validTierNames = tierNames.filter(name => name.trim() !== '');
-      if (validTierNames.length !== numberOfLevels - 1) {
-        alert(`Please provide names for all ${numberOfLevels - 1} tier(s).`);
+      if (validTierNames.length !== numberOfLevels) {
+        alert(`Please provide names for all ${numberOfLevels} tier(s).`);
         return;
       }
       
@@ -1145,6 +1152,120 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               }`}
             />
           </div>
+
+          {/* List Type Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              List Type
+            </label>
+            <select
+              value={listType}
+              onChange={(e) => {
+                const newType = e.target.value as 'Single' | 'Multi-Level';
+                setListType(newType);
+                if (newType === 'Single') {
+                  setNumberOfLevels(2);
+                  setTierNames([]);
+                } else {
+                  // Initialize with 2 tiers (Tier 1 and Tier 2)
+                  setNumberOfLevels(2);
+                  setTierNames(['', '']);
+                  // Clear list values when switching to Multi-Level
+                  // (they will be managed via grid modal instead)
+                  setListValuesText('');
+                }
+              }}
+              disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="Single">Single</option>
+              <option value="Multi-Level">Multi-Level</option>
+            </select>
+          </div>
+
+          {/* Multi-Level Options */}
+          {listType === 'Multi-Level' && (
+            <>
+              {/* Number of Levels Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  No. Levels
+                </label>
+                <select
+                  value={numberOfLevels}
+                  onChange={(e) => {
+                    const newLevels = parseInt(e.target.value);
+                    setNumberOfLevels(newLevels);
+                    // Adjust tier names array to match new number of tiers
+                    // numberOfLevels = number of tiers (Tier 1, Tier 2, etc.)
+                    const newTierNames = [...tierNames];
+                    const tiersNeeded = newLevels; // Number of tier fields needed
+                    while (newTierNames.length < tiersNeeded) {
+                      newTierNames.push('');
+                    }
+                    while (newTierNames.length > tiersNeeded) {
+                      newTierNames.pop();
+                    }
+                    setTierNames(newTierNames);
+                  }}
+                  disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+                  className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                    !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                    <option key={num} value={num}>
+                      {num}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tier Name Input Fields */}
+              {numberOfLevels > 0 && (
+                <div className="space-y-3">
+                  {Array.from({ length: numberOfLevels }, (_, index) => (
+                    <div key={`tier-input-${index}`}>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                        Tier {index + 1} Name
+                      </label>
+                      <input
+                        type="text"
+                        value={tierNames[index] || ''}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          const newTierNames = [...tierNames];
+                          newTierNames[index] = e.target.value;
+                          setTierNames(newTierNames);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        onFocus={(e) => e.stopPropagation()}
+                        disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+                        placeholder={`Enter Tier ${index + 1} name...`}
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -1259,125 +1380,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         />
-      </CollapsibleSection>
-
-      {/* List Type Section */}
-      <CollapsibleSection 
-        title="List Type" 
-        sectionKey="tiered"
-        icon={<List className="w-4 h-4 text-ag-dark-text-secondary" />}
-      >
-        <div className="space-y-4">
-          {/* List Type Dropdown */}
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              List Type
-            </label>
-            <select
-              value={listType}
-              onChange={(e) => {
-                const newType = e.target.value as 'Single' | 'Multi-Level';
-                setListType(newType);
-                if (newType === 'Single') {
-                  setNumberOfLevels(2);
-                  setTierNames([]);
-                } else {
-                  // Initialize with 2 levels (parent + 1 tier)
-                  setNumberOfLevels(2);
-                  setTierNames(['']);
-                  // Clear list values when switching to Multi-Level
-                  // (they will be managed via grid modal instead)
-                  setListValuesText('');
-                }
-              }}
-              disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="Single">Single</option>
-              <option value="Multi-Level">Multi-Level</option>
-            </select>
-          </div>
-
-          {/* Multi-Level Options */}
-          {listType === 'Multi-Level' && (
-            <>
-              {/* Number of Levels Dropdown */}
-              <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  No. Levels
-                </label>
-                <select
-                  value={numberOfLevels}
-                  onChange={(e) => {
-                    const newLevels = parseInt(e.target.value);
-                    setNumberOfLevels(newLevels);
-                    // Adjust tier names array to match new number of levels
-                    const newTierNames = [...tierNames];
-                    const tiersNeeded = newLevels - 1; // -1 because parent is level 1
-                    while (newTierNames.length < tiersNeeded) {
-                      newTierNames.push('');
-                    }
-                    while (newTierNames.length > tiersNeeded) {
-                      newTierNames.pop();
-                    }
-                    setTierNames(newTierNames);
-                  }}
-                  disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
-                  className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                    !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                    backgroundPosition: 'right 12px center',
-                    backgroundRepeat: 'no-repeat',
-                    backgroundSize: '16px'
-                  }}
-                >
-                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
-                    <option key={num} value={num}>
-                      {num}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Tier Name Input Fields */}
-              {numberOfLevels > 1 && (
-                <div className="space-y-3">
-                  {Array.from({ length: numberOfLevels - 1 }, (_, index) => (
-                    <div key={index}>
-                      <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                        Tier {index + 2} Name
-                      </label>
-                      <input
-                        type="text"
-                        value={tierNames[index] || ''}
-                        onChange={(e) => {
-                          const newTierNames = [...tierNames];
-                          newTierNames[index] = e.target.value;
-                          setTierNames(newTierNames);
-                        }}
-                        disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
-                        placeholder={`Enter Tier ${index + 2} name...`}
-                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                          !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
       </CollapsibleSection>
 
       {/* Applicability Section */}

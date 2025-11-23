@@ -32,20 +32,17 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Build column headers: parent list name + tier names
+  // Build column headers: only tier names (no parent list name)
   const columnHeaders: string[] = React.useMemo(() => {
     const headers: string[] = [];
-    if (selectedList) {
-      headers.push(selectedList.list || ''); // Tier 1 (parent list)
-      // Add tier names from props (Tier 2, Tier 3, etc.)
-      tierNames.forEach(tierName => {
-        if (tierName && tierName.trim()) {
-          headers.push(tierName.trim());
-        }
-      });
-    }
+    // Add tier names from props (Tier 1, Tier 2, etc.)
+    tierNames.forEach(tierName => {
+      if (tierName && tierName.trim()) {
+        headers.push(tierName.trim());
+      }
+    });
     return headers;
-  }, [selectedList, tierNames]);
+  }, [tierNames]);
 
   const loadTieredValues = useCallback(async () => {
     if (!selectedList) return;
@@ -55,17 +52,17 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       const existingValues = await getTieredListValues(selectedList.id);
       
       // Convert the backend format to rows
-      // Backend format: { "USA": [["California", "LA"], ["Texas", "Houston"]], ... }
-      // We need: rows where each row is [tier1, tier2, tier3, ...]
+      // Backend format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
+      // We need: rows where each row is [Tier1Value, Tier2Value, Tier3Value, ...]
       const rows: TieredValueRow[] = [];
       
       if (existingValues && Object.keys(existingValues).length > 0) {
-        // For each tier 1 value, create rows for each tiered value array
+        // For each Tier 1 value, create rows for each tiered value array
         Object.entries(existingValues).forEach(([tier1Value, tieredArrays]) => {
           tieredArrays.forEach((tieredArray) => {
-            // Create a row: [tier1Value, ...tieredArray]
+            // Create a row: [Tier1Value, Tier2Value, Tier3Value, ...]
             const rowValues = [tier1Value, ...tieredArray];
-            // Pad with empty strings if needed
+            // Pad with empty strings if needed to match column count
             while (rowValues.length < columnHeaders.length) {
               rowValues.push('');
             }
@@ -102,7 +99,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
 
   // Load existing tiered values when modal opens
   useEffect(() => {
-    if (isOpen && selectedList && columnHeaders.length >= 2) {
+    if (isOpen && selectedList && columnHeaders.length >= 1) {
       loadTieredValues();
     } else if (!isOpen) {
       // Reset when modal closes
@@ -311,20 +308,21 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
 
   const handleSave = () => {
     // Convert rows to the format expected by backend
-    // Group by tier 1 value, then create relationships
+    // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
+    // Format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
     const tieredValues: Record<string, string[][]> = {};
     
     tieredValueRows.forEach(row => {
-      if (row.values[0] && row.values[0].trim()) { // Tier 1 value (e.g., "USA")
+      if (row.values[0] && row.values[0].trim()) { // Tier 1 value (first column)
         const tier1Value = row.values[0].trim();
-        // Filter out empty values from the tiered array
-        const tieredArray = row.values.slice(1).filter(v => v && v.trim());
-        if (tieredArray.length > 0) {
+        // Get remaining tier values (Tier 2, Tier 3, etc.)
+        const remainingTierValues = row.values.slice(1).filter(v => v && v.trim());
+        if (remainingTierValues.length > 0) {
           if (!tieredValues[tier1Value]) {
             tieredValues[tier1Value] = [];
           }
-          // Add the rest of the values (tier 2, 3, etc.)
-          tieredValues[tier1Value].push(tieredArray);
+          // Add the array of tier values (Tier 2, Tier 3, etc.)
+          tieredValues[tier1Value].push(remainingTierValues);
         }
       }
     });
@@ -339,7 +337,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     onClose();
   };
 
-  if (!isOpen || !selectedList || columnHeaders.length < 2) return null;
+  if (!isOpen || !selectedList || columnHeaders.length < 1) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]" onClick={onClose}>
@@ -505,10 +503,10 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           <div className="border border-ag-dark-border rounded">
             {/* Table Header */}
             <div className="sticky top-0 bg-ag-dark-bg border-b border-ag-dark-border z-10">
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 1fr) auto` }}>
+              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 200px) auto` }}>
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                 {columnHeaders.map((header, index) => (
-                  <div key={index} className="text-xs font-medium text-ag-dark-text-secondary">
+                  <div key={index} className="text-xs font-medium text-ag-dark-text-secondary text-left">
                     {header}
                   </div>
                 ))}
@@ -522,7 +520,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                   <div 
                     key={row.id} 
                     className="grid gap-2 p-2 hover:bg-ag-dark-bg/50"
-                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 1fr) auto` }}
+                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 200px) auto` }}
                   >
                     <div className="flex items-center text-xs text-ag-dark-text-secondary">
                       {rowIndex + 1}
@@ -538,12 +536,12 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                             onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex)}
                             onPaste={(e) => handlePaste(e, row.id, colIndex)}
                             autoFocus
-                            className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent"
+                            className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
                           />
                         ) : (
                           <div
                             onClick={() => handleCellClick(row.id, colIndex, value)}
-                            className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center"
+                            className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
                             tabIndex={0}
                             onFocus={() => handleCellClick(row.id, colIndex, value)}
                           >

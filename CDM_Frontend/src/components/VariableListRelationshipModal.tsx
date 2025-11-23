@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { X, Save, Link } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { variableColumns } from '../data/variablesData';
@@ -163,15 +163,11 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       // If keyword mode is active, use keyword to determine selection
       // Otherwise, use existing relationships
       if (selectionMode === 'keyword' && currentKeyword && currentKeyword.trim()) {
-        // Apply keyword filter to determine selection
+        // Apply keyword filter to determine selection - ONLY match in variable name
         const keywordParts = currentKeyword.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
         for (const variable of allVariables) {
-          const searchableText = [
-            variable.variable || '',
-            variable.part || '',
-            variable.group || '',
-            variable.section || ''
-          ].join(' ').toLowerCase();
+          // Only search in the variable name itself, not in part/group/section
+          const searchableText = (variable.variable || '').toLowerCase();
           
           const matches = keywordParts.every(keyword => searchableText.includes(keyword));
           
@@ -231,21 +227,16 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       }
       setSelectedVariables(newSelection);
     } else if (selectionMode === 'keyword' && keywordFilter.trim()) {
-      // Select variables matching keywords (case-insensitive, preserves spacing)
+      // Select variables matching keywords - ONLY match in variable name
       // Split by spaces to support multiple keywords (AND logic - all keywords must match)
       const keywordParts = keywordFilter.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
       const newSelection: Record<string, SelectedVariableData> = {};
       
       for (const variable of allVariables) {
-        // Search in variable name and other relevant fields
-        const searchableText = [
-          variable.variable || '',
-          variable.part || '',
-          variable.group || '',
-          variable.section || ''
-        ].join(' ').toLowerCase();
+        // Only search in the variable name itself, not in part/group/section
+        const searchableText = (variable.variable || '').toLowerCase();
         
-        // All keyword parts must be found in the searchable text (AND logic)
+        // All keyword parts must be found in the variable name (AND logic)
         const matches = keywordParts.every(keyword => searchableText.includes(keyword));
         
         newSelection[variable.id] = {
@@ -439,9 +430,6 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
       // SINGLE MODE: Handle mode switching and keyword changes
       const currentList = sourceLists[0];
-      const selectedVariableIds = Object.entries(selectedVariables)
-        .filter(([_, data]) => data.isSelected)
-        .map(([id, _]) => id);
       
       // Get current relationships
       let existingRelationships: any[] = [];
@@ -456,54 +444,42 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       // For "any" mode, we don't track a keyword
       const currentKeyword = (selectionMode === 'keyword' && keywordFilter.trim()) ? keywordFilter.trim() : '';
       
-      // Check if keyword changed or mode switched
-      const keywordChanged = currentKeyword !== savedKeyword;
-
-      // If keyword changed and we had a saved keyword, delete relationships for old keyword
-      if (keywordChanged && savedKeyword) {
-        // Find all variables that matched the old keyword
-        const keywordParts = savedKeyword.toLowerCase().split(/\s+/).filter(k => k.length > 0);
-        const variablesMatchingOldKeyword = allVariables.filter(variable => {
-          const searchableText = [
-            variable.variable || '',
-            variable.part || '',
-            variable.group || '',
-            variable.section || ''
-          ].join(' ').toLowerCase();
-          return keywordParts.every(keyword => searchableText.includes(keyword));
-        });
-
-        // Delete relationships for variables that matched the old keyword
-        for (const variable of variablesMatchingOldKeyword) {
-          const existingRel = existingRelationships.find((rel: any) => 
-            (rel.id === variable.id || rel.variableId === variable.id)
-          );
-          if (existingRel) {
-            try {
-              await apiService.deleteVariableListRelationship(variable.id, currentList.id);
-              deletedVariableIds.add(variable.id);
-              // Remove from existingRelationships to avoid duplicate deletion attempts
-              existingRelationships = existingRelationships.filter((rel: any) => 
-                rel.id !== variable.id && rel.variableId !== variable.id
-              );
-            } catch (error) {
-              console.error(`Failed to delete relationship for variable ${variable.id}:`, error);
-            }
-          }
-        }
+      // If in keyword mode, ONLY use variables that match the keyword (ignore manual selections)
+      let variablesToRelate: string[] = [];
+      
+      if (selectionMode === 'keyword' && currentKeyword) {
+        // Keyword mode: ONLY create relationships for variables matching the keyword
+        const keywordParts = currentKeyword.toLowerCase().split(/\s+/).filter(k => k.length > 0);
+        variablesToRelate = allVariables
+          .filter(variable => {
+            const searchableText = (variable.variable || '').toLowerCase();
+            return keywordParts.every(keyword => searchableText.includes(keyword));
+          })
+          .map(v => v.id);
+      } else if (selectionMode === 'any') {
+        // Any mode: select all variables
+        variablesToRelate = allVariables.map(v => v.id);
+      } else {
+        // Manual mode: use selected variables
+        variablesToRelate = Object.entries(selectedVariables)
+          .filter(([_, data]) => data.isSelected)
+          .map(([id, _]) => id);
       }
 
-      // Track which variables should have relationships
-      const selectedVariableIdSet = new Set(selectedVariableIds);
+      // Get all existing variable IDs
       const existingVariableIdSet = new Set(
         existingRelationships.map((rel: any) => rel.id || rel.variableId)
       );
+      const variablesToRelateSet = new Set(variablesToRelate);
 
-      // Delete relationships for variables that should no longer be selected
-      // (but skip if we already deleted them due to keyword change)
+      // Delete relationships for variables that should no longer be related
+      // This includes:
+      // 1. Variables that matched old keyword (if keyword changed or removed)
+      // 2. Variables that were manually selected but are not in the new keyword match (if keyword mode)
+      // 3. Variables that are not in the new selection set
       for (const existingRel of existingRelationships) {
         const variableId = existingRel.id || existingRel.variableId;
-        if (!selectedVariableIdSet.has(variableId)) {
+        if (!variablesToRelateSet.has(variableId)) {
           try {
             await apiService.deleteVariableListRelationship(variableId, currentList.id);
           } catch (error) {
@@ -512,8 +488,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         }
       }
 
-      // Create relationships for newly selected variables
-      for (const variableId of selectedVariableIds) {
+      // Create relationships ONLY for variables that match the keyword (if keyword mode)
+      // or for selected variables (if manual/any mode)
+      for (const variableId of variablesToRelate) {
         if (!existingVariableIdSet.has(variableId)) {
           try {
             await apiService.createVariableListRelationship(variableId, currentList.id);
@@ -525,21 +502,28 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         }
       }
 
-      // Update saved keyword - always save the current keyword if it exists
-      // This ensures the keyword persists even if user switches modes
+      // Update saved keyword
       const savedKeywordKey = getSavedKeywordStorageKey();
       const storageKey = getKeywordStorageKey();
       if (currentKeyword && currentKeyword.trim()) {
+        // Save the current keyword
         setSavedKeyword(currentKeyword);
         if (savedKeywordKey) {
           localStorage.setItem(savedKeywordKey, currentKeyword);
         }
-        // Also update the filter key to keep it in sync
         if (storageKey) {
           localStorage.setItem(storageKey, currentKeyword);
         }
+      } else {
+        // Clear saved keyword if keyword is removed
+        setSavedKeyword('');
+        if (savedKeywordKey) {
+          localStorage.removeItem(savedKeywordKey);
+        }
+        if (storageKey) {
+          localStorage.removeItem(storageKey);
+        }
       }
-      // Don't clear saved keyword when switching modes - keep it for persistence
 
       // Call the callback to refresh main data
       if (onSave) {
@@ -561,38 +545,59 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
     onClose();
   };
 
-  if (!isOpen || sourceLists.length === 0) return null;
-
   // Prepare data for the grid - deduplicate by ID
-  const seenIds = new Set<string>();
-  const gridData = allVariables
-    .filter(variable => {
-      if (seenIds.has(variable.id)) {
-        return false; // Skip duplicates
-      }
-      seenIds.add(variable.id);
-      return true;
-    })
-    .map(variable => {
-      const varData = selectedVariables[variable.id];
-      return {
-        ...variable,
-        isSelected: varData?.isSelected || false
-      };
-    });
+  // Must be before early return to follow Rules of Hooks
+  const gridData = useMemo(() => {
+    const seenIds = new Set<string>();
+    return allVariables
+      .filter(variable => {
+        if (seenIds.has(variable.id)) {
+          return false; // Skip duplicates
+        }
+        seenIds.add(variable.id);
+        return true;
+      })
+      .map(variable => {
+        const varData = selectedVariables[variable.id];
+        return {
+          ...variable,
+          isSelected: varData?.isSelected || false
+        };
+      });
+  }, [allVariables, selectedVariables]);
 
   // Custom columns for the variable-list relationship modal
+  // Only show sector, domain, country, and variable columns (removed part, group, section)
   // Increase variable column width to prevent truncation
-  const relationshipColumns = variableColumns
-    .filter(col => 
-      ['sector', 'domain', 'country', 'part', 'group', 'section', 'variable'].includes(col.key)
-    )
-    .map(col => {
-      if (col.key === 'variable') {
-        return { ...col, width: '400px' }; // Increased from 200px to 400px
-      }
-      return col;
-    });
+  // Must be before early return to follow Rules of Hooks
+  const relationshipColumns = useMemo(() => {
+    return variableColumns
+      .filter(col => 
+        ['sector', 'domain', 'country', 'variable'].includes(col.key)
+      )
+      .map(col => {
+        if (col.key === 'variable') {
+          return { ...col, width: '400px' }; // Increased from 200px to 400px
+        }
+        return col;
+      });
+  }, []);
+  
+  // Filter data based on keyword - ONLY match in variable name
+  // Must be before early return to follow Rules of Hooks
+  const filteredGridData = useMemo(() => {
+    if (selectionMode === 'keyword' && keywordFilter.trim()) {
+      const keywordParts = keywordFilter.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+      return gridData.filter(variable => {
+        // Only search in the variable name itself, not in part/group/section
+        const searchableText = (variable.variable || '').toLowerCase();
+        return keywordParts.every(keyword => searchableText.includes(keyword));
+      });
+    }
+    return gridData;
+  }, [gridData, selectionMode, keywordFilter]);
+
+  if (!isOpen || sourceLists.length === 0) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
@@ -617,68 +622,70 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
         {/* Content */}
         <div className="flex-1 p-6 overflow-y-auto">
-          {loading ? (
+          {loading || allVariables.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-ag-dark-text-secondary">Loading relationships...</div>
+              <div className="text-ag-dark-text-secondary">
+                {loading ? 'Loading relationships...' : 'Loading variables data...'}
+              </div>
             </div>
           ) : (
             <>
-              {/* Selection Mode Controls */}
-              <div className="mb-4 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
-                <div className="flex items-center gap-4 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-ag-dark-text">Selection Mode:</span>
-                    <button
-                      onClick={handleAnyButtonClick}
-                      className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
-                        selectionMode === 'any'
-                          ? 'bg-ag-dark-accent text-white'
-                          : 'bg-ag-dark-surface border border-ag-dark-border text-ag-dark-text hover:bg-ag-dark-bg'
-                      }`}
-                      title="Select all variables (dynamic - includes new variables automatically)"
-                    >
-                      Any
-                    </button>
-                    <div className="flex items-center gap-2 ml-2">
-                      <label className="text-sm text-ag-dark-text-secondary">Keywords:</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          value={keywordFilter}
-                          onChange={(e) => handleKeywordChange(e.target.value)}
-                          placeholder="Enter keywords to match variables..."
-                          className="px-3 py-2 pr-8 text-sm bg-ag-dark-surface border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent w-80"
-                          title="Enter keywords to auto-select matching variables (case-insensitive, preserves spacing)"
-                        />
-                        {keywordFilter && (
-                          <button
-                            onClick={handleClearKeyword}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-                            title="Clear keyword filter"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
+              <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
+                {/* Selection Mode Controls - Positioned above Variables column */}
+                <div className="mb-4 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex justify-end">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-ag-dark-text">Selection Mode:</span>
+                      <button
+                        onClick={handleAnyButtonClick}
+                        className={`px-4 py-2 text-sm font-medium rounded transition-colors ${
+                          selectionMode === 'any'
+                            ? 'bg-ag-dark-accent text-white'
+                            : 'bg-ag-dark-surface border border-ag-dark-border text-ag-dark-text hover:bg-ag-dark-bg'
+                        }`}
+                        title="Select all variables (dynamic - includes new variables automatically)"
+                      >
+                        Any
+                      </button>
+                      <div className="flex items-center gap-2 ml-2">
+                        <label className="text-sm text-ag-dark-text-secondary">Keywords:</label>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={keywordFilter}
+                            onChange={(e) => handleKeywordChange(e.target.value)}
+                            placeholder="Enter keywords to match variables..."
+                            className="px-3 py-2 pr-8 text-sm bg-ag-dark-surface border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent w-80"
+                            title="Enter keywords to filter and auto-select matching variables (case-insensitive, preserves spacing)"
+                          />
+                          {keywordFilter && (
+                            <button
+                              onClick={handleClearKeyword}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+                              title="Clear keyword filter"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
+                    {selectionMode === 'any' && (
+                      <div className="text-xs text-ag-dark-text-secondary">
+                        All {allVariables.length} variables will be selected
+                      </div>
+                    )}
+                    {selectionMode === 'keyword' && keywordFilter.trim() && (
+                      <div className="text-xs text-ag-dark-text-secondary">
+                        {filteredGridData.length} variable(s) match "{keywordFilter}"
+                      </div>
+                    )}
                   </div>
-                  {selectionMode === 'any' && (
-                    <div className="text-xs text-ag-dark-text-secondary">
-                      All {allVariables.length} variables will be selected
-                    </div>
-                  )}
-                  {selectionMode === 'keyword' && keywordFilter.trim() && (
-                    <div className="text-xs text-ag-dark-text-secondary">
-                      {Object.values(selectedVariables).filter(v => v.isSelected).length} variable(s) match "{keywordFilter}"
-                    </div>
-                  )}
                 </div>
-              </div>
-              
-              <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
+                
                 <DataGrid
                 columns={relationshipColumns}
-                data={gridData}
+                data={filteredGridData}
                 onRowSelect={() => {}} // No row selection needed in modal
                 selectedRows={[]}
                 affectedIds={new Set()}

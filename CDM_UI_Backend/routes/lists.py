@@ -265,12 +265,13 @@ async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[
         
         tier_list_ids = []
         
-        for index, tier_name in enumerate(tier_names, start=2):  # Start at tier 2
+        for index, tier_name in enumerate(tier_names, start=1):  # Start at tier 1
             if not tier_name or not tier_name.strip():
                 print(f"⚠️ Skipping empty tier name at index {index}")
                 continue
             
             tier_name = tier_name.strip()
+            tier_number = index  # Tier 1, Tier 2, etc.
             
             # Check if tier list already exists with this name, set, and grouping
             existing_result = session.run("""
@@ -281,9 +282,14 @@ async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[
             existing_record = existing_result.single()
             if existing_record:
                 tier_list_id = existing_record["id"]
-                print(f"✅ Tier list '{tier_name}' already exists with id {tier_list_id}")
+                # Update tier property if it exists
+                session.run("""
+                    MATCH (l:List {id: $tier_list_id})
+                    SET l.tier = $tier_number
+                """, tier_list_id=tier_list_id, tier_number=tier_number)
+                print(f"✅ Tier list '{tier_name}' already exists with id {tier_list_id}, set tier={tier_number}")
             else:
-                # Create new tier list node
+                # Create new tier list node with tier property
                 tier_list_id = str(uuid.uuid4())
                 session.run("""
                     MERGE (s:Set {name: $set})
@@ -300,11 +306,12 @@ async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[
                         upkeep: '',
                         graph: '',
                         origin: '',
-                        status: 'Active'
+                        status: 'Active',
+                        tier: $tier_number
                     })
                     MERGE (g)-[:HAS_LIST]->(l)
-                """, tier_list_id=tier_list_id, tier_name=tier_name, set=parent_set, grouping=parent_grouping)
-                print(f"✅ Created tier list node '{tier_name}' with id {tier_list_id}")
+                """, tier_list_id=tier_list_id, tier_name=tier_name, set=parent_set, grouping=parent_grouping, tier_number=tier_number)
+                print(f"✅ Created tier list node '{tier_name}' with id {tier_list_id}, tier={tier_number}")
             
             tier_list_ids.append(tier_list_id)
         
@@ -316,16 +323,16 @@ async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[
 
 async def create_tiered_list_relationships(session, list_id: str, tiered_lists: List[Dict[str, Any]]):
     """
-    Create tiered list relationships (HAS_TIER_2, HAS_TIER_3, etc.) from parent list to tiered lists.
+    Create tiered list relationships (HAS_TIER_1, HAS_TIER_2, etc.) from parent list to tiered lists.
     Replaces all existing tiered relationships.
-    Also deletes tiered value relationships for removed tiers, but preserves tier 1 list values.
+    Also deletes tiered value relationships for removed tiers.
     """
     try:
         print(f"Creating tiered list relationships for list {list_id}")
         
         # Get current tiered list IDs before deletion
         current_tiered_result = session.run("""
-            MATCH (l:List {id: $list_id})-[r:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+            MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
             RETURN tiered.id as id, type(r) as rel_type
             ORDER BY type(r)
         """, list_id=list_id)
@@ -381,14 +388,14 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
         
         # Delete all existing tiered relationships
         session.run("""
-            MATCH (l:List {id: $list_id})-[r:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+            MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
             DELETE r
         """, list_id=list_id)
         print(f"Deleted all existing tiered relationships for list {list_id}")
         
         created_count = 0
         
-        for index, tiered_list in enumerate(tiered_lists, start=2):  # Start at tier 2
+        for index, tiered_list in enumerate(tiered_lists, start=1):  # Start at tier 1
             tier_number = min(index, 10)  # Cap at tier 10
             tiered_list_id = tiered_list.get("listId") if isinstance(tiered_list, dict) else getattr(tiered_list, "listId", None)
             
@@ -421,8 +428,10 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
 async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Dict[str, Any]], tiered_values: Dict[str, List[List[str]]]):
     """
     Create tiered list values with relationships.
-    tiered_values: Dict mapping tier 1 value (e.g., "USA") to list of arrays, where each array contains values for tier 2, 3, etc.
+    Parent list has NO values. Only tier lists have values.
+    tiered_values: Dict mapping Tier 1 value to list of arrays, where each array contains values for Tier 2, Tier 3, etc.
     For example: {"USA": [["California", "Los Angeles"], ["Texas", "Houston"]], "Canada": [["Ontario", "Toronto"]]}
+    Where "USA" is a Tier 1 value, "California"/"Texas" are Tier 2 values, "Los Angeles"/"Houston" are Tier 3 values.
     """
     try:
         print(f"Creating tiered list values for list {list_id}")
@@ -432,183 +441,122 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
             print("No tiered lists defined, skipping tiered values")
             return 0
         
-        # Get list names for each tier
+        # Get tier list names and IDs (Tier 1, Tier 2, etc.)
         tier_list_names = []
         tier_list_ids = []
         
-        # First, get the parent list name
-        parent_list_result = session.run("MATCH (l:List {id: $list_id}) RETURN l.name as name", list_id=list_id)
-        parent_list_record = parent_list_result.single()
-        if not parent_list_record:
-            print(f"Parent list {list_id} not found")
-            return 0
-        
-        parent_list_name = parent_list_record["name"]
-        tier_list_names.append(parent_list_name)
-        tier_list_ids.append(list_id)
-        
-        # Get tiered list names and IDs
+        # Get tiered list names and IDs (these are Tier 1, Tier 2, etc.)
+        tier_info_list = []
         for tier in tiered_lists:
             tier_list_id = tier.get("listId") if isinstance(tier, dict) else getattr(tier, "listId", None)
             if tier_list_id:
-                tier_list_result = session.run("MATCH (l:List {id: $tier_id}) RETURN l.name as name", tier_id=tier_list_id)
+                tier_list_result = session.run("MATCH (l:List {id: $tier_id}) RETURN l.name as name, l.tier as tier", tier_id=tier_list_id)
                 tier_list_record = tier_list_result.single()
                 if tier_list_record:
-                    tier_list_names.append(tier_list_record["name"])
-                    tier_list_ids.append(tier_list_id)
+                    tier_info_list.append({
+                        'id': tier_list_id,
+                        'name': tier_list_record["name"],
+                        'tier': tier_list_record.get("tier") or 0
+                    })
+        
+        # Sort by tier number to ensure correct order (Tier 1, Tier 2, etc.)
+        tier_info_list.sort(key=lambda x: x['tier'])
+        tier_list_ids = [x['id'] for x in tier_info_list]
+        tier_list_names = [x['name'] for x in tier_info_list]
         
         print(f"Tier structure: {tier_list_names}")
         
+        if len(tier_list_names) == 0:
+            print("No tier lists found, skipping tiered values")
+            return 0
+        
         created_count = 0
         
-        # Process each tier 1 value
+        # Process each Tier 1 value
         for tier1_value, tiered_value_arrays in tiered_values.items():
-            if not tier1_value:
+            if not tier1_value or not tier1_value.strip():
                 continue
             
-            # Create or get the tier 1 list value node
+            tier1_value = tier1_value.strip()
+            tier1_list_id = tier_list_ids[0]  # First tier list (Tier 1)
+            tier1_list_name = tier_list_names[0]
+            
+            # Create or get the Tier 1 list value node (connected to Tier 1 list, NOT parent list)
             tier1_lv_result = session.run("""
-                MATCH (l:List {id: $list_id})
-                MERGE (lv1:ListValue {value: $value})
-                MERGE (l)-[:HAS_LIST_VALUE]->(lv1)
+                MATCH (tier1_list:List {id: $tier1_list_id})
+                MERGE (lv1:ListValue {value: $value, tier: 1, listName: $tier1_list_name})
+                ON CREATE SET lv1.tier = 1, lv1.listName = $tier1_list_name
+                ON MATCH SET lv1.tier = 1, lv1.listName = $tier1_list_name
+                MERGE (tier1_list)-[:HAS_LIST_VALUE]->(lv1)
                 RETURN lv1
-            """, list_id=list_id, value=tier1_value)
+            """, tier1_list_id=tier1_list_id, value=tier1_value, tier1_list_name=tier1_list_name)
             
             if not tier1_lv_result.single():
-                print(f"Failed to create/get tier 1 list value: {tier1_value}")
+                print(f"Failed to create/get Tier 1 list value: {tier1_value}")
                 continue
             
-            # Process each array of tiered values
+            # Process each array of tiered values (Tier 2, Tier 3, etc.)
             for tiered_value_array in tiered_value_arrays:
                 if not tiered_value_array or len(tiered_value_array) == 0:
                     continue
                 
-                # Create chain of relationships: tier1 -> tier2 -> tier3 -> ...
+                # Create chain of relationships: Tier1 -> Tier2 -> Tier3 -> ...
                 previous_lv_value = tier1_value
+                previous_tier_number = 1
                 
                 for tier_index, tier_value in enumerate(tiered_value_array):
-                    if not tier_value:
+                    if not tier_value or not tier_value.strip():
                         break
+                    
+                    tier_value = tier_value.strip()
                     
                     # Check if we have enough tier lists for this tier index
+                    # tier_index 0 = Tier 2, tier_index 1 = Tier 3, etc.
                     if tier_index + 1 >= len(tier_list_names) or tier_index + 1 >= len(tier_list_ids):
-                        print(f"⚠️ WARNING: Not enough tier lists for tier index {tier_index}. Expected {tier_index + 2} tiers but only have {len(tier_list_names)}.")
+                        print(f"⚠️ WARNING: Not enough tier lists for tier index {tier_index}. Expected Tier {tier_index + 2} but only have {len(tier_list_names)} tiers.")
                         break
                     
-                    tier_number = tier_index + 2  # Start at tier 2
-                    tier_list_name = tier_list_names[tier_index + 1]
+                    current_tier_number = tier_index + 2  # Tier 2, Tier 3, etc.
+                    current_tier_list_id = tier_list_ids[tier_index + 1]
+                    current_tier_list_name = tier_list_names[tier_index + 1]
                     
-                    # Validate tier_list_name is not None
-                    if not tier_list_name:
-                        print(f"⚠️ WARNING: tier_list_name is None or empty for tier_index {tier_index}")
-                        break
+                    # Relationship type: HAS_TIER_2_VALUE, HAS_TIER_3_VALUE, etc.
+                    relationship_type = f"HAS_TIER_{current_tier_number}_VALUE"
                     
-                    # Create relationship type: HAS_STATE_VALUE, HAS_CITY_VALUE, etc.
-                    # Convert list name to relationship type (e.g., "State" -> "HAS_STATE_VALUE")
-                    # Sanitize list name for relationship type (remove/replace special chars, uppercase)
-                    # Neo4j relationship types can only contain letters, numbers, and underscores
-                    sanitized_list_name = str(tier_list_name).upper()
-                    # Replace common special characters
-                    sanitized_list_name = sanitized_list_name.replace('&', 'AND')
-                    sanitized_list_name = sanitized_list_name.replace('&AMP;', 'AND')  # HTML entity
-                    sanitized_list_name = sanitized_list_name.replace(' ', '_')
-                    sanitized_list_name = sanitized_list_name.replace('-', '_')
-                    sanitized_list_name = sanitized_list_name.replace('.', '_')
-                    sanitized_list_name = sanitized_list_name.replace(',', '_')
-                    sanitized_list_name = sanitized_list_name.replace('(', '_')
-                    sanitized_list_name = sanitized_list_name.replace(')', '_')
-                    sanitized_list_name = sanitized_list_name.replace('[', '_')
-                    sanitized_list_name = sanitized_list_name.replace(']', '_')
-                    sanitized_list_name = sanitized_list_name.replace('{', '_')
-                    sanitized_list_name = sanitized_list_name.replace('}', '_')
-                    sanitized_list_name = sanitized_list_name.replace('/', '_')
-                    sanitized_list_name = sanitized_list_name.replace('\\', '_')
-                    sanitized_list_name = sanitized_list_name.replace('@', 'AT')
-                    sanitized_list_name = sanitized_list_name.replace('#', 'HASH')
-                    sanitized_list_name = sanitized_list_name.replace('$', 'DOLLAR')
-                    sanitized_list_name = sanitized_list_name.replace('%', 'PERCENT')
-                    sanitized_list_name = sanitized_list_name.replace('*', 'STAR')
-                    sanitized_list_name = sanitized_list_name.replace('+', 'PLUS')
-                    sanitized_list_name = sanitized_list_name.replace('=', 'EQUALS')
-                    sanitized_list_name = sanitized_list_name.replace('!', 'EXCLAMATION')
-                    sanitized_list_name = sanitized_list_name.replace('?', 'QUESTION')
-                    sanitized_list_name = sanitized_list_name.replace(':', '_')
-                    sanitized_list_name = sanitized_list_name.replace(';', '_')
-                    sanitized_list_name = sanitized_list_name.replace("'", '_')
-                    sanitized_list_name = sanitized_list_name.replace('"', '_')
-                    sanitized_list_name = sanitized_list_name.replace('|', '_')
-                    sanitized_list_name = sanitized_list_name.replace('<', '_')
-                    sanitized_list_name = sanitized_list_name.replace('>', '_')
-                    # Remove any remaining non-alphanumeric characters except underscores
-                    sanitized_list_name = re.sub(r'[^A-Z0-9_]', '_', sanitized_list_name)
-                    # Remove multiple consecutive underscores
-                    sanitized_list_name = re.sub(r'_+', '_', sanitized_list_name)
-                    # Remove leading/trailing underscores
-                    sanitized_list_name = sanitized_list_name.strip('_')
-                    relationship_type = f"HAS_{sanitized_list_name}_VALUE"
+                    # Create or get the current tier list value node
+                    query = f"""
+                        MATCH (prev:ListValue {{value: $prev_value, tier: $prev_tier_number, listName: $prev_tier_list_name}})
+                        MATCH (current_tier_list:List {{id: $current_tier_list_id}})
+                        MERGE (current:ListValue {{value: $tier_value, tier: $current_tier_number, listName: $current_tier_list_name}})
+                        ON CREATE SET current.tier = $current_tier_number, current.listName = $current_tier_list_name
+                        ON MATCH SET current.tier = $current_tier_number, current.listName = $current_tier_list_name
+                        MERGE (prev)-[r:{relationship_type}]->(current)
+                        MERGE (current_tier_list)-[:HAS_LIST_VALUE]->(current)
+                        RETURN current
+                    """
                     
-                    # Create or get the tiered list value node with properties
-                    # Use MERGE to create node with properties, ensuring uniqueness
-                    # tier_list_id was already validated above when checking bounds
-                    tier_list_id = tier_list_ids[tier_index + 1]  # Get the ID of the tiered list
-                    
-                    # For tier 1, match by value and connection to parent list
-                    # For tier 2+, match by value, tier, and listName to ensure we get the right node
-                    if tier_index == 0:
-                        # First tier after tier 1 - match previous by value and connection to parent list
-                        query = f"""
-                            MATCH (parent_list:List {{id: $list_id}})-[:HAS_LIST_VALUE]->(prev:ListValue {{value: $prev_value}})
-                            MATCH (tier_list:List {{id: $tier_list_id}})
-                            MERGE (current:ListValue {{value: $tier_value, tier: $tier_number, listName: $tier_list_name}})
-                            ON CREATE SET current.tier = $tier_number, current.listName = $tier_list_name
-                            ON MATCH SET current.tier = $tier_number, current.listName = $tier_list_name
-                            MERGE (prev)-[r:{relationship_type}]->(current)
-                            MERGE (tier_list)-[:HAS_LIST_VALUE]->(current)
-                            RETURN current
-                        """
-                    else:
-                        # Subsequent tiers - match previous by value, tier, and listName
-                        # Validate we have enough tier lists
-                        if tier_index >= len(tier_list_names):
-                            print(f"⚠️ WARNING: Not enough tier lists for previous tier index {tier_index}")
-                            break
-                        prev_tier_number = tier_index + 1
-                        prev_tier_list_name = tier_list_names[tier_index]
-                        
-                        # Validate prev_tier_list_name is not None
-                        if not prev_tier_list_name:
-                            print(f"⚠️ WARNING: prev_tier_list_name is None or empty for tier_index {tier_index}")
-                            break
-                        query = f"""
-                            MATCH (prev:ListValue {{value: $prev_value, tier: $prev_tier_number, listName: $prev_tier_list_name}})
-                            MATCH (tier_list:List {{id: $tier_list_id}})
-                            MERGE (current:ListValue {{value: $tier_value, tier: $tier_number, listName: $tier_list_name}})
-                            ON CREATE SET current.tier = $tier_number, current.listName = $tier_list_name
-                            ON MATCH SET current.tier = $tier_number, current.listName = $tier_list_name
-                            MERGE (prev)-[r:{relationship_type}]->(current)
-                            MERGE (tier_list)-[:HAS_LIST_VALUE]->(current)
-                            RETURN current
-                        """
+                    # Get previous tier list name for matching
+                    prev_tier_list_name = tier_list_names[tier_index] if tier_index > 0 else tier1_list_name
                     
                     result = session.run(query, 
-                        list_id=list_id,
                         prev_value=previous_lv_value,
+                        prev_tier_number=previous_tier_number,
+                        prev_tier_list_name=prev_tier_list_name,
                         tier_value=tier_value,
-                        tier_number=tier_number,
-                        tier_list_name=tier_list_name,
-                        tier_list_id=tier_list_id,
-                        prev_tier_number=tier_index + 1 if tier_index > 0 else None,
-                        prev_tier_list_name=tier_list_names[tier_index] if tier_index > 0 else None
+                        current_tier_number=current_tier_number,
+                        current_tier_list_name=current_tier_list_name,
+                        current_tier_list_id=current_tier_list_id
                     )
                     
                     record = result.single()
                     if record:
                         created_count += 1
                         previous_lv_value = tier_value
-                        print(f"✅ Created relationship: {previous_lv_value} -> {tier_value} (tier {tier_number})")
+                        previous_tier_number = current_tier_number
+                        print(f"✅ Created relationship: {previous_lv_value} -> {tier_value} (Tier {current_tier_number})")
                     else:
-                        print(f"❌ Failed to create relationship for {tier_value} (tier {tier_number})")
-                        print(f"   Previous value: {previous_lv_value}, Tier list: {tier_list_name}")
+                        print(f"❌ Failed to create relationship for {tier_value} (Tier {current_tier_number})")
+                        print(f"   Previous value: {previous_lv_value}, Tier list: {current_tier_list_name}")
                         break
         
         print(f"Created {created_count} tiered list value relationships")
@@ -638,8 +586,8 @@ async def get_lists():
                 OPTIONAL MATCH (l)<-[:IS_RELEVANT_TO]-(country:Country)
                 OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
                 OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:Variation)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
@@ -997,7 +945,7 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 if list_data.listType == 'Single':
                     print(f"Switching list {list_id} to Single type - clearing tiered relationships")
                     session.run("""
-                        MATCH (l:List {id: $list_id})-[r:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
                         DELETE r
                     """, list_id=list_id)
                     
@@ -1557,8 +1505,8 @@ async def get_list(list_id: str):
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (v:Variable)-[:HAS_LIST]->(l)
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
