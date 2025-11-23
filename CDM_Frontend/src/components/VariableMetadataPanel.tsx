@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info, Copy, Upload, Layers, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
+import { Settings, Save, X, Link, ChevronRight, ChevronDown, Database, Users, FileText, Plus, Network, Info, Copy, Upload, Layers, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
 import { getVariableFieldOptions, concatenateVariableDrivers, parseVariableDriverString } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { apiService } from '../services/api';
@@ -660,7 +660,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {isExpanded && actions && <>{actions}</>}
+            {actions && <>{actions}</>}
             {ontologyViewType && (
               <button
                 onClick={(e) => {
@@ -698,9 +698,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   return (
-    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6">
+    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border flex flex-col h-full" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-shrink-0 p-6 pb-4">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
           <h3 className="text-lg font-semibold text-ag-dark-text">Metadata</h3>
@@ -715,6 +715,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         )}
       </div>
 
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto px-6">
       {/* Variable Name Field - Moved out of collapsible section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1202,12 +1204,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <button
               onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
               disabled={!isPanelEnabled}
-              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
               }`}
               title={selectedCount > 1 ? "View relationships (bulk edit not yet supported)" : "View and manage relationships"}
             >
-              View Relationships
+              <Grid3x3 className="w-5 h-5" />
             </button>
           </div>
         }
@@ -1338,9 +1340,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         />
       </CollapsibleSection>
 
-      {/* Actions */}
+      </div>
+
+      {/* Actions - Fixed at bottom */}
       {onSave && (
-        <div className="mt-8 pt-6 border-t border-ag-dark-border">
+        <div className="mt-8 pt-6 border-t border-ag-dark-border flex-shrink-0 px-6 pb-6">
           <button
             onClick={handleSave}
             disabled={!isPanelEnabled || (selectedVariable?._isCloned && !selectedVariable?._isSaved && !formData.variable?.trim())}

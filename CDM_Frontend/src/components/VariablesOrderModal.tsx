@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, GripVertical } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, GripVertical, Maximize2, Minimize2 } from 'lucide-react';
 import type { VariableData } from '../data/variablesData';
 
 interface OrderSortOrder {
@@ -41,6 +41,8 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const [savedGroupOrders, setSavedGroupOrders] = useState<Record<string, string[]>>({});
   const [savedVariableOrders, setSavedVariableOrders] = useState<Record<string, string[]>>({});
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   // Get distinct values
   const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
@@ -238,20 +240,36 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 max-w-[90rem] w-full mx-4 max-h-[90vh] overflow-y-auto">
+      <div 
+        ref={modalRef}
+        className={`bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 transition-all duration-300 flex flex-col ${
+          isExpanded 
+            ? 'w-[95vw] h-[95vh]' 
+            : 'max-w-[90rem] w-full mx-4 max-h-[90vh]'
+        }`}
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-ag-dark-text">Order</h3>
-          <button
-            onClick={onClose}
-            className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+              title={isExpanded ? "Minimize" : "Maximize"}
+            >
+              {isExpanded ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Instructions */}
-        <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
+        <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex-shrink-0">
           <p className="text-sm text-ag-dark-text-secondary">
             Define the sort order for Part, Section, Group, and Variable columns. Drag items to reorder them.
             The order will be applied when enabled.
@@ -259,11 +277,11 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
         </div>
 
         {/* Four Column Layout */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className={`grid grid-cols-4 gap-4 mb-6 ${isExpanded ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
           {/* Part Column */}
-          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none">
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Part</h4>
-            <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
+            <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
               {workingPartOrder.map((part, index) => (
                 <div
                   key={part}
@@ -295,9 +313,9 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
           </div>
 
           {/* Section Column */}
-          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none">
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Section</h4>
-            <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
+            <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
               {workingSectionOrder.map((section, index) => (
                 <div
                   key={section}
@@ -329,9 +347,9 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
           </div>
 
           {/* Group Column */}
-          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none">
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Group</h4>
-            <div className="mb-3">
+            <div className="mb-3 flex-shrink-0">
               <select
                 value={selectedPart}
                 onChange={(e) => {
@@ -348,7 +366,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             </div>
             {selectedPart && (
               <>
-                <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
+                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
                   {(workingGroupOrders[selectedPart] || savedGroupOrders[selectedPart] || groupsForPart).map((group, index) => (
                     <div
                       key={group}
@@ -382,9 +400,9 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
           </div>
 
           {/* Variable Column */}
-          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none">
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Variable</h4>
-            <div className="mb-3">
+            <div className="mb-3 flex-shrink-0">
               <select
                 value={selectedPart}
                 onChange={(e) => {
@@ -413,7 +431,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             </div>
             {selectedPart && selectedGroup && (
               <>
-                <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
+                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
                   {(workingVariableOrders[`${selectedPart}|${selectedGroup}`] || savedVariableOrders[`${selectedPart}|${selectedGroup}`] || variablesForPartAndGroup).map((variable, index) => (
                     <div
                       key={variable}
@@ -448,7 +466,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-4 border-t border-ag-dark-border">
+        <div className="flex items-center justify-between pt-4 border-t border-ag-dark-border flex-shrink-0">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"

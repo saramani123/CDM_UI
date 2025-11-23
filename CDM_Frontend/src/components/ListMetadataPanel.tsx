@@ -10,6 +10,7 @@ import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
+import { SingleListValuesModal } from './SingleListValuesModal';
 import { apiService } from '../services/api';
 
 interface ListMetadataField {
@@ -232,6 +233,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
   const [listValuesGraphModalOpen, setListValuesGraphModalOpen] = useState(false);
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
+  const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
+  const [singleListValues, setSingleListValues] = useState<string[]>([]);
   
   // Variations state - using string for multiline input
   const [variationsText, setVariationsText] = useState('');
@@ -645,15 +648,26 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     
     // Handle list type and tiered lists
     if (listType === 'Single') {
-      // Single list - include list values and clear any tiered lists
-      const listValuesArray = listValuesText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map((value, index) => ({
+      // Single list - use values from modal if available, otherwise from textarea (for backward compatibility)
+      let listValuesArray: Array<{ id: string; value: string }>;
+      
+      if (singleListValues.length > 0) {
+        // Use values from single list values modal
+        listValuesArray = singleListValues.map((value, index) => ({
           id: (Date.now() + index).toString(),
           value
         }));
+      } else {
+        // Fallback to textarea (for backward compatibility)
+        listValuesArray = listValuesText
+          .split('\n')
+          .map(line => line.trim())
+          .filter(line => line.length > 0)
+          .map((value, index) => ({
+            id: (Date.now() + index).toString(),
+            value
+          }));
+      }
       
       // Check for duplicate values (case-insensitive) within the same list
       const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
@@ -1471,40 +1485,18 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                 <Grid3x3 className="w-5 h-5" />
               </button>
             )}
-            {/* For Single lists, show sort and upload buttons */}
+            {/* For Single lists, show only grid icon */}
             {listType === 'Single' && !selectedList?.hasIncomingTier && (
-              <>
-                <button
-                  onClick={() => handleSortListValues('asc')}
-                  disabled={!isPanelEnabled}
-                  className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
-                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title="Sort A-Z"
-                >
-                  <ArrowUpAZ className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => handleSortListValues('desc')}
-                  disabled={!isPanelEnabled}
-                  className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
-                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title="Sort Z-A"
-                >
-                  <ArrowDownZA className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsListValuesUploadOpen(true)}
-                  disabled={!isPanelEnabled}
-                  className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title="Upload List Values CSV"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-              </>
+              <button
+                onClick={() => setIsSingleListValuesModalOpen(true)}
+                disabled={!isPanelEnabled}
+                className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
+                  !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title="Edit List Values"
+              >
+                <Grid3x3 className="w-5 h-5" />
+              </button>
             )}
             {/* Graph icon - always show */}
             <button
@@ -1536,66 +1528,11 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             </div>
           </div>
         ) : (
-          <textarea
-            ref={listValuesTextareaRef}
-            value={listValuesText}
-            onChange={(e) => {
-              handleListValuesTextChange(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              // Prevent Enter key from propagating to parent components
-              e.stopPropagation();
-              // Prevent default only for Escape, not Enter
-              if (e.key === 'Escape') {
-                listValuesTextareaRef.current?.blur();
-              }
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-            }}
-            onFocus={(e) => {
-              e.stopPropagation();
-              isListValuesTextareaFocusedRef.current = true;
-            }}
-            onBlur={(e) => {
-              // Only restore focus if blur happened very recently after typing (likely accidental)
-              const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
-              const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-              
-              // Check if blur was intentional (user clicked on another focusable element)
-              const relatedTarget = e.relatedTarget as HTMLElement;
-              const clickedOutside = !relatedTarget || 
-                (relatedTarget.tagName !== 'TEXTAREA' && 
-                 relatedTarget.tagName !== 'INPUT' && 
-                 !relatedTarget.isContentEditable);
-              
-              // Only restore focus if it was recent typing and user didn't click on another input
-              if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-                // Restore focus after a brief delay to let React finish its render cycle
-                setTimeout(() => {
-                  if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
-                    listValuesTextareaRef.current.focus();
-                  }
-                }, 10);
-              } else if (!wasRecentTyping) {
-                // User intentionally blurred, don't restore
-                isListValuesTextareaFocusedRef.current = false;
-              }
-            }}
-            placeholder={
-              listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined
-            }
-            rows={8}
-            disabled={!isPanelEnabled}
-            className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y ${
-              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-            }`}
-          />
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This is a single-level list. Use the grid icon above to edit list values.
+            </div>
+          </div>
         )}
       </div>
       </div>
@@ -1775,6 +1712,58 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             // Save immediately
             await onSave(saveData);
             setIsTieredListValuesModalOpen(false);
+          }
+        }}
+      />
+
+      {/* Single List Values Modal */}
+      <SingleListValuesModal
+        isOpen={isSingleListValuesModalOpen}
+        onClose={() => setIsSingleListValuesModalOpen(false)}
+        selectedList={selectedList || null}
+        onSave={(values) => {
+          // Store values to be used when saving the list
+          setSingleListValues(values);
+          setIsSingleListValuesModalOpen(false);
+          // Trigger save with the new values
+          if (onSave) {
+            // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
+            const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
+              if (values.includes('ALL')) {
+                return allPossibleValues.filter(v => v !== 'ALL');
+              }
+              return values.filter(v => v !== 'ALL');
+            };
+            
+            const listValuesArray = values.map((value, index) => ({
+              id: (Date.now() + index).toString(),
+              value
+            }));
+            
+            const saveData: any = {
+              ...formData,
+              sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
+              domain: getDriverValuesForSave(driverSelections.domain, driversData.domains),
+              country: getDriverValuesForSave(driverSelections.country, driversData.countries),
+              variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
+              listValuesList: listValuesArray,
+              listType: 'Single',
+              tieredListsList: [],
+              tieredListValues: {}
+            };
+            
+            // Handle variationsList
+            const variationsArray = variationsText
+              .split('\n')
+              .map(line => line.trim())
+              .filter(line => line.length > 0)
+              .map((name) => ({ name }));
+            
+            if (variationsArray.length > 0) {
+              saveData.variationsList = variationsArray;
+            }
+            
+            onSave(saveData);
           }
         }}
       />

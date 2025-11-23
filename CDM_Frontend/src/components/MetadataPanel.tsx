@@ -1149,9 +1149,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   return (
-    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6">
+    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border flex flex-col h-full" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 flex-shrink-0 p-6 pb-4">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
           <h3 className="text-lg font-semibold text-ag-dark-text">Metadata</h3>
@@ -1166,6 +1166,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         )}
       </div>
 
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto px-6">
       {/* Object Name Field - Moved out of collapsible section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1842,9 +1844,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         />
       </CollapsibleSection>
 
-      {/* Actions */}
+      </div>
+
+      {/* Actions - Fixed at bottom */}
       {onSave && (
-        <div className="mt-6 pt-4 border-t border-ag-dark-border">
+        <div className="mt-6 pt-4 border-t border-ag-dark-border flex-shrink-0 px-6 pb-6">
           <button
             onClick={handleSave}
             disabled={!isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved && !formData.object?.trim())}

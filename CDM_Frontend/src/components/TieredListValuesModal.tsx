@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { X, Upload, Save, Plus, Trash2, FileText } from 'lucide-react';
+import { X, Upload, Save, Plus, Trash2, FileText, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import { ListData } from '../data/listsData';
 import { getTieredListValues } from '../services/api';
 
@@ -306,6 +306,35 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     reader.readAsText(file);
   };
 
+  const handleSortColumn = (colIndex: number, direction: 'asc' | 'desc') => {
+    // Separate rows with values and rows without values in the target column
+    const rowsWithValues: TieredValueRow[] = [];
+    const rowsWithoutValues: TieredValueRow[] = [];
+    
+    tieredValueRows.forEach(row => {
+      const value = (row.values[colIndex] || '').trim();
+      if (value.length > 0) {
+        rowsWithValues.push(row);
+      } else {
+        rowsWithoutValues.push(row);
+      }
+    });
+    
+    // Sort only rows with values
+    const sortedRowsWithValues = rowsWithValues.sort((a, b) => {
+      const aValue = (a.values[colIndex] || '').trim().toLowerCase();
+      const bValue = (b.values[colIndex] || '').trim().toLowerCase();
+      if (direction === 'asc') {
+        return aValue.localeCompare(bValue);
+      } else {
+        return bValue.localeCompare(aValue);
+      }
+    });
+    
+    // Combine: sorted rows with values first, then rows without values
+    setTieredValueRows([...sortedRowsWithValues, ...rowsWithoutValues]);
+  };
+
   const handleSave = () => {
     // Convert rows to the format expected by backend
     // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
@@ -503,11 +532,27 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           <div className="border border-ag-dark-border rounded">
             {/* Table Header */}
             <div className="sticky top-0 bg-ag-dark-bg border-b border-ag-dark-border z-10">
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 200px) auto` }}>
+              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 250px) auto` }}>
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                 {columnHeaders.map((header, index) => (
-                  <div key={index} className="text-xs font-medium text-ag-dark-text-secondary text-left">
-                    {header}
+                  <div key={index} className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
+                    <span>{header}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleSortColumn(index, 'asc')}
+                        className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
+                        title="Sort A-Z"
+                      >
+                        <ArrowUpAZ className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleSortColumn(index, 'desc')}
+                        className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
+                        title="Sort Z-A"
+                      >
+                        <ArrowDownZA className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                 ))}
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
@@ -520,7 +565,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                   <div 
                     key={row.id} 
                     className="grid gap-2 p-2 hover:bg-ag-dark-bg/50"
-                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 200px) auto` }}
+                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 250px) auto` }}
                   >
                     <div className="flex items-center text-xs text-ag-dark-text-secondary">
                       {rowIndex + 1}
