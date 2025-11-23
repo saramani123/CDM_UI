@@ -3069,12 +3069,49 @@ function App() {
                         title="Define custom sort order for Part, Section, Group, and Variable columns"
                       >
                         <ArrowUpDown className="w-4 h-4" />
-                        Order
+                        Default Order
                         {isVariablesOrderEnabled && (
                           <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                             Active
                           </span>
                         )}
+                      </button>
+                    )}
+                    
+                    {/* Generic Button */}
+                    {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
+                      <button
+                        onClick={() => {
+                          if (activeTab === 'objects') {
+                            if (activeView === 'Generic') {
+                              handleViewsApply('None');
+                            } else {
+                              handleViewsApply('Generic');
+                            }
+                          } else if (activeTab === 'variables') {
+                            if (activeVariablesView === 'Generic') {
+                              handleViewsApply('None');
+                            } else {
+                              handleViewsApply('Generic');
+                            }
+                          } else if (activeTab === 'lists') {
+                            if (activeListsView === 'Generic') {
+                              handleViewsApply('None');
+                            } else {
+                              handleViewsApply('Generic');
+                            }
+                          }
+                        }}
+                        className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          ((activeTab === 'objects' && activeView === 'Generic') || 
+                           (activeTab === 'variables' && activeVariablesView === 'Generic') ||
+                           (activeTab === 'lists' && activeListsView === 'Generic'))
+                            ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title="Toggle Generic view (S/D/C = All)"
+                      >
+                        Generic
                       </button>
                     )}
                     
@@ -3161,6 +3198,25 @@ function App() {
                           Column Sort Active
                         </span>
                       )}
+                    </button>
+                    
+                    {/* Generic Button */}
+                    <button
+                      onClick={() => {
+                        if (activeListsView === 'Generic') {
+                          handleViewsApply('None');
+                        } else {
+                          handleViewsApply('Generic');
+                        }
+                      }}
+                      className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                        activeListsView === 'Generic'
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
+                      title="Toggle Generic view (S/D/C = All)"
+                    >
+                      Generic
                     </button>
                     
                     {/* Reset Filter Button (small box) */}
@@ -3304,45 +3360,10 @@ function App() {
           ) : (
             <div className="lg:col-span-1">
               <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
-                {/* Three equal-sized buttons: Generic, Graph View, Grid View (for Objects, Variables, and Lists tabs) */}
+                {/* Two equal-sized buttons: Graph View, Grid View (for Objects, Variables, and Lists tabs) */}
                 {/* Position buttons to align with Custom Sort/Add buttons on the left - match the grid header height */}
                 {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                  <div className="mb-4 grid grid-cols-3 gap-2 flex-shrink-0" style={{ marginTop: '0' }}>
-                    {/* Generic Button */}
-                    <button
-                      onClick={() => {
-                        if (activeTab === 'objects') {
-                          if (activeView === 'Generic') {
-                            handleViewsApply('None');
-                          } else {
-                            handleViewsApply('Generic');
-                          }
-                        } else if (activeTab === 'variables') {
-                          if (activeVariablesView === 'Generic') {
-                            handleViewsApply('None');
-                          } else {
-                            handleViewsApply('Generic');
-                          }
-                        } else if (activeTab === 'lists') {
-                          if (activeListsView === 'Generic') {
-                            handleViewsApply('None');
-                          } else {
-                            handleViewsApply('Generic');
-                          }
-                        }
-                      }}
-                      className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                        ((activeTab === 'objects' && activeView === 'Generic') || 
-                         (activeTab === 'variables' && activeVariablesView === 'Generic') ||
-                         (activeTab === 'lists' && activeListsView === 'Generic'))
-                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
-                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                      }`}
-                      title="Toggle Generic view (S/D/C = All)"
-                    >
-                      Generic
-                    </button>
-                    
+                  <div className="mb-4 grid grid-cols-2 gap-2 flex-shrink-0" style={{ marginTop: '0' }}>
                     {/* Graph View Button */}
                     <button
                       onClick={() => {

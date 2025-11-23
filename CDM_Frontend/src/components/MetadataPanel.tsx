@@ -1111,7 +1111,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {isExpanded && actions && <>{actions}</>}
+            {actions && <>{actions}</>}
             {ontologyViewType && (
               <button
                 onClick={(e) => {
@@ -1639,7 +1639,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             {/* Clone Relationships Button - Hide for cloned objects (they already have relationships) */}
             {!(selectedObject?._isCloned && !selectedObject?._isSaved) && (
               <button
-                onClick={() => setIsCloneRelationshipsModalOpen(true)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCloneRelationshipsModalOpen(true);
+                }}
                 disabled={!isPanelEnabled || relationships.length > 0}
                 className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
                   !isPanelEnabled || relationships.length > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
@@ -1650,7 +1653,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               </button>
             )}
             <button
-              onClick={onEnterRelationshipView}
+              onClick={(e) => {
+                e.stopPropagation();
+                onEnterRelationshipView();
+              }}
               disabled={!isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved)}
               className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
                 !isPanelEnabled || (selectedObject?._isCloned && !selectedObject?._isSaved) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'

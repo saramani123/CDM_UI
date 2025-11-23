@@ -1156,7 +1156,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
           </div>
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            {isExpanded && actions && <>{actions}</>}
+            {actions && <>{actions}</>}
             {isListsMode && showRelationshipsGraph && (
               <button
                 onClick={(e) => {
@@ -2107,7 +2107,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           <div className="flex items-center gap-2">
             {/* Clone Relationships Button */}
             <button
-              onClick={() => setIsCloneRelationshipsModalOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCloneRelationshipsModalOpen(true);
+              }}
               disabled={selectedObjects.length === 0 || hasExistingRelationships}
               className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
                 selectedObjects.length === 0 || hasExistingRelationships ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
@@ -2123,7 +2126,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               <Copy className="w-5 h-5" />
             </button>
             <button
-              onClick={() => setIsRelationshipModalOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRelationshipModalOpen(true);
+              }}
               disabled={selectedObjects.length === 0}
               className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
                 selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'

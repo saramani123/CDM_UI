@@ -81,7 +81,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           {icon}
           <h4 className="text-md font-semibold text-ag-dark-text">{title}</h4>
         </div>
-        {isExpanded && actions && (
+        {actions && (
           <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
             {actions}
           </div>
@@ -1033,14 +1033,20 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsRelationshipUploadOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRelationshipUploadOpen(true);
+              }}
               className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
               title="Upload Relationships CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setIsRelationshipModalOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsRelationshipModalOpen(true);
+              }}
               className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
               title="View and manage relationships"
             >

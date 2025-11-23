@@ -36,6 +36,11 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'part' | 'section' | 'group' | 'variable' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
+  const [savedPartOrder, setSavedPartOrder] = useState<string[]>([]);
+  const [savedSectionOrder, setSavedSectionOrder] = useState<string[]>([]);
+  const [savedGroupOrders, setSavedGroupOrders] = useState<Record<string, string[]>>({});
+  const [savedVariableOrders, setSavedVariableOrders] = useState<Record<string, string[]>>({});
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Get distinct values
   const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
@@ -47,31 +52,39 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
     ? Array.from(new Set(variableData.filter(v => v.part === selectedPart && v.group === selectedGroup).map(v => v.variable).filter(Boolean))).sort()
     : [];
 
-  // Initialize working orders from props or create defaults
+  // Initialize working orders from props or create defaults - only once when modal opens
   useEffect(() => {
-    if (orderSortOrder) {
-      setWorkingPartOrder(orderSortOrder.partOrder || []);
-      setWorkingSectionOrder(orderSortOrder.sectionOrder || []);
-      setWorkingGroupOrders(orderSortOrder.groupOrders || {});
-      setWorkingVariableOrders(orderSortOrder.variableOrders || {});
-    } else {
-      // Create default alphabetical orders
-      setWorkingPartOrder(distinctParts);
-      setWorkingSectionOrder(distinctSections);
-      setWorkingGroupOrders({});
-      setWorkingVariableOrders({});
+    if (!isOpen) {
+      setIsInitialized(false);
+      return;
     }
-  }, [orderSortOrder, distinctParts, distinctSections]);
-
-  // Update working orders when distinct values change
-  useEffect(() => {
-    if (workingPartOrder.length === 0 && distinctParts.length > 0) {
-      setWorkingPartOrder(distinctParts);
+    
+    if (!isInitialized) {
+      if (orderSortOrder) {
+        const partOrder = orderSortOrder.partOrder && orderSortOrder.partOrder.length > 0 ? orderSortOrder.partOrder : distinctParts;
+        const sectionOrder = orderSortOrder.sectionOrder && orderSortOrder.sectionOrder.length > 0 ? orderSortOrder.sectionOrder : distinctSections;
+        setWorkingPartOrder(partOrder);
+        setWorkingSectionOrder(sectionOrder);
+        setSavedPartOrder(partOrder);
+        setSavedSectionOrder(sectionOrder);
+        setWorkingGroupOrders(orderSortOrder.groupOrders || {});
+        setSavedGroupOrders(orderSortOrder.groupOrders || {});
+        setWorkingVariableOrders(orderSortOrder.variableOrders || {});
+        setSavedVariableOrders(orderSortOrder.variableOrders || {});
+      } else {
+        // Create default alphabetical orders
+        setWorkingPartOrder(distinctParts);
+        setWorkingSectionOrder(distinctSections);
+        setSavedPartOrder(distinctParts);
+        setSavedSectionOrder(distinctSections);
+        setWorkingGroupOrders({});
+        setSavedGroupOrders({});
+        setWorkingVariableOrders({});
+        setSavedVariableOrders({});
+      }
+      setIsInitialized(true);
     }
-    if (workingSectionOrder.length === 0 && distinctSections.length > 0) {
-      setWorkingSectionOrder(distinctSections);
-    }
-  }, [distinctParts, distinctSections, workingPartOrder.length, workingSectionOrder.length]);
+  }, [isOpen, orderSortOrder, distinctParts, distinctSections, isInitialized]);
 
   const handleDragStart = (item: string, type: 'part' | 'section' | 'group' | 'variable') => {
     setDraggedItem(item);
@@ -85,39 +98,77 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
 
   const handleDrop = (e: React.DragEvent, index: number, type: 'part' | 'section' | 'group' | 'variable') => {
     e.preventDefault();
-    if (!draggedItem || dragType !== type) return;
+    e.stopPropagation();
+    if (!draggedItem || dragType !== type) {
+      setDraggedItem(null);
+      setDragType(null);
+      setDragOverIndex(-1);
+      return;
+    }
 
     if (type === 'part') {
       const newOrder = [...workingPartOrder];
       const draggedIndex = newOrder.indexOf(draggedItem);
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
+      }
+      // Remove from old position
       newOrder.splice(draggedIndex, 1);
-      newOrder.splice(index, 0, draggedItem);
+      // Insert at new position (adjust index if dragging down)
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingPartOrder(newOrder);
     } else if (type === 'section') {
       const newOrder = [...workingSectionOrder];
       const draggedIndex = newOrder.indexOf(draggedItem);
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
+      }
+      // Remove from old position
       newOrder.splice(draggedIndex, 1);
-      newOrder.splice(index, 0, draggedItem);
+      // Insert at new position (adjust index if dragging down)
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingSectionOrder(newOrder);
     } else if (type === 'group' && selectedPart) {
-      const currentGroups = workingGroupOrders[selectedPart] || groupsForPart;
+      const currentGroups = workingGroupOrders[selectedPart] || savedGroupOrders[selectedPart] || groupsForPart;
       const newOrder = [...currentGroups];
       const draggedIndex = newOrder.indexOf(draggedItem);
-      if (draggedIndex !== -1) {
-        newOrder.splice(draggedIndex, 1);
-        newOrder.splice(index, 0, draggedItem);
-        setWorkingGroupOrders({ ...workingGroupOrders, [selectedPart]: newOrder });
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
       }
+      // Remove from old position
+      newOrder.splice(draggedIndex, 1);
+      // Insert at new position (adjust index if dragging down)
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
+      setWorkingGroupOrders({ ...workingGroupOrders, [selectedPart]: newOrder });
     } else if (type === 'variable' && selectedPart && selectedGroup) {
       const key = `${selectedPart}|${selectedGroup}`;
-      const currentVariables = workingVariableOrders[key] || variablesForPartAndGroup;
+      const currentVariables = workingVariableOrders[key] || savedVariableOrders[key] || variablesForPartAndGroup;
       const newOrder = [...currentVariables];
       const draggedIndex = newOrder.indexOf(draggedItem);
-      if (draggedIndex !== -1) {
-        newOrder.splice(draggedIndex, 1);
-        newOrder.splice(index, 0, draggedItem);
-        setWorkingVariableOrders({ ...workingVariableOrders, [key]: newOrder });
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
       }
+      // Remove from old position
+      newOrder.splice(draggedIndex, 1);
+      // Insert at new position (adjust index if dragging down)
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
+      setWorkingVariableOrders({ ...workingVariableOrders, [key]: newOrder });
     }
 
     setDraggedItem(null);
@@ -132,32 +183,39 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   };
 
   const handleSavePartOrder = () => {
-    // Part order is already saved in workingPartOrder state
+    // Persist the current working order as the saved order
+    setSavedPartOrder([...workingPartOrder]);
   };
 
   const handleSaveSectionOrder = () => {
-    // Section order is already saved in workingSectionOrder state
+    // Persist the current working order as the saved order
+    setSavedSectionOrder([...workingSectionOrder]);
   };
 
   const handleSaveGroupOrder = () => {
     if (!selectedPart) return;
     const currentGroups = workingGroupOrders[selectedPart] || groupsForPart;
-    setWorkingGroupOrders({ ...workingGroupOrders, [selectedPart]: currentGroups });
+    const newGroupOrders = { ...workingGroupOrders, [selectedPart]: [...currentGroups] };
+    setWorkingGroupOrders(newGroupOrders);
+    setSavedGroupOrders(newGroupOrders);
   };
 
   const handleSaveVariableOrder = () => {
     if (!selectedPart || !selectedGroup) return;
     const key = `${selectedPart}|${selectedGroup}`;
     const currentVariables = workingVariableOrders[key] || variablesForPartAndGroup;
-    setWorkingVariableOrders({ ...workingVariableOrders, [key]: currentVariables });
+    const newVariableOrders = { ...workingVariableOrders, [key]: [...currentVariables] };
+    setWorkingVariableOrders(newVariableOrders);
+    setSavedVariableOrders(newVariableOrders);
   };
 
   const handleApply = () => {
+    // Use saved orders if available, otherwise use working orders
     const order: OrderSortOrder = {
-      partOrder: workingPartOrder,
-      sectionOrder: workingSectionOrder,
-      groupOrders: workingGroupOrders,
-      variableOrders: workingVariableOrders
+      partOrder: savedPartOrder.length > 0 ? savedPartOrder : workingPartOrder,
+      sectionOrder: savedSectionOrder.length > 0 ? savedSectionOrder : workingSectionOrder,
+      groupOrders: Object.keys(savedGroupOrders).length > 0 ? savedGroupOrders : workingGroupOrders,
+      variableOrders: Object.keys(savedVariableOrders).length > 0 ? savedVariableOrders : workingVariableOrders
     };
     onApplyOrder(isOrderEnabled, order);
     onClose();
@@ -291,7 +349,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             {selectedPart && (
               <>
                 <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
-                  {(workingGroupOrders[selectedPart] || groupsForPart).map((group, index) => (
+                  {(workingGroupOrders[selectedPart] || savedGroupOrders[selectedPart] || groupsForPart).map((group, index) => (
                     <div
                       key={group}
                       draggable
@@ -356,7 +414,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             {selectedPart && selectedGroup && (
               <>
                 <div className="space-y-2 max-h-96 overflow-y-auto mb-3 flex-1 border-0 outline-none">
-                  {(workingVariableOrders[`${selectedPart}|${selectedGroup}`] || variablesForPartAndGroup).map((variable, index) => (
+                  {(workingVariableOrders[`${selectedPart}|${selectedGroup}`] || savedVariableOrders[`${selectedPart}|${selectedGroup}`] || variablesForPartAndGroup).map((variable, index) => (
                     <div
                       key={variable}
                       draggable
@@ -396,17 +454,18 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
               type="checkbox"
               checked={isOrderEnabled}
               onChange={(e) => {
+                // Use saved orders if available, otherwise use working orders
                 const order: OrderSortOrder = {
-                  partOrder: workingPartOrder,
-                  sectionOrder: workingSectionOrder,
-                  groupOrders: workingGroupOrders,
-                  variableOrders: workingVariableOrders
+                  partOrder: savedPartOrder.length > 0 ? savedPartOrder : workingPartOrder,
+                  sectionOrder: savedSectionOrder.length > 0 ? savedSectionOrder : workingSectionOrder,
+                  groupOrders: Object.keys(savedGroupOrders).length > 0 ? savedGroupOrders : workingGroupOrders,
+                  variableOrders: Object.keys(savedVariableOrders).length > 0 ? savedVariableOrders : workingVariableOrders
                 };
                 onApplyOrder(e.target.checked, order);
               }}
               className="w-4 h-4 text-ag-dark-accent bg-ag-dark-bg border-ag-dark-border rounded focus:ring-ag-dark-accent"
             />
-            <span className="text-sm text-ag-dark-text">Enable Order Sort</span>
+            <span className="text-sm text-ag-dark-text">Enable default order</span>
           </label>
           <div className="flex gap-3">
             <button
