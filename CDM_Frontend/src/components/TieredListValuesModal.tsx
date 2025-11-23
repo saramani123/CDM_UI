@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { X, Upload, Save, Plus, Trash2, FileText } from 'lucide-react';
-import { ListData, TieredList } from '../data/listsData';
+import { ListData } from '../data/listsData';
 import { getTieredListValues } from '../services/api';
 
 interface TieredListValuesModalProps {
@@ -8,6 +8,7 @@ interface TieredListValuesModalProps {
   onClose: () => void;
   selectedList: ListData | null;
   allLists: ListData[];
+  tierNames?: string[]; // Tier names from List Type section (Tier 2, Tier 3, etc.)
   onSave: (tieredValues: Record<string, string[][]>) => void;
 }
 
@@ -21,6 +22,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   onClose,
   selectedList,
   allLists,
+  tierNames = [],
   onSave
 }) => {
   const [tieredValueRows, setTieredValueRows] = useState<TieredValueRow[]>([]);
@@ -30,31 +32,22 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get tiered lists in order (Tier 1 = current list, then Tier 2, 3, etc.)
-  const tieredLists: (ListData | null)[] = [];
-  if (selectedList) {
-    tieredLists.push(selectedList); // Tier 1
-    if (selectedList.tieredListsList) {
-      selectedList.tieredListsList.forEach(tier => {
-        const tierList = allLists.find(l => l.id === tier.listId);
-        tieredLists.push(tierList || null);
+  // Build column headers: parent list name + tier names
+  const columnHeaders: string[] = React.useMemo(() => {
+    const headers: string[] = [];
+    if (selectedList) {
+      headers.push(selectedList.list || ''); // Tier 1 (parent list)
+      // Add tier names from props (Tier 2, Tier 3, etc.)
+      tierNames.forEach(tierName => {
+        if (tierName && tierName.trim()) {
+          headers.push(tierName.trim());
+        }
       });
     }
-  }
+    return headers;
+  }, [selectedList, tierNames]);
 
-  // Load existing tiered values when modal opens
-  useEffect(() => {
-    if (isOpen && selectedList) {
-      loadTieredValues();
-    } else if (!isOpen) {
-      // Reset when modal closes
-      setTieredValueRows([]);
-      setEditingCell(null);
-      setEditValue('');
-    }
-  }, [isOpen, selectedList]);
-
-  const loadTieredValues = async () => {
+  const loadTieredValues = useCallback(async () => {
     if (!selectedList) return;
     
     try {
@@ -73,12 +66,12 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             // Create a row: [tier1Value, ...tieredArray]
             const rowValues = [tier1Value, ...tieredArray];
             // Pad with empty strings if needed
-            while (rowValues.length < tieredLists.length) {
+            while (rowValues.length < columnHeaders.length) {
               rowValues.push('');
             }
             rows.push({
               id: `row-${Date.now()}-${rows.length}`,
-              values: rowValues.slice(0, tieredLists.length)
+              values: rowValues.slice(0, columnHeaders.length)
             });
           });
         });
@@ -88,7 +81,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       while (rows.length < 100) {
         rows.push({
           id: `row-${Date.now()}-${rows.length}`,
-          values: tieredLists.map(() => '')
+          values: columnHeaders.map(() => '')
         });
       }
       
@@ -100,17 +93,29 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       for (let i = 0; i < 100; i++) {
         initialRows.push({ 
           id: `row-${i + 1}`, 
-          values: tieredLists.map(() => '') 
+          values: columnHeaders.map(() => '') 
         });
       }
       setTieredValueRows(initialRows);
     }
-  };
+  }, [selectedList, columnHeaders]);
+
+  // Load existing tiered values when modal opens
+  useEffect(() => {
+    if (isOpen && selectedList && columnHeaders.length >= 2) {
+      loadTieredValues();
+    } else if (!isOpen) {
+      // Reset when modal closes
+      setTieredValueRows([]);
+      setEditingCell(null);
+      setEditValue('');
+    }
+  }, [isOpen, selectedList, columnHeaders.length, loadTieredValues]);
 
   const handleAddRow = (index?: number) => {
     const newRow: TieredValueRow = {
       id: Date.now().toString(),
-      values: tieredLists.map(() => '')
+      values: columnHeaders.map(() => '')
     };
     if (index !== undefined) {
       setTieredValueRows(prev => [...prev.slice(0, index), newRow, ...prev.slice(index)]);
@@ -171,7 +176,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         const lineIndex = i - startRowIndex;
         const line = lines[lineIndex];
         const values = line.split('\t');
-        const newValues = tieredLists.map((_, colIndex) => {
+        const newValues = columnHeaders.map((_, colIndex) => {
           const colOffset = colIndex - startColIndex;
           return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
         });
@@ -216,7 +221,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     } else if (e.key === 'Tab') {
       e.preventDefault();
       // Move to next column, same row
-      if (colIndex < tieredLists.length - 1) {
+      if (colIndex < columnHeaders.length - 1) {
         const currentRow = tieredValueRows.find(r => r.id === rowId);
         if (currentRow) {
           setEditingCell({ rowId, colIndex: colIndex + 1 });
@@ -253,10 +258,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         const headerLine = lines[0];
         const headers = headerLine.split(',').map(h => h.trim().replace(/^"|"$/g, ''));
         
-        // Verify headers match tiered list names
-        const tierNames = tieredLists.map(t => t?.list || '').filter(Boolean);
-        if (headers.length !== tierNames.length || !headers.every((h, i) => h === tierNames[i])) {
-          alert(`CSV headers must match tiered list names in order: ${tierNames.join(', ')}`);
+        // Verify headers match column headers (parent list name + tier names)
+        if (headers.length !== columnHeaders.length || !headers.every((h, i) => h === columnHeaders[i])) {
+          alert(`CSV headers must match column names in order: ${columnHeaders.join(', ')}`);
           return;
         }
 
@@ -281,12 +285,12 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           }
           values.push(currentValue.trim().replace(/^"|"$/g, ''));
           
-          // Pad or truncate to match number of tiers
+          // Pad or truncate to match number of columns
           const paddedValues = [...values];
-          while (paddedValues.length < tieredLists.length) {
+          while (paddedValues.length < columnHeaders.length) {
             paddedValues.push('');
           }
-          paddedValues.length = tieredLists.length;
+          paddedValues.length = columnHeaders.length;
           
           newRows.push({
             id: (Date.now() + i).toString(),
@@ -335,7 +339,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     onClose();
   };
 
-  if (!isOpen || !selectedList || tieredLists.length < 2) return null;
+  if (!isOpen || !selectedList || columnHeaders.length < 2) return null;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]" onClick={onClose}>
@@ -401,7 +405,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                 <div className="space-y-3">
                   <h3 className="text-sm font-medium text-ag-dark-accent">CSV FORMAT</h3>
                   <div className="bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-hidden">
-                    {tieredLists.map((tier, index) => (
+                    {columnHeaders.map((header, index) => (
                       <div
                         key={index}
                         className="flex items-center justify-between px-4 py-3 border-b border-ag-dark-border last:border-b-0"
@@ -410,7 +414,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                           Column {index + 1}
                         </span>
                         <span className="text-sm font-medium text-ag-dark-text">
-                          {tier?.list || `Tier ${index + 1}`}
+                          {header}
                         </span>
                       </div>
                     ))}
@@ -477,7 +481,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                 {/* Format Notes */}
                 <div className="text-xs text-ag-dark-text-secondary space-y-1">
                   <p>• First row should contain column headers</p>
-                  <p>• Column headers must match the tiered list names in order: {tieredLists.map(t => t?.list || '').filter(Boolean).join(', ')}</p>
+                  <p>• Column headers must match the column names in order: {columnHeaders.join(', ')}</p>
                   <p>• Each subsequent row represents one tiered value combination</p>
                   <p>• Values should be separated by commas</p>
                   <p>• You can also copy/paste directly from Excel into the grid</p>
@@ -501,11 +505,11 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           <div className="border border-ag-dark-border rounded">
             {/* Table Header */}
             <div className="sticky top-0 bg-ag-dark-bg border-b border-ag-dark-border z-10">
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${tieredLists.length}, 1fr) auto` }}>
+              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 1fr) auto` }}>
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
-                {tieredLists.map((tier, index) => (
+                {columnHeaders.map((header, index) => (
                   <div key={index} className="text-xs font-medium text-ag-dark-text-secondary">
-                    {tier?.list || `Tier ${index + 1}`}
+                    {header}
                   </div>
                 ))}
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
@@ -518,7 +522,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                   <div 
                     key={row.id} 
                     className="grid gap-2 p-2 hover:bg-ag-dark-bg/50"
-                    style={{ gridTemplateColumns: `40px repeat(${tieredLists.length}, 1fr) auto` }}
+                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 1fr) auto` }}
                   >
                     <div className="flex items-center text-xs text-ag-dark-text-secondary">
                       {rowIndex + 1}

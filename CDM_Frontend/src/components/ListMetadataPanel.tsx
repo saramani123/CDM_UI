@@ -271,17 +271,27 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     relationships: false
   });
   
-  // Tiered lists state
-  const [tieredLists, setTieredLists] = useState<TieredList[]>(() => {
-    // Initialize with current list as first (non-editable) entry
-    if (selectedList) {
-      return [{
-        id: '1',
-        set: selectedList.set || '',
-        grouping: selectedList.grouping || '',
-        list: selectedList.list || '',
-        listId: selectedList.id
-      }];
+  // List Type state - Single or Multi-Level
+  const [listType, setListType] = useState<'Single' | 'Multi-Level'>(() => {
+    // Check if list has tiered lists to determine if it's Multi-Level
+    if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
+      return 'Multi-Level';
+    }
+    return 'Single';
+  });
+  
+  // Number of levels for Multi-Level lists (2-10)
+  const [numberOfLevels, setNumberOfLevels] = useState<number>(() => {
+    if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
+      return selectedList.tieredListsList.length + 1; // +1 for parent list
+    }
+    return 2;
+  });
+  
+  // Tier names for Multi-Level lists (Tier 2, Tier 3, etc.)
+  const [tierNames, setTierNames] = useState<string[]>(() => {
+    if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
+      return selectedList.tieredListsList.map((tier: any) => tier.list || '');
     }
     return [];
   });
@@ -325,25 +335,31 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     } else {
       setListValuesText('');
     }
-    // Update tiered lists - always start with current list, then add any existing tiered lists
+    // Update list type and tier names
     if (selectedList) {
-      const currentListEntry: TieredList = {
-        id: '1',
-        set: selectedList.set || '',
-        grouping: selectedList.grouping || '',
-        list: selectedList.list || '',
-        listId: selectedList.id
-      };
-      const existingTiered = selectedList.tieredListsList || [];
-      setTieredLists([currentListEntry, ...existingTiered.map((tier: any, index: number) => ({
-        id: String(index + 2),
-        set: tier.set || '',
-        grouping: tier.grouping || '',
-        list: tier.list || '',
-        listId: tier.listId
-      }))]);
+      // Check if list has listType property (new structure) or tieredListsList (old structure)
+      if (selectedList.listType === 'Multi-Level' || (selectedList.tieredListsList && selectedList.tieredListsList.length > 0)) {
+        setListType('Multi-Level');
+        // If we have tierNames from the new structure, use those; otherwise use old tieredListsList
+        if (selectedList.tierNames && selectedList.tierNames.length > 0) {
+          setNumberOfLevels(selectedList.tierNames.length + 1);
+          setTierNames(selectedList.tierNames);
+        } else if (selectedList.tieredListsList && selectedList.tieredListsList.length > 0) {
+          setNumberOfLevels(selectedList.tieredListsList.length + 1);
+          setTierNames(selectedList.tieredListsList.map((tier: any) => tier.list || ''));
+        } else {
+          setNumberOfLevels(2);
+          setTierNames([]);
+        }
+      } else {
+        setListType('Single');
+        setNumberOfLevels(2);
+        setTierNames([]);
+      }
     } else {
-      setTieredLists([]);
+      setListType('Single');
+      setNumberOfLevels(2);
+      setTierNames([]);
     }
     // Load relationships from API
     if (selectedList?.id) {
@@ -426,90 +442,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     );
   };
   
-  // Add a new tiered list entry
-  const handleAddTieredList = () => {
-    const newId = String(tieredLists.length + 1);
-    setTieredLists([...tieredLists, {
-      id: newId,
-      set: '',
-      grouping: '',
-      list: '',
-      listId: undefined
-    }]);
-  };
-  
-  // Validate if a list can be added as a tiered list (check if it has existing list values)
-  const validateTieredListSelection = (listId: string, listName: string): boolean => {
-    const targetList = allData.find((list: any) => list.id === listId);
-    if (targetList && targetList.listValuesList && targetList.listValuesList.length > 0) {
-      alert(`Please delete list values for "${listName}" in order to add it to Tier ${tieredLists.length + 1} of the list "${selectedList?.list || 'this list'}".`);
-      return false;
-    }
-    return true;
-  };
-  
-  // Remove a tiered list entry (cannot remove the first one)
-  const handleRemoveTieredList = (id: string) => {
-    if (id === '1') return; // Cannot remove the first (current list) entry
-    
-    // Find the index of the tier being removed
-    const removeIndex = tieredLists.findIndex(tier => tier.id === id);
-    if (removeIndex === -1) return;
-    
-    // Remove the tier and renumber subsequent tiers
-    const updatedTieredLists = tieredLists
-      .filter(tier => tier.id !== id)
-      .map((tier, index) => {
-        // Renumber IDs for tiers after the removed one
-        if (index >= removeIndex - 1) { // -1 because we're excluding the first row
-          return { ...tier, id: String(index + 1) };
-        }
-        return tier;
-      });
-    
-    setTieredLists(updatedTieredLists);
-  };
-  
-  // Update a tiered list entry
-  const handleTieredListChange = (id: string, field: 'set' | 'grouping' | 'list', value: string) => {
-    if (id === '1') return; // Cannot edit the first (current list) entry
-    
-    setTieredLists(prevTieredLists => prevTieredLists.map(tier => {
-      if (tier.id === id) {
-        const updated = { ...tier };
-        
-        // When set or grouping changes, reset dependent fields
-        if (field === 'set') {
-          updated.set = value;
-          updated.grouping = '';
-          updated.list = '';
-          updated.listId = undefined;
-        } else if (field === 'grouping') {
-          updated.grouping = value;
-          updated.list = '';
-          updated.listId = undefined;
-        } else if (field === 'list') {
-          // Find the list ID when a list is selected
-          const selectedListData = allData.find((list: any) => 
-            list.set === tier.set && 
-            list.grouping === tier.grouping && 
-            list.list === value
-          );
-          if (selectedListData) {
-            // Validate that the selected list doesn't have existing list values
-            if (!validateTieredListSelection(selectedListData.id, value)) {
-              // Reset the selection if validation fails
-              return tier;
-            }
-            updated.list = value;
-            updated.listId = selectedListData.id;
-          }
-        }
-        return updated;
-      }
-      return tier;
-    }));
-  };
 
   // Check if panel should be enabled (exactly 1 list selected)
   const isPanelEnabled = selectedCount === 1;
@@ -681,38 +613,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   };
 
   const handleSave = () => {
-    // Only include list values if no tiered lists exist
-    let listValuesArray: ListValue[] = [];
-    if (!selectedList?.tieredListsList || selectedList.tieredListsList.length === 0) {
-      listValuesArray = listValuesText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map((value, index) => ({
-          id: (Date.now() + index).toString(),
-          value
-        }));
-      
-      // Check for duplicate values (case-insensitive) within the same list
-      const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
-      if (listValuesArray.length !== uniqueValues.size) {
-        const duplicateValues = listValuesArray.filter((lv, index) => 
-          listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
-        ).map(lv => lv.value);
-        
-        alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
-        return;
-      }
-    }
-    
-    // Convert tiered lists (excluding the first one which is the current list)
-    const tieredListsArray = tieredLists.slice(1).map(tier => ({
-      id: tier.id,
-      set: tier.set,
-      grouping: tier.grouping,
-      list: tier.list,
-      listId: tier.listId
-    })).filter(tier => tier.set && tier.grouping && tier.list && tier.listId); // Only include complete entries
+    console.log('ListMetadataPanel: handleSave called');
+    console.log('ListMetadataPanel: listType =', listType);
+    console.log('ListMetadataPanel: numberOfLevels =', numberOfLevels);
+    console.log('ListMetadataPanel: tierNames =', tierNames);
     
     // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
     const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
@@ -732,17 +636,55 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached
     };
     
-    // Only include list values if no tiered lists exist
-    if (!selectedList?.tieredListsList || selectedList.tieredListsList.length === 0) {
+    // Handle list type and tiered lists
+    if (listType === 'Single') {
+      // Single list - include list values and clear any tiered lists
+      const listValuesArray = listValuesText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map((value, index) => ({
+          id: (Date.now() + index).toString(),
+          value
+        }));
+      
+      // Check for duplicate values (case-insensitive) within the same list
+      const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
+      if (listValuesArray.length !== uniqueValues.size) {
+        const duplicateValues = listValuesArray.filter((lv, index) => 
+          listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
+        ).map(lv => lv.value);
+        
+        alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
+        return;
+      }
+      
       saveData.listValuesList = listValuesArray;
-    }
-    
-    // Only include tiered lists if they exist
-    if (tieredListsArray.length > 0) {
-      saveData.tieredListsList = tieredListsArray;
-    } else if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
-      // If tiered lists were removed, send empty array
       saveData.tieredListsList = [];
+      saveData.listType = 'Single';
+      // Clear tiered list values if switching from Multi-Level to Single
+      saveData.tieredListValues = {};
+    } else if (listType === 'Multi-Level') {
+      // Multi-Level list - validate tier names and prepare for backend
+      const validTierNames = tierNames.filter(name => name.trim() !== '');
+      if (validTierNames.length !== numberOfLevels - 1) {
+        alert(`Please provide names for all ${numberOfLevels - 1} tier(s).`);
+        return;
+      }
+      
+      // Clear existing list values when switching to Multi-Level
+      // (they will be managed via grid modal instead)
+      saveData.listValuesList = [];
+      saveData.listType = 'Multi-Level';
+      saveData.numberOfLevels = numberOfLevels;
+      saveData.tierNames = validTierNames;
+      console.log('ListMetadataPanel: Saving Multi-Level configuration:', {
+        listType: saveData.listType,
+        numberOfLevels: saveData.numberOfLevels,
+        tierNames: saveData.tierNames
+      });
+      // Backend will create the tier list nodes and relationships
+      // Note: tieredListValues can be saved separately via grid modal or together here
     }
     
     // Handle variationsList - parse from textarea and check for duplicates
@@ -767,6 +709,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       saveData.variationsList = variationsArray;
     }
     
+    console.log('ListMetadataPanel: Calling onSave with data:', saveData);
     onSave?.(saveData);
   };
 
@@ -959,9 +902,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   };
 
   return (
-    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6">
+    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border flex flex-col relative" style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between p-6 pb-4 flex-shrink-0">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
           <h3 className="text-lg font-semibold text-ag-dark-text">{title}</h3>
@@ -976,6 +919,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         )}
       </div>
 
+      {/* Scrollable Content Area - with bottom padding to account for button */}
+      <div className="flex-1 overflow-y-auto px-6" style={{ minHeight: 0, paddingBottom: onSave ? '90px' : '24px' }}>
       {/* List Name Field - Moved to header section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1316,158 +1261,122 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         />
       </CollapsibleSection>
 
-      {/* Tiered Section */}
+      {/* List Type Section */}
       <CollapsibleSection 
-        title="Tiered" 
+        title="List Type" 
         sectionKey="tiered"
         icon={<List className="w-4 h-4 text-ag-dark-text-secondary" />}
-        actions={
-          <button
-            onClick={handleAddTieredList}
-            disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
-            className={`flex items-center justify-center w-6 h-6 rounded text-ag-dark-accent hover:bg-ag-dark-accent/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
-              !isPanelEnabled || selectedList?.hasIncomingTier ? '' : ''
-            }`}
-            title={selectedList?.hasIncomingTier ? "This list is already a tier of another list. Remove it from the parent list's tiers first." : "Add Tiered List"}
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-        }
       >
-        {selectedList?.hasIncomingTier && (
-          <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-700/50 rounded text-sm text-yellow-200">
-            This list is already a tier of another list. To enable tiering for this list, first remove it from the parent list's tiered section.
-          </div>
-        )}
         <div className="space-y-4">
-          <div className="border border-ag-dark-border rounded">
-            {/* Table Header */}
-            <div className="grid grid-cols-[30px_1fr_1fr_1fr_auto] gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
-              <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
-              <div className="text-xs font-medium text-ag-dark-text-secondary">Set</div>
-              <div className="text-xs font-medium text-ag-dark-text-secondary">Grouping</div>
-              <div className="text-xs font-medium text-ag-dark-text-secondary">List</div>
-              <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
-            </div>
-            {/* Table Rows */}
-            <div className="divide-y divide-ag-dark-border">
-              {tieredLists.map((tier, index) => {
-                const isFirstRow = index === 0;
-                // Get excluded list IDs (current list + all previously selected tiered lists, but NOT the current row's selected list)
-                const excludeListIds = [
-                  selectedList?.id,
-                  ...tieredLists.slice(0, index).map(t => t.listId).filter(Boolean) // Only exclude lists from previous rows, not current row
-                ].filter(Boolean) as string[];
-                
-                // Get available lists for this row's set and grouping
-                let availableLists = isFirstRow ? [] : getListsForSetAndGrouping(tier.set, tier.grouping, excludeListIds);
-                
-                // If this row has a selected list, make sure it's included in available lists even if it would be excluded
-                if (!isFirstRow && tier.listId && tier.list) {
-                  const selectedListInData = allData.find((list: any) => list.id === tier.listId);
-                  if (selectedListInData && !availableLists.find((l: any) => l.id === tier.listId)) {
-                    availableLists = [...availableLists, selectedListInData];
-                  }
+          {/* List Type Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              List Type
+            </label>
+            <select
+              value={listType}
+              onChange={(e) => {
+                const newType = e.target.value as 'Single' | 'Multi-Level';
+                setListType(newType);
+                if (newType === 'Single') {
+                  setNumberOfLevels(2);
+                  setTierNames([]);
+                } else {
+                  // Initialize with 2 levels (parent + 1 tier)
+                  setNumberOfLevels(2);
+                  setTierNames(['']);
+                  // Clear list values when switching to Multi-Level
+                  // (they will be managed via grid modal instead)
+                  setListValuesText('');
                 }
-                
-                return (
-                  <div key={tier.id} className="grid grid-cols-[30px_1fr_1fr_1fr_auto] gap-2 items-center p-2 hover:bg-ag-dark-bg/50">
-                    {/* Row Number */}
-                    <div className="flex items-center">
-                      <span className="text-xs font-medium text-ag-dark-text">{index + 1}.</span>
-                    </div>
-                    
-                    {/* Set Dropdown */}
-                    <select
-                      value={tier.set}
-                      onChange={(e) => handleTieredListChange(tier.id, 'set', e.target.value)}
-                      disabled={!isPanelEnabled || isFirstRow || selectedList?.hasIncomingTier}
-                      className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                        !isPanelEnabled || isFirstRow ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select Set</option>
-                      {getDistinctSets().map((set) => (
-                        <option key={set} value={set}>
-                          {set}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* Grouping Dropdown */}
-                    <select
-                      value={tier.grouping}
-                      onChange={(e) => handleTieredListChange(tier.id, 'grouping', e.target.value)}
-                      disabled={!isPanelEnabled || isFirstRow || !tier.set || selectedList?.hasIncomingTier}
-                      className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                        !isPanelEnabled || isFirstRow || !tier.set ? 'opacity-50 cursor-not-allowed' : ''
-                      }`}
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '12px'
-                      }}
-                    >
-                      <option value="">Select Grouping</option>
-                      {getGroupingsForSet(tier.set).map((grouping) => (
-                        <option key={grouping} value={grouping}>
-                          {grouping}
-                        </option>
-                      ))}
-                    </select>
-
-                    {/* List Dropdown or Display */}
-                    {isFirstRow ? (
-                      <div className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text opacity-75">
-                        {selectedList?.list || 'N/A'}
-                      </div>
-                    ) : (
-                      <select
-                        value={tier.list}
-                        onChange={(e) => handleTieredListChange(tier.id, 'list', e.target.value)}
-                        disabled={!isPanelEnabled || !tier.set || !tier.grouping || selectedList?.hasIncomingTier}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled || !tier.set || !tier.grouping ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select List</option>
-                        {availableLists.map((list: any) => (
-                          <option key={list.id} value={list.list}>
-                            {list.list}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    
-                    {/* Delete Button (hidden for first row) */}
-                    {!isFirstRow && (
-                      <button
-                        onClick={() => handleRemoveTieredList(tier.id)}
-                        disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
-                        className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title={selectedList?.hasIncomingTier ? "Cannot remove tiers while this list is a child of another list" : "Remove Tiered List"}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+              }}
+              disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="Single">Single</option>
+              <option value="Multi-Level">Multi-Level</option>
+            </select>
           </div>
+
+          {/* Multi-Level Options */}
+          {listType === 'Multi-Level' && (
+            <>
+              {/* Number of Levels Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  No. Levels
+                </label>
+                <select
+                  value={numberOfLevels}
+                  onChange={(e) => {
+                    const newLevels = parseInt(e.target.value);
+                    setNumberOfLevels(newLevels);
+                    // Adjust tier names array to match new number of levels
+                    const newTierNames = [...tierNames];
+                    const tiersNeeded = newLevels - 1; // -1 because parent is level 1
+                    while (newTierNames.length < tiersNeeded) {
+                      newTierNames.push('');
+                    }
+                    while (newTierNames.length > tiersNeeded) {
+                      newTierNames.pop();
+                    }
+                    setTierNames(newTierNames);
+                  }}
+                  disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+                  className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                    !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                    <option key={num} value={num}>
+                      {num}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tier Name Input Fields */}
+              {numberOfLevels > 1 && (
+                <div className="space-y-3">
+                  {Array.from({ length: numberOfLevels - 1 }, (_, index) => (
+                    <div key={index}>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                        Tier {index + 2} Name
+                      </label>
+                      <input
+                        type="text"
+                        value={tierNames[index] || ''}
+                        onChange={(e) => {
+                          const newTierNames = [...tierNames];
+                          newTierNames[index] = e.target.value;
+                          setTierNames(newTierNames);
+                        }}
+                        disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+                        placeholder={`Enter Tier ${index + 2} name...`}
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+                        }`}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -1547,8 +1456,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">List Values</h4>
           </div>
           <div className="flex items-center gap-2">
-            {/* Check if this list has tiered children - if so, show grid icon for tiered values */}
-            {selectedList?.tieredListsList && selectedList.tieredListsList.length > 0 && !selectedList?.hasIncomingTier && (
+            {/* For Multi-Level lists, show only grid icon and graph icon */}
+            {listType === 'Multi-Level' && !selectedList?.hasIncomingTier && (
               <button
                 onClick={() => setIsTieredListValuesModalOpen(true)}
                 disabled={!isPanelEnabled}
@@ -1560,41 +1469,42 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                 <Grid3x3 className="w-5 h-5" />
               </button>
             )}
-            {/* For child lists (hasIncomingTier), only show graph icon */}
-            {!selectedList?.hasIncomingTier && (
+            {/* For Single lists, show sort and upload buttons */}
+            {listType === 'Single' && !selectedList?.hasIncomingTier && (
               <>
                 <button
                   onClick={() => handleSortListValues('asc')}
-                  disabled={selectedList?.tieredListsList && selectedList.tieredListsList.length > 0}
+                  disabled={!isPanelEnabled}
                   className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
-                    (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? 'opacity-50 cursor-not-allowed' : ''
+                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
-                  title={(selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? "Disabled: List has tiered lists" : "Sort A-Z"}
+                  title="Sort A-Z"
                 >
                   <ArrowUpAZ className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => handleSortListValues('desc')}
-                  disabled={selectedList?.tieredListsList && selectedList.tieredListsList.length > 0}
+                  disabled={!isPanelEnabled}
                   className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
-                    (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? 'opacity-50 cursor-not-allowed' : ''
+                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
-                  title={(selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? "Disabled: List has tiered lists" : "Sort Z-A"}
+                  title="Sort Z-A"
                 >
                   <ArrowDownZA className="w-5 h-5" />
                 </button>
                 <button
                   onClick={() => setIsListValuesUploadOpen(true)}
-                  disabled={!isPanelEnabled || (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0)}
+                  disabled={!isPanelEnabled}
                   className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                    !isPanelEnabled || (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? 'opacity-50 cursor-not-allowed' : ''
+                    !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
-                  title={(selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? "Disabled: List has tiered lists" : "Upload List Values CSV"}
+                  title="Upload List Values CSV"
                 >
                   <Upload className="w-4 h-4" />
                 </button>
               </>
             )}
+            {/* Graph icon - always show */}
             <button
               onClick={() => setListValuesGraphModalOpen(true)}
               disabled={!isPanelEnabled}
@@ -1617,14 +1527,17 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               This list is a tiered child list. List values are managed through the parent list's tiered values editor.
             </div>
           </div>
+        ) : listType === 'Multi-Level' ? (
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This is a multi-level list. Use the grid icon above to edit tiered list values.
+            </div>
+          </div>
         ) : (
           <textarea
             ref={listValuesTextareaRef}
             value={listValuesText}
             onChange={(e) => {
-              if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
-                return; // Don't allow editing when tiered lists exist
-              }
               handleListValuesTextChange(e.target.value);
             }}
             onKeyDown={(e) => {
@@ -1673,22 +1586,21 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               }
             }}
             placeholder={
-              selectedList?.tieredListsList && selectedList.tieredListsList.length > 0
-                ? "This list has tiered lists. Use the grid icon to edit tiered list values."
-                : (listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined)
+              listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined
             }
             rows={8}
-            disabled={!isPanelEnabled || (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0)}
+            disabled={!isPanelEnabled}
             className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y ${
-              !isPanelEnabled || (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) ? 'opacity-50 cursor-not-allowed' : ''
+              !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           />
         )}
       </div>
+      </div>
 
-      {/* Actions */}
+      {/* Actions - Fixed at bottom of panel, always visible */}
       {onSave && (
-        <div className="mt-8 pt-6 border-t border-ag-dark-border">
+        <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface px-6 py-4" style={{ position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 20 }}>
           <button
             onClick={handleSave}
             disabled={!isPanelEnabled}
@@ -1816,23 +1728,46 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onClose={() => setIsTieredListValuesModalOpen(false)}
         selectedList={selectedList || null}
         allLists={allData}
+        tierNames={tierNames}
         onSave={async (tieredValues) => {
-          // Save tiered values immediately
+          // Save tiered values - include all current form data to preserve list type and tier configuration
           if (onSave) {
-            // Include tiered lists structure along with values
+            // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
+            const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
+              if (values.includes('ALL')) {
+                return allPossibleValues.filter(v => v !== 'ALL');
+              }
+              return values.filter(v => v !== 'ALL');
+            };
+            
             const saveData: any = {
+              ...formData,
+              sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
+              domain: getDriverValuesForSave(driverSelections.domain, driversData.domains),
+              country: getDriverValuesForSave(driverSelections.country, driversData.countries),
+              variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
               tieredListValues: tieredValues
             };
             
-            // Include tiered lists if they exist
-            if (tieredLists.length > 1) {
-              const tieredListsArray = tieredLists.slice(1).map(tier => ({
-                listId: tier.listId || '',
-                set: tier.set || '',
-                grouping: tier.grouping || '',
-                list: tier.list || ''
-              }));
-              saveData.tieredListsList = tieredListsArray;
+            // Always preserve Multi-Level configuration when saving from grid
+            if (listType === 'Multi-Level') {
+              const validTierNames = tierNames.filter(name => name.trim() !== '');
+              saveData.listType = 'Multi-Level';
+              saveData.numberOfLevels = numberOfLevels;
+              saveData.tierNames = validTierNames;
+              // Clear regular list values for multi-level lists
+              saveData.listValuesList = [];
+            }
+            
+            // Handle variationsList
+            const variationsArray = variationsText
+              .split('\n')
+              .map(line => line.trim())
+              .filter(line => line.length > 0)
+              .map((name) => ({ name }));
+            
+            if (variationsArray.length > 0) {
+              saveData.variationsList = variationsArray;
             }
             
             // Save immediately

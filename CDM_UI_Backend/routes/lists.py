@@ -55,6 +55,9 @@ class ListUpdateRequest(BaseModel):
     tieredListsList: Optional[List[TieredListRequest]] = None
     tieredListValues: Optional[Dict[str, List[List[str]]]] = None  # Dict mapping tier 1 value to list of tiered value arrays
     variationsList: Optional[List[dict]] = None  # List of variations to append to the list
+    listType: Optional[str] = None  # 'Single' or 'Multi-Level'
+    numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
+    tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
 
 async def create_list_driver_relationships(session, list_id: str, sector_str: str, domain_str: str, country_str: str):
     """
@@ -239,6 +242,78 @@ async def create_list_values(session, list_id: str, list_values: List[Any], repl
         print(f"Error creating list values for list {list_id}: {e}")
         raise
 
+async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[str], set_name: str, grouping_name: str):
+    """
+    Create tier list nodes from tier names and return their IDs.
+    Each tier list node will have the same set and grouping as the parent list.
+    """
+    try:
+        print(f"Creating tier list nodes for parent list {parent_list_id} with tier names: {tier_names}")
+        
+        # Get parent list info
+        parent_result = session.run("""
+            MATCH (l:List {id: $list_id})
+            RETURN l.set as set, l.grouping as grouping, l.name as name
+        """, list_id=parent_list_id)
+        
+        parent_record = parent_result.single()
+        if not parent_record:
+            raise ValueError(f"Parent list {parent_list_id} not found")
+        
+        parent_set = set_name or parent_record["set"]
+        parent_grouping = grouping_name or parent_record["grouping"]
+        
+        tier_list_ids = []
+        
+        for index, tier_name in enumerate(tier_names, start=2):  # Start at tier 2
+            if not tier_name or not tier_name.strip():
+                print(f"⚠️ Skipping empty tier name at index {index}")
+                continue
+            
+            tier_name = tier_name.strip()
+            
+            # Check if tier list already exists with this name, set, and grouping
+            existing_result = session.run("""
+                MATCH (l:List {name: $tier_name, set: $set, grouping: $grouping})
+                RETURN l.id as id
+            """, tier_name=tier_name, set=parent_set, grouping=parent_grouping)
+            
+            existing_record = existing_result.single()
+            if existing_record:
+                tier_list_id = existing_record["id"]
+                print(f"✅ Tier list '{tier_name}' already exists with id {tier_list_id}")
+            else:
+                # Create new tier list node
+                tier_list_id = str(uuid.uuid4())
+                session.run("""
+                    MERGE (s:Set {name: $set})
+                    MERGE (g:Grouping {name: $grouping})
+                    MERGE (s)-[:HAS_GROUPING]->(g)
+                    WITH g
+                    CREATE (l:List {
+                        id: $tier_list_id,
+                        name: $tier_name,
+                        set: $set,
+                        grouping: $grouping,
+                        format: '',
+                        source: '',
+                        upkeep: '',
+                        graph: '',
+                        origin: '',
+                        status: 'Active'
+                    })
+                    MERGE (g)-[:HAS_LIST]->(l)
+                """, tier_list_id=tier_list_id, tier_name=tier_name, set=parent_set, grouping=parent_grouping)
+                print(f"✅ Created tier list node '{tier_name}' with id {tier_list_id}")
+            
+            tier_list_ids.append(tier_list_id)
+        
+        return tier_list_ids
+        
+    except Exception as e:
+        print(f"Error creating tier list nodes: {e}")
+        raise
+
 async def create_tiered_list_relationships(session, list_id: str, tiered_lists: List[Dict[str, Any]]):
     """
     Create tiered list relationships (HAS_TIER_2, HAS_TIER_3, etc.) from parent list to tiered lists.
@@ -412,17 +487,27 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                 previous_lv_value = tier1_value
                 
                 for tier_index, tier_value in enumerate(tiered_value_array):
-                    if not tier_value or tier_index >= len(tier_list_names) - 1:
+                    if not tier_value:
+                        break
+                    
+                    # Check if we have enough tier lists for this tier index
+                    if tier_index + 1 >= len(tier_list_names) or tier_index + 1 >= len(tier_list_ids):
+                        print(f"⚠️ WARNING: Not enough tier lists for tier index {tier_index}. Expected {tier_index + 2} tiers but only have {len(tier_list_names)}.")
                         break
                     
                     tier_number = tier_index + 2  # Start at tier 2
                     tier_list_name = tier_list_names[tier_index + 1]
                     
+                    # Validate tier_list_name is not None
+                    if not tier_list_name:
+                        print(f"⚠️ WARNING: tier_list_name is None or empty for tier_index {tier_index}")
+                        break
+                    
                     # Create relationship type: HAS_STATE_VALUE, HAS_CITY_VALUE, etc.
                     # Convert list name to relationship type (e.g., "State" -> "HAS_STATE_VALUE")
                     # Sanitize list name for relationship type (remove/replace special chars, uppercase)
                     # Neo4j relationship types can only contain letters, numbers, and underscores
-                    sanitized_list_name = tier_list_name.upper()
+                    sanitized_list_name = str(tier_list_name).upper()
                     # Replace common special characters
                     sanitized_list_name = sanitized_list_name.replace('&', 'AND')
                     sanitized_list_name = sanitized_list_name.replace('&AMP;', 'AND')  # HTML entity
@@ -464,32 +549,66 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                     
                     # Create or get the tiered list value node with properties
                     # Use MERGE to create node with properties, ensuring uniqueness
+                    # tier_list_id was already validated above when checking bounds
                     tier_list_id = tier_list_ids[tier_index + 1]  # Get the ID of the tiered list
                     
-                    query = f"""
-                        MATCH (prev:ListValue {{value: $prev_value}})
-                        MATCH (tier_list:List {{id: $tier_list_id}})
-                        MERGE (current:ListValue {{value: $tier_value, tier: $tier_number, listName: $tier_list_name}})
-                        ON CREATE SET current.tier = $tier_number, current.listName = $tier_list_name
-                        ON MATCH SET current.tier = $tier_number, current.listName = $tier_list_name
-                        MERGE (prev)-[r:{relationship_type}]->(current)
-                        MERGE (tier_list)-[:HAS_LIST_VALUE]->(current)
-                        RETURN current
-                    """
+                    # For tier 1, match by value and connection to parent list
+                    # For tier 2+, match by value, tier, and listName to ensure we get the right node
+                    if tier_index == 0:
+                        # First tier after tier 1 - match previous by value and connection to parent list
+                        query = f"""
+                            MATCH (parent_list:List {{id: $list_id}})-[:HAS_LIST_VALUE]->(prev:ListValue {{value: $prev_value}})
+                            MATCH (tier_list:List {{id: $tier_list_id}})
+                            MERGE (current:ListValue {{value: $tier_value, tier: $tier_number, listName: $tier_list_name}})
+                            ON CREATE SET current.tier = $tier_number, current.listName = $tier_list_name
+                            ON MATCH SET current.tier = $tier_number, current.listName = $tier_list_name
+                            MERGE (prev)-[r:{relationship_type}]->(current)
+                            MERGE (tier_list)-[:HAS_LIST_VALUE]->(current)
+                            RETURN current
+                        """
+                    else:
+                        # Subsequent tiers - match previous by value, tier, and listName
+                        # Validate we have enough tier lists
+                        if tier_index >= len(tier_list_names):
+                            print(f"⚠️ WARNING: Not enough tier lists for previous tier index {tier_index}")
+                            break
+                        prev_tier_number = tier_index + 1
+                        prev_tier_list_name = tier_list_names[tier_index]
+                        
+                        # Validate prev_tier_list_name is not None
+                        if not prev_tier_list_name:
+                            print(f"⚠️ WARNING: prev_tier_list_name is None or empty for tier_index {tier_index}")
+                            break
+                        query = f"""
+                            MATCH (prev:ListValue {{value: $prev_value, tier: $prev_tier_number, listName: $prev_tier_list_name}})
+                            MATCH (tier_list:List {{id: $tier_list_id}})
+                            MERGE (current:ListValue {{value: $tier_value, tier: $tier_number, listName: $tier_list_name}})
+                            ON CREATE SET current.tier = $tier_number, current.listName = $tier_list_name
+                            ON MATCH SET current.tier = $tier_number, current.listName = $tier_list_name
+                            MERGE (prev)-[r:{relationship_type}]->(current)
+                            MERGE (tier_list)-[:HAS_LIST_VALUE]->(current)
+                            RETURN current
+                        """
                     
                     result = session.run(query, 
+                        list_id=list_id,
                         prev_value=previous_lv_value,
                         tier_value=tier_value,
                         tier_number=tier_number,
                         tier_list_name=tier_list_name,
-                        tier_list_id=tier_list_id
+                        tier_list_id=tier_list_id,
+                        prev_tier_number=tier_index + 1 if tier_index > 0 else None,
+                        prev_tier_list_name=tier_list_names[tier_index] if tier_index > 0 else None
                     )
                     
-                    if result.single():
+                    record = result.single()
+                    if record:
                         created_count += 1
                         previous_lv_value = tier_value
+                        print(f"✅ Created relationship: {previous_lv_value} -> {tier_value} (tier {tier_number})")
                     else:
-                        print(f"Failed to create relationship for {tier_value}")
+                        print(f"❌ Failed to create relationship for {tier_value} (tier {tier_number})")
+                        print(f"   Previous value: {previous_lv_value}, Tier list: {tier_list_name}")
                         break
         
         print(f"Created {created_count} tiered list value relationships")
@@ -531,13 +650,14 @@ async def get_lists():
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
                      count(DISTINCT parent) > 0 as has_incoming_tier,
                      count(DISTINCT var) as variations_count,
-                     collect(DISTINCT {id: var.id, name: var.name}) as variations
+                     collect(DISTINCT {id: var.id, name: var.name}) as variations,
+                     size(collect(DISTINCT tiered.id)) as tiered_count
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
                        s.name as set_name, g.name as grouping_name,
                        sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
-                       variations_count, variations
+                       variations_count, variations, tiered_count
                 ORDER BY l.id
             """)
 
@@ -571,6 +691,12 @@ async def get_lists():
                 
                 variations_list = record.get("variations") or []
                 variations_count = record.get("variations_count") or 0
+                tiered_count = record.get("tiered_count") or 0
+                
+                # Determine listType, numberOfLevels, and tierNames from tiered lists
+                list_type = 'Multi-Level' if tiered_count > 0 else 'Single'
+                number_of_levels = tiered_count + 1 if tiered_count > 0 else 2
+                tier_names = [tier.get("list", "") for tier in tieredListsList if tier.get("list")]
                 
                 list_item = {
                     "id": record["id"],
@@ -592,7 +718,10 @@ async def get_lists():
                     "tieredListsList": tieredListsList,
                     "hasIncomingTier": record.get("has_incoming_tier", False),
                     "variations": variations_count,
-                    "variationsList": variations_list
+                    "variationsList": variations_list,
+                    "listType": list_type,
+                    "numberOfLevels": number_of_levels,
+                    "tierNames": tier_names
                 }
                 lists.append(list_item)
 
@@ -862,21 +991,98 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                     MERGE (g)-[:HAS_LIST]->(l)
                 """, {"id": list_id, "set": set_name, "grouping": grouping_name})
             
+            # Handle listType changes (Single vs Multi-Level)
+            if list_data.listType is not None:
+                # If switching to Single, clear all tiered relationships
+                if list_data.listType == 'Single':
+                    print(f"Switching list {list_id} to Single type - clearing tiered relationships")
+                    session.run("""
+                        MATCH (l:List {id: $list_id})-[r:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        DELETE r
+                    """, list_id=list_id)
+                    
+                    # Delete tiered value relationships
+                    session.run("""
+                        MATCH (lv1:ListValue)-[r]->(lv2:ListValue)
+                        WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
+                          AND type(r) <> 'HAS_LIST_VALUE'
+                        DELETE r
+                    """)
+                    
+                    # Delete orphaned tiered list value nodes
+                    session.run("""
+                        MATCH (lv:ListValue)
+                        WHERE lv.tier IS NOT NULL
+                          AND NOT EXISTS {
+                            MATCH (lv2:ListValue)-[r]->(lv)
+                            WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
+                          }
+                        DETACH DELETE lv
+                    """)
+            
+            # Handle Multi-Level list setup: create tier list nodes and relationships
+            print(f"DEBUG: Checking listType setup - listType={list_data.listType}, tierNames={list_data.tierNames}, numberOfLevels={list_data.numberOfLevels}")
+            if list_data.listType == 'Multi-Level' and list_data.tierNames is not None and len(list_data.tierNames) > 0:
+                print(f"Setting up Multi-Level list {list_id} with tier names: {list_data.tierNames}")
+                
+                # Get current set and grouping
+                current_result = session.run("""
+                    MATCH (l:List {id: $id})
+                    RETURN l.set as set, l.grouping as grouping
+                """, {"id": list_id})
+                current = current_result.single()
+                if not current:
+                    raise HTTPException(status_code=404, detail="List not found")
+                set_name = list_data.set if list_data.set is not None else current["set"]
+                grouping_name = list_data.grouping if list_data.grouping is not None else current["grouping"]
+                
+                # Create tier list nodes
+                tier_list_ids = await create_tier_list_nodes(session, list_id, list_data.tierNames, set_name, grouping_name)
+                print(f"DEBUG: Created {len(tier_list_ids)} tier list nodes with IDs: {tier_list_ids}")
+                
+                # Build tieredListsList from tier list IDs
+                tiered_lists = []
+                for tier_list_id in tier_list_ids:
+                    # Get tier list info
+                    tier_result = session.run("""
+                        MATCH (l:List {id: $tier_id})
+                        RETURN l.name as name, l.set as set, l.grouping as grouping
+                    """, tier_id=tier_list_id)
+                    tier_record = tier_result.single()
+                    if tier_record:
+                        tiered_lists.append({
+                            "listId": tier_list_id,
+                            "set": tier_record["set"],
+                            "grouping": tier_record["grouping"],
+                            "list": tier_record["name"]
+                        })
+                
+                print(f"DEBUG: Built tiered_lists: {tiered_lists}")
+                
+                # Create tiered list relationships
+                if tiered_lists:
+                    await create_tiered_list_relationships(session, list_id, tiered_lists)
+                    print(f"✅ Created {len(tiered_lists)} tier list relationships")
+            
             # Update list values if provided (replace all existing with new ones)
             # Note: Even if listValuesList is an empty array, we still want to replace (clear all values)
             if list_data.listValuesList is not None:
                 await create_list_values(session, list_id, list_data.listValuesList, replace=True)
             
             # Update tiered list relationships if provided (replace all existing)
+            # This handles the old structure where tieredListsList is explicitly provided
             if list_data.tieredListsList is not None:
                 await create_tiered_list_relationships(session, list_id, list_data.tieredListsList)
             
             # Update tiered list values if provided
             if list_data.tieredListValues is not None:
-                # Get current tiered lists structure
+                print(f"Processing tieredListValues for list {list_id}")
+                print(f"tieredListValues data: {list_data.tieredListValues}")
+                
+                # Get current tiered lists structure from database
                 current_tiered_result = session.run("""
                     MATCH (l:List {id: $list_id})-[r:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                    RETURN tiered.id as id, tiered.set as set, tiered.grouping as grouping, tiered.name as list
+                    RETURN tiered.id as id, tiered.set as set, tiered.grouping as grouping, tiered.name as list, type(r) as rel_type
                     ORDER BY type(r)
                 """, list_id=list_id)
                 
@@ -889,20 +1095,72 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                         "list": record["list"]
                     })
                 
-                if current_tiered_lists:
+                print(f"Found {len(current_tiered_lists)} tiered lists for list {list_id}")
+                
+                # If no tiered lists found but tierNames are provided, create them now
+                if not current_tiered_lists and list_data.tierNames and len(list_data.tierNames) > 0:
+                    print(f"⚠️ No tiered lists found, but tierNames provided. Creating tier list nodes now...")
+                    # Get current set and grouping
+                    current_result = session.run("""
+                        MATCH (l:List {id: $id})
+                        RETURN l.set as set, l.grouping as grouping
+                    """, {"id": list_id})
+                    current = current_result.single()
+                    if not current:
+                        print(f"⚠️ ERROR: List {list_id} not found when trying to create tier list nodes")
+                        raise HTTPException(status_code=404, detail=f"List {list_id} not found")
+                    
+                    set_name = list_data.set if list_data.set is not None else current["set"]
+                    grouping_name = list_data.grouping if list_data.grouping is not None else current["grouping"]
+                    
+                    # Create tier list nodes
+                    tier_list_ids = await create_tier_list_nodes(session, list_id, list_data.tierNames, set_name, grouping_name)
+                    
+                    # Build tieredListsList from tier list IDs
+                    for tier_list_id in tier_list_ids:
+                        tier_result = session.run("""
+                            MATCH (l:List {id: $tier_id})
+                            RETURN l.name as name, l.set as set, l.grouping as grouping
+                        """, tier_id=tier_list_id)
+                        tier_record = tier_result.single()
+                        if tier_record:
+                            current_tiered_lists.append({
+                                "listId": tier_list_id,
+                                "set": tier_record["set"],
+                                "grouping": tier_record["grouping"],
+                                "list": tier_record["name"]
+                            })
+                    
+                    # Create tiered list relationships
+                    if current_tiered_lists:
+                        await create_tiered_list_relationships(session, list_id, current_tiered_lists)
+                        print(f"✅ Created {len(current_tiered_lists)} tier list nodes and relationships")
+                        print(f"DEBUG: current_tiered_lists after creation: {current_tiered_lists}")
+                    else:
+                        print(f"⚠️ WARNING: Failed to create tier list nodes or build tieredListsList")
+                
+                if not current_tiered_lists:
+                    print(f"⚠️ WARNING: No tiered lists found for list {list_id}. Cannot save tiered values.")
+                    print(f"   Make sure you have saved the List Type configuration (Multi-Level with tier names) first.")
+                    # Don't raise an error, just log a warning - the API call will succeed but no values will be saved
+                else:
                     # Delete existing tiered value relationships
                     # Delete all relationships from tier 1 list values to tiered list values
-                    session.run("""
+                    delete_result = session.run("""
                         MATCH (l:List {id: $list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
                         MATCH (lv1)-[r2]->(lv2:ListValue)
                         WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
                           AND type(r2) <> 'HAS_LIST_VALUE'
                         DELETE r2
+                        RETURN count(r2) as deleted_count
                     """, list_id=list_id)
+                    delete_record = delete_result.single()
+                    deleted_count = delete_record["deleted_count"] if delete_record else 0
+                    print(f"Deleted {deleted_count} existing tiered value relationships")
                     
                     # Also delete orphaned tiered list value nodes (those that are no longer connected to tier 1 values)
                     # These are nodes with tier property that have no incoming relationships from other ListValues
-                    session.run("""
+                    delete_orphans_result = session.run("""
                         MATCH (lv:ListValue)
                         WHERE lv.tier IS NOT NULL
                           AND NOT EXISTS {
@@ -910,10 +1168,21 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                             WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
                           }
                         DETACH DELETE lv
+                        RETURN count(lv) as deleted_count
                     """)
+                    delete_orphans_record = delete_orphans_result.single()
+                    deleted_orphans = delete_orphans_record["deleted_count"] if delete_orphans_record else 0
+                    print(f"Deleted {deleted_orphans} orphaned tiered list value nodes")
                     
                     # Create new tiered value relationships
-                    await create_tiered_list_values(session, list_id, current_tiered_lists, list_data.tieredListValues)
+                    try:
+                        created_count = await create_tiered_list_values(session, list_id, current_tiered_lists, list_data.tieredListValues)
+                        print(f"✅ Created {created_count} tiered list value relationships")
+                    except Exception as e:
+                        print(f"❌ Error creating tiered list values: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        raise
             
             # Handle variationsList if provided (append variations to the list)
             has_variations_list = list_data.variationsList is not None and len(list_data.variationsList) > 0
@@ -989,13 +1258,21 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 """, {"id": list_id})
                 current = current_result.single()
                 
-                sector_str = list_data.sector if list_data.sector is not None else (", ".join(current["sectors"]) if current["sectors"] else "ALL")
-                domain_str = list_data.domain if list_data.domain is not None else (", ".join(current["domains"]) if current["domains"] else "ALL")
-                country_str = list_data.country if list_data.country is not None else (", ".join(current["countries"]) if current["countries"] else "ALL")
+                if current:
+                    sector_str = list_data.sector if list_data.sector is not None else (", ".join(current["sectors"]) if current["sectors"] else "ALL")
+                    domain_str = list_data.domain if list_data.domain is not None else (", ".join(current["domains"]) if current["domains"] else "ALL")
+                    country_str = list_data.country if list_data.country is not None else (", ".join(current["countries"]) if current["countries"] else "ALL")
+                else:
+                    # Fallback if current is None
+                    sector_str = list_data.sector if list_data.sector is not None else "ALL"
+                    domain_str = list_data.domain if list_data.domain is not None else "ALL"
+                    country_str = list_data.country if list_data.country is not None else "ALL"
                 
                 await create_list_driver_relationships(session, list_id, sector_str, domain_str, country_str)
             
             # Return updated list
+            print(f"DEBUG: Fetching updated list data for {list_id}")
+            print(f"DEBUG: list_data.listType={list_data.listType}, list_data.tierNames={list_data.tierNames}, list_data.numberOfLevels={list_data.numberOfLevels}")
             result = session.run("""
                 MATCH (l:List {id: $id})
                 OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(l)
@@ -1011,11 +1288,12 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                      collect(DISTINCT lv.value) as list_values,
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
                      count(DISTINCT var) as variations_count,
-                     collect(DISTINCT {id: var.id, name: var.name}) as variations
+                     collect(DISTINCT {id: var.id, name: var.name}) as variations,
+                     size(collect(DISTINCT tiered.id)) as tiered_count
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries, list_values, tiered_lists, variations_count, variations
+                       sectors, domains, countries, list_values, tiered_lists, variations_count, variations, tiered_count
             """, {"id": list_id})
             
             record = result.single()
@@ -1038,7 +1316,7 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
             tiered_lists_raw = record.get("tiered_lists") or []
             tieredListsList = []
             for tier in tiered_lists_raw:
-                if tier and tier.get("listId"):
+                if tier and isinstance(tier, dict) and tier.get("listId"):
                     tieredListsList.append({
                         "id": tier.get("listId"),
                         "set": tier.get("set", ""),
@@ -1047,8 +1325,32 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                         "listId": tier.get("listId")
                     })
             
+            print(f"DEBUG: Response tiered_lists_raw: {tiered_lists_raw}")
+            print(f"DEBUG: Response tieredListsList: {tieredListsList}")
+            print(f"DEBUG: Response tiered_count: {record.get('tiered_count')}")
+            
             variations_list = record.get("variations") or []
             variations_count = record.get("variations_count") or 0
+            tiered_count = record.get("tiered_count") or 0
+            
+            # Determine listType, numberOfLevels, and tierNames from tiered lists
+            # If listType was provided in the update, use it; otherwise infer from tiered_count
+            if list_data.listType is not None:
+                list_type = list_data.listType
+            else:
+                list_type = 'Multi-Level' if tiered_count > 0 else 'Single'
+            
+            # If numberOfLevels was provided, use it; otherwise calculate from tiered_count
+            if list_data.numberOfLevels is not None:
+                number_of_levels = list_data.numberOfLevels
+            else:
+                number_of_levels = tiered_count + 1 if tiered_count > 0 else 2
+            
+            # If tierNames were provided, use them; otherwise get from tieredListsList
+            if list_data.tierNames is not None and len(list_data.tierNames) > 0:
+                tier_names = list_data.tierNames
+            else:
+                tier_names = [tier.get("list", "") for tier in tieredListsList if tier and isinstance(tier, dict) and tier.get("list")]
             
             return {
                 "id": record["id"],
@@ -1068,13 +1370,18 @@ async def update_list(list_id: str, list_data: ListUpdateRequest):
                 "listValuesList": listValuesList,
                 "tieredListsList": tieredListsList,
                 "variations": variations_count,
-                "variationsList": variations_list
+                "variationsList": variations_list,
+                "listType": list_type,
+                "numberOfLevels": number_of_levels,
+                "tierNames": tier_names
             }
 
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error updating list: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to update list: {str(e)}")
 
 @router.delete("/lists/{list_id}")
@@ -1259,11 +1566,12 @@ async def get_list(list_id: str):
                      count(DISTINCT v) as variables_count,
                      collect(DISTINCT lv.value) as list_values,
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
-                     count(DISTINCT parent) > 0 as has_incoming_tier
+                     count(DISTINCT parent) > 0 as has_incoming_tier,
+                     size(collect(DISTINCT tiered.id)) as tiered_count
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier
+                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier, tiered_count
             """, {"id": list_id})
             
             record = result.single()
@@ -1295,6 +1603,11 @@ async def get_list(list_id: str):
                         "listId": tier.get("listId")
                     })
             
+            tiered_count = record.get("tiered_count") or 0
+            list_type = 'Multi-Level' if tiered_count > 0 else 'Single'
+            number_of_levels = tiered_count + 1 if tiered_count > 0 else 2
+            tier_names = [tier.get("list", "") for tier in tieredListsList if tier.get("list")]
+            
             return {
                 "id": record["id"],
                 "sector": sector_str if sector_str != "ALL" else ["ALL"],
@@ -1313,7 +1626,10 @@ async def get_list(list_id: str):
                 "variablesAttachedList": [],
                 "listValuesList": listValuesList,
                 "tieredListsList": tieredListsList,
-                "hasIncomingTier": record.get("has_incoming_tier", False)
+                "hasIncomingTier": record.get("has_incoming_tier", False),
+                "listType": list_type,
+                "numberOfLevels": number_of_levels,
+                "tierNames": tier_names
             }
 
     except HTTPException:

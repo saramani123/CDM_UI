@@ -1918,6 +1918,9 @@ function App() {
           if (gridData.tieredListsList !== undefined) apiListData.tieredListsList = gridData.tieredListsList;
           if (gridData.tieredListValues !== undefined) apiListData.tieredListValues = gridData.tieredListValues;
           if (gridData.variationsList !== undefined) apiListData.variationsList = gridData.variationsList;
+          if (gridData.listType !== undefined) apiListData.listType = gridData.listType;
+          if (gridData.numberOfLevels !== undefined) apiListData.numberOfLevels = gridData.numberOfLevels;
+          if (gridData.tierNames !== undefined) apiListData.tierNames = gridData.tierNames;
           
           // Only update if there are fields to update
           if (Object.keys(apiListData).length > 0) {
@@ -1928,7 +1931,9 @@ function App() {
             }
             
             console.log('🔄 Updating list - ID:', selectedRowForMetadata.id, 'Name:', selectedRowForMetadata.list, 'Data keys:', Object.keys(apiListData));
+            console.log('🔄 Update data:', JSON.stringify(apiListData, null, 2));
             const updatedList = await apiService.updateList(selectedRowForMetadata.id, apiListData) as any;
+            console.log('🔄 Updated list response:', JSON.stringify(updatedList, null, 2));
             
             // Convert API response to ListData format
             const listDataFormat: ListData = {
@@ -1951,7 +1956,10 @@ function App() {
               variations: updatedList.variations || 0,
               variationsList: updatedList.variationsList || [],
               tiers: (updatedList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
-              hasIncomingTier: updatedList.hasIncomingTier || false
+              hasIncomingTier: updatedList.hasIncomingTier || false,
+              listType: updatedList.listType || (updatedList.tieredListsList && updatedList.tieredListsList.length > 0 ? 'Multi-Level' : 'Single'),
+              numberOfLevels: updatedList.numberOfLevels || (updatedList.tieredListsList ? updatedList.tieredListsList.length + 1 : 2),
+              tierNames: updatedList.tierNames || (updatedList.tieredListsList ? updatedList.tieredListsList.map((tier: any) => tier.list) : [])
             };
             
             // Update local state
@@ -1964,9 +1972,16 @@ function App() {
             // Update selected row
             setSelectedRowForMetadata(listDataFormat);
             
-            // If tiered lists were updated, refresh all lists to update hasIncomingTier flags
-            if (apiListData.tieredListsList !== undefined) {
-              // Refresh all lists to update hasIncomingTier flags for child lists
+            // Track what was actually changed (only for ListData)
+            const isListData = selectedRowForMetadata && 'list' in selectedRowForMetadata;
+            const listTypeChanged = apiListData.listType !== undefined;
+            const tieredListsChanged = isListData && apiListData.tieredListsList !== undefined && 
+              JSON.stringify((selectedRowForMetadata as any)?.tieredListsList || []) !== JSON.stringify(apiListData.tieredListsList);
+            const tieredListValuesChanged = isListData && apiListData.tieredListValues !== undefined;
+            
+            // Refresh all lists if listType, tieredListsList, or tieredListValues were updated
+            if (listTypeChanged || tieredListsChanged || tieredListValuesChanged) {
+              // Refresh all lists to get updated data
               const refreshedLists = await fetchLists();
               setListData(refreshedLists);
               
@@ -1977,17 +1992,26 @@ function App() {
               }
             }
             
-            // Track what was actually changed (only for ListData)
-            const isListData = selectedRowForMetadata && 'list' in selectedRowForMetadata;
-            const tieredListsChanged = isListData && apiListData.tieredListsList !== undefined && 
-              JSON.stringify((selectedRowForMetadata as any)?.tieredListsList || []) !== JSON.stringify(apiListData.tieredListsList);
-            
             const listValuesChanged = isListData && apiListData.listValuesList !== undefined && 
               JSON.stringify(((selectedRowForMetadata as any)?.listValuesList || []).map((lv: any) => lv.value).sort()) !== 
               JSON.stringify((apiListData.listValuesList || []).map((lv: any) => lv.value).sort());
+            const isMultiLevelList = apiListData.listType === 'Multi-Level' || (selectedRowForMetadata as any)?.listType === 'Multi-Level' || 
+              (apiListData.tieredListsList && apiListData.tieredListsList.length > 0) ||
+              ((selectedRowForMetadata as any)?.tieredListsList && (selectedRowForMetadata as any).tieredListsList.length > 0);
             
-            // Show success message if tiered lists were updated
-            if (tieredListsChanged) {
+            // Show success message if tiered list values were updated
+            if (tieredListValuesChanged) {
+              const tieredValues = apiListData.tieredListValues || {};
+              const totalRows = Object.values(tieredValues).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+              if (totalRows > 0) {
+                alert(`Tiered list values saved successfully! ${totalRows} row${totalRows !== 1 ? 's' : ''} saved.`);
+              } else {
+                alert('Tiered list values cleared successfully!');
+              }
+            }
+            
+            // Show success message if tiered lists were updated (only if tiered list values weren't updated)
+            if (tieredListsChanged && !tieredListValuesChanged) {
               const tieredCount = Array.isArray(apiListData.tieredListsList) ? apiListData.tieredListsList.length : 0;
               if (tieredCount > 0) {
                 const tierNumbers = apiListData.tieredListsList.map((_: any, index: number) => index + 2).join(', ');
@@ -1997,8 +2021,8 @@ function App() {
               }
             }
             
-            // Show success message if list values were updated (only if tiered lists weren't updated)
-            if (listValuesChanged && !tieredListsChanged) {
+            // Show success message if list values were updated (only if not a multi-level list and tiered values weren't updated)
+            if (listValuesChanged && !isMultiLevelList && !tieredListValuesChanged) {
               const valueCount = Array.isArray(apiListData.listValuesList) ? apiListData.listValuesList.length : 0;
               if (valueCount > 0) {
                 alert(`List values saved successfully! ${valueCount} value${valueCount !== 1 ? 's' : ''} saved.`);
@@ -2007,8 +2031,8 @@ function App() {
               }
             }
             
-            // Show success message if both tiered lists and list values were updated
-            if (tieredListsChanged && listValuesChanged) {
+            // Show success message if both tiered lists and list values were updated (but not tiered list values)
+            if (tieredListsChanged && listValuesChanged && !tieredListValuesChanged) {
               const tieredCount = Array.isArray(apiListData.tieredListsList) ? apiListData.tieredListsList.length : 0;
               const valueCount = Array.isArray(apiListData.listValuesList) ? apiListData.listValuesList.length : 0;
               const messages = [];
@@ -2135,7 +2159,10 @@ function App() {
           variations: list.variations || 0,
           variationsList: list.variationsList || [],
           tiers: tiersString, // Add tiers column value
-          hasIncomingTier: list.hasIncomingTier || false
+          hasIncomingTier: list.hasIncomingTier || false,
+          listType: list.listType || (list.tieredListsList && list.tieredListsList.length > 0 ? 'Multi-Level' : 'Single'),
+          numberOfLevels: list.numberOfLevels || (list.tieredListsList ? list.tieredListsList.length + 1 : 2),
+          tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : [])
         };
       });
       

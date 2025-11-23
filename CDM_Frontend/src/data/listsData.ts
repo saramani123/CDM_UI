@@ -23,6 +23,9 @@ export interface ListData {
   variations?: number; // Count of variations
   variationsList?: Array<{ id?: string; name: string }>; // List of variations
   hasIncomingTier?: boolean; // True if this list is already a child of another list
+  listType?: 'Single' | 'Multi-Level'; // Type of list
+  numberOfLevels?: number; // Number of levels for Multi-Level lists
+  tierNames?: string[]; // Names of tier lists (Tier 2, Tier 3, etc.)
 }
 
 export interface VariableAttached {
