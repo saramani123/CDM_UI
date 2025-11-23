@@ -27,6 +27,7 @@ import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
 import { VariablesCustomSortModal } from './components/VariablesCustomSortModal';
+import { VariablesOrderModal } from './components/VariablesOrderModal';
 import { ListsCustomSortModal } from './components/ListsCustomSortModal';
 import { ViewsModal } from './components/ViewsModal';
 import { RelationshipModal } from './components/RelationshipModal';
@@ -84,9 +85,9 @@ function App() {
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
   const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
   const [isBulkObjectUploadOpen, setIsBulkObjectUploadOpen] = useState(false);
-  const [isNeo4jGraphModalOpen, setIsNeo4jGraphModalOpen] = useState(false);
-  const [isNeo4jVariablesGraphModalOpen, setIsNeo4jVariablesGraphModalOpen] = useState(false);
-  const [isNeo4jListsGraphModalOpen, setIsNeo4jListsGraphModalOpen] = useState(false);
+  const [isNeo4jGraphModalOpen, setIsNeo4jGraphModalOpen] = useState(true);
+  const [isNeo4jVariablesGraphModalOpen, setIsNeo4jVariablesGraphModalOpen] = useState(true);
+  const [isNeo4jListsGraphModalOpen, setIsNeo4jListsGraphModalOpen] = useState(true);
   const [variableData, setVariableData] = useState<VariableData[]>([]);
   const [isAddVariableOpen, setIsAddVariableOpen] = useState(false);
   const [isBulkVariableUploadOpen, setIsBulkVariableUploadOpen] = useState(false);
@@ -113,15 +114,16 @@ function App() {
       const savedVariablesCustomSortRules = localStorage.getItem('cdm_variables_custom_sort_rules');
       const savedVariablesCustomSortActive = localStorage.getItem('cdm_variables_custom_sort_active');
       const savedVariablesColumnSortActive = localStorage.getItem('cdm_variables_column_sort_active');
-      const savedPredefinedSortEnabled = localStorage.getItem('cdm_variables_predefined_sort_enabled');
-      const savedPredefinedSortOrder = localStorage.getItem('cdm_variables_predefined_sort_order');
+      // Support both old key (predefined_sort) and new key (order) for backward compatibility
+      const savedOrderEnabled = localStorage.getItem('cdm_variables_order_enabled') || localStorage.getItem('cdm_variables_predefined_sort_enabled');
+      const savedOrderSortOrder = localStorage.getItem('cdm_variables_order_sort_order') || localStorage.getItem('cdm_variables_predefined_sort_order');
       
       return {
         variablesCustomSortRules: savedVariablesCustomSortRules ? JSON.parse(savedVariablesCustomSortRules) : [],
         isVariablesCustomSortActive: savedVariablesCustomSortActive === 'true',
         isVariablesColumnSortActive: savedVariablesColumnSortActive === 'true',
-        isPredefinedSortEnabled: savedPredefinedSortEnabled === 'true',
-        predefinedSortOrder: savedPredefinedSortOrder ? JSON.parse(savedPredefinedSortOrder) : undefined
+        isOrderEnabled: savedOrderEnabled === 'true',
+        orderSortOrder: savedOrderSortOrder ? JSON.parse(savedOrderSortOrder) : undefined
       };
     } catch (error) {
       console.error('Error loading persisted variables state:', error);
@@ -129,14 +131,15 @@ function App() {
         variablesCustomSortRules: [],
         isVariablesCustomSortActive: false,
         isVariablesColumnSortActive: false,
-        isPredefinedSortEnabled: false,
-        predefinedSortOrder: undefined
+        isOrderEnabled: false,
+        orderSortOrder: undefined
       };
     }
   };
 
   const variablesPersistedState = loadVariablesPersistedState();
   const [isVariablesCustomSortOpen, setIsVariablesCustomSortOpen] = useState(false);
+  const [isVariablesOrderOpen, setIsVariablesOrderOpen] = useState(false);
   const [variablesCustomSortRules, setVariablesCustomSortRules] = useState<Array<{
     id: string;
     column: string;
@@ -145,12 +148,13 @@ function App() {
   }>>(variablesPersistedState.variablesCustomSortRules);
   const [isVariablesCustomSortActive, setIsVariablesCustomSortActive] = useState(variablesPersistedState.isVariablesCustomSortActive);
   const [isVariablesColumnSortActive, setIsVariablesColumnSortActive] = useState(variablesPersistedState.isVariablesColumnSortActive);
-  const [isVariablesPredefinedSortEnabled, setIsVariablesPredefinedSortEnabled] = useState(variablesPersistedState.isPredefinedSortEnabled);
-  const [variablesPredefinedSortOrder, setVariablesPredefinedSortOrder] = useState<{
+  const [isVariablesOrderEnabled, setIsVariablesOrderEnabled] = useState(variablesPersistedState.isOrderEnabled);
+  const [variablesOrderSortOrder, setVariablesOrderSortOrder] = useState<{
     partOrder: string[];
+    sectionOrder: string[];
     groupOrders: Record<string, string[]>;
     variableOrders: Record<string, string[]>;
-  } | undefined>(variablesPersistedState.predefinedSortOrder);
+  } | undefined>(variablesPersistedState.orderSortOrder);
 
   // Lists Custom Sort state - load from localStorage
   const loadListsPersistedState = () => {
@@ -2686,10 +2690,11 @@ function App() {
     sortOn: string;
     order: 'asc' | 'desc';
   }>) => {
-    // If predefined sort is enabled, turn it off (but preserve the order)
-    if (isVariablesPredefinedSortEnabled) {
-      setIsVariablesPredefinedSortEnabled(false);
-      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
+    // If order sort is enabled, turn it off (but preserve the order)
+    if (isVariablesOrderEnabled) {
+      setIsVariablesOrderEnabled(false);
+      localStorage.setItem('cdm_variables_order_enabled', 'false');
+      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false'); // Backward compatibility
       // Preserve the order - don't clear it!
     }
     
@@ -2703,10 +2708,11 @@ function App() {
   };
 
   const handleVariablesColumnSort = () => {
-    // If predefined sort is enabled, turn it off (but preserve the order)
-    if (isVariablesPredefinedSortEnabled) {
-      setIsVariablesPredefinedSortEnabled(false);
-      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
+    // If order sort is enabled, turn it off (but preserve the order)
+    if (isVariablesOrderEnabled) {
+      setIsVariablesOrderEnabled(false);
+      localStorage.setItem('cdm_variables_order_enabled', 'false');
+      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false'); // Backward compatibility
       // Preserve the order - don't clear it!
     }
     
@@ -2722,26 +2728,36 @@ function App() {
     setIsVariablesColumnSortActive(true);
   };
 
-  const handleVariablesPredefinedSortApply = (enabled: boolean, order: {
+  const handleVariablesOrderApply = (enabled: boolean, order: {
     partOrder: string[];
+    sectionOrder: string[];
     groupOrders: Record<string, string[]>;
     variableOrders: Record<string, string[]>;
   }) => {
     // ALWAYS save the order, even when disabled - the order is sacred
-    setVariablesPredefinedSortOrder(order);
-    localStorage.setItem('cdm_variables_predefined_sort_order', JSON.stringify(order));
+    setVariablesOrderSortOrder(order);
+    localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(order));
+    // Also save to old key for backward compatibility during migration
+    const oldOrder = {
+      partOrder: order.partOrder,
+      groupOrders: order.groupOrders,
+      variableOrders: order.variableOrders
+    };
+    localStorage.setItem('cdm_variables_predefined_sort_order', JSON.stringify(oldOrder));
     
-    setIsVariablesPredefinedSortEnabled(enabled);
+    setIsVariablesOrderEnabled(enabled);
+    localStorage.setItem('cdm_variables_order_enabled', enabled.toString());
+    // Also save to old key for backward compatibility
     localStorage.setItem('cdm_variables_predefined_sort_enabled', enabled.toString());
     
-    // If enabling predefined sort, clear column sort (any column, not just Part/Group/Variable)
+    // If enabling order sort, clear column sort (any column, not just Part/Section/Group/Variable)
     if (enabled) {
       try {
         const savedSortConfig = localStorage.getItem('cdm_variables_sort_config');
         if (savedSortConfig) {
           const sortConfig = JSON.parse(savedSortConfig);
-          // Clear column sort if it's for Part, Group, or Variable
-          if (sortConfig && ['part', 'group', 'variable'].includes(sortConfig.key)) {
+          // Clear column sort if it's for Part, Section, Group, or Variable
+          if (sortConfig && ['part', 'section', 'group', 'variable'].includes(sortConfig.key)) {
             localStorage.removeItem('cdm_variables_sort_config');
             setIsVariablesColumnSortActive(false);
             localStorage.removeItem('cdm_variables_column_sort_active');
@@ -2751,25 +2767,24 @@ function App() {
         console.error('Error clearing column sort:', error);
       }
     }
-    console.log('Variables predefined sort applied:', { enabled, order });
+    console.log('Variables order sort applied:', { enabled, order });
   };
 
   const handleClearVariablesSorts = () => {
-    // Clear custom sort and column sort, but PRESERVE predefined sort order
+    // Clear custom sort and column sort, but PRESERVE order sort order
     setVariablesCustomSortRules([]);
     setIsVariablesCustomSortActive(false);
     setIsVariablesColumnSortActive(false);
-    setIsVariablesPredefinedSortEnabled(false);
-    // DO NOT clear predefined sort order - it's sacred!
-    // setVariablesPredefinedSortOrder(undefined); // REMOVED
-    // localStorage.removeItem('cdm_variables_predefined_sort_order'); // REMOVED
+    setIsVariablesOrderEnabled(false);
+    // DO NOT clear order sort order - it's sacred!
     
     // Clear localStorage for active sorts only
     localStorage.removeItem('cdm_variables_custom_sort_rules');
     localStorage.removeItem('cdm_variables_custom_sort_active');
     localStorage.removeItem('cdm_variables_column_sort_active');
-    localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false');
-    // Note: predefined sort order is preserved in localStorage
+    localStorage.setItem('cdm_variables_order_enabled', 'false');
+    localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false'); // Backward compatibility
+    // Note: order sort order is preserved in localStorage
   };
 
   const handleListsCustomSortApply = (sortRules: Array<{
@@ -2859,7 +2874,7 @@ function App() {
       </div>
 
       {/* Main Content */}
-      <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
+      <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
         {['ledgers', 'sources'].includes(activeTab) ? (
           <div className="flex items-center justify-center min-h-[400px]">
@@ -2940,11 +2955,11 @@ function App() {
             </div>
           </div>
         ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative">
           {/* Data Grid */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 flex flex-col min-h-0">
             {/* Grid Header with Actions */}
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
               {/* Left side: Add, Upload, Custom Sort (for Objects and Variables tabs) */}
               <div className="flex items-center gap-3">
                 {(activeTab === 'objects' || activeTab === 'variables') && (
@@ -3014,6 +3029,27 @@ function App() {
                         </span>
                       )}
                     </button>
+                    
+                    {/* Order Button (Variables only) */}
+                    {activeTab === 'variables' && (
+                      <button
+                        onClick={() => setIsVariablesOrderOpen(true)}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          isVariablesOrderEnabled
+                            ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title="Define custom sort order for Part, Section, Group, and Variable columns"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                        Order
+                        {isVariablesOrderEnabled && (
+                          <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </button>
+                    )}
                     
                     {/* Reset Filter Button (small box) */}
                     {((activeTab === 'objects' && objectsResetHandlers?.hasActiveFilters) || 
@@ -3135,79 +3171,46 @@ function App() {
                 )}
               </div>
               
-              {/* Right side: Generic toggle button (for Objects, Variables, and Lists tabs) */}
-              <div className="flex items-center gap-3">
-                {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                  <button
-                    onClick={() => {
-                      if (activeTab === 'objects') {
-                        if (activeView === 'Generic') {
-                          handleViewsApply('None');
-                        } else {
-                          handleViewsApply('Generic');
-                        }
-                      } else if (activeTab === 'variables') {
-                        if (activeVariablesView === 'Generic') {
-                          handleViewsApply('None');
-                        } else {
-                          handleViewsApply('Generic');
-                        }
-                      } else if (activeTab === 'lists') {
-                        if (activeListsView === 'Generic') {
-                          handleViewsApply('None');
-                        } else {
-                          handleViewsApply('Generic');
-                        }
-                      }
-                    }}
-                    className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors ${
-                      ((activeTab === 'objects' && activeView === 'Generic') || 
-                       (activeTab === 'variables' && activeVariablesView === 'Generic') ||
-                       (activeTab === 'lists' && activeListsView === 'Generic'))
-                        ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
-                        : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                    }`}
-                    title="Toggle Generic view (S/D/C = All)"
-                  >
-                    Generic
-                  </button>
-                )}
-              </div>
+              {/* Right side: Empty for now - buttons moved to metadata panel */}
+              <div></div>
             </div>
             
-            {/* Filter Panel */}
-            <FilterPanel
-              columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
-              data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
-              filters={filters}
-              onFilterChange={handleFilterChange}
-              isOpen={false}
-              activeTab={activeTab}
-            />
-            
-            {/* Data Grid */}
-            <DataGrid
-              key={activeTab} // Force remount when switching tabs to prevent state bleeding
-              columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
-              data={activeTab === 'lists' ? filteredListData : activeTab === 'variables' ? filteredVariableData : filteredData}
-              onRowSelect={handleRowSelect}
-              onDelete={handleDelete}
-              onClone={handleClone}
-              selectionMode={activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists' ? 'row' : 'checkbox'}
-              selectedRows={selectedRows}
-              onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
-              affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
-              deletedDriverType={deletedDriverType}
-              customSortRules={activeTab === 'objects' ? customSortRules : activeTab === 'variables' ? variablesCustomSortRules : activeTab === 'lists' ? listsCustomSortRules : []}
-              onClearCustomSort={activeTab === 'objects' ? handleClearAllSorts : activeTab === 'variables' ? handleClearVariablesSorts : activeTab === 'lists' ? handleClearListsSorts : undefined}
-              onColumnSort={activeTab === 'objects' ? handleColumnSort : activeTab === 'variables' ? handleVariablesColumnSort : activeTab === 'lists' ? handleListsColumnSort : undefined}
-              isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : activeTab === 'lists' ? isListsCustomSortActive : false}
-              isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : activeTab === 'lists' ? isListsColumnSortActive : false}
-              gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
-              isPredefinedSortEnabled={activeTab === 'variables' ? isVariablesPredefinedSortEnabled : false}
-              predefinedSortOrder={activeTab === 'variables' ? variablesPredefinedSortOrder : undefined}
-              onResetHandlersReady={activeTab === 'objects' ? setObjectsResetHandlers : activeTab === 'variables' ? setVariablesResetHandlers : activeTab === 'lists' ? setListsResetHandlers : undefined}
-            />
+            {/* Grid Content Area - Relative container for graph modal */}
+            <div className="relative flex-1 min-h-0 overflow-hidden">
+              {/* Filter Panel */}
+              <FilterPanel
+                columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
+                data={activeTab === 'lists' ? listData : activeTab === 'variables' ? variableData : filteredData}
+                filters={filters}
+                onFilterChange={handleFilterChange}
+                isOpen={false}
+                activeTab={activeTab}
+              />
+              
+              {/* Data Grid */}
+              <DataGrid
+                key={activeTab} // Force remount when switching tabs to prevent state bleeding
+                columns={activeTab === 'lists' ? listColumns : activeTab === 'variables' ? variableColumns : objectColumns}
+                data={activeTab === 'lists' ? filteredListData : activeTab === 'variables' ? filteredVariableData : filteredData}
+                onRowSelect={handleRowSelect}
+                onDelete={handleDelete}
+                onClone={handleClone}
+                selectionMode={activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists' ? 'row' : 'checkbox'}
+                selectedRows={selectedRows}
+                onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}
+                affectedIds={activeTab === 'objects' ? affectedObjectIds : activeTab === 'variables' ? affectedVariableIds : new Set()}
+                deletedDriverType={deletedDriverType}
+                customSortRules={activeTab === 'objects' ? customSortRules : activeTab === 'variables' ? variablesCustomSortRules : activeTab === 'lists' ? listsCustomSortRules : []}
+                onClearCustomSort={activeTab === 'objects' ? handleClearAllSorts : activeTab === 'variables' ? handleClearVariablesSorts : activeTab === 'lists' ? handleClearListsSorts : undefined}
+                onColumnSort={activeTab === 'objects' ? handleColumnSort : activeTab === 'variables' ? handleVariablesColumnSort : activeTab === 'lists' ? handleListsColumnSort : undefined}
+                isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : activeTab === 'lists' ? isListsCustomSortActive : false}
+                isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : activeTab === 'lists' ? isListsColumnSortActive : false}
+                gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
+                isPredefinedSortEnabled={activeTab === 'variables' ? isVariablesOrderEnabled : false}
+                predefinedSortOrder={activeTab === 'variables' ? variablesOrderSortOrder : undefined}
+                onResetHandlersReady={activeTab === 'objects' ? setObjectsResetHandlers : activeTab === 'variables' ? setVariablesResetHandlers : activeTab === 'lists' ? setListsResetHandlers : undefined}
+              />
+            </div>
           </div>
 
           {/* Metadata Panel */}
@@ -3271,10 +3274,10 @@ function App() {
             </div>
           ) : (
             <div className="lg:col-span-1">
-              <div className="sticky top-6 max-h-[calc(100vh-3rem)] overflow-y-auto">
+              <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto" style={{ marginTop: '-4rem', paddingTop: '4rem' }}>
                 {/* Three equal-sized buttons: Generic, Graph View, Grid View (for Objects, Variables, and Lists tabs) */}
                 {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
-                  <div className="mb-3 grid grid-cols-3 gap-2">
+                  <div className="mb-3 grid grid-cols-3 gap-2" style={{ marginTop: '-3.5rem' }}>
                     {/* Generic Button */}
                     <button
                       onClick={() => {
@@ -3298,7 +3301,7 @@ function App() {
                           }
                         }
                       }}
-                      className={`inline-flex items-center justify-center gap-1 px-2 py-2 border rounded text-xs font-medium transition-colors ${
+                      className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors ${
                         ((activeTab === 'objects' && activeView === 'Generic') || 
                          (activeTab === 'variables' && activeVariablesView === 'Generic') ||
                          (activeTab === 'lists' && activeListsView === 'Generic'))
@@ -3321,22 +3324,40 @@ function App() {
                           setIsNeo4jListsGraphModalOpen(true);
                         }
                       }}
-                      className="inline-flex items-center justify-center gap-1 px-2 py-2 border border-ag-dark-accent rounded text-xs font-medium text-ag-dark-accent hover:bg-ag-dark-accent hover:text-white transition-colors"
+                      className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors ${
+                        ((activeTab === 'objects' && isNeo4jGraphModalOpen) || 
+                         (activeTab === 'variables' && isNeo4jVariablesGraphModalOpen) ||
+                         (activeTab === 'lists' && isNeo4jListsGraphModalOpen))
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
                       title="Graph View"
                     >
-                      <Network className="w-3 h-3" />
-                      Graph View
+                      <Network className="w-4 h-4" />
+                      <span className="text-xs">Graph View</span>
                     </button>
                     
                     {/* Grid View Button */}
                     <button
                       onClick={() => {
-                        // Placeholder - functionality to be implemented later
+                        if (activeTab === 'objects') {
+                          setIsNeo4jGraphModalOpen(false);
+                        } else if (activeTab === 'variables') {
+                          setIsNeo4jVariablesGraphModalOpen(false);
+                        } else if (activeTab === 'lists') {
+                          setIsNeo4jListsGraphModalOpen(false);
+                        }
                       }}
-                      className="inline-flex items-center justify-center gap-1 px-2 py-2 border border-ag-dark-border rounded text-xs font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
+                      className={`inline-flex items-center justify-center gap-1 px-3 py-2 border rounded text-sm font-medium transition-colors ${
+                        ((activeTab === 'objects' && !isNeo4jGraphModalOpen) || 
+                         (activeTab === 'variables' && !isNeo4jVariablesGraphModalOpen) ||
+                         (activeTab === 'lists' && !isNeo4jListsGraphModalOpen))
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
                       title="Grid View"
                     >
-                      Grid View
+                      <span className="text-xs">Grid View</span>
                     </button>
                   </div>
                 )}
@@ -3375,6 +3396,29 @@ function App() {
                 )}
               </div>
             </div>
+          )}
+          
+          {/* Graph Modal - Positioned absolutely to cover both grid and metadata panel */}
+          {(activeTab === 'objects' && isNeo4jGraphModalOpen) && (
+            <Neo4jGraphModal
+              isOpen={isNeo4jGraphModalOpen}
+              onClose={() => setIsNeo4jGraphModalOpen(false)}
+              graphType="objects"
+            />
+          )}
+          {(activeTab === 'variables' && isNeo4jVariablesGraphModalOpen) && (
+            <Neo4jGraphModal
+              isOpen={isNeo4jVariablesGraphModalOpen}
+              onClose={() => setIsNeo4jVariablesGraphModalOpen(false)}
+              graphType="variables"
+            />
+          )}
+          {(activeTab === 'lists' && isNeo4jListsGraphModalOpen) && (
+            <Neo4jGraphModal
+              isOpen={isNeo4jListsGraphModalOpen}
+              onClose={() => setIsNeo4jListsGraphModalOpen(false)}
+              graphType="lists"
+            />
           )}
         </div>
         )}
@@ -3449,9 +3493,15 @@ function App() {
         isOpen={isVariablesCustomSortOpen}
         onClose={() => setIsVariablesCustomSortOpen(false)}
         onApplySort={handleVariablesCustomSortApply}
-        onApplyPredefinedSort={handleVariablesPredefinedSortApply}
         columns={variableColumns}
         currentSortRules={variablesCustomSortRules}
+      />
+
+      {/* Variables Order Modal */}
+      <VariablesOrderModal
+        isOpen={isVariablesOrderOpen}
+        onClose={() => setIsVariablesOrderOpen(false)}
+        onApplyOrder={handleVariablesOrderApply}
         variableData={variableData}
         sortConfig={(() => {
           try {
@@ -3461,8 +3511,8 @@ function App() {
             return null;
           }
         })()}
-        isPredefinedSortEnabled={isVariablesPredefinedSortEnabled}
-        predefinedSortOrder={variablesPredefinedSortOrder}
+        isOrderEnabled={isVariablesOrderEnabled}
+        orderSortOrder={variablesOrderSortOrder}
       />
 
       {/* Views Modal - Objects */}
@@ -3504,26 +3554,6 @@ function App() {
         loadingType={loadingType}
       />
 
-      {/* Neo4j Knowledge Graph Modal - Objects */}
-      <Neo4jGraphModal
-        isOpen={isNeo4jGraphModalOpen}
-        onClose={() => setIsNeo4jGraphModalOpen(false)}
-        graphType="objects"
-      />
-
-      {/* Neo4j Knowledge Graph Modal - Variables */}
-      <Neo4jGraphModal
-        isOpen={isNeo4jVariablesGraphModalOpen}
-        onClose={() => setIsNeo4jVariablesGraphModalOpen(false)}
-        graphType="variables"
-      />
-
-      {/* Neo4j Knowledge Graph Modal - Lists */}
-      <Neo4jGraphModal
-        isOpen={isNeo4jListsGraphModalOpen}
-        onClose={() => setIsNeo4jListsGraphModalOpen(false)}
-        graphType="lists"
-      />
 
       {/* Relationship Modal */}
       <RelationshipModal

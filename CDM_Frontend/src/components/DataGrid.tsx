@@ -16,6 +16,7 @@ interface Column {
 
 interface PredefinedSortOrder {
   partOrder: string[];
+  sectionOrder: string[];
   groupOrders: Record<string, string[]>; // key: part, value: array of groups
   variableOrders: Record<string, string[]>; // key: "part|group", value: array of variables
 }
@@ -442,7 +443,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
       console.log('🔍 DataGrid - affected items:', affectedItems.map(item => ({ id: item.id, object: item.object, driver: item.driver })));
     }
 
-    // Apply predefined sort for Variables (Part, Group, Variable) - this is applied BEFORE custom sort
+    // Apply predefined sort for Variables (Part, Section, Group, Variable) - this is applied BEFORE custom sort
     if (gridType === 'variables' && isPredefinedSortEnabled && predefinedSortOrder) {
       console.log('🎯 APPLYING PREDEFINED SORT:', predefinedSortOrder);
       
@@ -461,7 +462,22 @@ export const DataGrid: React.FC<DataGridProps> = ({
           return aPartIndex - bPartIndex;
         }
         
-        // If parts are the same, sort by Group
+        // If parts are the same, sort by Section (if sectionOrder exists)
+        if (predefinedSortOrder.sectionOrder && predefinedSortOrder.sectionOrder.length > 0) {
+          const aSection = String(a.section || '');
+          const bSection = String(b.section || '');
+          const sectionOrder = predefinedSortOrder.sectionOrder;
+          const aSectionIndex = sectionOrder.indexOf(aSection);
+          const bSectionIndex = sectionOrder.indexOf(bSection);
+          
+          if (aSectionIndex !== bSectionIndex) {
+            if (aSectionIndex === -1) return 1;
+            if (bSectionIndex === -1) return -1;
+            return aSectionIndex - bSectionIndex;
+          }
+        }
+        
+        // If sections are the same, sort by Group
         const aGroup = String(a.group || '');
         const bGroup = String(b.group || '');
         const groupOrder = predefinedSortOrder.groupOrders[aPart] || [];

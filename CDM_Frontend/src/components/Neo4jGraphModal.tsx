@@ -304,35 +304,62 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
             networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
           }
           
-          // Use fit() to center and fit the graph to the viewport
+          // First, fit the graph to center it
           networkRef.current?.fit({
-            padding: 10, // Very minimal padding for tight fit
+            padding: 20, // Minimal padding for tighter fit
             animation: {
               duration: 600,
               easingFunction: 'easeInOutQuad'
             }
           });
           
-          // Then aggressively zoom in after a short delay
+          // Then zoom in more aggressively for better visibility after a short delay
           setTimeout(() => {
             if (networkRef.current) {
               const currentScale = networkRef.current.getScale() || 1;
-              const targetScale = Math.min(currentScale * 4, 6); // Very aggressive zoom (up to 6x)
+              // Zoom in 2.5x for much better visibility
+              const targetScale = Math.min(currentScale * 2.5, 3);
               
               console.log('Zooming in from', currentScale, 'to', targetScale);
               
+              // Get current view position to maintain center, but move up a bit
+              const viewPosition = networkRef.current.getViewPosition();
+              
+              // Zoom in while maintaining the center position, but move up vertically
               networkRef.current.moveTo({
                 scale: targetScale,
+                position: { x: viewPosition.x, y: viewPosition.y - 100 }, // Move up by 100 units
                 animation: {
                   duration: 400,
                   easingFunction: 'easeInOutQuad'
                 }
               });
               
-              // Final resize check
+              // Final resize check and re-center using fit
               setTimeout(() => {
                 if (networkRef.current && container) {
                   networkRef.current.setSize(`${container.clientWidth}px`, `${container.clientHeight}px`);
+                  // Re-center and adjust zoom after resize
+                  networkRef.current.fit({
+                    padding: 20,
+                    animation: {
+                      duration: 300,
+                      easingFunction: 'easeInOutQuad'
+                    }
+                  });
+                  // Then zoom in again and move up
+                  setTimeout(() => {
+                    if (networkRef.current) {
+                      const newScale = networkRef.current.getScale() || 1;
+                      const finalScale = Math.min(newScale * 2.5, 3);
+                      const finalPosition = networkRef.current.getViewPosition();
+                      networkRef.current.moveTo({
+                        scale: finalScale,
+                        position: { x: finalPosition.x, y: finalPosition.y - 100 }, // Move up by 100 units
+                        animation: false
+                      });
+                    }
+                  }, 350);
                 }
               }, 500);
             }
@@ -490,42 +517,41 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[95vw] h-[90vh] max-w-[95vw] max-h-[90vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
-          <div className="flex items-center gap-3">
-            <Network className="w-6 h-6 text-ag-dark-accent" />
-            <div>
-              <h3 className="text-lg font-semibold text-ag-dark-text">
-                Neo4j Knowledge Graph
-              </h3>
-              <p className="text-xs text-ag-dark-text-secondary mt-1">
-                Instance: <span className="font-medium">{envInfo.instanceName}</span>
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleRefresh}
-              disabled={isLoading}
-              className="p-2 text-ag-dark-text-secondary hover:text-ag-dark-text hover:bg-ag-dark-bg rounded transition-colors disabled:opacity-50"
-              title="Refresh graph"
-            >
-              <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 text-ag-dark-text-secondary hover:text-ag-dark-text hover:bg-ag-dark-bg rounded transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
+    <div className="absolute bg-ag-dark-surface border border-ag-dark-border rounded-lg flex flex-col z-40 overflow-hidden" style={{ 
+      top: '3rem', 
+      left: 0, 
+      right: 0, 
+      bottom: 0,
+      width: '100%'
+    }}>
+      {/* Modal Header */}
+      <div className="flex items-center justify-between p-4 border-b border-ag-dark-border flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <Network className="w-5 h-5 text-ag-dark-accent" />
+          <div>
+            <h3 className="text-base font-semibold text-ag-dark-text">
+              Neo4j Knowledge Graph
+            </h3>
+            <p className="text-xs text-ag-dark-text-secondary mt-0.5">
+              Instance: <span className="font-medium">{envInfo.instanceName}</span>
+            </p>
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="p-2 text-ag-dark-text-secondary hover:text-ag-dark-text hover:bg-ag-dark-bg rounded transition-colors disabled:opacity-50"
+            title="Refresh graph"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
 
         {/* Error/Warning Banner */}
         {error && (
-          <div className="px-6 pt-4 pb-2">
+          <div className="px-4 pt-3 pb-2">
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${
               nodeCount && nodeCount > 300 
                 ? 'bg-yellow-900/20 border-yellow-700/50' 
@@ -544,7 +570,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         )}
 
         {/* Tabs */}
-        <div className="flex items-center justify-between border-b border-ag-dark-border px-6">
+        <div className="flex items-center justify-between border-b border-ag-dark-border px-4 flex-shrink-0">
           <div className="flex">
             <button
               onClick={() => setActiveView('taxonomy')}
@@ -639,22 +665,24 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
             
 
             {/* Zoom Controls - Positioned in bottom-right corner */}
-            <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
-              <button
-                onClick={handleZoomIn}
-                className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
-                title="Zoom In"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleZoomOut}
-                className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
-                title="Zoom Out"
-              >
-                <Minus className="w-4 h-4" />
-              </button>
-            </div>
+            {!isLoading && !showFallback && (
+              <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-auto">
+                <button
+                  onClick={handleZoomIn}
+                  className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
+                  title="Zoom In"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleZoomOut}
+                  className="p-2 bg-ag-dark-surface border border-ag-dark-border rounded shadow-lg text-ag-dark-text hover:text-ag-dark-accent hover:border-ag-dark-accent transition-colors"
+                  title="Zoom Out"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Details Side Panel */}
@@ -865,8 +893,6 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
             )}
           </div>
         </div>
-
-      </div>
     </div>
   );
 };
