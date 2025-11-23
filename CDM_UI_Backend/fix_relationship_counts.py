@@ -37,6 +37,9 @@ def fix_relationship_counts():
             
             fixed_count = 0
             incorrect_objects = []
+            correct_count = 0
+            
+            print("Checking and fixing relationship counts...\n")
             
             for obj in objects:
                 object_id = obj["id"]
@@ -67,7 +70,14 @@ def fix_relationship_counts():
                     fixed_count += 1
                     print(f"✅ Fixed {object_name}: {current_count} → {actual_count} relationships")
                 else:
-                    print(f"✓ {object_name}: {actual_count} relationships (correct)")
+                    correct_count += 1
+                    # Only print correct ones if there are few objects, otherwise just show progress
+                    if total_objects <= 50:
+                        print(f"✓ {object_name}: {actual_count} relationships (correct)")
+            
+            # Show progress for large datasets
+            if total_objects > 50:
+                print(f"\n✓ {correct_count} objects already have correct counts")
             
             print("=" * 80)
             print(f"📊 Summary:")
