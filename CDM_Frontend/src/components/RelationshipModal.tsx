@@ -54,6 +54,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       ? [selectedObject] 
       : [];
   const [relationshipData, setRelationshipData] = useState<Record<string, RelationshipData>>({});
+  const [initialRelationshipData, setInitialRelationshipData] = useState<Record<string, RelationshipData>>({}); // Track initial state to detect changes
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
@@ -108,6 +109,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // Reset relationship data when modal closes
     if (!isOpen) {
       setRelationshipData({});
+      setInitialRelationshipData({}); // Reset initial state tracking
       // Don't reset customSortRules - keep them for next time modal opens
       // Only reset if user explicitly clears custom sort
       isInitializingRef.current = false;
@@ -284,6 +286,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       }
 
       setRelationshipData(initialData);
+      // Store initial state to detect changes later
+      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData))); // Deep copy
     } catch (error) {
       console.error('Failed to load existing relationships:', error);
       // Initialize with default data: ALL objects selected
@@ -324,6 +328,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       }
       
       setRelationshipData(initialData);
+      // Store initial state to detect changes later
+      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData))); // Deep copy
     } finally {
       setLoading(false);
       isInitializingRef.current = false;
@@ -588,11 +594,20 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           console.error('Failed to fetch existing relationships:', error);
         }
         
-        // Step 1: Update all existing relationships with new type and frequency
-        // Process each target object to update properties
+        // Step 1: Only update relationships where type/frequency actually changed
+        const relationshipsToUpdate: Array<{
+          targetObject: ObjectData;
+          relationshipType: string;
+          frequency: 'Critical' | 'Likely' | 'Possible';
+        }> = [];
+        
         for (const [objectId, relData] of Object.entries(relationshipData)) {
           const targetObject = allObjects.find(obj => obj.id === objectId);
           if (!targetObject) continue;
+
+          // Get initial state for this object
+          const initialRelData = initialRelationshipData[objectId];
+          if (!initialRelData) continue; // Skip if no initial data (shouldn't happen)
 
           // All objects are selected by default - always process them
           const isSelf = objectId === selectedObject.id;
@@ -603,24 +618,42 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Blood relationships MUST always be Critical
           const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
           
-          // Update all existing relationships to this target with new type and frequency
+          // Check if type or frequency changed
+          const initialType = isSelf ? 'Intra-Table' : initialRelData.relationshipType;
+          const initialFrequency = initialType === 'Blood' ? 'Critical' : (initialRelData.frequency || 'Possible');
+          
+          const typeChanged = relationshipType !== initialType;
+          const frequencyChanged = frequency !== initialFrequency;
+          
+          // Only update if something actually changed
+          if (typeChanged || frequencyChanged) {
+            relationshipsToUpdate.push({
+              targetObject,
+              relationshipType,
+              frequency
+            });
+          }
+        }
+        
+        // Update only changed relationships
+        for (const update of relationshipsToUpdate) {
           try {
             await apiService.updateRelationshipsToTarget(
               selectedObject.id,
-              targetObject.being || 'ALL',
-              targetObject.avatar || 'ALL',
-              targetObject.object || 'ALL',
-              relationshipType,
-              frequency
+              update.targetObject.being || 'ALL',
+              update.targetObject.avatar || 'ALL',
+              update.targetObject.object || 'ALL',
+              update.relationshipType,
+              update.frequency
             );
-            console.log(`Updated relationships to ${targetObject.object} with type=${relationshipType}, frequency=${frequency}`);
+            console.log(`Updated relationships to ${update.targetObject.object} with type=${update.relationshipType}, frequency=${update.frequency}`);
           } catch (error) {
-            console.error(`Failed to update relationships to ${targetObject.object}:`, error);
+            console.error(`Failed to update relationships to ${update.targetObject.object}:`, error);
             // Continue to next target even if update fails
           }
         }
         
-        // Step 2: Collect all new relationships to create (batch operation)
+        // Step 2: Collect only NEW role words that were actually added (compare with initial state)
         const relationshipsToCreate: Array<{
           sourceObjectId: string;
           targetObject: ObjectData;
@@ -633,6 +666,10 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           const targetObject = allObjects.find(obj => obj.id === objectId);
           if (!targetObject) continue;
 
+          // Get initial state for this object
+          const initialRelData = initialRelationshipData[objectId];
+          if (!initialRelData) continue; // Skip if no initial data
+
           // All objects are selected by default - always process them
           const isSelf = objectId === selectedObject.id;
           
@@ -642,7 +679,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           // Blood relationships MUST always be Critical
           const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
           
-          // Get existing role words for relationships to this target
+          // Get existing role words for relationships to this target (from database)
           const existingRolesForTarget = existingRelationships
             .filter((rel: any) => 
               rel.toBeing === targetObject.being && 
@@ -652,15 +689,22 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             .map((rel: any) => (rel.role || '').trim().toLowerCase())
             .filter((role: string) => role.length > 0);
           
-          // Get user-added roles (excluding default role word)
-          const userAddedRoles = validateRoles(relData.roles || '');
+          // Get current user-added roles
+          const currentUserAddedRoles = validateRoles(relData.roles || '');
+          const currentUserAddedRolesLower = currentUserAddedRoles.map(r => r.toLowerCase());
           
-          // Collect role words that don't exist yet
-          // Always ensure default role word relationship exists
-          const allRolesToCheck = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
-          const newRoles = allRolesToCheck
-            .filter(role => role && role.trim() !== '')
-            .filter(role => !existingRolesForTarget.includes(role.trim().toLowerCase()));
+          // Get initial user-added roles (from when modal opened)
+          const initialUserAddedRoles = validateRoles(initialRelData.roles || '');
+          const initialUserAddedRolesLower = initialUserAddedRoles.map(r => r.toLowerCase());
+          
+          // Find NEW role words that were added (not in initial state and not in database)
+          const newRoles = currentUserAddedRoles.filter(role => {
+            const roleLower = role.toLowerCase();
+            // Must be new (not in initial state) and not already in database
+            return !initialUserAddedRolesLower.includes(roleLower) && 
+                   !existingRolesForTarget.includes(roleLower) &&
+                   roleLower !== defaultRoleWord.toLowerCase();
+          });
           
           // If there are new roles to create, add them to the batch
           if (newRoles.length > 0) {

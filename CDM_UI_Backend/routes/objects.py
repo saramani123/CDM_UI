@@ -64,7 +64,7 @@ async def get_objects():
                      }) as relationships,
                      collect(DISTINCT v.name) as variant_names,
                      count(DISTINCT var) as variables_count,
-                     count(DISTINCT other) as relationships_count
+                     count(r) as relationships_count
                 RETURN o.id as id, 
                        o.driver as driver, 
                        o.being as being,
@@ -109,8 +109,9 @@ async def get_objects():
                 # Get variables count from the query result
                 variables_count = record.get("variables_count", 0) or 0
                 
-                # Get relationships count - count distinct target objects (not all relationship edges)
-                # After migration, this should equal the total number of objects
+                # Get relationships count - count total relationships (multiple role words = multiple relationships)
+                # By default, each object has 1 relationship to each other object (with default role word)
+                # Adding role words creates additional relationships, incrementing the count
                 relationships_count = record.get("relationships_count", 0) or 0
                 
                 obj = {
@@ -1789,10 +1790,11 @@ async def create_relationship(
                 except Exception as e:
                     print(f"DEBUG: Error creating relationship to {target_result['object']}: {e}")
             
-            # Update relationship count
+            # Update relationship count - count total relationships (not distinct targets)
+            # Multiple role words to same target = multiple relationships
             count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
+                RETURN count(*) as rel_count
             """, object_id=object_id).single()
             
             rel_count = count_result["rel_count"] if count_result else 0
@@ -1892,10 +1894,11 @@ async def update_relationships_to_target(
             
             updated_count = result["updated_count"] if result else 0
             
-            # Update relationship count
+            # Update relationship count - count total relationships (not distinct targets)
+            # Multiple role words to same target = multiple relationships
             count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(DISTINCT other) as rel_count
+                RETURN count(*) as rel_count
             """, object_id=object_id).single()
             
             rel_count = count_result["rel_count"] if count_result else 0
@@ -2082,10 +2085,11 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                             print(f"DEBUG: Error creating relationship: {e}")
             
             # Update relationship counts for all affected source objects
+            # Count total relationships (not distinct targets) since multiple role words = multiple relationships
             for source_id in source_object_ids:
                 count_result = session.run("""
                     MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                    RETURN count(other) as rel_count
+                    RETURN count(*) as rel_count
                 """, object_id=source_id).single()
                 
                 rel_count = count_result["rel_count"] if count_result else 0
