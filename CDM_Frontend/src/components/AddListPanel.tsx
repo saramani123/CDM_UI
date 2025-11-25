@@ -82,6 +82,23 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   const isVariationsTextareaFocusedRef = useRef(false);
   const lastVariationsChangeTimeRef = useRef(0);
 
+  // Metadata input fields focus management
+  const formatInputRef = useRef<HTMLInputElement>(null);
+  const sourceInputRef = useRef<HTMLInputElement>(null);
+  const upkeepInputRef = useRef<HTMLInputElement>(null);
+  const graphInputRef = useRef<HTMLInputElement>(null);
+  const originInputRef = useRef<HTMLInputElement>(null);
+  const isFormatInputFocusedRef = useRef<boolean>(false);
+  const isSourceInputFocusedRef = useRef<boolean>(false);
+  const isUpkeepInputFocusedRef = useRef<boolean>(false);
+  const isGraphInputFocusedRef = useRef<boolean>(false);
+  const isOriginInputFocusedRef = useRef<boolean>(false);
+  const lastFormatChangeTimeRef = useRef<number>(0);
+  const lastSourceChangeTimeRef = useRef<number>(0);
+  const lastUpkeepChangeTimeRef = useRef<number>(0);
+  const lastGraphChangeTimeRef = useRef<number>(0);
+  const lastOriginChangeTimeRef = useRef<number>(0);
+
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
@@ -699,9 +716,47 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               Format
             </label>
             <input
+              ref={formatInputRef}
               type="text"
               value={formData.format}
-              onChange={(e) => handleChange('format', e.target.value)}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastFormatChangeTimeRef.current = Date.now();
+                handleChange('format', newValue);
+                const restoreFocus = () => {
+                  if (formatInputRef.current) {
+                    formatInputRef.current.focus();
+                    const maxPos = formatInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    formatInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                restoreFocus();
+                Promise.resolve().then(restoreFocus);
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => { e.stopPropagation(); }}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isFormatInputFocusedRef.current = true; }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastFormatChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                if (wasRecentTyping && !clickedOnInput && formatInputRef.current && isFormatInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTimeout(() => { if (formatInputRef.current) formatInputRef.current.focus(); }, 0);
+                } else if (!wasRecentTyping) {
+                  isFormatInputFocusedRef.current = false;
+                }
+              }}
               placeholder="Enter format..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
@@ -712,9 +767,47 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               Source
             </label>
             <input
+              ref={sourceInputRef}
               type="text"
               value={formData.source}
-              onChange={(e) => handleChange('source', e.target.value)}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastSourceChangeTimeRef.current = Date.now();
+                handleChange('source', newValue);
+                const restoreFocus = () => {
+                  if (sourceInputRef.current) {
+                    sourceInputRef.current.focus();
+                    const maxPos = sourceInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    sourceInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                restoreFocus();
+                Promise.resolve().then(restoreFocus);
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => { e.stopPropagation(); }}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isSourceInputFocusedRef.current = true; }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastSourceChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                if (wasRecentTyping && !clickedOnInput && sourceInputRef.current && isSourceInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTimeout(() => { if (sourceInputRef.current) sourceInputRef.current.focus(); }, 0);
+                } else if (!wasRecentTyping) {
+                  isSourceInputFocusedRef.current = false;
+                }
+              }}
               placeholder="Enter source..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
@@ -725,9 +818,47 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               Upkeep
             </label>
             <input
+              ref={upkeepInputRef}
               type="text"
               value={formData.upkeep}
-              onChange={(e) => handleChange('upkeep', e.target.value)}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastUpkeepChangeTimeRef.current = Date.now();
+                handleChange('upkeep', newValue);
+                const restoreFocus = () => {
+                  if (upkeepInputRef.current) {
+                    upkeepInputRef.current.focus();
+                    const maxPos = upkeepInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    upkeepInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                restoreFocus();
+                Promise.resolve().then(restoreFocus);
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => { e.stopPropagation(); }}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isUpkeepInputFocusedRef.current = true; }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastUpkeepChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                if (wasRecentTyping && !clickedOnInput && upkeepInputRef.current && isUpkeepInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTimeout(() => { if (upkeepInputRef.current) upkeepInputRef.current.focus(); }, 0);
+                } else if (!wasRecentTyping) {
+                  isUpkeepInputFocusedRef.current = false;
+                }
+              }}
               placeholder="Enter upkeep..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
@@ -738,9 +869,47 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               Graph
             </label>
             <input
+              ref={graphInputRef}
               type="text"
               value={formData.graph}
-              onChange={(e) => handleChange('graph', e.target.value)}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastGraphChangeTimeRef.current = Date.now();
+                handleChange('graph', newValue);
+                const restoreFocus = () => {
+                  if (graphInputRef.current) {
+                    graphInputRef.current.focus();
+                    const maxPos = graphInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    graphInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                restoreFocus();
+                Promise.resolve().then(restoreFocus);
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => { e.stopPropagation(); }}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isGraphInputFocusedRef.current = true; }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastGraphChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                if (wasRecentTyping && !clickedOnInput && graphInputRef.current && isGraphInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTimeout(() => { if (graphInputRef.current) graphInputRef.current.focus(); }, 0);
+                } else if (!wasRecentTyping) {
+                  isGraphInputFocusedRef.current = false;
+                }
+              }}
               placeholder="Enter graph..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
@@ -751,9 +920,47 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               Origin
             </label>
             <input
+              ref={originInputRef}
               type="text"
               value={formData.origin}
-              onChange={(e) => handleChange('origin', e.target.value)}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastOriginChangeTimeRef.current = Date.now();
+                handleChange('origin', newValue);
+                const restoreFocus = () => {
+                  if (originInputRef.current) {
+                    originInputRef.current.focus();
+                    const maxPos = originInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    originInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                restoreFocus();
+                Promise.resolve().then(restoreFocus);
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => { e.stopPropagation(); }}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isOriginInputFocusedRef.current = true; }}
+              onBlur={(e) => {
+                const timeSinceLastChange = Date.now() - lastOriginChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300;
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                if (wasRecentTyping && !clickedOnInput && originInputRef.current && isOriginInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTimeout(() => { if (originInputRef.current) originInputRef.current.focus(); }, 0);
+                } else if (!wasRecentTyping) {
+                  isOriginInputFocusedRef.current = false;
+                }
+              }}
               placeholder="Enter origin..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />

@@ -28,7 +28,9 @@ import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
 import { VariablesCustomSortModal } from './components/VariablesCustomSortModal';
 import { VariablesOrderModal } from './components/VariablesOrderModal';
+import { ObjectsOrderModal } from './components/ObjectsOrderModal';
 import { ListsCustomSortModal } from './components/ListsCustomSortModal';
+import { ListsOrderModal } from './components/ListsOrderModal';
 import { ViewsModal } from './components/ViewsModal';
 import { RelationshipModal } from './components/RelationshipModal';
 import { Neo4jGraphModal } from './components/Neo4jGraphModal';
@@ -180,6 +182,7 @@ function App() {
 
   const listsPersistedState = loadListsPersistedState();
   const [isListsCustomSortOpen, setIsListsCustomSortOpen] = useState(false);
+  const [isListsOrderOpen, setIsListsOrderOpen] = useState(false);
   const [listsCustomSortRules, setListsCustomSortRules] = useState<Array<{
     id: string;
     column: string;
@@ -188,6 +191,61 @@ function App() {
   }>>(listsPersistedState.listsCustomSortRules);
   const [isListsCustomSortActive, setIsListsCustomSortActive] = useState(listsPersistedState.isListsCustomSortActive);
   const [isListsColumnSortActive, setIsListsColumnSortActive] = useState(listsPersistedState.isListsColumnSortActive);
+  
+  // Objects Default Order state - load from localStorage
+  const loadObjectsPersistedState = () => {
+    try {
+      const savedObjectsOrderEnabled = localStorage.getItem('cdm_objects_order_enabled');
+      const savedObjectsOrderSortOrder = localStorage.getItem('cdm_objects_order_sort_order');
+      
+      return {
+        isOrderEnabled: savedObjectsOrderEnabled === 'true',
+        orderSortOrder: savedObjectsOrderSortOrder ? JSON.parse(savedObjectsOrderSortOrder) : undefined
+      };
+    } catch (error) {
+      console.error('Error loading persisted objects order state:', error);
+      return {
+        isOrderEnabled: false,
+        orderSortOrder: undefined
+      };
+    }
+  };
+
+  const objectsPersistedState = loadObjectsPersistedState();
+  const [isObjectsOrderOpen, setIsObjectsOrderOpen] = useState(false);
+  const [isObjectsOrderEnabled, setIsObjectsOrderEnabled] = useState(objectsPersistedState.isOrderEnabled);
+  const [objectsOrderSortOrder, setObjectsOrderSortOrder] = useState<{
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  } | undefined>(objectsPersistedState.orderSortOrder);
+
+  // Lists Default Order state - load from localStorage
+  const loadListsOrderPersistedState = () => {
+    try {
+      const savedListsOrderEnabled = localStorage.getItem('cdm_lists_order_enabled');
+      const savedListsOrderSortOrder = localStorage.getItem('cdm_lists_order_sort_order');
+      
+      return {
+        isOrderEnabled: savedListsOrderEnabled === 'true',
+        orderSortOrder: savedListsOrderSortOrder ? JSON.parse(savedListsOrderSortOrder) : undefined
+      };
+    } catch (error) {
+      console.error('Error loading persisted lists order state:', error);
+      return {
+        isOrderEnabled: false,
+        orderSortOrder: undefined
+      };
+    }
+  };
+
+  const listsOrderPersistedState = loadListsOrderPersistedState();
+  const [isListsOrderEnabled, setIsListsOrderEnabled] = useState(listsOrderPersistedState.isOrderEnabled);
+  const [listsOrderSortOrder, setListsOrderSortOrder] = useState<{
+    setOrder: string[];
+    groupingOrders: Record<string, string[]>;
+    listOrders: Record<string, string[]>;
+  } | undefined>(listsOrderPersistedState.orderSortOrder);
 
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
@@ -780,9 +838,23 @@ function App() {
             setSelectedRows(prev => prev.filter(item => item.id !== row.id));
           }
         } else if (activeTab === 'variables') {
-          setVariableData(prev => prev.filter(item => item.id !== row.id));
-          // Remove from selectedRows if it was selected
-          setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+          try {
+            await deleteVariable(row.id);
+            // Remove from state immediately
+            setVariableData(prev => prev.filter(item => item.id !== row.id));
+            // Remove from selectedRows if it was selected
+            setSelectedRows(prev => prev.filter(item => item.id !== row.id));
+            // Refresh variable data from API to ensure UI is in sync and deleted variables are removed from all components
+            try {
+              await fetchVariables();
+            } catch (error) {
+              console.error('Error refreshing variables after deletion:', error);
+              // Don't clear UI if refresh fails - keep what we have
+            }
+          } catch (error) {
+            console.error('Error deleting variable:', error);
+            alert('Failed to delete variable. Please try again.');
+          }
         }
         
         if (selectedRowForMetadata?.id === row.id) {
@@ -2649,14 +2721,18 @@ function App() {
     column: string;
     sortOn: string;
     order: 'asc' | 'desc';
-  }>) => {
+  }>, isDefaultOrderEnabled: boolean = false) => {
+    // Update default order enabled state
+    setIsObjectsOrderEnabled(isDefaultOrderEnabled);
+    localStorage.setItem('cdm_objects_order_enabled', isDefaultOrderEnabled.toString());
+    
     setCustomSortRules(sortRules);
     setIsCustomSortActive(sortRules.length > 0);
     setIsColumnSortActive(false); // Clear column sort when grid sort is applied
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_objects_column_sort_active');
     localStorage.removeItem('cdm_objects_sort_config');
-    console.log('Custom sort applied:', sortRules);
+    console.log('Custom sort applied:', sortRules, 'Default order enabled:', isDefaultOrderEnabled);
   };
 
   const handleViewsApply = (viewName: string) => {
@@ -2716,14 +2792,11 @@ function App() {
     column: string;
     sortOn: string;
     order: 'asc' | 'desc';
-  }>) => {
-    // If order sort is enabled, turn it off (but preserve the order)
-    if (isVariablesOrderEnabled) {
-      setIsVariablesOrderEnabled(false);
-      localStorage.setItem('cdm_variables_order_enabled', 'false');
-      localStorage.setItem('cdm_variables_predefined_sort_enabled', 'false'); // Backward compatibility
-      // Preserve the order - don't clear it!
-    }
+  }>, isDefaultOrderEnabled: boolean = false) => {
+    // Update default order enabled state
+    setIsVariablesOrderEnabled(isDefaultOrderEnabled);
+    localStorage.setItem('cdm_variables_order_enabled', isDefaultOrderEnabled.toString());
+    localStorage.setItem('cdm_variables_predefined_sort_enabled', isDefaultOrderEnabled.toString()); // Backward compatibility
     
     setVariablesCustomSortRules(sortRules);
     setIsVariablesCustomSortActive(sortRules.length > 0);
@@ -2731,7 +2804,7 @@ function App() {
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_variables_column_sort_active');
     localStorage.removeItem('cdm_variables_sort_config');
-    console.log('Variables custom sort applied:', sortRules);
+    console.log('Variables custom sort applied:', sortRules, 'Default order enabled:', isDefaultOrderEnabled);
   };
 
   const handleVariablesColumnSort = () => {
@@ -2755,13 +2828,13 @@ function App() {
     setIsVariablesColumnSortActive(true);
   };
 
-  const handleVariablesOrderApply = (enabled: boolean, order: {
+  const handleVariablesOrderSave = (order: {
     partOrder: string[];
     sectionOrder: string[];
     groupOrders: Record<string, string[]>;
     variableOrders: Record<string, string[]>;
   }) => {
-    // ALWAYS save the order, even when disabled - the order is sacred
+    // Save the order to localStorage - this is persistent and doesn't change unless user modifies it
     setVariablesOrderSortOrder(order);
     localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(order));
     // Also save to old key for backward compatibility during migration
@@ -2771,13 +2844,16 @@ function App() {
       variableOrders: order.variableOrders
     };
     localStorage.setItem('cdm_variables_predefined_sort_order', JSON.stringify(oldOrder));
-    
+    console.log('Variables order saved:', order);
+  };
+
+  const handleVariablesDefaultOrderToggle = (enabled: boolean) => {
     setIsVariablesOrderEnabled(enabled);
     localStorage.setItem('cdm_variables_order_enabled', enabled.toString());
     // Also save to old key for backward compatibility
     localStorage.setItem('cdm_variables_predefined_sort_enabled', enabled.toString());
     
-    // If enabling order sort, clear column sort (any column, not just Part/Section/Group/Variable)
+    // If enabling default order, clear column sort for Part, Section, Group, Variable
     if (enabled) {
       try {
         const savedSortConfig = localStorage.getItem('cdm_variables_sort_config');
@@ -2794,7 +2870,73 @@ function App() {
         console.error('Error clearing column sort:', error);
       }
     }
-    console.log('Variables order sort applied:', { enabled, order });
+    console.log('Variables default order toggled:', enabled);
+  };
+
+  const handleObjectsOrderSave = (order: {
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  }) => {
+    setObjectsOrderSortOrder(order);
+    localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(order));
+    console.log('Objects order saved:', order);
+  };
+
+  const handleObjectsDefaultOrderToggle = (enabled: boolean) => {
+    setIsObjectsOrderEnabled(enabled);
+    localStorage.setItem('cdm_objects_order_enabled', enabled.toString());
+    
+    // If enabling default order, clear column sort for Being, Avatar, Object
+    if (enabled) {
+      try {
+        const savedSortConfig = localStorage.getItem('cdm_objects_sort_config');
+        if (savedSortConfig) {
+          const sortConfig = JSON.parse(savedSortConfig);
+          if (sortConfig && ['being', 'avatar', 'object'].includes(sortConfig.key)) {
+            localStorage.removeItem('cdm_objects_sort_config');
+            setIsColumnSortActive(false);
+            localStorage.removeItem('cdm_objects_column_sort_active');
+          }
+        }
+      } catch (error) {
+        console.error('Error clearing column sort:', error);
+      }
+    }
+    console.log('Objects default order toggled:', enabled);
+  };
+
+  const handleListsOrderSave = (order: {
+    setOrder: string[];
+    groupingOrders: Record<string, string[]>;
+    listOrders: Record<string, string[]>;
+  }) => {
+    setListsOrderSortOrder(order);
+    localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(order));
+    console.log('Lists order saved:', order);
+  };
+
+  const handleListsDefaultOrderToggle = (enabled: boolean) => {
+    setIsListsOrderEnabled(enabled);
+    localStorage.setItem('cdm_lists_order_enabled', enabled.toString());
+    
+    // If enabling default order, clear column sort for Set, Grouping, List
+    if (enabled) {
+      try {
+        const savedSortConfig = localStorage.getItem('cdm_lists_sort_config');
+        if (savedSortConfig) {
+          const sortConfig = JSON.parse(savedSortConfig);
+          if (sortConfig && ['set', 'grouping', 'list'].includes(sortConfig.key)) {
+            localStorage.removeItem('cdm_lists_sort_config');
+            setIsListsColumnSortActive(false);
+            localStorage.removeItem('cdm_lists_column_sort_active');
+          }
+        }
+      } catch (error) {
+        console.error('Error clearing column sort:', error);
+      }
+    }
+    console.log('Lists default order toggled:', enabled);
   };
 
   const handleClearVariablesSorts = () => {
@@ -2819,14 +2961,18 @@ function App() {
     column: string;
     sortOn: string;
     order: 'asc' | 'desc';
-  }>) => {
+  }>, isDefaultOrderEnabled: boolean = false) => {
+    // Update default order enabled state
+    setIsListsOrderEnabled(isDefaultOrderEnabled);
+    localStorage.setItem('cdm_lists_order_enabled', isDefaultOrderEnabled.toString());
+    
     setListsCustomSortRules(sortRules);
     setIsListsCustomSortActive(sortRules.length > 0);
     setIsListsColumnSortActive(false); // Clear column sort when grid sort is applied
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_lists_column_sort_active');
     localStorage.removeItem('cdm_lists_sort_config');
-    console.log('Lists custom sort applied:', sortRules);
+    console.log('Lists custom sort applied:', sortRules, 'Default order enabled:', isDefaultOrderEnabled);
   };
 
   const handleListsColumnSort = () => {
@@ -3078,6 +3224,48 @@ function App() {
                       </button>
                     )}
                     
+                    {/* Order Button (Objects only) */}
+                    {activeTab === 'objects' && (
+                      <button
+                        onClick={() => setIsObjectsOrderOpen(true)}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          isObjectsOrderEnabled
+                            ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title="Define custom sort order for Being, Avatar, and Object columns"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                        Default Order
+                        {isObjectsOrderEnabled && (
+                          <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    
+                    {/* Order Button (Lists only) */}
+                    {activeTab === 'lists' && (
+                      <button
+                        onClick={() => setIsListsOrderOpen(true)}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          isListsOrderEnabled
+                            ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title="Define custom sort order for Set, Grouping, and List columns"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                        Default Order
+                        {isListsOrderEnabled && (
+                          <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    
                     {/* Generic Button */}
                     {(activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists') && (
                       <button
@@ -3200,6 +3388,25 @@ function App() {
                       )}
                     </button>
                     
+                    {/* Order Button (Lists only) */}
+                    <button
+                      onClick={() => setIsListsOrderOpen(true)}
+                      className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                        isListsOrderEnabled
+                          ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                          : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                      }`}
+                      title="Define custom sort order for Set, Grouping, and List columns"
+                    >
+                      <ArrowUpDown className="w-4 h-4" />
+                      Default Order
+                      {isListsOrderEnabled && (
+                        <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                          Active
+                        </span>
+                      )}
+                    </button>
+                    
                     {/* Generic Button */}
                     <button
                       onClick={() => {
@@ -3290,8 +3497,16 @@ function App() {
                 isCustomSortActive={activeTab === 'objects' ? isCustomSortActive : activeTab === 'variables' ? isVariablesCustomSortActive : activeTab === 'lists' ? isListsCustomSortActive : false}
                 isColumnSortActive={activeTab === 'objects' ? isColumnSortActive : activeTab === 'variables' ? isVariablesColumnSortActive : activeTab === 'lists' ? isListsColumnSortActive : false}
                 gridType={activeTab === 'lists' ? 'lists' : activeTab === 'variables' ? 'variables' : 'objects'}
-                isPredefinedSortEnabled={activeTab === 'variables' ? isVariablesOrderEnabled : false}
-                predefinedSortOrder={activeTab === 'variables' ? variablesOrderSortOrder : undefined}
+                isPredefinedSortEnabled={
+                  activeTab === 'variables' ? isVariablesOrderEnabled :
+                  activeTab === 'objects' ? isObjectsOrderEnabled :
+                  activeTab === 'lists' ? isListsOrderEnabled : false
+                }
+                predefinedSortOrder={
+                  activeTab === 'variables' ? variablesOrderSortOrder :
+                  activeTab === 'objects' ? objectsOrderSortOrder :
+                  activeTab === 'lists' ? listsOrderSortOrder : undefined
+                }
                 onResetHandlersReady={activeTab === 'objects' ? setObjectsResetHandlers : activeTab === 'variables' ? setVariablesResetHandlers : activeTab === 'lists' ? setListsResetHandlers : undefined}
               />
               </div>
@@ -3537,6 +3752,8 @@ function App() {
         onApplySort={handleCustomSortApply}
         columns={objectColumns}
         currentSortRules={customSortRules}
+        isDefaultOrderEnabled={isObjectsOrderEnabled}
+        onDefaultOrderToggle={handleObjectsDefaultOrderToggle}
       />
 
       {/* Variables Custom Sort Modal */}
@@ -3546,13 +3763,15 @@ function App() {
         onApplySort={handleVariablesCustomSortApply}
         columns={variableColumns}
         currentSortRules={variablesCustomSortRules}
+        isDefaultOrderEnabled={isVariablesOrderEnabled}
+        onDefaultOrderToggle={handleVariablesDefaultOrderToggle}
       />
 
       {/* Variables Order Modal */}
       <VariablesOrderModal
         isOpen={isVariablesOrderOpen}
         onClose={() => setIsVariablesOrderOpen(false)}
-        onApplyOrder={handleVariablesOrderApply}
+        onSaveOrder={handleVariablesOrderSave}
         variableData={variableData}
         sortConfig={(() => {
           try {
@@ -3562,8 +3781,25 @@ function App() {
             return null;
           }
         })()}
-        isOrderEnabled={isVariablesOrderEnabled}
         orderSortOrder={variablesOrderSortOrder}
+      />
+
+      {/* Objects Order Modal */}
+      <ObjectsOrderModal
+        isOpen={isObjectsOrderOpen}
+        onClose={() => setIsObjectsOrderOpen(false)}
+        onSaveOrder={handleObjectsOrderSave}
+        objectData={data}
+        orderSortOrder={objectsOrderSortOrder}
+      />
+
+      {/* Lists Order Modal */}
+      <ListsOrderModal
+        isOpen={isListsOrderOpen}
+        onClose={() => setIsListsOrderOpen(false)}
+        onSaveOrder={handleListsOrderSave}
+        listData={listData}
+        orderSortOrder={listsOrderSortOrder}
       />
 
       {/* Views Modal - Objects */}
@@ -3589,6 +3825,8 @@ function App() {
         onApplySort={handleListsCustomSortApply}
         columns={listColumns}
         currentSortRules={listsCustomSortRules}
+        isDefaultOrderEnabled={isListsOrderEnabled}
+        onDefaultOrderToggle={handleListsDefaultOrderToggle}
       />
 
       {/* Lists Views Modal */}

@@ -472,35 +472,48 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                     set_clauses = []
                     params = {"id": variable_id}
                     
-                    # Only update fields that are provided and not "Keep Current" values
-                    if bulk_data.variable is not None and bulk_data.variable.strip() != "Keep Current":
+                    # Helper function to check if a field should be updated
+                    def should_update_field(value: Optional[str], keep_current_text: str = "Keep Current") -> bool:
+                        if value is None:
+                            return False
+                        stripped = value.strip()
+                        return stripped != "" and stripped != keep_current_text and not stripped.startswith("Keep Current") and not stripped.startswith("Keep current")
+                    
+                    # Only update fields that are provided, not empty, and not "Keep Current" values
+                    if should_update_field(bulk_data.variable, "Keep current variable"):
                         set_clauses.append("v.name = $variable")
                         params["variable"] = bulk_data.variable
-                    if bulk_data.section is not None and bulk_data.section.strip() != "Keep Current":
+                    if should_update_field(bulk_data.part, "Keep Current Part"):
+                        set_clauses.append("v.part = $part")
+                        params["part"] = bulk_data.part
+                    if should_update_field(bulk_data.section, "Keep current section"):
                         set_clauses.append("v.section = $section")
                         params["section"] = bulk_data.section
-                    if bulk_data.formatI is not None and bulk_data.formatI.strip() != "Keep Current":
+                    if should_update_field(bulk_data.group, "Keep Current Group"):
+                        set_clauses.append("v.group = $group")
+                        params["group"] = bulk_data.group
+                    if should_update_field(bulk_data.formatI, "Keep Current Format I"):
                         set_clauses.append("v.formatI = $formatI")
                         params["formatI"] = bulk_data.formatI
-                    if bulk_data.formatII is not None and bulk_data.formatII.strip() != "Keep Current":
+                    if should_update_field(bulk_data.formatII, "Keep Current Format II"):
                         set_clauses.append("v.formatII = $formatII")
                         params["formatII"] = bulk_data.formatII
-                    if bulk_data.gType is not None and bulk_data.gType.strip() != "Keep Current":
+                    if should_update_field(bulk_data.gType, "Keep Current G-Type"):
                         set_clauses.append("v.gType = $gType")
                         params["gType"] = bulk_data.gType
-                    if bulk_data.validation is not None and bulk_data.validation.strip() != "Keep Current":
+                    if should_update_field(bulk_data.validation, "Keep Current Validation"):
                         set_clauses.append("v.validation = $validation")
                         params["validation"] = bulk_data.validation
-                    if bulk_data.default is not None and bulk_data.default.strip() != "Keep Current":
+                    if should_update_field(bulk_data.default, "Keep Current Default"):
                         set_clauses.append("v.default = $default")
                         params["default"] = bulk_data.default
-                    if bulk_data.graph is not None and bulk_data.graph.strip() != "Keep Current":
+                    if should_update_field(bulk_data.graph, "Keep Current Graph"):
                         set_clauses.append("v.graph = $graph")
                         params["graph"] = bulk_data.graph
-                    if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
+                    if should_update_field(bulk_data.status, "Keep Current Status"):
                         set_clauses.append("v.status = $status")
                         params["status"] = bulk_data.status
-                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                    if should_update_field(bulk_data.driver):
                         set_clauses.append("v.driver = $driver")
                         params["driver"] = bulk_data.driver
 
@@ -512,8 +525,8 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         """
                         session.run(update_query, params)
 
-                    # Update driver relationships if driver field is provided and not "Keep Current"
-                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                    # Update driver relationships if driver field is provided, not empty, and not "Keep Current"
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "" and bulk_data.driver.strip() != "Keep Current":
                         print(f"Updating driver relationships with: {bulk_data.driver}")
                         await create_driver_relationships(session, variable_id, bulk_data.driver)
 
@@ -1660,35 +1673,48 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                     set_clauses = []
                     params = {"id": variable_id}
                     
-                    # Only update fields that are provided and not "Keep Current" values
-                    if bulk_data.variable is not None and bulk_data.variable.strip() != "Keep Current":
+                    # Helper function to check if a field should be updated
+                    def should_update_field(value: Optional[str], keep_current_text: str = "Keep Current") -> bool:
+                        if value is None:
+                            return False
+                        stripped = value.strip()
+                        return stripped != "" and stripped != keep_current_text and not stripped.startswith("Keep Current") and not stripped.startswith("Keep current")
+                    
+                    # Only update fields that are provided, not empty, and not "Keep Current" values
+                    if should_update_field(bulk_data.variable, "Keep current variable"):
                         set_clauses.append("v.name = $variable")
                         params["variable"] = bulk_data.variable
-                    if bulk_data.section is not None and bulk_data.section.strip() != "Keep Current":
+                    if should_update_field(bulk_data.part, "Keep Current Part"):
+                        set_clauses.append("v.part = $part")
+                        params["part"] = bulk_data.part
+                    if should_update_field(bulk_data.section, "Keep current section"):
                         set_clauses.append("v.section = $section")
                         params["section"] = bulk_data.section
-                    if bulk_data.formatI is not None and bulk_data.formatI.strip() != "Keep Current":
+                    if should_update_field(bulk_data.group, "Keep Current Group"):
+                        set_clauses.append("v.group = $group")
+                        params["group"] = bulk_data.group
+                    if should_update_field(bulk_data.formatI, "Keep Current Format I"):
                         set_clauses.append("v.formatI = $formatI")
                         params["formatI"] = bulk_data.formatI
-                    if bulk_data.formatII is not None and bulk_data.formatII.strip() != "Keep Current":
+                    if should_update_field(bulk_data.formatII, "Keep Current Format II"):
                         set_clauses.append("v.formatII = $formatII")
                         params["formatII"] = bulk_data.formatII
-                    if bulk_data.gType is not None and bulk_data.gType.strip() != "Keep Current":
+                    if should_update_field(bulk_data.gType, "Keep Current G-Type"):
                         set_clauses.append("v.gType = $gType")
                         params["gType"] = bulk_data.gType
-                    if bulk_data.validation is not None and bulk_data.validation.strip() != "Keep Current":
+                    if should_update_field(bulk_data.validation, "Keep Current Validation"):
                         set_clauses.append("v.validation = $validation")
                         params["validation"] = bulk_data.validation
-                    if bulk_data.default is not None and bulk_data.default.strip() != "Keep Current":
+                    if should_update_field(bulk_data.default, "Keep Current Default"):
                         set_clauses.append("v.default = $default")
                         params["default"] = bulk_data.default
-                    if bulk_data.graph is not None and bulk_data.graph.strip() != "Keep Current":
+                    if should_update_field(bulk_data.graph, "Keep Current Graph"):
                         set_clauses.append("v.graph = $graph")
                         params["graph"] = bulk_data.graph
-                    if bulk_data.status is not None and bulk_data.status.strip() != "Keep Current":
+                    if should_update_field(bulk_data.status, "Keep Current Status"):
                         set_clauses.append("v.status = $status")
                         params["status"] = bulk_data.status
-                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                    if should_update_field(bulk_data.driver):
                         set_clauses.append("v.driver = $driver")
                         params["driver"] = bulk_data.driver
 
@@ -1700,8 +1726,8 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         """
                         session.run(update_query, params)
 
-                    # Update driver relationships if driver field is provided and not "Keep Current"
-                    if bulk_data.driver is not None and bulk_data.driver.strip() != "Keep Current":
+                    # Update driver relationships if driver field is provided, not empty, and not "Keep Current"
+                    if bulk_data.driver is not None and bulk_data.driver.strip() != "" and bulk_data.driver.strip() != "Keep Current":
                         print(f"Updating driver relationships with: {bulk_data.driver}")
                         await create_driver_relationships(session, variable_id, bulk_data.driver)
 

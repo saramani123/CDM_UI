@@ -18,6 +18,7 @@ interface ColumnFilterDropdownProps {
   currentSort: { type: 'custom' | 'none'; customOrder?: string[] };
   position: { top: number; left: number };
   availableOptions?: string[];
+  gridType?: 'objects' | 'variables' | 'lists';
 }
 
 export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
@@ -31,10 +32,12 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   currentFilters,
   currentSort,
   position,
-  availableOptions
+  availableOptions,
+  gridType
 }) => {
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'filter' | 'sort'>('filter');
+  // For variables grid, always use filter tab (sort tab is hidden)
+  const [activeTab, setActiveTab] = useState<'filter' | 'sort'>(gridType === 'variables' ? 'filter' : 'filter');
   const [tempFilters, setTempFilters] = useState<string[]>(currentFilters);
   const [customSortOrder, setCustomSortOrder] = useState<string[]>(
     currentSort.customOrder || []
@@ -236,8 +239,8 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
         </button>
       </div>
 
-      {/* Tabs */}
-      {!isNumericColumn && (
+      {/* Tabs - Hide sort tab for variables grid */}
+      {!isNumericColumn && gridType !== 'variables' && (
         <div className="flex border-b border-ag-dark-border">
           <button
             onClick={() => setActiveTab('filter')}
@@ -264,8 +267,8 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
 
       {/* Content */}
       <div className="p-4 max-h-[500px] overflow-y-auto">
-        {/* Filter Tab */}
-        {!isNumericColumn && activeTab === 'filter' && (
+        {/* Filter Tab - Always show for variables, or when filter tab is active for other grids */}
+        {!isNumericColumn && (gridType === 'variables' || activeTab === 'filter') && (
           <div className="space-y-3">
             {/* Search Input */}
             <div className="relative">
@@ -327,8 +330,8 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
           </div>
         )}
 
-        {/* Sort Tab */}
-        {(isNumericColumn || activeTab === 'sort') && (
+        {/* Sort Tab - Hide for variables grid */}
+        {gridType !== 'variables' && (isNumericColumn || activeTab === 'sort') && (
           <div className="space-y-3">
             <span className="text-sm text-ag-dark-text">Custom Sort</span>
             

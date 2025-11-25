@@ -145,6 +145,23 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const isTextareaFocusedRef = useRef<boolean>(false);
   const lastChangeTimeRef = useRef<number>(0);
 
+  // List metadata input fields focus management (for lists tab)
+  const listFormatInputRef = useRef<HTMLInputElement>(null);
+  const listSourceInputRef = useRef<HTMLInputElement>(null);
+  const listUpkeepInputRef = useRef<HTMLInputElement>(null);
+  const listGraphInputRef = useRef<HTMLInputElement>(null);
+  const listOriginInputRef = useRef<HTMLInputElement>(null);
+  const isListFormatInputFocusedRef = useRef<boolean>(false);
+  const isListSourceInputFocusedRef = useRef<boolean>(false);
+  const isListUpkeepInputFocusedRef = useRef<boolean>(false);
+  const isListGraphInputFocusedRef = useRef<boolean>(false);
+  const isListOriginInputFocusedRef = useRef<boolean>(false);
+  const lastListFormatChangeTimeRef = useRef<number>(0);
+  const lastListSourceChangeTimeRef = useRef<number>(0);
+  const lastListUpkeepChangeTimeRef = useRef<number>(0);
+  const lastListGraphChangeTimeRef = useRef<number>(0);
+  const lastListOriginChangeTimeRef = useRef<number>(0);
+
   const handleSortVariants = (direction: 'asc' | 'desc') => {
     const lines = variantsText.split('\n').filter(line => line.trim() !== '');
     const sortedLines = [...lines].sort((a, b) => {
@@ -1392,9 +1409,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   Format
                 </label>
                 <input
+                  ref={listFormatInputRef}
                   type="text"
                   value={listFormData.format}
-                  onChange={(e) => handleChange('format', e.target.value)}
+                  onInput={(e) => {
+                    e.stopPropagation();
+                    const input = e.target as HTMLInputElement;
+                    const cursorPosition = input.selectionStart;
+                    const newValue = input.value;
+                    lastListFormatChangeTimeRef.current = Date.now();
+                    handleChange('format', newValue);
+                    const restoreFocus = () => {
+                      if (listFormatInputRef.current) {
+                        listFormatInputRef.current.focus();
+                        const maxPos = listFormatInputRef.current.value.length;
+                        const safePos = Math.min(cursorPosition, maxPos);
+                        listFormatInputRef.current.setSelectionRange(safePos, safePos);
+                      }
+                    };
+                    restoreFocus();
+                    Promise.resolve().then(restoreFocus);
+                    requestAnimationFrame(restoreFocus);
+                  }}
+                  onChange={(e) => { e.stopPropagation(); }}
+                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListFormatInputFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    const timeSinceLastChange = Date.now() - lastListFormatChangeTimeRef.current;
+                    const wasRecentTyping = timeSinceLastChange < 300;
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                    if (wasRecentTyping && !clickedOnInput && listFormatInputRef.current && isListFormatInputFocusedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTimeout(() => { if (listFormatInputRef.current) listFormatInputRef.current.focus(); }, 0);
+                    } else if (!wasRecentTyping) {
+                      isListFormatInputFocusedRef.current = false;
+                    }
+                  }}
                   placeholder="Keep current format"
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                 />
@@ -1405,9 +1460,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   Source
                 </label>
                 <input
+                  ref={listSourceInputRef}
                   type="text"
                   value={listFormData.source}
-                  onChange={(e) => handleChange('source', e.target.value)}
+                  onInput={(e) => {
+                    e.stopPropagation();
+                    const input = e.target as HTMLInputElement;
+                    const cursorPosition = input.selectionStart;
+                    const newValue = input.value;
+                    lastListSourceChangeTimeRef.current = Date.now();
+                    handleChange('source', newValue);
+                    const restoreFocus = () => {
+                      if (listSourceInputRef.current) {
+                        listSourceInputRef.current.focus();
+                        const maxPos = listSourceInputRef.current.value.length;
+                        const safePos = Math.min(cursorPosition, maxPos);
+                        listSourceInputRef.current.setSelectionRange(safePos, safePos);
+                      }
+                    };
+                    restoreFocus();
+                    Promise.resolve().then(restoreFocus);
+                    requestAnimationFrame(restoreFocus);
+                  }}
+                  onChange={(e) => { e.stopPropagation(); }}
+                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListSourceInputFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    const timeSinceLastChange = Date.now() - lastListSourceChangeTimeRef.current;
+                    const wasRecentTyping = timeSinceLastChange < 300;
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                    if (wasRecentTyping && !clickedOnInput && listSourceInputRef.current && isListSourceInputFocusedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTimeout(() => { if (listSourceInputRef.current) listSourceInputRef.current.focus(); }, 0);
+                    } else if (!wasRecentTyping) {
+                      isListSourceInputFocusedRef.current = false;
+                    }
+                  }}
                   placeholder="Keep current source"
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                 />
@@ -1418,9 +1511,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   Upkeep
                 </label>
                 <input
+                  ref={listUpkeepInputRef}
                   type="text"
                   value={listFormData.upkeep}
-                  onChange={(e) => handleChange('upkeep', e.target.value)}
+                  onInput={(e) => {
+                    e.stopPropagation();
+                    const input = e.target as HTMLInputElement;
+                    const cursorPosition = input.selectionStart;
+                    const newValue = input.value;
+                    lastListUpkeepChangeTimeRef.current = Date.now();
+                    handleChange('upkeep', newValue);
+                    const restoreFocus = () => {
+                      if (listUpkeepInputRef.current) {
+                        listUpkeepInputRef.current.focus();
+                        const maxPos = listUpkeepInputRef.current.value.length;
+                        const safePos = Math.min(cursorPosition, maxPos);
+                        listUpkeepInputRef.current.setSelectionRange(safePos, safePos);
+                      }
+                    };
+                    restoreFocus();
+                    Promise.resolve().then(restoreFocus);
+                    requestAnimationFrame(restoreFocus);
+                  }}
+                  onChange={(e) => { e.stopPropagation(); }}
+                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListUpkeepInputFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    const timeSinceLastChange = Date.now() - lastListUpkeepChangeTimeRef.current;
+                    const wasRecentTyping = timeSinceLastChange < 300;
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                    if (wasRecentTyping && !clickedOnInput && listUpkeepInputRef.current && isListUpkeepInputFocusedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTimeout(() => { if (listUpkeepInputRef.current) listUpkeepInputRef.current.focus(); }, 0);
+                    } else if (!wasRecentTyping) {
+                      isListUpkeepInputFocusedRef.current = false;
+                    }
+                  }}
                   placeholder="Keep current upkeep"
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                 />
@@ -1431,9 +1562,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   Graph
                 </label>
                 <input
+                  ref={listGraphInputRef}
                   type="text"
                   value={listFormData.graph}
-                  onChange={(e) => handleChange('graph', e.target.value)}
+                  onInput={(e) => {
+                    e.stopPropagation();
+                    const input = e.target as HTMLInputElement;
+                    const cursorPosition = input.selectionStart;
+                    const newValue = input.value;
+                    lastListGraphChangeTimeRef.current = Date.now();
+                    handleChange('graph', newValue);
+                    const restoreFocus = () => {
+                      if (listGraphInputRef.current) {
+                        listGraphInputRef.current.focus();
+                        const maxPos = listGraphInputRef.current.value.length;
+                        const safePos = Math.min(cursorPosition, maxPos);
+                        listGraphInputRef.current.setSelectionRange(safePos, safePos);
+                      }
+                    };
+                    restoreFocus();
+                    Promise.resolve().then(restoreFocus);
+                    requestAnimationFrame(restoreFocus);
+                  }}
+                  onChange={(e) => { e.stopPropagation(); }}
+                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListGraphInputFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    const timeSinceLastChange = Date.now() - lastListGraphChangeTimeRef.current;
+                    const wasRecentTyping = timeSinceLastChange < 300;
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                    if (wasRecentTyping && !clickedOnInput && listGraphInputRef.current && isListGraphInputFocusedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTimeout(() => { if (listGraphInputRef.current) listGraphInputRef.current.focus(); }, 0);
+                    } else if (!wasRecentTyping) {
+                      isListGraphInputFocusedRef.current = false;
+                    }
+                  }}
                   placeholder="Keep current graph"
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                 />
@@ -1444,9 +1613,47 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   Origin
                 </label>
                 <input
+                  ref={listOriginInputRef}
                   type="text"
                   value={listFormData.origin}
-                  onChange={(e) => handleChange('origin', e.target.value)}
+                  onInput={(e) => {
+                    e.stopPropagation();
+                    const input = e.target as HTMLInputElement;
+                    const cursorPosition = input.selectionStart;
+                    const newValue = input.value;
+                    lastListOriginChangeTimeRef.current = Date.now();
+                    handleChange('origin', newValue);
+                    const restoreFocus = () => {
+                      if (listOriginInputRef.current) {
+                        listOriginInputRef.current.focus();
+                        const maxPos = listOriginInputRef.current.value.length;
+                        const safePos = Math.min(cursorPosition, maxPos);
+                        listOriginInputRef.current.setSelectionRange(safePos, safePos);
+                      }
+                    };
+                    restoreFocus();
+                    Promise.resolve().then(restoreFocus);
+                    requestAnimationFrame(restoreFocus);
+                  }}
+                  onChange={(e) => { e.stopPropagation(); }}
+                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListOriginInputFocusedRef.current = true; }}
+                  onBlur={(e) => {
+                    const timeSinceLastChange = Date.now() - lastListOriginChangeTimeRef.current;
+                    const wasRecentTyping = timeSinceLastChange < 300;
+                    const relatedTarget = e.relatedTarget as HTMLElement;
+                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                    if (wasRecentTyping && !clickedOnInput && listOriginInputRef.current && isListOriginInputFocusedRef.current) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTimeout(() => { if (listOriginInputRef.current) listOriginInputRef.current.focus(); }, 0);
+                    } else if (!wasRecentTyping) {
+                      isListOriginInputFocusedRef.current = false;
+                    }
+                  }}
                   placeholder="Keep current origin"
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                 />

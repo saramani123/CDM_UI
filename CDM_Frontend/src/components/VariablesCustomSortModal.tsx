@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, RotateCcw, Check } from 'lucide-react';
 
 interface SortRule {
@@ -11,9 +11,11 @@ interface SortRule {
 interface VariablesCustomSortModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApplySort: (sortRules: SortRule[]) => void;
+  onApplySort: (sortRules: SortRule[], isDefaultOrderEnabled: boolean) => void;
   columns: Array<{ key: string; title: string; sortable?: boolean }>;
   currentSortRules?: SortRule[];
+  isDefaultOrderEnabled?: boolean;
+  onDefaultOrderToggle?: (enabled: boolean) => void;
 }
 
 export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> = ({
@@ -21,13 +23,21 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
   onClose,
   onApplySort,
   columns,
-  currentSortRules = []
+  currentSortRules = [],
+  isDefaultOrderEnabled = false,
+  onDefaultOrderToggle
 }) => {
   const [sortRules, setSortRules] = useState<SortRule[]>(
     currentSortRules.length > 0 ? currentSortRules : [
       { id: '1', column: '', sortOn: 'cellValues', order: 'asc' }
     ]
   );
+  const [defaultOrderEnabled, setDefaultOrderEnabled] = useState(isDefaultOrderEnabled);
+
+  // Sync defaultOrderEnabled with prop when it changes
+  useEffect(() => {
+    setDefaultOrderEnabled(isDefaultOrderEnabled);
+  }, [isDefaultOrderEnabled]);
 
   // Custom Sort handlers
   const addSortRule = () => {
@@ -56,8 +66,21 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
 
   const handleApplyCustomSort = () => {
     const validRules = sortRules.filter(rule => rule.column);
-    onApplySort(validRules);
+    onApplySort(validRules, defaultOrderEnabled);
     onClose();
+  };
+
+  const handleDefaultOrderToggle = (enabled: boolean) => {
+    setDefaultOrderEnabled(enabled);
+    if (onDefaultOrderToggle) {
+      onDefaultOrderToggle(enabled);
+    }
+    // When enabling default order, remove any rules that use Part, Section, Group, or Variable
+    if (enabled) {
+      setSortRules(prev => prev.filter(rule => 
+        !rule.column || !['part', 'section', 'group', 'variable'].includes(rule.column)
+      ));
+    }
   };
 
   const handleCancel = () => {
@@ -70,10 +93,19 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
     onClose();
   };
 
-  // Get available columns for Variables custom sort (only Sector, Domain, Country - NOT Part, Section, Group, Variable)
-  const availableColumns = columns.filter(col => 
-    col.sortable && ['sector', 'domain', 'country'].includes(col.key)
-  );
+  // Get available columns for Variables custom sort
+  // When default order is enabled: only Sector, Domain, Country
+  // When default order is disabled: Sector, Domain, Country, Part, Section, Group, Variable
+  const availableColumns = columns.filter(col => {
+    if (!col.sortable) return false;
+    if (defaultOrderEnabled) {
+      // Only S, D, C when default order is enabled
+      return ['sector', 'domain', 'country'].includes(col.key);
+    } else {
+      // All columns when default order is disabled
+      return ['sector', 'domain', 'country', 'part', 'section', 'group', 'variable'].includes(col.key);
+    }
+  });
 
   if (!isOpen) return null;
 
@@ -94,11 +126,34 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
         {/* Custom Sort Content */}
         {(
           <>
+            {/* Enable Default Order Toggle */}
+            <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={defaultOrderEnabled}
+                  onChange={(e) => handleDefaultOrderToggle(e.target.checked)}
+                  className="w-5 h-5 text-ag-dark-accent bg-ag-dark-surface border-ag-dark-border rounded focus:ring-ag-dark-accent"
+                />
+                <span className="text-sm font-medium text-ag-dark-text">Enable default order</span>
+              </label>
+              {defaultOrderEnabled && (
+                <p className="text-xs text-ag-dark-text-secondary mt-2 ml-8">
+                  When enabled, sorting will be: Sector, Domain, Country (custom sort), then Part, Section, Group, Variable (default order).
+                  Part, Section, Group, and Variable columns are not available in custom sort when default order is enabled.
+                </p>
+              )}
+            </div>
+
             {/* Instructions */}
             <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
               <p className="text-sm text-ag-dark-text-secondary">
                 Define multi-column sorting rules for Variables. The first rule will be the primary sort, 
-                the second will be the secondary sort, and so on. Available columns: Sector, Domain, Country.
+                the second will be the secondary sort, and so on. 
+                {defaultOrderEnabled 
+                  ? ' Available columns: Sector, Domain, Country. Default order (Part, Section, Group, Variable) will be applied after custom sort.'
+                  : ' Available columns: Sector, Domain, Country, Part, Section, Group, Variable.'
+                }
               </p>
             </div>
 

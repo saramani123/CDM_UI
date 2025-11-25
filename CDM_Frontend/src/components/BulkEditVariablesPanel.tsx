@@ -142,6 +142,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
 
+  // Section input focus management
+  const sectionInputRef = useRef<HTMLInputElement>(null);
+  const isSectionInputFocusedRef = useRef<boolean>(false);
+  const lastSectionChangeTimeRef = useRef<number>(0);
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
@@ -458,14 +463,27 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       return;
     }
 
-    const saveData = {
-      ...formData,
-      ...(driverString && { driver: driverString }),
-      ...metadata,
-      objectRelationshipsList: objectRelationshipsList,
-      selectedObjectIds: selectedObjectRelationships, // Store IDs for reference
-      shouldOverrideRelationships: true, // Flag to indicate we should delete existing relationships
-      variationsList: variationsList.length > 0 ? variationsList : undefined
+    // Only include fields that have actual values (not empty strings or "Keep Current" placeholders)
+    const saveData: Record<string, any> = {
+      // Only include formData fields that have values
+      ...(formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part' && { part: formData.part }),
+      ...(formData.section && formData.section.trim() !== '' && formData.section !== 'Keep current section' && { section: formData.section }),
+      ...(formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group' && { group: formData.group }),
+      ...(formData.variable && formData.variable.trim() !== '' && formData.variable !== 'Keep current variable' && { variable: formData.variable }),
+      // Only include driver if it has a value
+      ...(driverString && driverString.trim() !== '' && { driver: driverString }),
+      // Only include metadata fields that have values
+      ...(metadata.formatI && metadata.formatI.trim() !== '' && metadata.formatI !== 'Keep Current Format I' && { formatI: metadata.formatI }),
+      ...(metadata.formatII && metadata.formatII.trim() !== '' && metadata.formatII !== 'Keep Current Format II' && { formatII: metadata.formatII }),
+      ...(metadata.gType && metadata.gType.trim() !== '' && metadata.gType !== 'Keep Current G-Type' && { gType: metadata.gType }),
+      ...(metadata.validation && metadata.validation.trim() !== '' && metadata.validation !== 'Keep Current Validation' && { validation: metadata.validation }),
+      ...(metadata.default && metadata.default.trim() !== '' && metadata.default !== 'Keep Current Default' && { default: metadata.default }),
+      ...(metadata.graph && metadata.graph.trim() !== '' && metadata.graph !== 'Keep Current Graph' && { graph: metadata.graph }),
+      // Object relationships
+      ...(objectRelationshipsList.length > 0 && { objectRelationshipsList: objectRelationshipsList }),
+      ...(objectRelationshipsList.length > 0 && { shouldOverrideRelationships: true }), // Flag to indicate we should delete existing relationships
+      // Variations
+      ...(variationsList.length > 0 && { variationsList: variationsList })
     };
     
     // If relationships are being changed, show confirmation
@@ -800,6 +818,99 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Section
+            </label>
+            <input
+              ref={sectionInputRef}
+              type="text"
+              value={formData.section}
+              onInput={(e) => {
+                e.stopPropagation();
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastSectionChangeTimeRef.current = Date.now();
+                
+                // Update state
+                handleChange('section', newValue);
+                
+                // Aggressively maintain focus - use multiple strategies
+                const restoreFocus = () => {
+                  if (sectionInputRef.current) {
+                    sectionInputRef.current.focus();
+                    const maxPos = sectionInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    sectionInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                
+                // Try immediately
+                restoreFocus();
+                
+                // Also try after microtask
+                Promise.resolve().then(restoreFocus);
+                
+                // Also try after animation frame
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => {
+                // Also handle onChange as fallback
+                e.stopPropagation();
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onKeyPress={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onMouseDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onFocus={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+                isSectionInputFocusedRef.current = true;
+              }}
+              onBlur={(e) => {
+                // Prevent blur if it happened right after typing
+                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
+                
+                // Check if blur was intentional
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && 
+                  (relatedTarget.tagName === 'INPUT' || 
+                   relatedTarget.tagName === 'TEXTAREA' || 
+                   relatedTarget.isContentEditable);
+                
+                // If it was recent typing and user didn't click on another input, prevent blur
+                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // Force focus back immediately
+                  setTimeout(() => {
+                    if (sectionInputRef.current) {
+                      sectionInputRef.current.focus();
+                    }
+                  }, 0);
+                } else if (!wasRecentTyping) {
+                  isSectionInputFocusedRef.current = false;
+                }
+              }}
+              placeholder="Keep current section"
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Group
             </label>
             <select
@@ -820,39 +931,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 </option>
               ))}
             </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Section
-            </label>
-            <input
-              key={`section-input-bulk-${selectedCount}`}
-              type="text"
-              value={formData.section}
-              onChange={(e) => {
-                e.stopPropagation();
-                handleChange('section', e.target.value);
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onFocus={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              placeholder="Keep current section"
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
           </div>
 
         </div>

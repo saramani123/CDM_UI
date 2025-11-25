@@ -71,6 +71,11 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   const lastChangeTimeRef = useRef<number>(0);
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
 
+  // Section input focus management
+  const sectionInputRef = useRef<HTMLInputElement>(null);
+  const isSectionInputFocusedRef = useRef<boolean>(false);
+  const lastSectionChangeTimeRef = useRef<number>(0);
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
@@ -597,14 +602,47 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               Section <span className="text-ag-dark-error">*</span>
             </label>
             <input
-              key="section-input-add"
+              ref={sectionInputRef}
               type="text"
               value={formData.section}
-              onChange={(e) => {
+              onInput={(e) => {
                 e.stopPropagation();
-                handleChange('section', e.target.value);
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastSectionChangeTimeRef.current = Date.now();
+                
+                // Update state
+                handleChange('section', newValue);
+                
+                // Aggressively maintain focus - use multiple strategies
+                const restoreFocus = () => {
+                  if (sectionInputRef.current) {
+                    sectionInputRef.current.focus();
+                    const maxPos = sectionInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    sectionInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                
+                // Try immediately
+                restoreFocus();
+                
+                // Also try after microtask
+                Promise.resolve().then(restoreFocus);
+                
+                // Also try after animation frame
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => {
+                // Also handle onChange as fallback
+                e.stopPropagation();
               }}
               onKeyDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onKeyPress={(e) => {
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
               }}
@@ -619,6 +657,33 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               onFocus={(e) => {
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
+                isSectionInputFocusedRef.current = true;
+              }}
+              onBlur={(e) => {
+                // Prevent blur if it happened right after typing
+                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
+                
+                // Check if blur was intentional
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && 
+                  (relatedTarget.tagName === 'INPUT' || 
+                   relatedTarget.tagName === 'TEXTAREA' || 
+                   relatedTarget.isContentEditable);
+                
+                // If it was recent typing and user didn't click on another input, prevent blur
+                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // Force focus back immediately
+                  setTimeout(() => {
+                    if (sectionInputRef.current) {
+                      sectionInputRef.current.focus();
+                    }
+                  }, 0);
+                } else if (!wasRecentTyping) {
+                  isSectionInputFocusedRef.current = false;
+                }
               }}
               placeholder="Enter section..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"

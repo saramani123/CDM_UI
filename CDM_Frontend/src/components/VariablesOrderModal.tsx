@@ -12,19 +12,17 @@ interface OrderSortOrder {
 interface VariablesOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApplyOrder: (enabled: boolean, order: OrderSortOrder) => void;
+  onSaveOrder: (order: OrderSortOrder) => void; // Changed: only saves order, doesn't enable/disable
   variableData: VariableData[];
   sortConfig?: any;
-  isOrderEnabled: boolean;
   orderSortOrder?: OrderSortOrder;
 }
 
 export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   isOpen,
   onClose,
-  onApplyOrder,
+  onSaveOrder,
   variableData,
-  isOrderEnabled,
   orderSortOrder
 }) => {
   const [workingPartOrder, setWorkingPartOrder] = useState<string[]>([]);
@@ -33,6 +31,9 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const [workingVariableOrders, setWorkingVariableOrders] = useState<Record<string, string[]>>({});
   const [selectedPart, setSelectedPart] = useState<string>('');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
+  // Separate state for Variable column part/group selection
+  const [selectedVariablePart, setSelectedVariablePart] = useState<string>('');
+  const [selectedVariableGroup, setSelectedVariableGroup] = useState<string>('');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'part' | 'section' | 'group' | 'variable' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
@@ -50,8 +51,8 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const groupsForPart = selectedPart
     ? Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.group).filter(Boolean))).sort()
     : [];
-  const variablesForPartAndGroup = selectedPart && selectedGroup
-    ? Array.from(new Set(variableData.filter(v => v.part === selectedPart && v.group === selectedGroup).map(v => v.variable).filter(Boolean))).sort()
+  const variablesForPartAndGroup = selectedVariablePart && selectedVariableGroup
+    ? Array.from(new Set(variableData.filter(v => v.part === selectedVariablePart && v.group === selectedVariableGroup).map(v => v.variable).filter(Boolean))).sort()
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
@@ -87,6 +88,39 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       setIsInitialized(true);
     }
   }, [isOpen, orderSortOrder, distinctParts, distinctSections, isInitialized]);
+
+  // Initialize working order for a part when it's selected (if not already in working orders)
+  useEffect(() => {
+    if (selectedPart && !workingGroupOrders[selectedPart]) {
+      const groupsForSelectedPart = Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.group).filter(Boolean))).sort();
+      const savedOrder = savedGroupOrders[selectedPart];
+      if (savedOrder && savedOrder.length > 0) {
+        // Use saved order if available
+        setWorkingGroupOrders(prev => ({ ...prev, [selectedPart]: [...savedOrder] }));
+      } else {
+        // Use alphabetical order
+        setWorkingGroupOrders(prev => ({ ...prev, [selectedPart]: groupsForSelectedPart }));
+      }
+    }
+  }, [selectedPart, variableData, savedGroupOrders, workingGroupOrders]);
+
+  // Initialize working order for a part+group when they're selected (if not already in working orders)
+  useEffect(() => {
+    if (selectedVariablePart && selectedVariableGroup) {
+      const key = `${selectedVariablePart}|${selectedVariableGroup}`;
+      if (!workingVariableOrders[key]) {
+        const variablesForSelected = Array.from(new Set(variableData.filter(v => v.part === selectedVariablePart && v.group === selectedVariableGroup).map(v => v.variable).filter(Boolean))).sort();
+        const savedOrder = savedVariableOrders[key];
+        if (savedOrder && savedOrder.length > 0) {
+          // Use saved order if available
+          setWorkingVariableOrders(prev => ({ ...prev, [key]: [...savedOrder] }));
+        } else {
+          // Use alphabetical order
+          setWorkingVariableOrders(prev => ({ ...prev, [key]: variablesForSelected }));
+        }
+      }
+    }
+  }, [selectedVariablePart, selectedVariableGroup, variableData, savedVariableOrders, workingVariableOrders]);
 
   const handleDragStart = (item: string, type: 'part' | 'section' | 'group' | 'variable') => {
     setDraggedItem(item);
@@ -154,8 +188,8 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingGroupOrders({ ...workingGroupOrders, [selectedPart]: newOrder });
-    } else if (type === 'variable' && selectedPart && selectedGroup) {
-      const key = `${selectedPart}|${selectedGroup}`;
+    } else if (type === 'variable' && selectedVariablePart && selectedVariableGroup) {
+      const key = `${selectedVariablePart}|${selectedVariableGroup}`;
       const currentVariables = workingVariableOrders[key] || savedVariableOrders[key] || variablesForPartAndGroup;
       const newOrder = [...currentVariables];
       const draggedIndex = newOrder.indexOf(draggedItem);
@@ -184,42 +218,25 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
     setDragOverIndex(-1);
   };
 
-  const handleSavePartOrder = () => {
-    // Persist the current working order as the saved order
-    setSavedPartOrder([...workingPartOrder]);
-  };
-
-  const handleSaveSectionOrder = () => {
-    // Persist the current working order as the saved order
-    setSavedSectionOrder([...workingSectionOrder]);
-  };
-
-  const handleSaveGroupOrder = () => {
-    if (!selectedPart) return;
-    const currentGroups = workingGroupOrders[selectedPart] || groupsForPart;
-    const newGroupOrders = { ...workingGroupOrders, [selectedPart]: [...currentGroups] };
-    setWorkingGroupOrders(newGroupOrders);
-    setSavedGroupOrders(newGroupOrders);
-  };
-
-  const handleSaveVariableOrder = () => {
-    if (!selectedPart || !selectedGroup) return;
-    const key = `${selectedPart}|${selectedGroup}`;
-    const currentVariables = workingVariableOrders[key] || variablesForPartAndGroup;
-    const newVariableOrders = { ...workingVariableOrders, [key]: [...currentVariables] };
-    setWorkingVariableOrders(newVariableOrders);
-    setSavedVariableOrders(newVariableOrders);
-  };
-
-  const handleApply = () => {
-    // Use saved orders if available, otherwise use working orders
+  const handleSaveChanges = () => {
+    // Save all current working orders (including any changes made when switching between parts/groups)
+    // This captures all changes across all parts and groups
     const order: OrderSortOrder = {
-      partOrder: savedPartOrder.length > 0 ? savedPartOrder : workingPartOrder,
-      sectionOrder: savedSectionOrder.length > 0 ? savedSectionOrder : workingSectionOrder,
-      groupOrders: Object.keys(savedGroupOrders).length > 0 ? savedGroupOrders : workingGroupOrders,
-      variableOrders: Object.keys(savedVariableOrders).length > 0 ? savedVariableOrders : workingVariableOrders
+      partOrder: workingPartOrder,
+      sectionOrder: workingSectionOrder,
+      groupOrders: workingGroupOrders,
+      variableOrders: workingVariableOrders
     };
-    onApplyOrder(isOrderEnabled, order);
+    
+    // Update saved orders to match working orders
+    setSavedPartOrder([...workingPartOrder]);
+    setSavedSectionOrder([...workingSectionOrder]);
+    setSavedGroupOrders({ ...workingGroupOrders });
+    setSavedVariableOrders({ ...workingVariableOrders });
+    
+    // Save to parent (which will persist to localStorage)
+    onSaveOrder(order);
+    // Close modal after saving
     onClose();
   };
 
@@ -304,12 +321,6 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                 </div>
               ))}
             </div>
-            <button
-              onClick={handleSavePartOrder}
-              className="w-full px-4 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors mt-auto"
-            >
-              Save Changes
-            </button>
           </div>
 
           {/* Section Column */}
@@ -338,12 +349,6 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                 </div>
               ))}
             </div>
-            <button
-              onClick={handleSaveSectionOrder}
-              className="w-full px-4 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors mt-auto"
-            >
-              Save Changes
-            </button>
           </div>
 
           {/* Group Column */}
@@ -389,12 +394,6 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={handleSaveGroupOrder}
-                  className="w-full px-4 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors mt-auto"
-                >
-                  Save Changes
-                </button>
               </>
             )}
           </div>
@@ -404,10 +403,11 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Variable</h4>
             <div className="mb-3 flex-shrink-0">
               <select
-                value={selectedPart}
+                value={selectedVariablePart}
                 onChange={(e) => {
-                  setSelectedPart(e.target.value);
-                  setSelectedGroup('');
+                  const newPart = e.target.value;
+                  setSelectedVariablePart(newPart);
+                  setSelectedVariableGroup(''); // Reset group when part changes
                 }}
                 className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
               >
@@ -416,23 +416,23 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                   <option key={part} value={part}>{part}</option>
                 ))}
               </select>
-              {selectedPart && (
+              {selectedVariablePart && (
                 <select
-                  value={selectedGroup}
-                  onChange={(e) => setSelectedGroup(e.target.value)}
+                  value={selectedVariableGroup}
+                  onChange={(e) => setSelectedVariableGroup(e.target.value)}
                   className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
                 >
                   <option value="">Select Group</option>
-                  {groupsForPart.map(group => (
+                  {Array.from(new Set(variableData.filter(v => v.part === selectedVariablePart).map(v => v.group).filter(Boolean))).sort().map(group => (
                     <option key={group} value={group}>{group}</option>
                   ))}
                 </select>
               )}
             </div>
-            {selectedPart && selectedGroup && (
+            {selectedVariablePart && selectedVariableGroup && (
               <>
                 <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingVariableOrders[`${selectedPart}|${selectedGroup}`] || savedVariableOrders[`${selectedPart}|${selectedGroup}`] || variablesForPartAndGroup).map((variable, index) => (
+                  {(workingVariableOrders[`${selectedVariablePart}|${selectedVariableGroup}`] || savedVariableOrders[`${selectedVariablePart}|${selectedVariableGroup}`] || variablesForPartAndGroup).map((variable, index) => (
                     <div
                       key={variable}
                       draggable
@@ -454,37 +454,13 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                     </div>
                   ))}
                 </div>
-                <button
-                  onClick={handleSaveVariableOrder}
-                  className="w-full px-4 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors mt-auto"
-                >
-                  Save Changes
-                </button>
               </>
             )}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between pt-4 border-t border-ag-dark-border flex-shrink-0">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isOrderEnabled}
-              onChange={(e) => {
-                // Use saved orders if available, otherwise use working orders
-                const order: OrderSortOrder = {
-                  partOrder: savedPartOrder.length > 0 ? savedPartOrder : workingPartOrder,
-                  sectionOrder: savedSectionOrder.length > 0 ? savedSectionOrder : workingSectionOrder,
-                  groupOrders: Object.keys(savedGroupOrders).length > 0 ? savedGroupOrders : workingGroupOrders,
-                  variableOrders: Object.keys(savedVariableOrders).length > 0 ? savedVariableOrders : workingVariableOrders
-                };
-                onApplyOrder(e.target.checked, order);
-              }}
-              className="w-4 h-4 text-ag-dark-accent bg-ag-dark-bg border-ag-dark-border rounded focus:ring-ag-dark-accent"
-            />
-            <span className="text-sm text-ag-dark-text">Enable default order</span>
-          </label>
+        <div className="flex items-center justify-end pt-4 border-t border-ag-dark-border flex-shrink-0">
           <div className="flex gap-3">
             <button
               onClick={onClose}
@@ -493,10 +469,10 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
               Cancel
             </button>
             <button
-              onClick={handleApply}
+              onClick={handleSaveChanges}
               className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
             >
-              Apply
+              Save Changes
             </button>
           </div>
         </div>

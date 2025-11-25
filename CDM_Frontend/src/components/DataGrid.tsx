@@ -15,10 +15,19 @@ interface Column {
 }
 
 interface PredefinedSortOrder {
-  partOrder: string[];
-  sectionOrder: string[];
-  groupOrders: Record<string, string[]>; // key: part, value: array of groups
-  variableOrders: Record<string, string[]>; // key: "part|group", value: array of variables
+  // Variables
+  partOrder?: string[];
+  sectionOrder?: string[];
+  groupOrders?: Record<string, string[]>; // key: part, value: array of groups
+  variableOrders?: Record<string, string[]>; // key: "part|group", value: array of variables
+  // Objects
+  beingOrder?: string[];
+  avatarOrders?: Record<string, string[]>; // key: being, value: array of avatars
+  objectOrders?: Record<string, string[]>; // key: "being|avatar", value: array of objects
+  // Lists
+  setOrder?: string[];
+  groupingOrders?: Record<string, string[]>; // key: set, value: array of groupings
+  listOrders?: Record<string, string[]>; // key: "set|grouping", value: array of lists
 }
 
 interface DataGridProps {
@@ -121,6 +130,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [draggedRow, setDraggedRow] = useState<Record<string, any> | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [lastSelectedRowIndex, setLastSelectedRowIndex] = useState<number | null>(null);
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     // Load persisted column widths from localStorage - use grid-specific key
     const storageKey = `cdm_column_widths_${gridType}`;
@@ -481,75 +491,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
       console.log('🔍 DataGrid - affected items:', affectedItems.map(item => ({ id: item.id, object: item.object, driver: item.driver })));
     }
 
-    // Apply predefined sort for Variables (Part, Section, Group, Variable) - this is applied BEFORE custom sort
-    if (gridType === 'variables' && isPredefinedSortEnabled && predefinedSortOrder) {
-      console.log('🎯 APPLYING PREDEFINED SORT:', predefinedSortOrder);
-      
-      processedData.sort((a, b) => {
-        // First sort by Part
-        const aPart = String(a.part || '');
-        const bPart = String(b.part || '');
-        const aPartIndex = predefinedSortOrder.partOrder.indexOf(aPart);
-        const bPartIndex = predefinedSortOrder.partOrder.indexOf(bPart);
-        
-        // If parts are different, sort by part order
-        if (aPartIndex !== bPartIndex) {
-          // If either part is not in the order, put it at the end
-          if (aPartIndex === -1) return 1;
-          if (bPartIndex === -1) return -1;
-          return aPartIndex - bPartIndex;
-        }
-        
-        // If parts are the same, sort by Section (if sectionOrder exists)
-        if (predefinedSortOrder.sectionOrder && predefinedSortOrder.sectionOrder.length > 0) {
-          const aSection = String(a.section || '');
-          const bSection = String(b.section || '');
-          const sectionOrder = predefinedSortOrder.sectionOrder;
-          const aSectionIndex = sectionOrder.indexOf(aSection);
-          const bSectionIndex = sectionOrder.indexOf(bSection);
-          
-          if (aSectionIndex !== bSectionIndex) {
-            if (aSectionIndex === -1) return 1;
-            if (bSectionIndex === -1) return -1;
-            return aSectionIndex - bSectionIndex;
-          }
-        }
-        
-        // If sections are the same, sort by Group
-        const aGroup = String(a.group || '');
-        const bGroup = String(b.group || '');
-        const groupOrder = predefinedSortOrder.groupOrders[aPart] || [];
-        const aGroupIndex = groupOrder.indexOf(aGroup);
-        const bGroupIndex = groupOrder.indexOf(bGroup);
-        
-        if (aGroupIndex !== bGroupIndex) {
-          if (aGroupIndex === -1) return 1;
-          if (bGroupIndex === -1) return -1;
-          return aGroupIndex - bGroupIndex;
-        }
-        
-        // If groups are the same, sort by Variable
-        const aVariable = String(a.variable || '');
-        const bVariable = String(b.variable || '');
-        const key = `${aPart}|${aGroup}`;
-        const variableOrder = predefinedSortOrder.variableOrders[key] || [];
-        const aVariableIndex = variableOrder.indexOf(aVariable);
-        const bVariableIndex = variableOrder.indexOf(bVariable);
-        
-        if (aVariableIndex !== bVariableIndex) {
-          if (aVariableIndex === -1) return 1;
-          if (bVariableIndex === -1) return -1;
-          return aVariableIndex - bVariableIndex;
-        }
-        
-        return 0; // All are equal
-      });
-      
-      console.log('✅ PREDEFINED SORT APPLIED');
-    }
-
-    // Apply custom sort rules (grid-level sort) - this takes priority over individual column sorts
-    // Custom sort is applied AFTER predefined sort, so it can sort by Sector, Domain, Country
+    // Apply custom sort rules (grid-level sort) - S, D, C sorting comes FIRST
+    // When default order is enabled, it will be applied AFTER custom sort
     if (customSortRules.length > 0) {
       console.log('🎯 APPLYING CUSTOM SORT RULES:', customSortRules);
       
@@ -588,8 +531,169 @@ export const DataGrid: React.FC<DataGridProps> = ({
       
       console.log('✅ CUSTOM SORT APPLIED');
     }
+
+    // Apply predefined sort (default order) - This is applied AFTER custom sort (S, D, C) when default order is enabled
+    if (isPredefinedSortEnabled && predefinedSortOrder) {
+      if (gridType === 'variables' && predefinedSortOrder.partOrder) {
+        console.log('🎯 APPLYING DEFAULT ORDER FOR VARIABLES:', predefinedSortOrder);
+        
+        processedData.sort((a, b) => {
+          // First sort by Part
+          const aPart = String(a.part || '');
+          const bPart = String(b.part || '');
+          const aPartIndex = predefinedSortOrder.partOrder!.indexOf(aPart);
+          const bPartIndex = predefinedSortOrder.partOrder!.indexOf(bPart);
+          
+          if (aPartIndex !== bPartIndex) {
+            if (aPartIndex === -1) return 1;
+            if (bPartIndex === -1) return -1;
+            return aPartIndex - bPartIndex;
+          }
+          
+          // If parts are the same, sort by Section (if sectionOrder exists)
+          if (predefinedSortOrder.sectionOrder && predefinedSortOrder.sectionOrder.length > 0) {
+            const aSection = String(a.section || '');
+            const bSection = String(b.section || '');
+            const aSectionIndex = predefinedSortOrder.sectionOrder.indexOf(aSection);
+            const bSectionIndex = predefinedSortOrder.sectionOrder.indexOf(bSection);
+            
+            if (aSectionIndex !== bSectionIndex) {
+              if (aSectionIndex === -1) return 1;
+              if (bSectionIndex === -1) return -1;
+              return aSectionIndex - bSectionIndex;
+            }
+          }
+          
+          // If sections are the same, sort by Group
+          const aGroup = String(a.group || '');
+          const bGroup = String(b.group || '');
+          const groupOrder = predefinedSortOrder.groupOrders?.[aPart] || [];
+          const aGroupIndex = groupOrder.indexOf(aGroup);
+          const bGroupIndex = groupOrder.indexOf(bGroup);
+          
+          if (aGroupIndex !== bGroupIndex) {
+            if (aGroupIndex === -1) return 1;
+            if (bGroupIndex === -1) return -1;
+            return aGroupIndex - bGroupIndex;
+          }
+          
+          // If groups are the same, sort by Variable
+          const aVariable = String(a.variable || '');
+          const bVariable = String(b.variable || '');
+          const key = `${aPart}|${aGroup}`;
+          const variableOrder = predefinedSortOrder.variableOrders?.[key] || [];
+          const aVariableIndex = variableOrder.indexOf(aVariable);
+          const bVariableIndex = variableOrder.indexOf(bVariable);
+          
+          if (aVariableIndex !== bVariableIndex) {
+            if (aVariableIndex === -1) return 1;
+            if (bVariableIndex === -1) return -1;
+            return aVariableIndex - bVariableIndex;
+          }
+          
+          return 0;
+        });
+        
+        console.log('✅ DEFAULT ORDER FOR VARIABLES APPLIED');
+      } else if (gridType === 'objects' && predefinedSortOrder.beingOrder) {
+        console.log('🎯 APPLYING DEFAULT ORDER FOR OBJECTS:', predefinedSortOrder);
+        
+        processedData.sort((a, b) => {
+          // First sort by Being
+          const aBeing = String(a.being || '');
+          const bBeing = String(b.being || '');
+          const aBeingIndex = predefinedSortOrder.beingOrder!.indexOf(aBeing);
+          const bBeingIndex = predefinedSortOrder.beingOrder!.indexOf(bBeing);
+          
+          if (aBeingIndex !== bBeingIndex) {
+            if (aBeingIndex === -1) return 1;
+            if (bBeingIndex === -1) return -1;
+            return aBeingIndex - bBeingIndex;
+          }
+          
+          // If beings are the same, sort by Avatar
+          const aAvatar = String(a.avatar || '');
+          const bAvatar = String(b.avatar || '');
+          const avatarOrder = predefinedSortOrder.avatarOrders?.[aBeing] || [];
+          const aAvatarIndex = avatarOrder.indexOf(aAvatar);
+          const bAvatarIndex = avatarOrder.indexOf(bAvatar);
+          
+          if (aAvatarIndex !== bAvatarIndex) {
+            if (aAvatarIndex === -1) return 1;
+            if (bAvatarIndex === -1) return -1;
+            return aAvatarIndex - bAvatarIndex;
+          }
+          
+          // If avatars are the same, sort by Object
+          const aObject = String(a.object || '');
+          const bObject = String(b.object || '');
+          const key = `${aBeing}|${aAvatar}`;
+          const objectOrder = predefinedSortOrder.objectOrders?.[key] || [];
+          const aObjectIndex = objectOrder.indexOf(aObject);
+          const bObjectIndex = objectOrder.indexOf(bObject);
+          
+          if (aObjectIndex !== bObjectIndex) {
+            if (aObjectIndex === -1) return 1;
+            if (bObjectIndex === -1) return -1;
+            return aObjectIndex - bObjectIndex;
+          }
+          
+          return 0;
+        });
+        
+        console.log('✅ DEFAULT ORDER FOR OBJECTS APPLIED');
+      } else if (gridType === 'lists' && predefinedSortOrder.setOrder) {
+        console.log('🎯 APPLYING DEFAULT ORDER FOR LISTS:', predefinedSortOrder);
+        
+        processedData.sort((a, b) => {
+          // First sort by Set
+          const aSet = String(a.set || '');
+          const bSet = String(b.set || '');
+          const aSetIndex = predefinedSortOrder.setOrder!.indexOf(aSet);
+          const bSetIndex = predefinedSortOrder.setOrder!.indexOf(bSet);
+          
+          if (aSetIndex !== bSetIndex) {
+            if (aSetIndex === -1) return 1;
+            if (bSetIndex === -1) return -1;
+            return aSetIndex - bSetIndex;
+          }
+          
+          // If sets are the same, sort by Grouping
+          const aGrouping = String(a.grouping || '');
+          const bGrouping = String(b.grouping || '');
+          const groupingOrder = predefinedSortOrder.groupingOrders?.[aSet] || [];
+          const aGroupingIndex = groupingOrder.indexOf(aGrouping);
+          const bGroupingIndex = groupingOrder.indexOf(bGrouping);
+          
+          if (aGroupingIndex !== bGroupingIndex) {
+            if (aGroupingIndex === -1) return 1;
+            if (bGroupingIndex === -1) return -1;
+            return aGroupingIndex - bGroupingIndex;
+          }
+          
+          // If groupings are the same, sort by List
+          const aList = String(a.list || '');
+          const bList = String(b.list || '');
+          const key = `${aSet}|${aGrouping}`;
+          const listOrder = predefinedSortOrder.listOrders?.[key] || [];
+          const aListIndex = listOrder.indexOf(aList);
+          const bListIndex = listOrder.indexOf(bList);
+          
+          if (aListIndex !== bListIndex) {
+            if (aListIndex === -1) return 1;
+            if (bListIndex === -1) return -1;
+            return aListIndex - bListIndex;
+          }
+          
+          return 0;
+        });
+        
+        console.log('✅ DEFAULT ORDER FOR LISTS APPLIED');
+      }
+    }
+    
     // Apply individual column sorting only if no custom sort rules
-    else if (sortConfig) {
+    if (!customSortRules.length && sortConfig) {
       console.log('🎯 SORT CONFIG EXISTS:', sortConfig);
       if (sortConfig.type === 'custom' && sortConfig.customOrder) {
         console.log('🔄 APPLYING CUSTOM SORT TO DATA:', {
@@ -1047,15 +1151,42 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     // Click-to-select mode for relationship data
                     onRelationshipRowClick(row.id);
                   } else if (selectionMode === 'row' && !relationshipData) {
-                    // Excel-like selection: Shift+click for multi-select, normal click for single select
-                    if (e.shiftKey) {
-                      // Shift+click: toggle/add to selection (multi-select)
+                    // Excel-like selection behavior
+                    if (e.shiftKey && lastSelectedRowIndex !== null) {
+                      // Shift+click: select all rows between last selected and current (inclusive)
+                      const currentIndex = filteredAndSortedData.findIndex(r => r.id === row.id);
+                      if (currentIndex !== -1) {
+                        const startIndex = Math.min(lastSelectedRowIndex, currentIndex);
+                        const endIndex = Math.max(lastSelectedRowIndex, currentIndex);
+                        const rangeRows = filteredAndSortedData.slice(startIndex, endIndex + 1);
+                        setLocalSelectedRows(rangeRows);
+                        onRowSelect?.(rangeRows);
+                        setLastSelectedRowIndex(currentIndex);
+                      }
+                    } else if (e.metaKey || e.ctrlKey) {
+                      // Command/Ctrl+click: toggle individual row (non-adjacent selection)
                       const currentlySelected = isRowSelected(row);
-                      handleRowSelection(row, !currentlySelected);
+                      if (currentlySelected) {
+                        const newSelection = localSelectedRows.filter(selectedRow => selectedRow.id !== row.id);
+                        setLocalSelectedRows(newSelection);
+                        onRowSelect?.(newSelection);
+                      } else {
+                        const newSelection = [...localSelectedRows, row];
+                        setLocalSelectedRows(newSelection);
+                        onRowSelect?.(newSelection);
+                      }
+                      const currentIndex = filteredAndSortedData.findIndex(r => r.id === row.id);
+                      if (currentIndex !== -1) {
+                        setLastSelectedRowIndex(currentIndex);
+                      }
                     } else {
                       // Normal click: single select (replace selection with just this row)
                       setLocalSelectedRows([row]);
                       onRowSelect?.([row]);
+                      const currentIndex = filteredAndSortedData.findIndex(r => r.id === row.id);
+                      if (currentIndex !== -1) {
+                        setLastSelectedRowIndex(currentIndex);
+                      }
                     }
                   }
                 }}
@@ -1264,6 +1395,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
           currentSort={getCurrentSort(openDropdown)}
           position={dropdownPosition}
           availableOptions={getAvailableFilterOptions[openDropdown] || []}
+          gridType={gridType}
         />
       )}
     </>

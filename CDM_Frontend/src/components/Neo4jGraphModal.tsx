@@ -422,12 +422,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       }
       
       setNodeCount(graphData.nodeCount);
-      if (graphData.nodeCount > 300) {
-        setError(`Large graph detected: ${graphData.nodeCount} nodes. Performance may be affected.`);
-      } else {
-        // Clear any previous error if we successfully loaded nodes
-        setError(null);
-      }
+      // Clear any previous error if we successfully loaded nodes
+      setError(null);
+      // Note: Large graph warning removed - users can still see node count if needed
       
       // Don't set loading to false here - let stabilizationEnd handle it
       // This ensures the graph is actually rendered before we clear the loading state
@@ -642,7 +639,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       </div>
 
         {/* Error/Warning Banner */}
-        {error && (
+        {error && !error.includes('Large graph detected') && (
           <div className="px-4 pt-3 pb-2">
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${
               nodeCount && nodeCount > 300 

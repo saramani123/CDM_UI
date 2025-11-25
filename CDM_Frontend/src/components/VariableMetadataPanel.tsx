@@ -319,6 +319,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
 
+  // Section input focus management
+  const sectionInputRef = useRef<HTMLInputElement>(null);
+  const isSectionInputFocusedRef = useRef<boolean>(false);
+  const lastSectionChangeTimeRef = useRef<number>(0);
+
   // Load variations when selectedVariable changes
   React.useEffect(() => {
     if (selectedVariable?.id) {
@@ -861,14 +866,47 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               Section
             </label>
             <input
-              key={`section-input-${selectedVariable?.id || 'new'}`}
+              ref={sectionInputRef}
               type="text"
               value={formData.section}
-              onChange={(e) => {
+              onInput={(e) => {
                 e.stopPropagation();
-                handleChange('section', e.target.value);
+                const input = e.target as HTMLInputElement;
+                const cursorPosition = input.selectionStart;
+                const newValue = input.value;
+                lastSectionChangeTimeRef.current = Date.now();
+                
+                // Update state
+                handleChange('section', newValue);
+                
+                // Aggressively maintain focus - use multiple strategies
+                const restoreFocus = () => {
+                  if (sectionInputRef.current) {
+                    sectionInputRef.current.focus();
+                    const maxPos = sectionInputRef.current.value.length;
+                    const safePos = Math.min(cursorPosition, maxPos);
+                    sectionInputRef.current.setSelectionRange(safePos, safePos);
+                  }
+                };
+                
+                // Try immediately
+                restoreFocus();
+                
+                // Also try after microtask
+                Promise.resolve().then(restoreFocus);
+                
+                // Also try after animation frame
+                requestAnimationFrame(restoreFocus);
+              }}
+              onChange={(e) => {
+                // Also handle onChange as fallback
+                e.stopPropagation();
               }}
               onKeyDown={(e) => {
+                e.stopPropagation();
+                e.nativeEvent.stopImmediatePropagation();
+              }}
+              onKeyPress={(e) => {
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
               }}
@@ -883,6 +921,33 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               onFocus={(e) => {
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
+                isSectionInputFocusedRef.current = true;
+              }}
+              onBlur={(e) => {
+                // Prevent blur if it happened right after typing
+                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
+                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
+                
+                // Check if blur was intentional
+                const relatedTarget = e.relatedTarget as HTMLElement;
+                const clickedOnInput = relatedTarget && 
+                  (relatedTarget.tagName === 'INPUT' || 
+                   relatedTarget.tagName === 'TEXTAREA' || 
+                   relatedTarget.isContentEditable);
+                
+                // If it was recent typing and user didn't click on another input, prevent blur
+                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  // Force focus back immediately
+                  setTimeout(() => {
+                    if (sectionInputRef.current) {
+                      sectionInputRef.current.focus();
+                    }
+                  }, 0);
+                } else if (!wasRecentTyping) {
+                  isSectionInputFocusedRef.current = false;
+                }
               }}
               disabled={!isPanelEnabled}
               placeholder="Enter section..."
