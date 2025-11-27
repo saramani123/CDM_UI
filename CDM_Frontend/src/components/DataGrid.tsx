@@ -17,9 +17,10 @@ interface Column {
 interface PredefinedSortOrder {
   // Variables
   partOrder?: string[];
-  sectionOrder?: string[];
-  groupOrders?: Record<string, string[]>; // key: part, value: array of groups
-  variableOrders?: Record<string, string[]>; // key: "part|group", value: array of variables
+  sectionOrders?: Record<string, string[]>; // key: part, value: array of sections
+  sectionOrder?: string[]; // Legacy support for old format
+  groupOrders?: Record<string, string[]>; // key: "part|section", value: array of groups
+  variableOrders?: Record<string, string[]>; // key: "part|section|group", value: array of variables
   // Objects
   beingOrder?: string[];
   avatarOrders?: Record<string, string[]>; // key: being, value: array of avatars
@@ -550,12 +551,21 @@ export const DataGrid: React.FC<DataGridProps> = ({
             return aPartIndex - bPartIndex;
           }
           
-          // If parts are the same, sort by Section (if sectionOrder exists)
-          if (predefinedSortOrder.sectionOrder && predefinedSortOrder.sectionOrder.length > 0) {
-            const aSection = String(a.section || '');
-            const bSection = String(b.section || '');
-            const aSectionIndex = predefinedSortOrder.sectionOrder.indexOf(aSection);
-            const bSectionIndex = predefinedSortOrder.sectionOrder.indexOf(bSection);
+          // If parts are the same, sort by Section (if sectionOrders exists for this part)
+          const aSection = String(a.section || '');
+          const bSection = String(b.section || '');
+          // Support both new format (sectionOrders) and legacy format (sectionOrder)
+          let sectionOrder: string[] = [];
+          if (predefinedSortOrder.sectionOrders && predefinedSortOrder.sectionOrders[aPart]) {
+            sectionOrder = predefinedSortOrder.sectionOrders[aPart];
+          } else if (predefinedSortOrder.sectionOrder) {
+            // Legacy support: use flat sectionOrder
+            sectionOrder = predefinedSortOrder.sectionOrder;
+          }
+          
+          if (sectionOrder.length > 0) {
+            const aSectionIndex = sectionOrder.indexOf(aSection);
+            const bSectionIndex = sectionOrder.indexOf(bSection);
             
             if (aSectionIndex !== bSectionIndex) {
               if (aSectionIndex === -1) return 1;
@@ -567,7 +577,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
           // If sections are the same, sort by Group
           const aGroup = String(a.group || '');
           const bGroup = String(b.group || '');
-          const groupOrder = predefinedSortOrder.groupOrders?.[aPart] || [];
+          const groupKey = `${aPart}|${aSection}`;
+          const groupOrder = predefinedSortOrder.groupOrders?.[groupKey] || [];
           const aGroupIndex = groupOrder.indexOf(aGroup);
           const bGroupIndex = groupOrder.indexOf(bGroup);
           
@@ -580,8 +591,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
           // If groups are the same, sort by Variable
           const aVariable = String(a.variable || '');
           const bVariable = String(b.variable || '');
-          const key = `${aPart}|${aGroup}`;
-          const variableOrder = predefinedSortOrder.variableOrders?.[key] || [];
+          const variableKey = `${aPart}|${aSection}|${aGroup}`;
+          const variableOrder = predefinedSortOrder.variableOrders?.[variableKey] || [];
           const aVariableIndex = variableOrder.indexOf(aVariable);
           const bVariableIndex = variableOrder.indexOf(bVariable);
           

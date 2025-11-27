@@ -2760,3 +2760,555 @@ INFO:     127.0.0.1:56573 - "GET /api/v1/variables HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56686 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56686 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56694 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59421 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59423 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59421 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59424 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59423 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59426 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59421 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59424 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59428 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59426 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59423 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59429 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59428 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:59421 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:59424 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:59423 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:59429 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:59426 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:59421 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59424 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59428 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:59429 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59423 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59421 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:59428 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59423 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:59424 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#E827]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:59428 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:60079 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:60082 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:60079 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:60084 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:60086 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:60084 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:60088 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60089 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:60088 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60084 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+[#EABB]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:60086 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:60084 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#EB26]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:60088 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:60079 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:60254 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61052 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61053 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61052 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61055 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61053 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61057 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61052 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61055 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61058 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:61053 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:61057 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:61058 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:61052 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:61055 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61050 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:61053 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61057 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:61055 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61068 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61072 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:61074 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#EE86]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:61078 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61068 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error fetching variables: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61118 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61200 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61206 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61206 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61208 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61208 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61212 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61214 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61214 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61216 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61216 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61218 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61220 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61222 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61222 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61224 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61224 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61226 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61226 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61226 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61226 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61226 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61228 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61228 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61230 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:61240 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:61288 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65306 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65308 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65306 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65309 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65308 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65311 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65306 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65309 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65313 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65311 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65308 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65314 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65306 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:65309 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:65313 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:65314 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:65311 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:65308 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65306 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:65309 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65313 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:65308 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65314 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65309 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:65308 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#FF24]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:65306 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65336 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error fetching variables: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65352 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65387 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65389 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65391 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65391 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65393 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65393 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65395 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65397 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65397 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65399 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65401 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65403 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65405 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65405 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65407 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Error querying Neo4j: Cannot resolve address fbb04c5f.databases.neo4j.io:7687
+INFO:     127.0.0.1:65407 - "GET /api/v1/objects HTTP/1.1" 500 Internal Server Error
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:65456 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:49199 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:49201 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:49199 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:49202 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:49204 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:49202 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:49206 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49207 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:49206 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49202 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49224 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:49202 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49207 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49276 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53415 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53416 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53415 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53418 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53416 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53420 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53418 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53415 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53421 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53420 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53416 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53418 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53415 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53421 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:53420 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53421 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53418 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53430 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53413 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53418 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53432 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:53413 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53436 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54421 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54423 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54425 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54421 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54423 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54427 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54425 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54429 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54423 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54427 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54421 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54430 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54429 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54425 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54421 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54427 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54430 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54423 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:54429 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54425 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54421 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54430 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+[#D4A3]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:54429 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:54430 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54421 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54429 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:54452 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#D510]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:54453 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:55709 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55709 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55712 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55714 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55712 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55709 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55716 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55714 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55717 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55716 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:55712 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:55709 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:55717 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:55710 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:55714 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:55716 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55712 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55709 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:55717 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55709 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:55714 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55710 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:55714 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55750 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56237 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56239 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56237 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56240 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56239 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56242 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56240 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56237 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56244 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56239 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56242 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56245 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56244 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56240 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56237 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56239 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56245 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56242 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56240 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56244 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56242 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56245 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56240 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56239 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56245 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56265 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56268 - "GET /api/v1/objects HTTP/1.1" 200 OK
+[#DBB9]  _: <CONNECTION> error: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687))): TimeoutError('The read operation timed out')
+Error fetching variables: Failed to read from defunct connection IPv4Address(('si-fbb04c5f-25af.production-orch-0033.neo4j.io', 7687)) (ResolvedIPv4Address(('34.78.243.29', 7687)))
+INFO:     127.0.0.1:56270 - "GET /api/v1/variables HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:56963 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56964 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56963 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56966 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56964 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56968 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56963 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56966 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56970 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56968 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56964 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56971 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56963 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56970 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56966 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56964 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56971 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56968 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56963 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:56970 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56966 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56968 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56964 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56970 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56963 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56968 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:56963 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56979 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58332 - "OPTIONS /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58334 - "OPTIONS /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58332 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58332 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58334 - "OPTIONS /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58336 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "OPTIONS /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58406 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58408 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58410 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58413 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58414 - "OPTIONS /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58417 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58423 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58424 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58423 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58436 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58423 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58424 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58438 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58448 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58450 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58452 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58450 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58455 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58450 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58462 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58463 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58462 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58555 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58556 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58570 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58556 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58586 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58587 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58586 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58654 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58655 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58662 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58655 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58716 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58717 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58716 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58744 - "OPTIONS /api/v1/drivers/sectors HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "OPTIONS /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58747 - "OPTIONS /api/v1/drivers/countries HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58744 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58749 - "OPTIONS /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Sector) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:58747 - "GET /api/v1/drivers/sectors HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 44, offset: 43} for query: 'MATCH (d:Country) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:58746 - "GET /api/v1/drivers/countries HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58751 - "OPTIONS /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 43, offset: 42} for query: 'MATCH (d:Domain) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:58749 - "GET /api/v1/drivers/domains HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58744 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 52, offset: 51} for query: 'MATCH (d:ObjectClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:58747 - "GET /api/v1/drivers/objectClarifiers HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58751 - "GET /api/v1/objects HTTP/1.1" 200 OK
+Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownPropertyKeyWarning} {category: UNRECOGNIZED} {title: The provided property key is not in the database} {description: One of the property names in your query is not available in the database, make sure you didn't misspell it or that the label is available when you run this statement in your application (the missing property name is: order)} {position: line: 1, column: 54, offset: 53} for query: 'MATCH (d:VariableClarifier) RETURN d.name as name, d.order as order ORDER BY COALESCE(d.order, 999999), d.name'
+INFO:     127.0.0.1:58746 - "GET /api/v1/drivers/variableClarifiers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58749 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58746 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/v1/variables HTTP/1.1" 200 OK
+Retrieved 113 objects from Neo4j (optimized query)
+INFO:     127.0.0.1:58746 - "GET /api/v1/objects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58759 - "GET /api/v1/variables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58752 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "POST /api/v1/graph/query HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58746 - "GET /api/v1/variables/field-options HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58767 - "OPTIONS /api/v1/variables/03b9ef11-7b4f-469c-be8a-ba3ec135fcdc/variations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58767 - "GET /api/v1/variables/03b9ef11-7b4f-469c-be8a-ba3ec135fcdc/variations HTTP/1.1" 200 OK

@@ -153,9 +153,9 @@ function App() {
   const [isVariablesOrderEnabled, setIsVariablesOrderEnabled] = useState(variablesPersistedState.isOrderEnabled);
   const [variablesOrderSortOrder, setVariablesOrderSortOrder] = useState<{
     partOrder: string[];
-    sectionOrder: string[];
-    groupOrders: Record<string, string[]>;
-    variableOrders: Record<string, string[]>;
+    sectionOrders: Record<string, string[]>; // key: part, value: array of sections
+    groupOrders: Record<string, string[]>; // key: "part|section", value: array of groups
+    variableOrders: Record<string, string[]>; // key: "part|section|group", value: array of variables
   } | undefined>(variablesPersistedState.orderSortOrder);
 
   // Lists Custom Sort state - load from localStorage
@@ -2830,9 +2830,9 @@ function App() {
 
   const handleVariablesOrderSave = (order: {
     partOrder: string[];
-    sectionOrder: string[];
-    groupOrders: Record<string, string[]>;
-    variableOrders: Record<string, string[]>;
+    sectionOrders: Record<string, string[]>; // key: part, value: array of sections
+    groupOrders: Record<string, string[]>; // key: "part|section", value: array of groups
+    variableOrders: Record<string, string[]>; // key: "part|section|group", value: array of variables
   }) => {
     // Save the order to localStorage - this is persistent and doesn't change unless user modifies it
     setVariablesOrderSortOrder(order);
