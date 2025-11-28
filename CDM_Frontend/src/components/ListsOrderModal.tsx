@@ -26,10 +26,9 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
   const [workingSetOrder, setWorkingSetOrder] = useState<string[]>([]);
   const [workingGroupingOrders, setWorkingGroupingOrders] = useState<Record<string, string[]>>({});
   const [workingListOrders, setWorkingListOrders] = useState<Record<string, string[]>>({});
+  // Click-based selections (cascading filters)
   const [selectedSet, setSelectedSet] = useState<string>('');
-  // Separate state for List column set/grouping selection
-  const [selectedListSet, setSelectedListSet] = useState<string>('');
-  const [selectedListGrouping, setSelectedListGrouping] = useState<string>('');
+  const [selectedGrouping, setSelectedGrouping] = useState<string>('');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'set' | 'grouping' | 'list' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
@@ -45,8 +44,8 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
   const groupingsForSet = selectedSet
     ? Array.from(new Set(listData.filter(l => l.set === selectedSet).map(l => l.grouping).filter(Boolean))).sort()
     : [];
-  const listsForSetAndGrouping = selectedListSet && selectedListGrouping
-    ? Array.from(new Set(listData.filter(l => l.set === selectedListSet && l.grouping === selectedListGrouping).map(l => l.list).filter(Boolean))).sort()
+  const listsForSetAndGrouping = selectedSet && selectedGrouping
+    ? Array.from(new Set(listData.filter(l => l.set === selectedSet && l.grouping === selectedGrouping).map(l => l.list).filter(Boolean))).sort()
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
@@ -91,12 +90,12 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
     }
   }, [selectedSet, listData, savedGroupingOrders, workingGroupingOrders]);
 
-  // Initialize working order for a set+grouping when they're selected (if not already in working orders)
+  // Initialize working order for lists when set+grouping are selected (from column clicks)
   useEffect(() => {
-    if (selectedListSet && selectedListGrouping) {
-      const key = `${selectedListSet}|${selectedListGrouping}`;
+    if (selectedSet && selectedGrouping) {
+      const key = `${selectedSet}|${selectedGrouping}`;
       if (!workingListOrders[key]) {
-        const listsForSelected = Array.from(new Set(listData.filter(l => l.set === selectedListSet && l.grouping === selectedListGrouping).map(l => l.list).filter(Boolean))).sort();
+        const listsForSelected = Array.from(new Set(listData.filter(l => l.set === selectedSet && l.grouping === selectedGrouping).map(l => l.list).filter(Boolean))).sort();
         const savedOrder = savedListOrders[key];
         if (savedOrder && savedOrder.length > 0) {
           setWorkingListOrders(prev => ({ ...prev, [key]: [...savedOrder] }));
@@ -105,7 +104,7 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
         }
       }
     }
-  }, [selectedListSet, selectedListGrouping, listData, savedListOrders, workingListOrders]);
+  }, [selectedSet, selectedGrouping, listData, savedListOrders, workingListOrders]);
 
   const handleDragStart = (item: string, type: 'set' | 'grouping' | 'list') => {
     setDraggedItem(item);
@@ -154,8 +153,8 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingGroupingOrders({ ...workingGroupingOrders, [selectedSet]: newOrder });
-    } else if (type === 'list' && selectedListSet && selectedListGrouping) {
-      const key = `${selectedListSet}|${selectedListGrouping}`;
+    } else if (type === 'list' && selectedSet && selectedGrouping) {
+      const key = `${selectedSet}|${selectedGrouping}`;
       const currentLists = workingListOrders[key] || savedListOrders[key] || listsForSetAndGrouping;
       const newOrder = [...currentLists];
       const draggedIndex = newOrder.indexOf(draggedItem);
@@ -236,8 +235,7 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
         {/* Instructions */}
         <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex-shrink-0">
           <p className="text-sm text-ag-dark-text-secondary">
-            Define the sort order for Set, Grouping, and List columns. Drag items to reorder them.
-            The order will be applied when enabled.
+            Define the sort order for Set, Grouping, and List columns. Click on values to filter columns to the right. Drag items to reorder them. The order will be applied when enabled.
           </p>
         </div>
 
@@ -255,8 +253,25 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index, 'set')}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                    draggedItem === set && dragType === 'set'
+                  onClick={(e) => {
+                    // Only handle click if not dragging
+                    if (draggedItem === null) {
+                      e.stopPropagation();
+                      if (selectedSet === set) {
+                        // Deselect if clicking the same item
+                        setSelectedSet('');
+                        setSelectedGrouping('');
+                      } else {
+                        // Select this set and reset dependent selections
+                        setSelectedSet(set);
+                        setSelectedGrouping('');
+                      }
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                    selectedSet === set
+                      ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                      : draggedItem === set && dragType === 'set'
                       ? 'bg-ag-dark-accent bg-opacity-20'
                       : dragOverIndex === index && dragType === 'set'
                       ? 'bg-ag-dark-accent bg-opacity-10'
@@ -274,106 +289,83 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
           {/* Grouping Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Grouping</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedSet}
-                onChange={(e) => {
-                  setSelectedSet(e.target.value);
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-              >
-                <option value="">Select Set</option>
-                {distinctSets.map(set => (
-                  <option key={set} value={set}>{set}</option>
+            {selectedSet ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingGroupingOrders[selectedSet] || savedGroupingOrders[selectedSet] || groupingsForSet).map((grouping, index) => (
+                  <div
+                    key={grouping}
+                    draggable
+                    onDragStart={() => handleDragStart(grouping, 'grouping')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'grouping')}
+                    onDragEnd={handleDragEnd}
+                    onClick={(e) => {
+                      // Only handle click if not dragging
+                      if (draggedItem === null) {
+                        e.stopPropagation();
+                        if (selectedGrouping === grouping) {
+                          // Deselect if clicking the same item
+                          setSelectedGrouping('');
+                        } else {
+                          // Select this grouping
+                          setSelectedGrouping(grouping);
+                        }
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                      selectedGrouping === grouping
+                        ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                        : draggedItem === grouping && dragType === 'grouping'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'grouping'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{grouping}</span>
+                  </div>
                 ))}
-              </select>
-            </div>
-            {selectedSet && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingGroupingOrders[selectedSet] || savedGroupingOrders[selectedSet] || groupingsForSet).map((grouping, index) => (
-                    <div
-                      key={grouping}
-                      draggable
-                      onDragStart={() => handleDragStart(grouping, 'grouping')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'grouping')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === grouping && dragType === 'grouping'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'grouping'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{grouping}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                Click a Set to see Groupings
+              </div>
             )}
           </div>
 
           {/* List Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">List</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedListSet}
-                onChange={(e) => {
-                  const newSet = e.target.value;
-                  setSelectedListSet(newSet);
-                  setSelectedListGrouping('');
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
-              >
-                <option value="">Select Set</option>
-                {distinctSets.map(set => (
-                  <option key={set} value={set}>{set}</option>
+            {selectedSet && selectedGrouping ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingListOrders[`${selectedSet}|${selectedGrouping}`] || savedListOrders[`${selectedSet}|${selectedGrouping}`] || listsForSetAndGrouping).map((list, index) => (
+                  <div
+                    key={list}
+                    draggable
+                    onDragStart={() => handleDragStart(list, 'list')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'list')}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                      draggedItem === list && dragType === 'list'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'list'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{list}</span>
+                  </div>
                 ))}
-              </select>
-              {selectedListSet && (
-                <select
-                  value={selectedListGrouping}
-                  onChange={(e) => setSelectedListGrouping(e.target.value)}
-                  className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-                >
-                  <option value="">Select Grouping</option>
-                  {Array.from(new Set(listData.filter(l => l.set === selectedListSet).map(l => l.grouping).filter(Boolean))).sort().map(grouping => (
-                    <option key={grouping} value={grouping}>{grouping}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {selectedListSet && selectedListGrouping && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingListOrders[`${selectedListSet}|${selectedListGrouping}`] || savedListOrders[`${selectedListSet}|${selectedListGrouping}`] || listsForSetAndGrouping).map((list, index) => (
-                    <div
-                      key={list}
-                      draggable
-                      onDragStart={() => handleDragStart(list, 'list')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'list')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === list && dragType === 'list'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'list'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{list}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                {!selectedSet ? 'Click a Set to see Lists' : 'Click a Grouping to see Lists'}
+              </div>
             )}
           </div>
         </div>

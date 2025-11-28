@@ -9,6 +9,7 @@ import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
+import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
 
 interface VariableMetadataField {
   key: string;
@@ -225,6 +226,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     drivers: false,
     ontology: false,
     metadata: false,
+    validations: false,
     objectRelationships: false,
     variations: false
   });
@@ -257,6 +259,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       };
       console.log('VariableMetadataPanel: newFormData for new variable', newFormData);
       setFormData(newFormData);
+      
+      // Parse validation string into components
+      const parsed = parseValidation(selectedVariable?.validation || '');
+      setValidationComponents(parsed);
+      setValidationError('');
     }
     
     // Update driver selections when selected variable changes
@@ -319,10 +326,43 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
 
+  // Validation components state
+  const [validationComponents, setValidationComponents] = useState<ValidationComponents>({
+    valType: '',
+    operator: '',
+    value: ''
+  });
+  const [validationError, setValidationError] = useState<string>('');
+
   // Section input focus management
   const sectionInputRef = useRef<HTMLInputElement>(null);
   const isSectionInputFocusedRef = useRef<boolean>(false);
   const lastSectionChangeTimeRef = useRef<number>(0);
+
+  // Validation value input focus management
+  const validationValueInputRef = useRef<HTMLInputElement>(null);
+  const isValidationValueInputFocusedRef = useRef<boolean>(false);
+  const lastValidationValueChangeTimeRef = useRef<number>(0);
+
+  // Update validation value when formatI changes (for Range type)
+  React.useEffect(() => {
+    if (validationComponents.valType === 'Range' && formData.formatI) {
+      setValidationComponents(prev => ({
+        ...prev,
+        value: formData.formatI
+      }));
+    }
+  }, [formData.formatI, validationComponents.valType]);
+
+  // Update validation value when variable name changes (for Relative type)
+  React.useEffect(() => {
+    if (validationComponents.valType === 'Relative' && formData.variable) {
+      setValidationComponents(prev => ({
+        ...prev,
+        value: formData.variable
+      }));
+    }
+  }, [formData.variable, validationComponents.valType]);
 
   // Load variations when selectedVariable changes
   React.useEffect(() => {
@@ -506,9 +546,36 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         return;
       }
 
+      // Validate validation components before saving
+      if (validationComponents.valType) {
+        // Check if operator is required and selected
+        const requiresOperator = ['Range', 'Relative', 'Length'].includes(validationComponents.valType);
+        if (requiresOperator && !validationComponents.operator) {
+          alert('Please select an operator for the selected validation type.');
+          setValidationError('Operator is required');
+          return;
+        }
+        
+        // Check if value is required and entered
+        const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
+        if (requiresValue && !validationComponents.value.trim()) {
+          alert('Please enter a value for the selected validation type.');
+          setValidationError('Value is required');
+          return;
+        }
+      }
+
+      // Build validation string from components
+      const validationString = buildValidationString(
+        validationComponents,
+        formData.variable, // variable name for Relative type
+        formData.formatI  // formatI for Range type
+      );
+
       const saveData = {
         ...formData,
         driver: driverString,
+        validation: validationString,
         variationsList: variationsList
       };
 
@@ -1137,47 +1204,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-ag-dark-text">
-                Validation
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'validation', label: 'Validation' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Validation value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            <select
-              value={formData.validation}
-              onChange={(e) => handleChange('validation', e.target.value)}
-              disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Validation</option>
-              {dynamicFieldOptions.validation.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
                 Default
               </label>
               <button
@@ -1242,6 +1268,250 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               ))}
             </select>
           </div>
+        </div>
+      </CollapsibleSection>
+
+      {/* Validations Section */}
+      <CollapsibleSection title="Validations" sectionKey="validations" icon={<Settings className="w-4 h-4 text-ag-dark-text-secondary" />}>
+        <div className="space-y-4">
+          {/* Val Type Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Val Type
+            </label>
+            <select
+              value={validationComponents.valType}
+              onChange={(e) => {
+                const newValType = e.target.value as ValType | '';
+                const newComponents: ValidationComponents = {
+                  valType: newValType,
+                  operator: '',
+                  value: ''
+                };
+                
+                // Auto-set value for List
+                if (newValType === 'List') {
+                  newComponents.value = 'List';
+                }
+                // Auto-set value for Range (use formatI)
+                else if (newValType === 'Range') {
+                  newComponents.value = formData.formatI || '';
+                }
+                // Auto-set value for Relative (use variable name)
+                else if (newValType === 'Relative') {
+                  newComponents.value = formData.variable || '';
+                }
+                
+                setValidationComponents(newComponents);
+                setValidationError('');
+              }}
+              disabled={!isPanelEnabled}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">Select Val Type</option>
+              <option value="List">List</option>
+              <option value="Range">Range</option>
+              <option value="Relative">Relative</option>
+              <option value="Length">Length</option>
+              <option value="Character">Character</option>
+            </select>
+          </div>
+
+          {/* Operator Dropdown */}
+          {validationComponents.valType && getOperatorsForValType(validationComponents.valType).length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                Operator
+              </label>
+              <select
+                value={validationComponents.operator}
+                onChange={(e) => {
+                  setValidationComponents(prev => ({
+                    ...prev,
+                    operator: e.target.value as Operator
+                  }));
+                  setValidationError('');
+                }}
+                disabled={!isPanelEnabled}
+                className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                  validationError && validationError.includes('Operator') ? 'border-red-500' : 'border-ag-dark-border'
+                } ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Select Operator</option>
+                {getOperatorsForValType(validationComponents.valType).map((op) => (
+                  <option key={op} value={op}>
+                    {op}
+                  </option>
+                ))}
+              </select>
+              {validationError && validationError.includes('Operator') && (
+                <p className="mt-1 text-sm text-red-500">{validationError}</p>
+              )}
+            </div>
+          )}
+
+          {/* Value Field */}
+          {validationComponents.valType && (
+            <div>
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                Value
+              </label>
+              {validationComponents.valType === 'List' ? (
+                <input
+                  type="text"
+                  value={validationComponents.value}
+                  disabled
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                />
+              ) : validationComponents.valType === 'Range' ? (
+                <input
+                  type="text"
+                  value={validationComponents.value}
+                  disabled
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                />
+              ) : validationComponents.valType === 'Relative' ? (
+                <input
+                  type="text"
+                  value={validationComponents.value}
+                  disabled
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                />
+              ) : validationComponents.valType === 'Length' ? (
+                <div>
+                  <input
+                    ref={validationValueInputRef}
+                    type="text"
+                    value={validationComponents.value}
+                    onInput={(e) => {
+                      e.stopPropagation();
+                      const input = e.target as HTMLInputElement;
+                      const cursorPosition = input.selectionStart;
+                      const newValue = input.value;
+                      lastValidationValueChangeTimeRef.current = Date.now();
+                      const validation = validateValidationInput('Length', newValue);
+                      setValidationError(validation.isValid ? '' : (validation.error || ''));
+                      setValidationComponents(prev => ({
+                        ...prev,
+                        value: newValue
+                      }));
+                      const restoreFocus = () => {
+                        if (validationValueInputRef.current) {
+                          validationValueInputRef.current.focus();
+                          const maxPos = validationValueInputRef.current.value.length;
+                          const safePos = Math.min(cursorPosition, maxPos);
+                          validationValueInputRef.current.setSelectionRange(safePos, safePos);
+                        }
+                      };
+                      restoreFocus();
+                      Promise.resolve().then(restoreFocus);
+                      requestAnimationFrame(restoreFocus);
+                    }}
+                    onChange={(e) => { e.stopPropagation(); }}
+                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isValidationValueInputFocusedRef.current = true; }}
+                    onBlur={(e) => {
+                      const timeSinceLastChange = Date.now() - lastValidationValueChangeTimeRef.current;
+                      const wasRecentTyping = timeSinceLastChange < 300;
+                      const relatedTarget = e.relatedTarget as HTMLElement;
+                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                      if (wasRecentTyping && !clickedOnInput && validationValueInputRef.current && isValidationValueInputFocusedRef.current) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTimeout(() => { if (validationValueInputRef.current) validationValueInputRef.current.focus(); }, 0);
+                      } else if (!wasRecentTyping) {
+                        isValidationValueInputFocusedRef.current = false;
+                      }
+                    }}
+                    disabled={!isPanelEnabled}
+                    placeholder="Enter integer"
+                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                      validationError ? 'border-red-500' : ''
+                    } ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  />
+                  {validationError && (
+                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                  )}
+                </div>
+              ) : validationComponents.valType === 'Character' ? (
+                <div>
+                  <input
+                    ref={validationValueInputRef}
+                    type="text"
+                    value={validationComponents.value}
+                    onInput={(e) => {
+                      e.stopPropagation();
+                      const input = e.target as HTMLInputElement;
+                      const cursorPosition = input.selectionStart;
+                      const newValue = input.value;
+                      lastValidationValueChangeTimeRef.current = Date.now();
+                      const validation = validateValidationInput('Character', newValue);
+                      setValidationError(validation.isValid ? '' : (validation.error || ''));
+                      setValidationComponents(prev => ({
+                        ...prev,
+                        value: newValue
+                      }));
+                      const restoreFocus = () => {
+                        if (validationValueInputRef.current) {
+                          validationValueInputRef.current.focus();
+                          const maxPos = validationValueInputRef.current.value.length;
+                          const safePos = Math.min(cursorPosition, maxPos);
+                          validationValueInputRef.current.setSelectionRange(safePos, safePos);
+                        }
+                      };
+                      restoreFocus();
+                      Promise.resolve().then(restoreFocus);
+                      requestAnimationFrame(restoreFocus);
+                    }}
+                    onChange={(e) => { e.stopPropagation(); }}
+                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isValidationValueInputFocusedRef.current = true; }}
+                    onBlur={(e) => {
+                      const timeSinceLastChange = Date.now() - lastValidationValueChangeTimeRef.current;
+                      const wasRecentTyping = timeSinceLastChange < 300;
+                      const relatedTarget = e.relatedTarget as HTMLElement;
+                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                      if (wasRecentTyping && !clickedOnInput && validationValueInputRef.current && isValidationValueInputFocusedRef.current) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTimeout(() => { if (validationValueInputRef.current) validationValueInputRef.current.focus(); }, 0);
+                      } else if (!wasRecentTyping) {
+                        isValidationValueInputFocusedRef.current = false;
+                      }
+                    }}
+                    disabled={!isPanelEnabled}
+                    placeholder="Enter alphanumeric character"
+                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                      validationError ? 'border-red-500' : ''
+                    } ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  />
+                  {validationError && (
+                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
       </CollapsibleSection>
 

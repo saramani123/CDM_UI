@@ -260,6 +260,11 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const lastUpkeepChangeTimeRef = useRef<number>(0);
   const lastGraphChangeTimeRef = useRef<number>(0);
   const lastOriginChangeTimeRef = useRef<number>(0);
+
+  // Tier name inputs focus management (using Map for dynamic refs)
+  const tierNameInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const tierNameInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
+  const tierNameLastChangeTimeRefs = useRef<Map<number, number>>(new Map());
   
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
@@ -1465,16 +1470,66 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                         Tier {index + 1} Name
                       </label>
                       <input
+                        ref={(el) => {
+                          if (el) {
+                            tierNameInputRefs.current.set(index, el);
+                          } else {
+                            tierNameInputRefs.current.delete(index);
+                          }
+                        }}
                         type="text"
                         value={tierNames[index] || ''}
-                        onChange={(e) => {
+                        onInput={(e) => {
                           e.stopPropagation();
+                          const input = e.target as HTMLInputElement;
+                          const cursorPosition = input.selectionStart;
+                          const newValue = input.value;
+                          tierNameLastChangeTimeRefs.current.set(index, Date.now());
                           const newTierNames = [...tierNames];
-                          newTierNames[index] = e.target.value;
+                          newTierNames[index] = newValue;
                           setTierNames(newTierNames);
+                          const restoreFocus = () => {
+                            const inputRef = tierNameInputRefs.current.get(index);
+                            if (inputRef) {
+                              inputRef.focus();
+                              const maxPos = inputRef.value.length;
+                              const safePos = Math.min(cursorPosition, maxPos);
+                              inputRef.setSelectionRange(safePos, safePos);
+                            }
+                          };
+                          restoreFocus();
+                          Promise.resolve().then(restoreFocus);
+                          requestAnimationFrame(restoreFocus);
                         }}
-                        onClick={(e) => e.stopPropagation()}
-                        onFocus={(e) => e.stopPropagation()}
+                        onChange={(e) => { e.stopPropagation(); }}
+                        onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onFocus={(e) => {
+                          e.stopPropagation();
+                          e.nativeEvent.stopImmediatePropagation();
+                          tierNameInputFocusedRefs.current.set(index, true);
+                        }}
+                        onBlur={(e) => {
+                          const lastChangeTime = tierNameLastChangeTimeRefs.current.get(index) || 0;
+                          const timeSinceLastChange = Date.now() - lastChangeTime;
+                          const wasRecentTyping = timeSinceLastChange < 300;
+                          const relatedTarget = e.relatedTarget as HTMLElement;
+                          const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                          const inputRef = tierNameInputRefs.current.get(index);
+                          const isFocused = tierNameInputFocusedRefs.current.get(index) || false;
+                          if (wasRecentTyping && !clickedOnInput && inputRef && isFocused) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setTimeout(() => {
+                              const ref = tierNameInputRefs.current.get(index);
+                              if (ref) ref.focus();
+                            }, 0);
+                          } else if (!wasRecentTyping) {
+                            tierNameInputFocusedRefs.current.set(index, false);
+                          }
+                        }}
                         disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
                         placeholder={`Enter Tier ${index + 1} name...`}
                         className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${

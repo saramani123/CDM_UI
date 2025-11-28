@@ -29,15 +29,10 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const [workingSectionOrders, setWorkingSectionOrders] = useState<Record<string, string[]>>({});
   const [workingGroupOrders, setWorkingGroupOrders] = useState<Record<string, string[]>>({});
   const [workingVariableOrders, setWorkingVariableOrders] = useState<Record<string, string[]>>({});
-  // Section column: needs Part dropdown
-  const [selectedSectionPart, setSelectedSectionPart] = useState<string>('');
-  // Group column: needs Part and Section dropdowns
+  // Click-based selections (cascading filters)
   const [selectedPart, setSelectedPart] = useState<string>('');
   const [selectedSection, setSelectedSection] = useState<string>('');
-  // Variable column: needs Part, Section, and Group dropdowns
-  const [selectedVariablePart, setSelectedVariablePart] = useState<string>('');
-  const [selectedVariableSection, setSelectedVariableSection] = useState<string>('');
-  const [selectedVariableGroup, setSelectedVariableGroup] = useState<string>('');
+  const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'part' | 'section' | 'group' | 'variable' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
@@ -52,22 +47,22 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   // Get distinct values - dynamically updated when variableData changes
   const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
   
-  // Section values filtered by selected part
-  const sectionsForPart = selectedSectionPart
-    ? Array.from(new Set(variableData.filter(v => v.part === selectedSectionPart).map(v => v.section).filter(Boolean))).sort()
+  // Section values filtered by selected part (from Part column click)
+  const sectionsForPart = selectedPart
+    ? Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.section).filter(Boolean))).sort()
     : [];
   
-  // Group values filtered by selected part and section
+  // Group values filtered by selected part and section (from Part and Section column clicks)
   const groupsForPartAndSection = selectedPart && selectedSection
     ? Array.from(new Set(variableData.filter(v => v.part === selectedPart && v.section === selectedSection).map(v => v.group).filter(Boolean))).sort()
     : [];
   
-  // Variable values filtered by selected part, section, and group
-  const variablesForPartSectionAndGroup = selectedVariablePart && selectedVariableSection && selectedVariableGroup
+  // Variable values filtered by selected part, section, and group (from Part, Section, and Group column clicks)
+  const variablesForPartSectionAndGroup = selectedPart && selectedSection && selectedGroup
     ? Array.from(new Set(variableData.filter(v => 
-        v.part === selectedVariablePart && 
-        v.section === selectedVariableSection && 
-        v.group === selectedVariableGroup
+        v.part === selectedPart && 
+        v.section === selectedSection && 
+        v.group === selectedGroup
       ).map(v => v.variable).filter(Boolean))).sort()
     : [];
 
@@ -142,31 +137,31 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
     }
   }, [isOpen, orderSortOrder, variableData, isInitialized]);
 
-  // Initialize working order for sections when a part is selected in Section column
+  // Initialize working order for sections when a part is selected (from Part column click)
   useEffect(() => {
-    if (selectedSectionPart) {
-      const sectionsForSelectedPart = Array.from(new Set(variableData.filter(v => v.part === selectedSectionPart).map(v => v.section).filter(Boolean))).sort();
-      const savedOrder = savedSectionOrders[selectedSectionPart];
-      const currentOrder = workingSectionOrders[selectedSectionPart];
+    if (selectedPart) {
+      const sectionsForSelectedPart = Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.section).filter(Boolean))).sort();
+      const savedOrder = savedSectionOrders[selectedPart];
+      const currentOrder = workingSectionOrders[selectedPart];
       
       // If no working order exists, create one
       if (!currentOrder) {
         if (savedOrder && savedOrder.length > 0) {
           // Start with saved order, add any new sections that aren't in saved order
           const newSections = sectionsForSelectedPart.filter(s => !savedOrder.includes(s));
-          setWorkingSectionOrders(prev => ({ ...prev, [selectedSectionPart]: [...savedOrder, ...newSections] }));
+          setWorkingSectionOrders(prev => ({ ...prev, [selectedPart]: [...savedOrder, ...newSections] }));
         } else {
-          setWorkingSectionOrders(prev => ({ ...prev, [selectedSectionPart]: sectionsForSelectedPart }));
+          setWorkingSectionOrders(prev => ({ ...prev, [selectedPart]: sectionsForSelectedPart }));
         }
       } else {
         // Update existing order to include any new sections
         const newSections = sectionsForSelectedPart.filter(s => !currentOrder.includes(s));
         if (newSections.length > 0) {
-          setWorkingSectionOrders(prev => ({ ...prev, [selectedSectionPart]: [...currentOrder, ...newSections] }));
+          setWorkingSectionOrders(prev => ({ ...prev, [selectedPart]: [...currentOrder, ...newSections] }));
         }
       }
     }
-  }, [selectedSectionPart, variableData, savedSectionOrders, workingSectionOrders]);
+  }, [selectedPart, variableData, savedSectionOrders, workingSectionOrders]);
 
   // Initialize working order for groups when part+section are selected in Group column
   useEffect(() => {
@@ -194,14 +189,14 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
     }
   }, [selectedPart, selectedSection, variableData, savedGroupOrders, workingGroupOrders]);
 
-  // Initialize working order for variables when part+section+group are selected in Variable column
+  // Initialize working order for variables when part+section+group are selected (from column clicks)
   useEffect(() => {
-    if (selectedVariablePart && selectedVariableSection && selectedVariableGroup) {
-      const key = `${selectedVariablePart}|${selectedVariableSection}|${selectedVariableGroup}`;
+    if (selectedPart && selectedSection && selectedGroup) {
+      const key = `${selectedPart}|${selectedSection}|${selectedGroup}`;
       const variablesForSelected = Array.from(new Set(variableData.filter(v => 
-        v.part === selectedVariablePart && 
-        v.section === selectedVariableSection && 
-        v.group === selectedVariableGroup
+        v.part === selectedPart && 
+        v.section === selectedSection && 
+        v.group === selectedGroup
       ).map(v => v.variable).filter(Boolean))).sort();
       const savedOrder = savedVariableOrders[key];
       const currentOrder = workingVariableOrders[key];
@@ -222,7 +217,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
         }
       }
     }
-  }, [selectedVariablePart, selectedVariableSection, selectedVariableGroup, variableData, savedVariableOrders, workingVariableOrders]);
+  }, [selectedPart, selectedSection, selectedGroup, variableData, savedVariableOrders, workingVariableOrders]);
 
   const handleDragStart = (item: string, type: 'part' | 'section' | 'group' | 'variable') => {
     setDraggedItem(item);
@@ -259,8 +254,8 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingPartOrder(newOrder);
-    } else if (type === 'section' && selectedSectionPart) {
-      const currentSections = workingSectionOrders[selectedSectionPart] || savedSectionOrders[selectedSectionPart] || sectionsForPart;
+    } else if (type === 'section' && selectedPart) {
+      const currentSections = workingSectionOrders[selectedPart] || savedSectionOrders[selectedPart] || sectionsForPart;
       const newOrder = [...currentSections];
       const draggedIndex = newOrder.indexOf(draggedItem);
       if (draggedIndex === -1) {
@@ -272,7 +267,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       newOrder.splice(draggedIndex, 1);
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
-      setWorkingSectionOrders({ ...workingSectionOrders, [selectedSectionPart]: newOrder });
+      setWorkingSectionOrders({ ...workingSectionOrders, [selectedPart]: newOrder });
     } else if (type === 'group' && selectedPart && selectedSection) {
       const key = `${selectedPart}|${selectedSection}`;
       const currentGroups = workingGroupOrders[key] || savedGroupOrders[key] || groupsForPartAndSection;
@@ -288,8 +283,8 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingGroupOrders({ ...workingGroupOrders, [key]: newOrder });
-    } else if (type === 'variable' && selectedVariablePart && selectedVariableSection && selectedVariableGroup) {
-      const key = `${selectedVariablePart}|${selectedVariableSection}|${selectedVariableGroup}`;
+    } else if (type === 'variable' && selectedPart && selectedSection && selectedGroup) {
+      const key = `${selectedPart}|${selectedSection}|${selectedGroup}`;
       const currentVariables = workingVariableOrders[key] || savedVariableOrders[key] || variablesForPartSectionAndGroup;
       const newOrder = [...currentVariables];
       const draggedIndex = newOrder.indexOf(draggedItem);
@@ -387,8 +382,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
         {/* Instructions */}
         <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex-shrink-0">
           <p className="text-sm text-ag-dark-text-secondary">
-            Define the sort order for Part, Section, Group, and Variable columns. Drag items to reorder them.
-            The order will be applied when enabled.
+            Define the sort order for Part, Section, Group, and Variable columns. Click on values to filter columns to the right. Drag items to reorder them. The order will be applied when enabled.
           </p>
         </div>
 
@@ -406,8 +400,27 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index, 'part')}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                    draggedItem === part && dragType === 'part'
+                  onClick={(e) => {
+                    // Only handle click if not dragging
+                    if (draggedItem === null) {
+                      e.stopPropagation();
+                      if (selectedPart === part) {
+                        // Deselect if clicking the same item
+                        setSelectedPart('');
+                        setSelectedSection('');
+                        setSelectedGroup('');
+                      } else {
+                        // Select this part and reset dependent selections
+                        setSelectedPart(part);
+                        setSelectedSection('');
+                        setSelectedGroup('');
+                      }
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                    selectedPart === part
+                      ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                      : draggedItem === part && dragType === 'part'
                       ? 'bg-ag-dark-accent bg-opacity-20'
                       : dragOverIndex === index && dragType === 'part'
                       ? 'bg-ag-dark-accent bg-opacity-10'
@@ -425,181 +438,134 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
           {/* Section Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Section</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedSectionPart}
-                onChange={(e) => {
-                  setSelectedSectionPart(e.target.value);
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-              >
-                <option value="">Select Part</option>
-                {distinctParts.map(part => (
-                  <option key={part} value={part}>{part}</option>
+            {selectedPart ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingSectionOrders[selectedPart] || savedSectionOrders[selectedPart] || sectionsForPart).map((section, index) => (
+                  <div
+                    key={section}
+                    draggable
+                    onDragStart={() => handleDragStart(section, 'section')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'section')}
+                    onDragEnd={handleDragEnd}
+                    onClick={(e) => {
+                      // Only handle click if not dragging
+                      if (draggedItem === null) {
+                        e.stopPropagation();
+                        if (selectedSection === section) {
+                          // Deselect if clicking the same item
+                          setSelectedSection('');
+                          setSelectedGroup('');
+                        } else {
+                          // Select this section and reset dependent selections
+                          setSelectedSection(section);
+                          setSelectedGroup('');
+                        }
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                      selectedSection === section
+                        ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                        : draggedItem === section && dragType === 'section'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'section'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{section}</span>
+                  </div>
                 ))}
-              </select>
-            </div>
-            {selectedSectionPart && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingSectionOrders[selectedSectionPart] || savedSectionOrders[selectedSectionPart] || sectionsForPart).map((section, index) => (
-                    <div
-                      key={section}
-                      draggable
-                      onDragStart={() => handleDragStart(section, 'section')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'section')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === section && dragType === 'section'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'section'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{section}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                Click a Part to see Sections
+              </div>
             )}
           </div>
 
           {/* Group Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Group</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedPart}
-                onChange={(e) => {
-                  setSelectedPart(e.target.value);
-                  setSelectedSection(''); // Reset section when part changes
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
-              >
-                <option value="">Select Part</option>
-                {distinctParts.map(part => (
-                  <option key={part} value={part}>{part}</option>
+            {selectedPart && selectedSection ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingGroupOrders[`${selectedPart}|${selectedSection}`] || savedGroupOrders[`${selectedPart}|${selectedSection}`] || groupsForPartAndSection).map((group, index) => (
+                  <div
+                    key={group}
+                    draggable
+                    onDragStart={() => handleDragStart(group, 'group')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'group')}
+                    onDragEnd={handleDragEnd}
+                    onClick={(e) => {
+                      // Only handle click if not dragging
+                      if (draggedItem === null) {
+                        e.stopPropagation();
+                        if (selectedGroup === group) {
+                          // Deselect if clicking the same item
+                          setSelectedGroup('');
+                        } else {
+                          // Select this group
+                          setSelectedGroup(group);
+                        }
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                      selectedGroup === group
+                        ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                        : draggedItem === group && dragType === 'group'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'group'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{group}</span>
+                  </div>
                 ))}
-              </select>
-              {selectedPart && (
-                <select
-                  value={selectedSection}
-                  onChange={(e) => setSelectedSection(e.target.value)}
-                  className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-                >
-                  <option value="">Select Section</option>
-                  {Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.section).filter(Boolean))).sort().map(section => (
-                    <option key={section} value={section}>{section}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {selectedPart && selectedSection && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingGroupOrders[`${selectedPart}|${selectedSection}`] || savedGroupOrders[`${selectedPart}|${selectedSection}`] || groupsForPartAndSection).map((group, index) => (
-                    <div
-                      key={group}
-                      draggable
-                      onDragStart={() => handleDragStart(group, 'group')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'group')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === group && dragType === 'group'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'group'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{group}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                {!selectedPart ? 'Click a Part to see Groups' : 'Click a Section to see Groups'}
+              </div>
             )}
           </div>
 
           {/* Variable Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Variable</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedVariablePart}
-                onChange={(e) => {
-                  const newPart = e.target.value;
-                  setSelectedVariablePart(newPart);
-                  setSelectedVariableSection(''); // Reset section when part changes
-                  setSelectedVariableGroup(''); // Reset group when part changes
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
-              >
-                <option value="">Select Part</option>
-                {distinctParts.map(part => (
-                  <option key={part} value={part}>{part}</option>
+            {selectedPart && selectedSection && selectedGroup ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingVariableOrders[`${selectedPart}|${selectedSection}|${selectedGroup}`] || savedVariableOrders[`${selectedPart}|${selectedSection}|${selectedGroup}`] || variablesForPartSectionAndGroup).map((variable, index) => (
+                  <div
+                    key={variable}
+                    draggable
+                    onDragStart={() => handleDragStart(variable, 'variable')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'variable')}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                      draggedItem === variable && dragType === 'variable'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'variable'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{variable}</span>
+                  </div>
                 ))}
-              </select>
-              {selectedVariablePart && (
-                <select
-                  value={selectedVariableSection}
-                  onChange={(e) => {
-                    setSelectedVariableSection(e.target.value);
-                    setSelectedVariableGroup(''); // Reset group when section changes
-                  }}
-                  className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
-                >
-                  <option value="">Select Section</option>
-                  {Array.from(new Set(variableData.filter(v => v.part === selectedVariablePart).map(v => v.section).filter(Boolean))).sort().map(section => (
-                    <option key={section} value={section}>{section}</option>
-                  ))}
-                </select>
-              )}
-              {selectedVariablePart && selectedVariableSection && (
-                <select
-                  value={selectedVariableGroup}
-                  onChange={(e) => setSelectedVariableGroup(e.target.value)}
-                  className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-                >
-                  <option value="">Select Group</option>
-                  {Array.from(new Set(variableData.filter(v => v.part === selectedVariablePart && v.section === selectedVariableSection).map(v => v.group).filter(Boolean))).sort().map(group => (
-                    <option key={group} value={group}>{group}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {selectedVariablePart && selectedVariableSection && selectedVariableGroup && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingVariableOrders[`${selectedVariablePart}|${selectedVariableSection}|${selectedVariableGroup}`] || savedVariableOrders[`${selectedVariablePart}|${selectedVariableSection}|${selectedVariableGroup}`] || variablesForPartSectionAndGroup).map((variable, index) => (
-                    <div
-                      key={variable}
-                      draggable
-                      onDragStart={() => handleDragStart(variable, 'variable')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'variable')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === variable && dragType === 'variable'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'variable'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{variable}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                {!selectedPart ? 'Click a Part to see Variables' : !selectedSection ? 'Click a Section to see Variables' : 'Click a Group to see Variables'}
+              </div>
             )}
           </div>
         </div>

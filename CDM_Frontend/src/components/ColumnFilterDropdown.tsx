@@ -135,11 +135,15 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   };
 
   const handleSelectAll = () => {
-    setTempFilters([...allDistinctValues]);
+    // Use filtered values if search is active, otherwise use all values
+    setTempFilters([...distinctValues]);
   };
 
   const handleToggleSelectAll = () => {
-    if (tempFilters.length === allDistinctValues.length) {
+    // Check against filtered values if search is active, otherwise check against all values
+    const valuesToCheck = searchText.trim() ? distinctValues : allDistinctValues;
+    const allSelected = valuesToCheck.length > 0 && valuesToCheck.every(val => tempFilters.includes(val));
+    if (allSelected) {
       handleClearFilters();
     } else {
       handleSelectAll();
@@ -291,7 +295,11 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
                   onClick={handleToggleSelectAll}
                   className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
                 >
-                  {tempFilters.length === allDistinctValues.length ? 'Clear All' : 'Select All'}
+                  {(() => {
+                    const valuesToCheck = searchText.trim() ? distinctValues : allDistinctValues;
+                    const allSelected = valuesToCheck.length > 0 && valuesToCheck.every(val => tempFilters.includes(val));
+                    return allSelected ? 'Clear All' : 'Select All';
+                  })()}
                 </button>
                 <button
                   onClick={handleClearFilters}

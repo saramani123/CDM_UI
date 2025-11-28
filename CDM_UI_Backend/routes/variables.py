@@ -502,8 +502,23 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         set_clauses.append("v.gType = $gType")
                         params["gType"] = bulk_data.gType
                     if should_update_field(bulk_data.validation, "Keep Current Validation"):
+                        # Handle special bulk validation formats
+                        validation_value = bulk_data.validation
+                        
+                        # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
+                        if validation_value.startswith("_BULK_RANGE_"):
+                            operator = validation_value.replace("_BULK_RANGE_", "")
+                            # Use the variable's formatI as the value
+                            validation_value = f"{operator} {current_variable.get('formatI', '')}"
+                        
+                        # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
+                        elif validation_value.startswith("_BULK_RELATIVE_"):
+                            operator = validation_value.replace("_BULK_RELATIVE_", "")
+                            # Use the variable's name as the value
+                            validation_value = f"{operator} {current_variable.get('name', '')}"
+                        
                         set_clauses.append("v.validation = $validation")
-                        params["validation"] = bulk_data.validation
+                        params["validation"] = validation_value
                     if should_update_field(bulk_data.default, "Keep Current Default"):
                         set_clauses.append("v.default = $default")
                         params["default"] = bulk_data.default
@@ -1703,8 +1718,23 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         set_clauses.append("v.gType = $gType")
                         params["gType"] = bulk_data.gType
                     if should_update_field(bulk_data.validation, "Keep Current Validation"):
+                        # Handle special bulk validation formats
+                        validation_value = bulk_data.validation
+                        
+                        # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
+                        if validation_value.startswith("_BULK_RANGE_"):
+                            operator = validation_value.replace("_BULK_RANGE_", "")
+                            # Use the variable's formatI as the value
+                            validation_value = f"{operator} {current_variable.get('formatI', '')}"
+                        
+                        # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
+                        elif validation_value.startswith("_BULK_RELATIVE_"):
+                            operator = validation_value.replace("_BULK_RELATIVE_", "")
+                            # Use the variable's name as the value
+                            validation_value = f"{operator} {current_variable.get('name', '')}"
+                        
                         set_clauses.append("v.validation = $validation")
-                        params["validation"] = bulk_data.validation
+                        params["validation"] = validation_value
                     if should_update_field(bulk_data.default, "Keep Current Default"):
                         set_clauses.append("v.default = $default")
                         params["default"] = bulk_data.default

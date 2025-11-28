@@ -26,11 +26,9 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
   const [workingBeingOrder, setWorkingBeingOrder] = useState<string[]>([]);
   const [workingAvatarOrders, setWorkingAvatarOrders] = useState<Record<string, string[]>>({});
   const [workingObjectOrders, setWorkingObjectOrders] = useState<Record<string, string[]>>({});
+  // Click-based selections (cascading filters)
   const [selectedBeing, setSelectedBeing] = useState<string>('');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('');
-  // Separate state for Object column being/avatar selection
-  const [selectedObjectBeing, setSelectedObjectBeing] = useState<string>('');
-  const [selectedObjectAvatar, setSelectedObjectAvatar] = useState<string>('');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragType, setDragType] = useState<'being' | 'avatar' | 'object' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
@@ -46,8 +44,8 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
   const avatarsForBeing = selectedBeing
     ? Array.from(new Set(objectData.filter(o => o.being === selectedBeing).map(o => o.avatar).filter(Boolean))).sort()
     : [];
-  const objectsForBeingAndAvatar = selectedObjectBeing && selectedObjectAvatar
-    ? Array.from(new Set(objectData.filter(o => o.being === selectedObjectBeing && o.avatar === selectedObjectAvatar).map(o => o.object).filter(Boolean))).sort()
+  const objectsForBeingAndAvatar = selectedBeing && selectedAvatar
+    ? Array.from(new Set(objectData.filter(o => o.being === selectedBeing && o.avatar === selectedAvatar).map(o => o.object).filter(Boolean))).sort()
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
@@ -92,12 +90,12 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     }
   }, [selectedBeing, objectData, savedAvatarOrders, workingAvatarOrders]);
 
-  // Initialize working order for a being+avatar when they're selected (if not already in working orders)
+  // Initialize working order for objects when being+avatar are selected (from column clicks)
   useEffect(() => {
-    if (selectedObjectBeing && selectedObjectAvatar) {
-      const key = `${selectedObjectBeing}|${selectedObjectAvatar}`;
+    if (selectedBeing && selectedAvatar) {
+      const key = `${selectedBeing}|${selectedAvatar}`;
       if (!workingObjectOrders[key]) {
-        const objectsForSelected = Array.from(new Set(objectData.filter(o => o.being === selectedObjectBeing && o.avatar === selectedObjectAvatar).map(o => o.object).filter(Boolean))).sort();
+        const objectsForSelected = Array.from(new Set(objectData.filter(o => o.being === selectedBeing && o.avatar === selectedAvatar).map(o => o.object).filter(Boolean))).sort();
         const savedOrder = savedObjectOrders[key];
         if (savedOrder && savedOrder.length > 0) {
           setWorkingObjectOrders(prev => ({ ...prev, [key]: [...savedOrder] }));
@@ -106,7 +104,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
         }
       }
     }
-  }, [selectedObjectBeing, selectedObjectAvatar, objectData, savedObjectOrders, workingObjectOrders]);
+  }, [selectedBeing, selectedAvatar, objectData, savedObjectOrders, workingObjectOrders]);
 
   const handleDragStart = (item: string, type: 'being' | 'avatar' | 'object') => {
     setDraggedItem(item);
@@ -155,8 +153,8 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
       const insertIndex = draggedIndex < index ? index - 1 : index;
       newOrder.splice(insertIndex, 0, draggedItem);
       setWorkingAvatarOrders({ ...workingAvatarOrders, [selectedBeing]: newOrder });
-    } else if (type === 'object' && selectedObjectBeing && selectedObjectAvatar) {
-      const key = `${selectedObjectBeing}|${selectedObjectAvatar}`;
+    } else if (type === 'object' && selectedBeing && selectedAvatar) {
+      const key = `${selectedBeing}|${selectedAvatar}`;
       const currentObjects = workingObjectOrders[key] || savedObjectOrders[key] || objectsForBeingAndAvatar;
       const newOrder = [...currentObjects];
       const draggedIndex = newOrder.indexOf(draggedItem);
@@ -237,8 +235,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
         {/* Instructions */}
         <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex-shrink-0">
           <p className="text-sm text-ag-dark-text-secondary">
-            Define the sort order for Being, Avatar, and Object columns. Drag items to reorder them.
-            The order will be applied when enabled.
+            Define the sort order for Being, Avatar, and Object columns. Click on values to filter columns to the right. Drag items to reorder them. The order will be applied when enabled.
           </p>
         </div>
 
@@ -256,8 +253,25 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index, 'being')}
                   onDragEnd={handleDragEnd}
-                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                    draggedItem === being && dragType === 'being'
+                  onClick={(e) => {
+                    // Only handle click if not dragging
+                    if (draggedItem === null) {
+                      e.stopPropagation();
+                      if (selectedBeing === being) {
+                        // Deselect if clicking the same item
+                        setSelectedBeing('');
+                        setSelectedAvatar('');
+                      } else {
+                        // Select this being and reset dependent selections
+                        setSelectedBeing(being);
+                        setSelectedAvatar('');
+                      }
+                    }
+                  }}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                    selectedBeing === being
+                      ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                      : draggedItem === being && dragType === 'being'
                       ? 'bg-ag-dark-accent bg-opacity-20'
                       : dragOverIndex === index && dragType === 'being'
                       ? 'bg-ag-dark-accent bg-opacity-10'
@@ -275,107 +289,83 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
           {/* Avatar Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Avatar</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedBeing}
-                onChange={(e) => {
-                  setSelectedBeing(e.target.value);
-                  setSelectedAvatar('');
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-              >
-                <option value="">Select Being</option>
-                {distinctBeings.map(being => (
-                  <option key={being} value={being}>{being}</option>
+            {selectedBeing ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingAvatarOrders[selectedBeing] || savedAvatarOrders[selectedBeing] || avatarsForBeing).map((avatar, index) => (
+                  <div
+                    key={avatar}
+                    draggable
+                    onDragStart={() => handleDragStart(avatar, 'avatar')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'avatar')}
+                    onDragEnd={handleDragEnd}
+                    onClick={(e) => {
+                      // Only handle click if not dragging
+                      if (draggedItem === null) {
+                        e.stopPropagation();
+                        if (selectedAvatar === avatar) {
+                          // Deselect if clicking the same item
+                          setSelectedAvatar('');
+                        } else {
+                          // Select this avatar
+                          setSelectedAvatar(avatar);
+                        }
+                      }
+                    }}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-pointer transition-colors ${
+                      selectedAvatar === avatar
+                        ? 'bg-ag-dark-accent bg-opacity-30 border-2 border-ag-dark-accent'
+                        : draggedItem === avatar && dragType === 'avatar'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'avatar'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{avatar}</span>
+                  </div>
                 ))}
-              </select>
-            </div>
-            {selectedBeing && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingAvatarOrders[selectedBeing] || savedAvatarOrders[selectedBeing] || avatarsForBeing).map((avatar, index) => (
-                    <div
-                      key={avatar}
-                      draggable
-                      onDragStart={() => handleDragStart(avatar, 'avatar')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'avatar')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === avatar && dragType === 'avatar'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'avatar'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{avatar}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                Click a Being to see Avatars
+              </div>
             )}
           </div>
 
           {/* Object Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Object</h4>
-            <div className="mb-3 flex-shrink-0">
-              <select
-                value={selectedObjectBeing}
-                onChange={(e) => {
-                  const newBeing = e.target.value;
-                  setSelectedObjectBeing(newBeing);
-                  setSelectedObjectAvatar('');
-                }}
-                className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text mb-2"
-              >
-                <option value="">Select Being</option>
-                {distinctBeings.map(being => (
-                  <option key={being} value={being}>{being}</option>
+            {selectedBeing && selectedAvatar ? (
+              <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+                {(workingObjectOrders[`${selectedBeing}|${selectedAvatar}`] || savedObjectOrders[`${selectedBeing}|${selectedAvatar}`] || objectsForBeingAndAvatar).map((object, index) => (
+                  <div
+                    key={object}
+                    draggable
+                    onDragStart={() => handleDragStart(object, 'object')}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index, 'object')}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                      draggedItem === object && dragType === 'object'
+                        ? 'bg-ag-dark-accent bg-opacity-20'
+                        : dragOverIndex === index && dragType === 'object'
+                        ? 'bg-ag-dark-accent bg-opacity-10'
+                        : 'hover:bg-ag-dark-surface'
+                    }`}
+                  >
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                    <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                    <span className="text-ag-dark-text flex-1 truncate">{object}</span>
+                  </div>
                 ))}
-              </select>
-              {selectedObjectBeing && (
-                <select
-                  value={selectedObjectAvatar}
-                  onChange={(e) => setSelectedObjectAvatar(e.target.value)}
-                  className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text"
-                >
-                  <option value="">Select Avatar</option>
-                  {Array.from(new Set(objectData.filter(o => o.being === selectedObjectBeing).map(o => o.avatar).filter(Boolean))).sort().map(avatar => (
-                    <option key={avatar} value={avatar}>{avatar}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {selectedObjectBeing && selectedObjectAvatar && (
-              <>
-                <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
-                  {(workingObjectOrders[`${selectedObjectBeing}|${selectedObjectAvatar}`] || savedObjectOrders[`${selectedObjectBeing}|${selectedObjectAvatar}`] || objectsForBeingAndAvatar).map((object, index) => (
-                    <div
-                      key={object}
-                      draggable
-                      onDragStart={() => handleDragStart(object, 'object')}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index, 'object')}
-                      onDragEnd={handleDragEnd}
-                      className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
-                        draggedItem === object && dragType === 'object'
-                          ? 'bg-ag-dark-accent bg-opacity-20'
-                          : dragOverIndex === index && dragType === 'object'
-                          ? 'bg-ag-dark-accent bg-opacity-10'
-                          : 'hover:bg-ag-dark-surface'
-                      }`}
-                    >
-                      <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
-                      <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
-                      <span className="text-ag-dark-text flex-1 truncate">{object}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-ag-dark-text-secondary text-sm">
+                {!selectedBeing ? 'Click a Being to see Objects' : 'Click an Avatar to see Objects'}
+              </div>
             )}
           </div>
         </div>
