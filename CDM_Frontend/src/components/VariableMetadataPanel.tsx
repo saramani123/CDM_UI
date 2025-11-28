@@ -424,14 +424,17 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const handleChange = React.useCallback((key: string, value: string | number) => {
+    console.log(`🟢 handleChange called: ${key} = ${value}`);
     setFormData(prev => {
       const newData = { ...prev, [key]: value };
       
       // When part changes, clear group (groups are part-specific)
       if (key === 'part' && value !== prev.part) {
+        console.log(`🟡 Part changed from ${prev.part} to ${value}, clearing group`);
         newData.group = '';
       }
       
+      console.log(`🟢 New formData after change:`, newData);
       return newData;
     });
   }, []);
@@ -515,6 +518,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const handleSave = async () => {
+    console.log('🔵 handleSave CALLED');
+    console.log('🔵 Current formData:', formData);
+    console.log('🔵 formData.part:', formData.part);
+    console.log('🔵 formData.group:', formData.group);
+    
     try {
       // Generate driver string from selections
       const driverString = concatenateVariableDrivers(
@@ -578,6 +586,10 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         validation: validationString,
         variationsList: variationsList
       };
+
+      console.log('VariableMetadataPanel - saveData being sent:', saveData);
+      console.log('VariableMetadataPanel - part in saveData:', saveData.part);
+      console.log('VariableMetadataPanel - group in saveData:', saveData.group);
 
       // Call the main save operation (which will handle object relationships)
       await onSave?.(saveData);
@@ -1681,7 +1693,14 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       {onSave && (
         <div className="mt-8 pt-6 border-t border-ag-dark-border flex-shrink-0 px-6 pb-6">
           <button
-            onClick={handleSave}
+            onClick={(e) => {
+              console.log('🔴 Save button clicked');
+              console.log('🔴 isPanelEnabled:', isPanelEnabled);
+              console.log('🔴 formData at click:', formData);
+              e.preventDefault();
+              e.stopPropagation();
+              handleSave();
+            }}
             disabled={!isPanelEnabled || (selectedVariable?._isCloned && !selectedVariable?._isSaved && !formData.variable?.trim())}
             className={`w-full bg-ag-dark-accent text-white py-2 px-4 rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center justify-center gap-2 ${
               !isPanelEnabled || (selectedVariable?._isCloned && !selectedVariable?._isSaved && !formData.variable?.trim()) ? 'opacity-50 cursor-not-allowed bg-ag-dark-text-secondary hover:bg-ag-dark-text-secondary' : ''

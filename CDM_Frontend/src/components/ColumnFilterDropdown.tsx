@@ -136,16 +136,42 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
 
   const handleSelectAll = () => {
     // Use filtered values if search is active, otherwise use all values
-    setTempFilters([...distinctValues]);
+    const valuesToSelect = searchText.trim() ? distinctValues : allDistinctValues;
+    
+    // If search is active, add filtered values to existing filters (union)
+    // If no search, replace all filters with all values
+    if (searchText.trim()) {
+      // Add filtered values to existing selection (avoid duplicates)
+      setTempFilters(prev => [...new Set([...prev, ...valuesToSelect])]);
+    } else {
+      // Replace with all values
+      setTempFilters([...valuesToSelect]);
+    }
   };
 
   const handleToggleSelectAll = () => {
-    // Check against filtered values if search is active, otherwise check against all values
+    // Determine which values to check based on search state
     const valuesToCheck = searchText.trim() ? distinctValues : allDistinctValues;
-    const allSelected = valuesToCheck.length > 0 && valuesToCheck.every(val => tempFilters.includes(val));
+    
+    // Edge case: if no values to check, do nothing
+    if (valuesToCheck.length === 0) {
+      return;
+    }
+    
+    // Check if all values in the current context are selected
+    const allSelected = valuesToCheck.every(val => tempFilters.includes(val));
+    
     if (allSelected) {
-      handleClearFilters();
+      // If all are selected, deselect only the values in current context
+      if (searchText.trim()) {
+        // Remove only filtered values from selection
+        setTempFilters(prev => prev.filter(f => !valuesToCheck.includes(f)));
+      } else {
+        // Clear all filters
+        handleClearFilters();
+      }
     } else {
+      // If not all selected, select all in current context
       handleSelectAll();
     }
   };
@@ -296,8 +322,18 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
                   className="text-xs text-ag-dark-text-secondary hover:text-ag-dark-text"
                 >
                   {(() => {
+                    // Determine which values to check based on search state
                     const valuesToCheck = searchText.trim() ? distinctValues : allDistinctValues;
-                    const allSelected = valuesToCheck.length > 0 && valuesToCheck.every(val => tempFilters.includes(val));
+                    
+                    // Edge case: if no values to check, show "Select All"
+                    if (valuesToCheck.length === 0) {
+                      return 'Select All';
+                    }
+                    
+                    // Check if all values in the current context are selected
+                    const allSelected = valuesToCheck.every(val => tempFilters.includes(val));
+                    
+                    // Return appropriate text based on selection state
                     return allSelected ? 'Clear All' : 'Select All';
                   })()}
                 </button>

@@ -1223,8 +1223,11 @@ function App() {
           ...updatedData
         };
         
-        // Call the bulk update API
+        // Call the bulk update API (this already calls fetchVariables internally)
         await bulkUpdateVariables(bulkUpdateData);
+        
+        // Wait a bit for the data to refresh
+        await new Promise(resolve => setTimeout(resolve, 500));
         
         // Close modal and clear selections
         setIsBulkEditVariablesOpen(false);
@@ -1788,6 +1791,8 @@ function App() {
           
           console.log('objectRelationshipsList:', objectRelationshipsList);
           console.log('variableUpdateData:', variableUpdateData);
+          console.log('Part in update:', variableUpdateData.part);
+          console.log('Group in update:', variableUpdateData.group);
           console.log('Validation field in update:', variableUpdateData.validation);
           
           const result = await updateVariable(selectedRowForMetadata.id, variableUpdateData);
@@ -1856,7 +1861,9 @@ function App() {
           }
           
           // Refresh variables list to get updated relationship counts
+          console.log('🔄 Refreshing variables after update...');
           await fetchVariables();
+          console.log('🔄 Variables refreshed');
           
           // After fetchVariables, sync selectedRowForMetadata with the latest data from apiVariables
           // The result from updateVariable should already have the correct data, but we sync again
@@ -1864,7 +1871,18 @@ function App() {
           if (apiVariables && Array.isArray(apiVariables)) {
             const freshVariable = apiVariables.find((v: any) => v.id === selectedRowForMetadata.id);
             if (freshVariable) {
+              console.log('🔄 Found fresh variable after refresh:', freshVariable);
+              console.log('🔄 Fresh variable part:', freshVariable.part);
+              console.log('🔄 Fresh variable group:', freshVariable.group);
               setSelectedRowForMetadata(freshVariable);
+              // Also update the grid data
+              setVariableData(prev => prev.map(item => 
+                item.id === selectedRowForMetadata.id 
+                  ? freshVariable
+                  : item
+              ));
+            } else {
+              console.warn('🔄 WARNING - Could not find fresh variable after refresh');
             }
           }
           

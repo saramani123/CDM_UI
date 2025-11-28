@@ -199,7 +199,47 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     return ['Keep Current Part', ...parts];
   };
 
+  // Get part-group associations from localStorage
+  const getPartGroupAssociations = (): Record<string, string[]> => {
+    try {
+      const stored = localStorage.getItem('cdm_variable_part_group_associations');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Error reading part-group associations:', error);
+    }
+    return {};
+  };
+
+  // Get groups for a specific part
+  const getGroupsForPart = (part: string): string[] => {
+    if (!part || part === 'Keep Current Part') return [];
+    
+    // Get groups from existing variables data for this part
+    const groupsFromData = [...new Set(
+      allData
+        .filter((item: any) => item.part === part && item.group)
+        .map((item: any) => item.group)
+    )].filter(Boolean) as string[];
+    
+    // Get groups from localStorage associations
+    const associations = getPartGroupAssociations();
+    const groupsFromStorage = associations[part] || [];
+    
+    // Combine and deduplicate
+    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
+    return allGroups;
+  };
+
   const getDistinctGroups = () => {
+    // If a part is selected, return groups for that part only
+    if (formData.part && formData.part !== 'Keep Current Part') {
+      const groupsForPart = getGroupsForPart(formData.part);
+      return ['Keep Current Group', ...groupsForPart];
+    }
+    
+    // Otherwise, return all groups
     const groups = [...new Set(allData.map(item => item.group))];
     return ['Keep Current Group', ...groups];
   };
@@ -243,10 +283,16 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const handleChange = (key: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    setFormData(prev => {
+      const newData = { ...prev, [key]: value };
+      
+      // When part changes, clear group (groups are part-specific)
+      if (key === 'part' && value !== prev.part) {
+        newData.group = '';
+      }
+      
+      return newData;
+    });
   };
 
   const handleMetadataChange = (key: string, value: string) => {
@@ -412,6 +458,20 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const handleSaveBulkEdit = () => {
+    // Validate that if Part or Group is being changed, BOTH must be provided
+    const partProvided = formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part';
+    const groupProvided = formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group';
+    
+    if (partProvided && !groupProvided) {
+      alert('When changing Part in bulk edit, you must also specify Group. Please select both Part and Group.');
+      return;
+    }
+    
+    if (groupProvided && !partProvided) {
+      alert('When changing Group in bulk edit, you must also specify Part. Please select both Part and Group.');
+      return;
+    }
+    
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 
                                driverSelections.domain.length > 0 || 
@@ -977,7 +1037,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.group}
               onChange={(e) => handleChange('group', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              disabled={!formData.part || formData.part === 'Keep Current Part'}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.part || formData.part === 'Keep Current Part' ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
