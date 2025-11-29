@@ -231,6 +231,11 @@ async def get_variables():
 
             variables = []
             for record in result:
+                # Validate required fields - skip variables with missing critical data
+                if not record["id"] or not record["part"] or not record["group"] or not record["variable"]:
+                    print(f"⚠️  Skipping variable with missing required fields: id={record.get('id')}, part={record.get('part')}, group={record.get('group')}, variable={record.get('variable')}")
+                    continue
+                
                 # Get driver data from the query results
                 sectors = record["sectors"] or []
                 domains = record["domains"] or []
@@ -246,25 +251,25 @@ async def get_variables():
                 driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
                 
                 var = {
-                    "id": record["id"],
+                    "id": str(record["id"]) if record["id"] else "",
                     "driver": driver_string,
                     "sector": sector_str,
                     "domain": domain_str,
                     "country": country_str,
-                    "part": record["part"],
-                    "group": record["group"],
-                    "section": record["section"],
-                    "variable": record["variable"],
-                    "formatI": record["formatI"],
-                    "formatII": record["formatII"],
-                    "gType": record["gType"],
-                    "validation": record["validation"] or "",
-                    "default": record["default"] or "",
-                    "graph": record["graph"] or "Yes",
-                    "status": record["status"] or "Active",
-                    "objectRelationships": record["objectRelationships"],
+                    "part": str(record["part"]) if record["part"] else "",
+                    "group": str(record["group"]) if record["group"] else "",
+                    "section": str(record["section"]) if record["section"] else "",
+                    "variable": str(record["variable"]) if record["variable"] else "",
+                    "formatI": str(record["formatI"]) if record["formatI"] else "",
+                    "formatII": str(record["formatII"]) if record["formatII"] else "",
+                    "gType": str(record["gType"]) if record["gType"] else "",
+                    "validation": str(record["validation"]) if record["validation"] else "",
+                    "default": str(record["default"]) if record["default"] else "",
+                    "graph": str(record["graph"]) if record["graph"] else "Yes",
+                    "status": str(record["status"]) if record["status"] else "Active",
+                    "objectRelationships": int(record["objectRelationships"]) if record["objectRelationships"] is not None else 0,
                     "objectRelationshipsList": [],
-                    "variations": record["variations"] or 0
+                    "variations": int(record["variations"]) if record["variations"] is not None else 0
                 }
                 variables.append(var)
 
