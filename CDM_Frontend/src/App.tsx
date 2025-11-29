@@ -663,8 +663,11 @@ function App() {
   // Sync order with current data - append new items to order when data changes
   useEffect(() => {
     if (activeTab === 'objects' && data.length > 0 && objectsOrderSortOrder) {
+      // Filter out any undefined/null items first
+      const validData = data.filter(o => o && typeof o === 'object');
+      
       // Find new beings/avatars/objects that aren't in order and append them
-      const distinctBeings = Array.from(new Set(data.map(o => o.being).filter(Boolean)));
+      const distinctBeings = Array.from(new Set(validData.map(o => o?.being).filter(Boolean)));
       const newBeings = distinctBeings.filter(b => !objectsOrderSortOrder.beingOrder.includes(b));
       if (newBeings.length > 0) {
         const updatedOrder = { ...objectsOrderSortOrder };
@@ -676,7 +679,7 @@ function App() {
       
       // Similar for avatars and objects - but only append, never reorder
       distinctBeings.forEach(being => {
-        const avatarsForBeing = Array.from(new Set(data.filter(o => o.being === being).map(o => o.avatar).filter(Boolean)));
+        const avatarsForBeing = Array.from(new Set(validData.filter(o => o?.being === being).map(o => o?.avatar).filter(Boolean)));
         if (!objectsOrderSortOrder.avatarOrders[being]) {
           objectsOrderSortOrder.avatarOrders[being] = [];
         }
@@ -697,8 +700,11 @@ function App() {
 
   useEffect(() => {
     if (activeTab === 'variables' && variableData.length > 0 && variablesOrderSortOrder) {
+      // Filter out any undefined/null items first
+      const validVariableData = variableData.filter(v => v && typeof v === 'object');
+      
       // Find new parts/sections/groups/variables and append them
-      const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean)));
+      const distinctParts = Array.from(new Set(validVariableData.map(v => v?.part).filter(Boolean)));
       const newParts = distinctParts.filter(p => !variablesOrderSortOrder.partOrder.includes(p));
       if (newParts.length > 0) {
         const updatedOrder = { ...variablesOrderSortOrder };
@@ -710,7 +716,7 @@ function App() {
       
       // Similar for sections, groups, variables - append only
       distinctParts.forEach(part => {
-        const sectionsForPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean)));
+        const sectionsForPart = Array.from(new Set(validVariableData.filter(v => v?.part === part).map(v => v?.section).filter(Boolean)));
         if (!variablesOrderSortOrder.sectionOrders[part]) {
           variablesOrderSortOrder.sectionOrders[part] = [];
         }
@@ -727,7 +733,7 @@ function App() {
         }
         
         sectionsForPart.forEach(section => {
-          const groupsForPartSection = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section).map(v => v.group).filter(Boolean)));
+          const groupsForPartSection = Array.from(new Set(validVariableData.filter(v => v?.part === part && v?.section === section).map(v => v?.group).filter(Boolean)));
           const groupKey = `${part}|${section}`;
           if (!variablesOrderSortOrder.groupOrders[groupKey]) {
             variablesOrderSortOrder.groupOrders[groupKey] = [];
@@ -745,7 +751,7 @@ function App() {
           }
           
           groupsForPartSection.forEach(group => {
-            const variablesForPartSectionGroup = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section && v.group === group).map(v => v.variable).filter(Boolean)));
+            const variablesForPartSectionGroup = Array.from(new Set(validVariableData.filter(v => v?.part === part && v?.section === section && v?.group === group).map(v => v?.variable).filter(Boolean)));
             const variableKey = `${part}|${section}|${group}`;
             if (!variablesOrderSortOrder.variableOrders[variableKey]) {
               variablesOrderSortOrder.variableOrders[variableKey] = [];
@@ -769,8 +775,11 @@ function App() {
 
   useEffect(() => {
     if (activeTab === 'lists' && listData.length > 0 && listsOrderSortOrder) {
+      // Filter out any undefined/null items first
+      const validListData = listData.filter(l => l && typeof l === 'object');
+      
       // Find new sets/groupings/lists and append them
-      const distinctSets = Array.from(new Set(listData.map(l => l.set).filter(Boolean)));
+      const distinctSets = Array.from(new Set(validListData.map(l => l?.set).filter(Boolean)));
       const newSets = distinctSets.filter(s => !listsOrderSortOrder.setOrder.includes(s));
       if (newSets.length > 0) {
         const updatedOrder = { ...listsOrderSortOrder };
@@ -782,7 +791,7 @@ function App() {
       
       // Similar for groupings and lists - append only
       distinctSets.forEach(set => {
-        const groupingsForSet = Array.from(new Set(listData.filter(l => l.set === set).map(l => l.grouping).filter(Boolean)));
+        const groupingsForSet = Array.from(new Set(validListData.filter(l => l?.set === set).map(l => l?.grouping).filter(Boolean)));
         if (!listsOrderSortOrder.groupingOrders[set]) {
           listsOrderSortOrder.groupingOrders[set] = [];
         }
@@ -799,7 +808,7 @@ function App() {
         }
         
         groupingsForSet.forEach(grouping => {
-          const listsForSetGrouping = Array.from(new Set(listData.filter(l => l.set === set && l.grouping === grouping).map(l => l.list).filter(Boolean)));
+          const listsForSetGrouping = Array.from(new Set(validListData.filter(l => l?.set === set && l?.grouping === grouping).map(l => l?.list).filter(Boolean)));
           const listKey = `${set}|${grouping}`;
           if (!listsOrderSortOrder.listOrders[listKey]) {
             listsOrderSortOrder.listOrders[listKey] = [];

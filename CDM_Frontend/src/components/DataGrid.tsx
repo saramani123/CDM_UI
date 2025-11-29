@@ -438,7 +438,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const filteredAndSortedData = useMemo(() => {
     console.log('🔄 USEMEMO TRIGGERED:', { sortConfig, dataLength: data.length, affectedIds: affectedIds.size, affectedIdsArray: Array.from(affectedIds), customSortRules: customSortRules.length });
     
-    let processedData = [...data];
+    // Filter out any undefined/null items first to prevent errors
+    let processedData = [...data].filter(item => item && typeof item === 'object' && item.id);
 
     // Apply text filters
     Object.entries(filters).forEach(([key, filterValue]) => {
