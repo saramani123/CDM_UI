@@ -120,12 +120,40 @@ function App() {
       const savedOrderEnabled = localStorage.getItem('cdm_variables_order_enabled') || localStorage.getItem('cdm_variables_predefined_sort_enabled');
       const savedOrderSortOrder = localStorage.getItem('cdm_variables_order_sort_order') || localStorage.getItem('cdm_variables_predefined_sort_order');
       
+      let orderSortOrder = undefined;
+      if (savedOrderSortOrder) {
+        try {
+          const parsed = JSON.parse(savedOrderSortOrder);
+          // Validate structure - must have partOrder, sectionOrders, groupOrders, variableOrders
+          if (parsed && typeof parsed === 'object' && 
+              Array.isArray(parsed.partOrder) && 
+              typeof parsed.sectionOrders === 'object' && 
+              typeof parsed.groupOrders === 'object' && 
+              typeof parsed.variableOrders === 'object') {
+            orderSortOrder = {
+              partOrder: parsed.partOrder || [],
+              sectionOrders: parsed.sectionOrders || {},
+              groupOrders: parsed.groupOrders || {},
+              variableOrders: parsed.variableOrders || {}
+            };
+          } else {
+            console.warn('Invalid variables order structure in localStorage, clearing it');
+            localStorage.removeItem('cdm_variables_order_sort_order');
+            localStorage.removeItem('cdm_variables_predefined_sort_order');
+          }
+        } catch (parseError) {
+          console.error('Error parsing variables order from localStorage:', parseError);
+          localStorage.removeItem('cdm_variables_order_sort_order');
+          localStorage.removeItem('cdm_variables_predefined_sort_order');
+        }
+      }
+      
       return {
         variablesCustomSortRules: savedVariablesCustomSortRules ? JSON.parse(savedVariablesCustomSortRules) : [],
         isVariablesCustomSortActive: savedVariablesCustomSortActive === 'true',
         isVariablesColumnSortActive: savedVariablesColumnSortActive === 'true',
         isOrderEnabled: savedOrderEnabled === 'true',
-        orderSortOrder: savedOrderSortOrder ? JSON.parse(savedOrderSortOrder) : undefined
+        orderSortOrder
       };
     } catch (error) {
       console.error('Error loading persisted variables state:', error);
@@ -198,12 +226,38 @@ function App() {
       const savedObjectsOrderEnabled = localStorage.getItem('cdm_objects_order_enabled');
       const savedObjectsOrderSortOrder = localStorage.getItem('cdm_objects_order_sort_order');
       
+      let orderSortOrder = undefined;
+      if (savedObjectsOrderSortOrder) {
+        try {
+          const parsed = JSON.parse(savedObjectsOrderSortOrder);
+          // Validate structure - must have beingOrder, avatarOrders, objectOrders
+          if (parsed && typeof parsed === 'object' && 
+              Array.isArray(parsed.beingOrder) && 
+              typeof parsed.avatarOrders === 'object' && 
+              typeof parsed.objectOrders === 'object') {
+            orderSortOrder = {
+              beingOrder: parsed.beingOrder || [],
+              avatarOrders: parsed.avatarOrders || {},
+              objectOrders: parsed.objectOrders || {}
+            };
+          } else {
+            console.warn('Invalid objects order structure in localStorage, clearing it');
+            localStorage.removeItem('cdm_objects_order_sort_order');
+          }
+        } catch (parseError) {
+          console.error('Error parsing objects order from localStorage:', parseError);
+          localStorage.removeItem('cdm_objects_order_sort_order');
+        }
+      }
+      
       return {
         isOrderEnabled: savedObjectsOrderEnabled === 'true',
-        orderSortOrder: savedObjectsOrderSortOrder ? JSON.parse(savedObjectsOrderSortOrder) : undefined
+        orderSortOrder
       };
     } catch (error) {
       console.error('Error loading persisted objects order state:', error);
+      // Clear corrupted data
+      localStorage.removeItem('cdm_objects_order_sort_order');
       return {
         isOrderEnabled: false,
         orderSortOrder: undefined
@@ -226,12 +280,38 @@ function App() {
       const savedListsOrderEnabled = localStorage.getItem('cdm_lists_order_enabled');
       const savedListsOrderSortOrder = localStorage.getItem('cdm_lists_order_sort_order');
       
+      let orderSortOrder = undefined;
+      if (savedListsOrderSortOrder) {
+        try {
+          const parsed = JSON.parse(savedListsOrderSortOrder);
+          // Validate structure - must have setOrder, groupingOrders, listOrders
+          if (parsed && typeof parsed === 'object' && 
+              Array.isArray(parsed.setOrder) && 
+              typeof parsed.groupingOrders === 'object' && 
+              typeof parsed.listOrders === 'object') {
+            orderSortOrder = {
+              setOrder: parsed.setOrder || [],
+              groupingOrders: parsed.groupingOrders || {},
+              listOrders: parsed.listOrders || {}
+            };
+          } else {
+            console.warn('Invalid lists order structure in localStorage, clearing it');
+            localStorage.removeItem('cdm_lists_order_sort_order');
+          }
+        } catch (parseError) {
+          console.error('Error parsing lists order from localStorage:', parseError);
+          localStorage.removeItem('cdm_lists_order_sort_order');
+        }
+      }
+      
       return {
         isOrderEnabled: savedListsOrderEnabled === 'true',
-        orderSortOrder: savedListsOrderSortOrder ? JSON.parse(savedListsOrderSortOrder) : undefined
+        orderSortOrder
       };
     } catch (error) {
       console.error('Error loading persisted lists order state:', error);
+      // Clear corrupted data
+      localStorage.removeItem('cdm_lists_order_sort_order');
       return {
         isOrderEnabled: false,
         orderSortOrder: undefined
@@ -700,6 +780,17 @@ function App() {
 
   useEffect(() => {
     if (activeTab === 'variables' && variableData.length > 0 && variablesOrderSortOrder) {
+      // Validate order structure before using it
+      if (!variablesOrderSortOrder.partOrder || !Array.isArray(variablesOrderSortOrder.partOrder) ||
+          !variablesOrderSortOrder.sectionOrders || typeof variablesOrderSortOrder.sectionOrders !== 'object' ||
+          !variablesOrderSortOrder.groupOrders || typeof variablesOrderSortOrder.groupOrders !== 'object' ||
+          !variablesOrderSortOrder.variableOrders || typeof variablesOrderSortOrder.variableOrders !== 'object') {
+        console.error('Invalid variablesOrderSortOrder structure, resetting');
+        setVariablesOrderSortOrder(undefined);
+        localStorage.removeItem('cdm_variables_order_sort_order');
+        return;
+      }
+      
       // Filter out any undefined/null items first
       const validVariableData = variableData.filter(v => v && typeof v === 'object');
       
