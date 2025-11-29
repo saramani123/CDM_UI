@@ -49,6 +49,8 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
+  // CRITICAL: Order should NEVER change unless user explicitly modifies it via drag-and-drop
+  // New items should be appended to the end, edits should stay in place, deletes should remove without affecting others
   useEffect(() => {
     if (!isOpen) {
       setIsInitialized(false);
@@ -57,15 +59,48 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
     
     if (!isInitialized) {
       if (orderSortOrder) {
-        const setOrder = orderSortOrder.setOrder && orderSortOrder.setOrder.length > 0 ? orderSortOrder.setOrder : distinctSets;
+        // Preserve saved set order, append new sets
+        const savedSetOrder = orderSortOrder.setOrder && orderSortOrder.setOrder.length > 0 
+          ? [...orderSortOrder.setOrder] 
+          : [];
+        const validSavedSets = savedSetOrder.filter(set => distinctSets.includes(set));
+        const newSets = distinctSets.filter(set => !savedSetOrder.includes(set));
+        const setOrder = [...validSavedSets, ...newSets];
+        
+        // Preserve saved grouping orders, append new groupings
+        const groupingOrders: Record<string, string[]> = {};
+        const savedGroupingOrders = orderSortOrder.groupingOrders || {};
+        distinctSets.forEach(set => {
+          const groupingsForSet = Array.from(new Set(listData.filter(l => l.set === set).map(l => l.grouping).filter(Boolean))).sort();
+          const savedGroupingOrder = savedGroupingOrders[set] || [];
+          const validSavedGroupings = savedGroupingOrder.filter(grouping => groupingsForSet.includes(grouping));
+          const newGroupings = groupingsForSet.filter(grouping => !savedGroupingOrder.includes(grouping));
+          groupingOrders[set] = [...validSavedGroupings, ...newGroupings];
+        });
+        
+        // Preserve saved list orders, append new lists
+        const listOrders: Record<string, string[]> = {};
+        const savedListOrders = orderSortOrder.listOrders || {};
+        distinctSets.forEach(set => {
+          const groupingsForSet = Array.from(new Set(listData.filter(l => l.set === set).map(l => l.grouping).filter(Boolean))).sort();
+          groupingsForSet.forEach(grouping => {
+            const key = `${set}|${grouping}`;
+            const listsForSetGrouping = Array.from(new Set(listData.filter(l => l.set === set && l.grouping === grouping).map(l => l.list).filter(Boolean))).sort();
+            const savedListOrder = savedListOrders[key] || [];
+            const validSavedLists = savedListOrder.filter(list => listsForSetGrouping.includes(list));
+            const newLists = listsForSetGrouping.filter(list => !savedListOrder.includes(list));
+            listOrders[key] = [...validSavedLists, ...newLists];
+          });
+        });
+        
         setWorkingSetOrder(setOrder);
         setSavedSetOrder(setOrder);
-        setWorkingGroupingOrders(orderSortOrder.groupingOrders || {});
-        setSavedGroupingOrders(orderSortOrder.groupingOrders || {});
-        setWorkingListOrders(orderSortOrder.listOrders || {});
-        setSavedListOrders(orderSortOrder.listOrders || {});
+        setWorkingGroupingOrders(groupingOrders);
+        setSavedGroupingOrders(groupingOrders);
+        setWorkingListOrders(listOrders);
+        setSavedListOrders(listOrders);
       } else {
-        // Create default alphabetical orders
+        // Create default alphabetical orders (only if no saved order exists)
         setWorkingSetOrder(distinctSets);
         setSavedSetOrder(distinctSets);
         setWorkingGroupingOrders({});
@@ -75,7 +110,7 @@ export const ListsOrderModal: React.FC<ListsOrderModalProps> = ({
       }
       setIsInitialized(true);
     }
-  }, [isOpen, orderSortOrder, distinctSets, isInitialized]);
+  }, [isOpen, orderSortOrder, isInitialized]); // Removed distinctSets and listData from deps - only initialize once when modal opens
 
   // Initialize working order for a set when it's selected (if not already in working orders)
   useEffect(() => {

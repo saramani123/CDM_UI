@@ -67,31 +67,33 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
-  // Also re-initialize when variableData changes significantly (new parts/sections/groups added)
+  // CRITICAL: Order should NEVER change unless user explicitly modifies it via drag-and-drop
+  // New items should be appended to the end, edits should stay in place, deletes should remove without affecting others
   useEffect(() => {
     if (!isOpen) {
       setIsInitialized(false);
       return;
     }
     
-    // Check if we need to update part order (new parts added)
-    const currentDistinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
-    const hasNewParts = currentDistinctParts.some(part => !distinctParts.includes(part));
-    
-    if (!isInitialized || hasNewParts) {
+    if (!isInitialized) {
+      const currentDistinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
+      
       if (orderSortOrder) {
-        const partOrder = orderSortOrder.partOrder && orderSortOrder.partOrder.length > 0 
-          ? [...orderSortOrder.partOrder] // Start with saved order
-          : currentDistinctParts;
+        // Start with saved order - this is the source of truth
+        const savedPartOrder = orderSortOrder.partOrder && orderSortOrder.partOrder.length > 0 
+          ? [...orderSortOrder.partOrder] 
+          : [];
         
-        // Add any new parts that aren't in the saved order
-        currentDistinctParts.forEach(part => {
-          if (!partOrder.includes(part)) {
-            partOrder.push(part);
-          }
-        });
+        // Filter out deleted parts (parts that no longer exist in data)
+        const validSavedParts = savedPartOrder.filter(part => currentDistinctParts.includes(part));
         
-        // Handle migration from old format (sectionOrder: string[]) to new format (sectionOrders: Record<string, string[]>)
+        // Find new parts that aren't in saved order - append to end
+        const newParts = currentDistinctParts.filter(part => !savedPartOrder.includes(part));
+        
+        // Final order: valid saved parts (in saved order) + new parts (at end)
+        const partOrder = [...validSavedParts, ...newParts];
+        
+        // Handle section orders - preserve existing order, append new sections
         let sectionOrders = orderSortOrder.sectionOrders || {};
         if (!orderSortOrder.sectionOrders && (orderSortOrder as any).sectionOrder) {
           // Migrate old flat sectionOrder to new structure - distribute across all parts
@@ -105,25 +107,77 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
             sectionOrders[part] = [...orderedSections, ...remainingSections];
           });
         } else {
-          // Update sectionOrders for new parts
+          // For each part, preserve saved order and append new sections
           currentDistinctParts.forEach(part => {
-            if (!sectionOrders[part]) {
-              const sectionsForThisPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
-              sectionOrders[part] = sectionsForThisPart;
-            }
+            const sectionsForThisPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
+            const savedSectionOrder = sectionOrders[part] || [];
+            
+            // Filter out deleted sections, preserve order
+            const validSavedSections = savedSectionOrder.filter(section => sectionsForThisPart.includes(section));
+            
+            // Find new sections - append to end
+            const newSections = sectionsForThisPart.filter(section => !savedSectionOrder.includes(section));
+            
+            // Final order: valid saved sections (in saved order) + new sections (at end)
+            sectionOrders[part] = [...validSavedSections, ...newSections];
           });
         }
+        
+        // Handle group orders - preserve existing order, append new groups
+        const groupOrders: Record<string, string[]> = {};
+        const savedGroupOrders = orderSortOrder.groupOrders || {};
+        currentDistinctParts.forEach(part => {
+          const sectionsForPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
+          sectionsForPart.forEach(section => {
+            const key = `${part}|${section}`;
+            const groupsForPartSection = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section).map(v => v.group).filter(Boolean))).sort();
+            const savedGroupOrder = savedGroupOrders[key] || [];
+            
+            // Filter out deleted groups, preserve order
+            const validSavedGroups = savedGroupOrder.filter(group => groupsForPartSection.includes(group));
+            
+            // Find new groups - append to end
+            const newGroups = groupsForPartSection.filter(group => !savedGroupOrder.includes(group));
+            
+            // Final order: valid saved groups (in saved order) + new groups (at end)
+            groupOrders[key] = [...validSavedGroups, ...newGroups];
+          });
+        });
+        
+        // Handle variable orders - preserve existing order, append new variables
+        const variableOrders: Record<string, string[]> = {};
+        const savedVariableOrders = orderSortOrder.variableOrders || {};
+        currentDistinctParts.forEach(part => {
+          const sectionsForPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
+          sectionsForPart.forEach(section => {
+            const groupsForPartSection = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section).map(v => v.group).filter(Boolean))).sort();
+            groupsForPartSection.forEach(group => {
+              const key = `${part}|${section}|${group}`;
+              const variablesForPartSectionGroup = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section && v.group === group).map(v => v.variable).filter(Boolean))).sort();
+              const savedVariableOrder = savedVariableOrders[key] || [];
+              
+              // Filter out deleted variables, preserve order
+              const validSavedVariables = savedVariableOrder.filter(variable => variablesForPartSectionGroup.includes(variable));
+              
+              // Find new variables - append to end
+              const newVariables = variablesForPartSectionGroup.filter(variable => !savedVariableOrder.includes(variable));
+              
+              // Final order: valid saved variables (in saved order) + new variables (at end)
+              variableOrders[key] = [...validSavedVariables, ...newVariables];
+            });
+          });
+        });
         
         setWorkingPartOrder(partOrder);
         setWorkingSectionOrders(sectionOrders);
         setSavedPartOrder(partOrder);
         setSavedSectionOrders(sectionOrders);
-        setWorkingGroupOrders(orderSortOrder.groupOrders || {});
-        setSavedGroupOrders(orderSortOrder.groupOrders || {});
-        setWorkingVariableOrders(orderSortOrder.variableOrders || {});
-        setSavedVariableOrders(orderSortOrder.variableOrders || {});
+        setWorkingGroupOrders(groupOrders);
+        setSavedGroupOrders(groupOrders);
+        setWorkingVariableOrders(variableOrders);
+        setSavedVariableOrders(variableOrders);
       } else {
-        // Create default alphabetical orders
+        // Create default alphabetical orders (only if no saved order exists)
         setWorkingPartOrder(currentDistinctParts);
         setWorkingSectionOrders({});
         setSavedPartOrder(currentDistinctParts);
@@ -135,7 +189,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       }
       setIsInitialized(true);
     }
-  }, [isOpen, orderSortOrder, variableData, isInitialized]);
+  }, [isOpen, orderSortOrder, isInitialized, variableData]); // variableData needed for initialization
 
   // Initialize working order for sections when a part is selected (from Part column click)
   useEffect(() => {

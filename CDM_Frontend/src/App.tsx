@@ -598,6 +598,68 @@ function App() {
     }
   }, [data, selectedRowForMetadata]);
 
+  // Load order from backend on mount (for cross-device persistence)
+  useEffect(() => {
+    const loadOrderFromBackend = async () => {
+      try {
+        // Load Objects order
+        const objectsOrder = await apiService.getObjectsOrder() as {
+          beingOrder?: string[];
+          avatarOrders?: Record<string, string[]>;
+          objectOrders?: Record<string, string[]>;
+        } | null;
+        if (objectsOrder && (objectsOrder.beingOrder?.length > 0 || Object.keys(objectsOrder.avatarOrders || {}).length > 0 || Object.keys(objectsOrder.objectOrders || {}).length > 0)) {
+          setObjectsOrderSortOrder({
+            beingOrder: objectsOrder.beingOrder || [],
+            avatarOrders: objectsOrder.avatarOrders || {},
+            objectOrders: objectsOrder.objectOrders || {}
+          });
+          localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(objectsOrder));
+          console.log('✅ Loaded objects order from backend');
+        }
+        
+        // Load Variables order
+        const variablesOrder = await apiService.getVariablesOrder() as {
+          partOrder?: string[];
+          sectionOrders?: Record<string, string[]>;
+          groupOrders?: Record<string, string[]>;
+          variableOrders?: Record<string, string[]>;
+        } | null;
+        if (variablesOrder && (variablesOrder.partOrder?.length > 0 || Object.keys(variablesOrder.sectionOrders || {}).length > 0 || Object.keys(variablesOrder.groupOrders || {}).length > 0 || Object.keys(variablesOrder.variableOrders || {}).length > 0)) {
+          setVariablesOrderSortOrder({
+            partOrder: variablesOrder.partOrder || [],
+            sectionOrders: variablesOrder.sectionOrders || {},
+            groupOrders: variablesOrder.groupOrders || {},
+            variableOrders: variablesOrder.variableOrders || {}
+          });
+          localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(variablesOrder));
+          console.log('✅ Loaded variables order from backend');
+        }
+        
+        // Load Lists order
+        const listsOrder = await apiService.getListsOrder() as {
+          setOrder?: string[];
+          groupingOrders?: Record<string, string[]>;
+          listOrders?: Record<string, string[]>;
+        } | null;
+        if (listsOrder && (listsOrder.setOrder?.length > 0 || Object.keys(listsOrder.groupingOrders || {}).length > 0 || Object.keys(listsOrder.listOrders || {}).length > 0)) {
+          setListsOrderSortOrder({
+            setOrder: listsOrder.setOrder || [],
+            groupingOrders: listsOrder.groupingOrders || {},
+            listOrders: listsOrder.listOrders || {}
+          });
+          localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(listsOrder));
+          console.log('✅ Loaded lists order from backend');
+        }
+      } catch (error) {
+        console.error('❌ Failed to load order from backend (will use localStorage):', error);
+        // Continue with localStorage - this is not critical
+      }
+    };
+    
+    loadOrderFromBackend();
+  }, []); // Only run once on mount
+
   // Sync API variables data with local state
   React.useEffect(() => {
     console.log('Variables effect triggered:', { 
@@ -2846,7 +2908,7 @@ function App() {
     setIsVariablesColumnSortActive(true);
   };
 
-  const handleVariablesOrderSave = (order: {
+  const handleVariablesOrderSave = async (order: {
     partOrder: string[];
     sectionOrders: Record<string, string[]>; // key: part, value: array of sections
     groupOrders: Record<string, string[]>; // key: "part|section", value: array of groups
@@ -2862,7 +2924,15 @@ function App() {
       variableOrders: order.variableOrders
     };
     localStorage.setItem('cdm_variables_predefined_sort_order', JSON.stringify(oldOrder));
-    console.log('Variables order saved:', order);
+    
+    // Save to backend for cross-device persistence
+    try {
+      await apiService.saveVariablesOrder(order);
+      console.log('✅ Variables order saved to backend:', order);
+    } catch (error) {
+      console.error('❌ Failed to save variables order to backend:', error);
+      // Continue anyway - localStorage is still saved
+    }
   };
 
   const handleVariablesDefaultOrderToggle = (enabled: boolean) => {
@@ -2891,14 +2961,22 @@ function App() {
     console.log('Variables default order toggled:', enabled);
   };
 
-  const handleObjectsOrderSave = (order: {
+  const handleObjectsOrderSave = async (order: {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
     objectOrders: Record<string, string[]>;
   }) => {
     setObjectsOrderSortOrder(order);
     localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(order));
-    console.log('Objects order saved:', order);
+    
+    // Save to backend for cross-device persistence
+    try {
+      await apiService.saveObjectsOrder(order);
+      console.log('✅ Objects order saved to backend:', order);
+    } catch (error) {
+      console.error('❌ Failed to save objects order to backend:', error);
+      // Continue anyway - localStorage is still saved
+    }
   };
 
   const handleObjectsDefaultOrderToggle = (enabled: boolean) => {
@@ -2924,14 +3002,22 @@ function App() {
     console.log('Objects default order toggled:', enabled);
   };
 
-  const handleListsOrderSave = (order: {
+  const handleListsOrderSave = async (order: {
     setOrder: string[];
     groupingOrders: Record<string, string[]>;
     listOrders: Record<string, string[]>;
   }) => {
     setListsOrderSortOrder(order);
     localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(order));
-    console.log('Lists order saved:', order);
+    
+    // Save to backend for cross-device persistence
+    try {
+      await apiService.saveListsOrder(order);
+      console.log('✅ Lists order saved to backend:', order);
+    } catch (error) {
+      console.error('❌ Failed to save lists order to backend:', error);
+      // Continue anyway - localStorage is still saved
+    }
   };
 
   const handleListsDefaultOrderToggle = (enabled: boolean) => {

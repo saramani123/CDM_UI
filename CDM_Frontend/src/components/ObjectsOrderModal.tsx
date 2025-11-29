@@ -49,6 +49,8 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
+  // CRITICAL: Order should NEVER change unless user explicitly modifies it via drag-and-drop
+  // New items should be appended to the end, edits should stay in place, deletes should remove without affecting others
   useEffect(() => {
     if (!isOpen) {
       setIsInitialized(false);
@@ -57,15 +59,48 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     
     if (!isInitialized) {
       if (orderSortOrder) {
-        const beingOrder = orderSortOrder.beingOrder && orderSortOrder.beingOrder.length > 0 ? orderSortOrder.beingOrder : distinctBeings;
+        // Preserve saved being order, append new beings
+        const savedBeingOrder = orderSortOrder.beingOrder && orderSortOrder.beingOrder.length > 0 
+          ? [...orderSortOrder.beingOrder] 
+          : [];
+        const validSavedBeings = savedBeingOrder.filter(being => distinctBeings.includes(being));
+        const newBeings = distinctBeings.filter(being => !savedBeingOrder.includes(being));
+        const beingOrder = [...validSavedBeings, ...newBeings];
+        
+        // Preserve saved avatar orders, append new avatars
+        const avatarOrders: Record<string, string[]> = {};
+        const savedAvatarOrders = orderSortOrder.avatarOrders || {};
+        distinctBeings.forEach(being => {
+          const avatarsForBeing = Array.from(new Set(objectData.filter(o => o.being === being).map(o => o.avatar).filter(Boolean))).sort();
+          const savedAvatarOrder = savedAvatarOrders[being] || [];
+          const validSavedAvatars = savedAvatarOrder.filter(avatar => avatarsForBeing.includes(avatar));
+          const newAvatars = avatarsForBeing.filter(avatar => !savedAvatarOrder.includes(avatar));
+          avatarOrders[being] = [...validSavedAvatars, ...newAvatars];
+        });
+        
+        // Preserve saved object orders, append new objects
+        const objectOrders: Record<string, string[]> = {};
+        const savedObjectOrders = orderSortOrder.objectOrders || {};
+        distinctBeings.forEach(being => {
+          const avatarsForBeing = Array.from(new Set(objectData.filter(o => o.being === being).map(o => o.avatar).filter(Boolean))).sort();
+          avatarsForBeing.forEach(avatar => {
+            const key = `${being}|${avatar}`;
+            const objectsForBeingAvatar = Array.from(new Set(objectData.filter(o => o.being === being && o.avatar === avatar).map(o => o.object).filter(Boolean))).sort();
+            const savedObjectOrder = savedObjectOrders[key] || [];
+            const validSavedObjects = savedObjectOrder.filter(obj => objectsForBeingAvatar.includes(obj));
+            const newObjects = objectsForBeingAvatar.filter(obj => !savedObjectOrder.includes(obj));
+            objectOrders[key] = [...validSavedObjects, ...newObjects];
+          });
+        });
+        
         setWorkingBeingOrder(beingOrder);
         setSavedBeingOrder(beingOrder);
-        setWorkingAvatarOrders(orderSortOrder.avatarOrders || {});
-        setSavedAvatarOrders(orderSortOrder.avatarOrders || {});
-        setWorkingObjectOrders(orderSortOrder.objectOrders || {});
-        setSavedObjectOrders(orderSortOrder.objectOrders || {});
+        setWorkingAvatarOrders(avatarOrders);
+        setSavedAvatarOrders(avatarOrders);
+        setWorkingObjectOrders(objectOrders);
+        setSavedObjectOrders(objectOrders);
       } else {
-        // Create default alphabetical orders
+        // Create default alphabetical orders (only if no saved order exists)
         setWorkingBeingOrder(distinctBeings);
         setSavedBeingOrder(distinctBeings);
         setWorkingAvatarOrders({});
@@ -75,7 +110,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
       }
       setIsInitialized(true);
     }
-  }, [isOpen, orderSortOrder, distinctBeings, isInitialized]);
+  }, [isOpen, orderSortOrder, isInitialized]); // Removed distinctBeings and objectData from deps - only initialize once when modal opens
 
   // Initialize working order for a being when it's selected (if not already in working orders)
   useEffect(() => {

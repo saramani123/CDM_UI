@@ -891,6 +891,53 @@ class ApiService {
   async getVariableFieldOptions() {
     return this.request('/variables/field-options', { method: 'GET' });
   }
+
+  // Order API - for default sort order persistence
+  async getObjectsOrder() {
+    return this.request('/order/objects', { method: 'GET' });
+  }
+
+  async saveObjectsOrder(order: {
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  }) {
+    return this.request('/order/objects', {
+      method: 'POST',
+      body: JSON.stringify(order),
+    });
+  }
+
+  async getVariablesOrder() {
+    return this.request('/order/variables', { method: 'GET' });
+  }
+
+  async saveVariablesOrder(order: {
+    partOrder: string[];
+    sectionOrders: Record<string, string[]>;
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  }) {
+    return this.request('/order/variables', {
+      method: 'POST',
+      body: JSON.stringify(order),
+    });
+  }
+
+  async getListsOrder() {
+    return this.request('/order/lists', { method: 'GET' });
+  }
+
+  async saveListsOrder(order: {
+    setOrder: string[];
+    groupingOrders: Record<string, string[]>;
+    listOrders: Record<string, string[]>;
+  }) {
+    return this.request('/order/lists', {
+      method: 'POST',
+      body: JSON.stringify(order),
+    });
+  }
 }
 
 export const apiService = new ApiService();
