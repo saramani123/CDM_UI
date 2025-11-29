@@ -444,9 +444,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
     // Apply text filters
     Object.entries(filters).forEach(([key, filterValue]) => {
       if (filterValue) {
-        processedData = processedData.filter(item =>
-          String(item[key]).toLowerCase().includes(filterValue.toLowerCase())
-        );
+        processedData = processedData.filter(item => {
+          if (!item || typeof item !== 'object') return false;
+          return String(item[key] || '').toLowerCase().includes(filterValue.toLowerCase());
+        });
       }
     });
 
@@ -456,6 +457,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
         // Special handling for Sector, Domain, Country columns (which may have comma-separated values)
         if (['sector', 'domain', 'country'].includes(key)) {
           processedData = processedData.filter(item => {
+            if (!item || typeof item !== 'object') return false;
             const itemValue = String(item[key] || '');
             
             // If "ALL" is selected, only show items with "ALL" value
@@ -473,9 +475,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
           });
         } else {
           // Standard filtering for other columns
-          processedData = processedData.filter(item =>
-            filterValues.includes(String(item[key] || ''))
-          );
+          processedData = processedData.filter(item => {
+            if (!item || typeof item !== 'object') return false;
+            return filterValues.includes(String(item[key] || ''));
+          });
         }
       }
     });
@@ -713,14 +716,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
           customOrder: sortConfig.customOrder,
           customOrderLength: sortConfig.customOrder.length,
           dataCount: processedData.length,
-          sampleData: processedData.slice(0, 3).map(item => item[sortConfig.key])
+          sampleData: processedData.slice(0, 3).map(item => item && typeof item === 'object' ? item[sortConfig.key] : '')
         });
         
         // Log the original order before sorting
-        const originalOrder = processedData.map(item => item[sortConfig.key]);
+        const originalOrder = processedData.map(item => item && typeof item === 'object' ? item[sortConfig.key] : '');
         console.log('📋 ORIGINAL ORDER:', originalOrder);
         
         processedData.sort((a, b) => {
+          if (!a || typeof a !== 'object' || !b || typeof b !== 'object') return 0;
           const aValue = String(a[sortConfig.key] || '');
           const bValue = String(b[sortConfig.key] || '');
           
@@ -752,7 +756,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
           return result;
         });
         
-        const finalOrder = processedData.map(item => item[sortConfig.key]);
+        const finalOrder = processedData.map(item => item && typeof item === 'object' ? item[sortConfig.key] : '');
         console.log('📋 FINAL SORTED ORDER:', finalOrder);
         console.log('🔄 ORDER CHANGED:', JSON.stringify(originalOrder) !== JSON.stringify(finalOrder));
       }
@@ -808,6 +812,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
         if (['sector', 'domain', 'country'].includes(column.key)) {
           const valuesSet = new Set<string>();
           columnData.forEach(item => {
+            if (!item || typeof item !== 'object') return;
             const itemValue = String(item[column.key] || '');
             if (itemValue === 'ALL') {
               valuesSet.add('ALL');
@@ -820,7 +825,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
           distinctValues = Array.from(valuesSet);
         } else {
           // Standard extraction for other columns
-          distinctValues = [...new Set(columnData.map(item => String(item[column.key] || '')))].filter(Boolean);
+          distinctValues = [...new Set(columnData.filter(item => item && typeof item === 'object').map(item => String(item[column.key] || '')))].filter(Boolean);
         }
         
         options[column.key] = distinctValues.sort();
@@ -1347,8 +1352,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               return getGridDriverDisplayValue(column.key, value || '');
                             })() : 
                             (['relationships', 'variants', 'variables'].includes(column.key) 
-                              ? (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined ? '-' : row[column.key])
-                              : (row[column.key] || '-'))
+                              ? (row && typeof row === 'object' && (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined) ? '-' : (row && typeof row === 'object' ? row[column.key] : '-'))
+                              : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
                         }
                       </span>
                     )}
