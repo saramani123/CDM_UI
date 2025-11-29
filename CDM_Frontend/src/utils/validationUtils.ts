@@ -13,6 +13,12 @@ export interface ValidationComponents {
  * Parse a validation string into its components
  * Examples:
  * - "List" -> { valType: 'List', operator: '', value: 'List' }
+ * - "Range < Datetime" -> { valType: 'Range', operator: '<', value: 'Datetime' }
+ * - "Relative = Is Open" -> { valType: 'Relative', operator: '=', value: 'Is Open' }
+ * - "Length >4" -> { valType: 'Length', operator: '>', value: '4' }
+ * - "Character = ABC123" -> { valType: 'Character', operator: '=', value: 'ABC123' }
+ * 
+ * Also supports legacy format (without Val Type prefix) for backward compatibility:
  * - "> Number" -> { valType: 'Range', operator: '>', value: 'Number' }
  * - "= Is Open" -> { valType: 'Relative', operator: '=', value: 'Is Open' }
  * - ">4" -> { valType: 'Length', operator: '>', value: '4' }
@@ -30,7 +36,45 @@ export function parseValidation(validationString: string): ValidationComponents 
     return { valType: 'List', operator: '', value: 'List' };
   }
 
-  // Check for operators: =, >, <, >=, <=
+  // Check for new format with Val Type prefix: "Range < Datetime", "Relative = Is Open", "Length >4", "Character = ABC123"
+  const valTypePrefixPattern = /^(Range|Relative|Length|Character)\s+(.+)$/;
+  const valTypeMatch = trimmed.match(valTypePrefixPattern);
+  
+  if (valTypeMatch) {
+    const valType = valTypeMatch[1] as ValType;
+    const rest = valTypeMatch[2].trim();
+    
+    // For Length, operator and value are concatenated without space (e.g., "Length >4")
+    if (valType === 'Length') {
+      const lengthMatch = rest.match(/^(>=|<=|=|>|<)(\d+)$/);
+      if (lengthMatch) {
+        return {
+          valType: 'Length',
+          operator: lengthMatch[1] as Operator,
+          value: lengthMatch[2]
+        };
+      }
+    }
+    
+    // For Range, Relative, and Character: "Range < Datetime", "Relative = Is Open", "Character = ABC123"
+    const operatorPattern = /^(>=|<=|=|>|<)\s+(.+)$/;
+    const operatorMatch = rest.match(operatorPattern);
+    
+    if (operatorMatch) {
+      return {
+        valType,
+        operator: operatorMatch[1] as Operator,
+        value: operatorMatch[2].trim()
+      };
+    }
+    
+    // If no operator found but we have a val type prefix, it might be Character without operator
+    if (valType === 'Character') {
+      return { valType: 'Character', operator: '', value: rest };
+    }
+  }
+
+  // Legacy format support (backward compatibility): check for operators without Val Type prefix
   const operatorPattern = /^(>=|<=|=|>|<)\s*(.+)$/;
   const match = trimmed.match(operatorPattern);
 
@@ -38,15 +82,14 @@ export function parseValidation(validationString: string): ValidationComponents 
     const operator = match[1] as Operator;
     const value = match[2].trim();
 
-    // Check if it's a number (Length)
+    // Check if it's a number (Length) - no space between operator and number
     if (/^\d+$/.test(value)) {
       return { valType: 'Length', operator, value };
     }
 
     // Check if it's a variable name (Relative) - typically starts with capital letter
-    // For now, we'll check if it looks like a variable name (not a format type)
     // Common format types: Number, Date, String, etc.
-    const commonFormats = ['Number', 'Date', 'String', 'Text', 'Boolean', 'Flag', 'List', 'Currency'];
+    const commonFormats = ['Number', 'Date', 'String', 'Text', 'Boolean', 'Flag', 'List', 'Currency', 'Datetime', 'Integer', 'Decimal'];
     if (!commonFormats.includes(value)) {
       // Likely a Relative validation
       return { valType: 'Relative', operator, value };
@@ -56,12 +99,18 @@ export function parseValidation(validationString: string): ValidationComponents 
     }
   }
 
-  // If no operator, it's likely a Character validation
+  // If no operator and no prefix, it's likely a Character validation (legacy format)
   return { valType: 'Character', operator: '', value: trimmed };
 }
 
 /**
  * Build a validation string from components
+ * Format:
+ * - List: "List"
+ * - Range: "Range < Datetime" (Val Type + operator + formatI)
+ * - Relative: "Relative = Is Open" (Val Type + operator + variableName)
+ * - Length: "Length >4" (Val Type + operator + integer, no space between operator and value)
+ * - Character: "Character = ABC123" (Val Type + operator + alphanumeric)
  */
 export function buildValidationString(components: ValidationComponents, variableName?: string, formatI?: string): string {
   const { valType, operator, value } = components;
@@ -75,23 +124,32 @@ export function buildValidationString(components: ValidationComponents, variable
       return 'List';
 
     case 'Range':
-      if (!operator || !value) return '';
+      if (!operator) return '';
       // For Range, use formatI if provided, otherwise use value
       const rangeValue = formatI || value;
-      return `${operator} ${rangeValue}`;
+      if (!rangeValue) return '';
+      return `Range ${operator} ${rangeValue}`;
 
     case 'Relative':
-      if (!operator || !value) return '';
+      if (!operator) return '';
       // For Relative, use variableName if provided, otherwise use value
       const relativeValue = variableName || value;
-      return `${operator} ${relativeValue}`;
+      if (!relativeValue) return '';
+      return `Relative ${operator} ${relativeValue}`;
 
     case 'Length':
       if (!operator || !value) return '';
-      return `${operator}${value}`; // No space for length (e.g., ">4")
+      // No space between operator and value for Length (e.g., "Length >4")
+      return `Length ${operator}${value}`;
 
     case 'Character':
-      return value || '';
+      if (!value) return '';
+      // Character can have an operator or not
+      if (operator) {
+        return `Character ${operator} ${value}`;
+      }
+      // Legacy format: just the value (backward compatibility)
+      return value;
 
     default:
       return '';
@@ -124,9 +182,10 @@ export function validateValidationInput(valType: ValType, value: string): { isVa
  * Get available operators for a valType
  */
 export function getOperatorsForValType(valType: ValType): Operator[] {
-  if (valType === 'List' || valType === 'Character') {
+  if (valType === 'List') {
     return [];
   }
+  // Range, Relative, Length, and Character all support operators
   return ['=', '>', '<', '>=', '<='];
 }
 

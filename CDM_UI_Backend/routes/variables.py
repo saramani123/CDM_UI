@@ -513,14 +513,16 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
                         if validation_value.startswith("_BULK_RANGE_"):
                             operator = validation_value.replace("_BULK_RANGE_", "")
-                            # Use the variable's formatI as the value
-                            validation_value = f"{operator} {current_variable.get('formatI', '')}"
+                            # Use the variable's formatI as the value, with Val Type prefix
+                            formatI_value = current_variable.get('formatI', '')
+                            validation_value = f"Range {operator} {formatI_value}" if formatI_value else ""
                         
                         # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
                         elif validation_value.startswith("_BULK_RELATIVE_"):
                             operator = validation_value.replace("_BULK_RELATIVE_", "")
-                            # Use the variable's name as the value
-                            validation_value = f"{operator} {current_variable.get('name', '')}"
+                            # Use the variable's name as the value, with Val Type prefix
+                            variable_name = current_variable.get('name', '')
+                            validation_value = f"Relative {operator} {variable_name}" if variable_name else ""
                         
                         set_clauses.append("v.validation = $validation")
                         params["validation"] = validation_value
@@ -1985,14 +1987,16 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
                         if validation_value.startswith("_BULK_RANGE_"):
                             operator = validation_value.replace("_BULK_RANGE_", "")
-                            # Use the variable's formatI as the value
-                            validation_value = f"{operator} {current_variable.get('formatI', '')}"
+                            # Use the variable's formatI as the value, with Val Type prefix
+                            formatI_value = current_variable.get('formatI', '')
+                            validation_value = f"Range {operator} {formatI_value}" if formatI_value else ""
                         
                         # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
                         elif validation_value.startswith("_BULK_RELATIVE_"):
                             operator = validation_value.replace("_BULK_RELATIVE_", "")
-                            # Use the variable's name as the value
-                            validation_value = f"{operator} {current_variable.get('name', '')}"
+                            # Use the variable's name as the value, with Val Type prefix
+                            variable_name = current_variable.get('name', '')
+                            validation_value = f"Relative {operator} {variable_name}" if variable_name else ""
                         
                         set_clauses.append("v.validation = $validation")
                         params["validation"] = validation_value

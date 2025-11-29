@@ -2085,10 +2085,17 @@ function App() {
         console.log('🔄 Bulk edit lists - selectedIds:', selectedIds);
         console.log('🔄 Bulk edit lists - updatedData:', updatedData);
         
+        // Show loading modal
+        setIsLoading(true);
+        setLoadingType('lists');
+        
+        // Ensure listType is NOT included in bulk edit (unless explicitly changed)
+        const { listType, tieredListsList, tieredListValues, ...bulkEditData } = updatedData;
+        
         // Update each selected list via API
         for (const listId of selectedIds) {
-          // Prepare the update data for this list
-          const listUpdateData = { ...updatedData };
+          // Prepare the update data for this list (exclude listType)
+          const listUpdateData = { ...bulkEditData };
           console.log(`🔄 Bulk edit - updating list ${listId} with data:`, listUpdateData);
           
           // Call the updateList API for each list
@@ -2100,6 +2107,34 @@ function App() {
         // Force refresh the data to ensure UI shows updated values
         await fetchLists();
         
+        // Hide loading modal
+        setIsLoading(false);
+        
+        // Show success message
+        const changedFields = [];
+        if (bulkEditData.sector !== undefined || bulkEditData.domain !== undefined || bulkEditData.country !== undefined) {
+          changedFields.push('drivers');
+        }
+        if (bulkEditData.set !== undefined || bulkEditData.grouping !== undefined) {
+          changedFields.push('ontology');
+        }
+        if (bulkEditData.format !== undefined || bulkEditData.source !== undefined || bulkEditData.upkeep !== undefined || 
+            bulkEditData.graph !== undefined || bulkEditData.origin !== undefined || bulkEditData.status !== undefined) {
+          changedFields.push('metadata');
+        }
+        if (bulkEditData.variationsList !== undefined) {
+          changedFields.push('variations');
+        }
+        if (bulkEditData.variablesAttachedList !== undefined) {
+          changedFields.push('applicability');
+        }
+        
+        if (changedFields.length > 0) {
+          alert(`Bulk edit completed successfully! Updated ${changedFields.join(', ')} for ${selectedIds.length} list(s).`);
+        } else {
+          alert(`Bulk edit completed successfully for ${selectedIds.length} list(s).`);
+        }
+        
         // Close modal and clear selections
         setIsBulkEditOpen(false);
         setSelectedRows([]);
@@ -2107,6 +2142,7 @@ function App() {
         return;
       } catch (error) {
         console.error('❌ Failed to bulk update lists:', error);
+        setIsLoading(false);
         alert('Failed to update lists. Please try again.');
         return;
       }
@@ -2763,7 +2799,15 @@ function App() {
             
             console.log('🔄 Updating list - ID:', selectedRowForMetadata.id, 'Name:', selectedRowForMetadata.list, 'Data keys:', Object.keys(apiListData));
             console.log('🔄 Update data:', JSON.stringify(apiListData, null, 2));
+            
+            // Show loading modal
+            setIsLoading(true);
+            setLoadingType('lists');
+            
             const updatedList = await apiService.updateList(selectedRowForMetadata.id, apiListData) as any;
+            
+            // Hide loading modal
+            setIsLoading(false);
             
             // Update order if set/grouping/list changed
             const oldList = selectedRowForMetadata as ListData;
@@ -2826,6 +2870,25 @@ function App() {
             const tieredListsChanged = isListData && apiListData.tieredListsList !== undefined && 
               JSON.stringify((selectedRowForMetadata as any)?.tieredListsList || []) !== JSON.stringify(apiListData.tieredListsList);
             const tieredListValuesChanged = isListData && apiListData.tieredListValues !== undefined;
+            
+            // Track if drivers, metadata, variations, or applicability changed (but not listType)
+            const driversChanged = isListData && (
+              apiListData.sector !== undefined || 
+              apiListData.domain !== undefined || 
+              apiListData.country !== undefined
+            );
+            const metadataChanged = isListData && (
+              apiListData.set !== undefined || 
+              apiListData.grouping !== undefined || 
+              apiListData.format !== undefined || 
+              apiListData.source !== undefined || 
+              apiListData.upkeep !== undefined || 
+              apiListData.graph !== undefined || 
+              apiListData.origin !== undefined || 
+              apiListData.status !== undefined
+            );
+            const variationsChanged = isListData && apiListData.variationsList !== undefined;
+            const applicabilityChanged = isListData && apiListData.variablesAttachedList !== undefined;
             
             // Refresh all lists if listType, tieredListsList, or tieredListValues were updated
             if (listTypeChanged || tieredListsChanged || tieredListValuesChanged) {
@@ -2895,9 +2958,23 @@ function App() {
                 alert(`${messages.join(' and ')} for the list "${listDataFormat.list}" successfully!`);
               }
             }
+            
+            // Show success message if drivers, metadata, variations, or applicability changed (but not listType/tiered lists)
+            if (!listTypeChanged && !tieredListsChanged && !tieredListValuesChanged && !listValuesChanged) {
+              const messages = [];
+              if (driversChanged) messages.push('drivers');
+              if (metadataChanged) messages.push('metadata');
+              if (variationsChanged) messages.push('variations');
+              if (applicabilityChanged) messages.push('applicability');
+              
+              if (messages.length > 0) {
+                alert(`List ${messages.join(', ')} updated successfully for "${listDataFormat.list}"!`);
+              }
+            }
           }
         } catch (error: any) {
           console.error('Error updating list:', error);
+          setIsLoading(false); // Hide loading modal on error
           const errorMessage = error?.message || 'Unknown error';
           if (errorMessage.includes('not found') || errorMessage.includes('404')) {
             alert(`Failed to update list: The list with ID "${selectedRowForMetadata?.id}" was not found. This may happen if the list was deleted. Please refresh the page and try again.`);
@@ -3027,49 +3104,64 @@ function App() {
           variationsList: list.variationsList || [],
           tiers: tiersString, // Add tiers column value
           hasIncomingTier: list.hasIncomingTier || false,
+          tierNumber: list.tierNumber || undefined, // Add tier number from backend
           listType: list.listType || (list.tieredListsList && list.tieredListsList.length > 0 ? 'Multi-Level' : 'Single'),
           numberOfLevels: list.numberOfLevels || (list.tieredListsList ? list.tieredListsList.length + 1 : 2),
-          tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : [])
+          tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : []),
+          totalValuesCount: list.totalValuesCount ?? 0, // Total count of values
+          sampleValues: Array.isArray(list.sampleValues) ? list.sampleValues.filter(v => v && String(v).trim()) : [] // First 3 values for display
         };
       });
       
-      // Reorder lists so tiered lists appear beneath their parent
-      // Build a map of parent list ID to tiered list IDs
-      const parentToChildren = new Map<string, string[]>();
+      // Reorder lists so tiered lists appear beneath their parent, ordered by tier number
+      // Build a map of parent list ID to tiered list IDs with tier numbers
+      const parentToChildren = new Map<string, Array<{ id: string; tierNumber: number }>>();
       const allListIds = new Set(listsDataFormat.map(l => l.id));
       
       listsDataFormat.forEach(list => {
         if (list.tieredListsList && list.tieredListsList.length > 0) {
-          const childIds = list.tieredListsList.map(tier => tier.listId).filter((id): id is string => id !== undefined && allListIds.has(id));
+          const childIds = list.tieredListsList
+            .map(tier => {
+              const childList = listsDataFormat.find(l => l.id === tier.listId);
+              if (childList && childList.tierNumber) {
+                return { id: tier.listId!, tierNumber: childList.tierNumber };
+              }
+              return null;
+            })
+            .filter((item): item is { id: string; tierNumber: number } => item !== null && allListIds.has(item.id));
+          
+          // Sort by tier number
+          childIds.sort((a, b) => a.tierNumber - b.tierNumber);
+          
           if (childIds.length > 0) {
             parentToChildren.set(list.id, childIds);
           }
         }
       });
       
-      // Build ordered list: parents first, then their children in order
+      // Build ordered list: parents first, then their children in tier order
       const ordered: ListData[] = [];
       const added = new Set<string>();
       
       // First pass: add all lists that are not children of any other list
       listsDataFormat.forEach(list => {
         // Check if this list is a child of any other list
-        const isChild = Array.from(parentToChildren.values()).some(children => children.includes(list.id));
+        const isChild = Array.from(parentToChildren.values()).some(children => children.some(c => c.id === list.id));
         if (!isChild) {
           ordered.push(list);
           added.add(list.id);
           
-          // Add children recursively
+          // Add children recursively, ordered by tier number
           const addChildren = (parentId: string) => {
             const children = parentToChildren.get(parentId) || [];
-            children.forEach(childId => {
-              if (!added.has(childId)) {
-                const childList = listsDataFormat.find(l => l.id === childId);
+            children.forEach(child => {
+              if (!added.has(child.id)) {
+                const childList = listsDataFormat.find(l => l.id === child.id);
                 if (childList) {
                   ordered.push(childList);
-                  added.add(childId);
+                  added.add(child.id);
                   // Recursively add grandchildren
-                  addChildren(childId);
+                  addChildren(child.id);
                 }
               }
             });

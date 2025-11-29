@@ -44,6 +44,25 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     variableClarifiers: []
   };
 
+  // Get distinct Set values from actual lists data
+  const getDistinctSets = (): string[] => {
+    const listsData = allData.length > 0 ? allData : [];
+    const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
+    return sets;
+  };
+
+  // Get distinct Grouping values for a specific Set from actual lists data
+  const getGroupingsForSet = (set: string): string[] => {
+    if (!set) return [];
+    const listsData = allData.length > 0 ? allData : [];
+    const groupings = [...new Set(
+      listsData
+        .filter((list: any) => list.set === set && list.grouping)
+        .map((list: any) => list.grouping)
+    )].filter(Boolean).sort() as string[];
+    return groupings;
+  };
+
   // Driver selections state
   const [driverSelections, setDriverSelections] = useState({
     sector: [] as string[],
@@ -673,7 +692,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               }}
             >
               <option value="">Select Set</option>
-              {listFieldOptions.set.map((option) => (
+              {getDistinctSets().map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -688,20 +707,29 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
             <select
               value={formData.grouping}
               onChange={(e) => handleChange('grouping', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              disabled={!formData.set}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.set ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
                 backgroundRepeat: 'no-repeat',
                 backgroundSize: '16px'
               }}
+              title={!formData.set ? 'Please select a Set first' : ''}
             >
               <option value="">Select Grouping</option>
-              {listFieldOptions.grouping.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {(() => {
+                const groupingsForSet = formData.set 
+                  ? getGroupingsForSet(formData.set)
+                  : [];
+                return groupingsForSet.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ));
+              })()}
             </select>
           </div>
 

@@ -597,15 +597,23 @@ async def get_lists():
                      collect(DISTINCT lv.value) as list_values,
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
                      count(DISTINCT parent) > 0 as has_incoming_tier,
+                     head(collect(DISTINCT type(parent_tier_rel))) as parent_tier_rel_type,
                      count(DISTINCT var) as variations_count,
                      collect(DISTINCT {id: var.id, name: var.name}) as variations,
                      size(collect(DISTINCT tiered.id)) as tiered_count
+                WITH l, s, g, sectors, domains, countries, variables_count, list_values, tiered_lists, 
+                     has_incoming_tier, parent_tier_rel_type, variations_count, variations, tiered_count,
+                     CASE 
+                       WHEN parent_tier_rel_type IS NOT NULL THEN 
+                         toInteger(substring(parent_tier_rel_type, 9))  // Extract number from "HAS_TIER_X" (e.g., "HAS_TIER_2" -> 2)
+                       ELSE NULL 
+                     END as tier_number
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
                        s.name as set_name, g.name as grouping_name,
                        sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
-                       variations_count, variations, tiered_count
+                       variations_count, variations, tiered_count, tier_number
                 ORDER BY l.id
             """)
 
@@ -622,6 +630,8 @@ async def get_lists():
                 
                 # Convert list values to ListValue format
                 list_values = record.get("list_values") or []
+                # Filter out None/empty values and ensure we have strings
+                list_values = [val for val in list_values if val and str(val).strip()]
                 listValuesList = [{"id": str(i), "value": val} for i, val in enumerate(list_values) if val]
                 
                 # Convert tiered lists
@@ -646,6 +656,91 @@ async def get_lists():
                 number_of_levels = tiered_count + 1 if tiered_count > 0 else 2
                 tier_names = [tier.get("list", "") for tier in tieredListsList if tier.get("list")]
                 
+                tier_number = record.get("tier_number")
+                
+                # Calculate total values count and sample values
+                # For single lists: use list_values count
+                # For multi-level lists: count all values across all tiers
+                if tiered_count == 0:
+                    # Single list: count distinct values
+                    # Filter out None/empty values
+                    filtered_list_values = [val for val in list_values if val and str(val).strip()]
+                    total_values_count = len(filtered_list_values)
+                    sample_values = filtered_list_values[:3] if filtered_list_values else []
+                    print(f"DEBUG: Single list {record['list']} (id: {record['id']}) - totalValuesCount: {total_values_count}, sampleValues: {sample_values}")
+                else:
+                    # Multi-level list: query tiered values
+                    # For multi-level lists, values are stored on tier lists, not the parent list
+                    # Get the tier 1 list ID by finding the list with HAS_TIER_1 relationship
+                    tier1_list_id_result = session.run("""
+                        MATCH (parent:List {id: $list_id})-[r:HAS_TIER_1]->(tier1_list:List)
+                        RETURN tier1_list.id as tier1_list_id
+                        LIMIT 1
+                    """, {"list_id": record["id"]})
+                    
+                    tier1_list_id_record = tier1_list_id_result.single()
+                    tier1_list_id = tier1_list_id_record.get("tier1_list_id") if tier1_list_id_record else None
+                    
+                    if tier1_list_id:
+                        # Get tier 1 values from the tier 1 list (all values connected to tier 1 list)
+                        tier1_query = session.run("""
+                            MATCH (tier1_list:List {id: $tier1_list_id})-[r:HAS_LIST_VALUE]->(lv1:ListValue)
+                            RETURN collect(DISTINCT lv1.value) as tier1_values
+                        """, {"tier1_list_id": tier1_list_id})
+                        
+                        tier1_result = tier1_query.single()
+                        tier1_vals = tier1_result.get("tier1_values") or [] if tier1_result else []
+                        # Filter out None/empty values
+                        tier1_vals = [val for val in tier1_vals if val and str(val).strip()]
+                        
+                        print(f"DEBUG: Multi-level list {record['list']} (id: {record['id']}) - tier1_list_id: {tier1_list_id}, tier1_vals count: {len(tier1_vals)}, tier1_vals: {tier1_vals[:5]}")
+                        
+                        # Count all distinct values across all tier lists
+                        # This includes:
+                        # 1. All ListValue nodes directly connected to any tier list via HAS_LIST_VALUE
+                        # 2. All ListValue nodes reachable via tier value relationships (recursively)
+                        # Use a recursive approach to find all values
+                        count_query = session.run("""
+                            MATCH (parent:List {id: $list_id})-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier_list:List)
+                            MATCH (tier_list)-[:HAS_LIST_VALUE]->(lv:ListValue)
+                            OPTIONAL MATCH path = (lv)-[*1..10]->(lv2:ListValue)
+                            WHERE ALL(rel in relationships(path) WHERE type(rel) STARTS WITH 'HAS_' AND type(rel) ENDS WITH '_VALUE')
+                            WITH collect(DISTINCT lv) as direct_values, collect(DISTINCT lv2) as nested_values
+                            WITH direct_values + nested_values as all_values
+                            UNWIND all_values as val
+                            WHERE val IS NOT NULL
+                            RETURN count(DISTINCT val) as total_count
+                        """, {"list_id": record["id"]})
+                        
+                        count_result = count_query.single()
+                        if count_result and count_result.get("total_count") is not None:
+                            total_values_count = count_result.get("total_count") or 0
+                            print(f"DEBUG: Multi-level list {record['list']} - total_values_count from recursive query: {total_values_count}")
+                        else:
+                            # Fallback: count all values from all tier lists directly (no recursion)
+                            fallback_query = session.run("""
+                                MATCH (parent:List {id: $list_id})-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier_list:List)
+                                MATCH (tier_list)-[:HAS_LIST_VALUE]->(lv:ListValue)
+                                RETURN count(DISTINCT lv) as total_count
+                            """, {"list_id": record["id"]})
+                            fallback_result = fallback_query.single()
+                            if fallback_result:
+                                total_values_count = fallback_result.get("total_count") or 0
+                                print(f"DEBUG: Multi-level list {record['list']} - total_values_count from fallback query: {total_values_count}")
+                            else:
+                                total_values_count = len(tier1_vals)
+                                print(f"DEBUG: Multi-level list {record['list']} - total_values_count from tier1_vals: {total_values_count}")
+                        
+                        sample_values = tier1_vals[:3] if tier1_vals else []
+                    else:
+                        # No tier 1 list found, set to 0
+                        total_values_count = 0
+                        sample_values = []
+                
+                # Debug logging
+                if record["id"] and (total_values_count > 0 or len(sample_values) > 0):
+                    print(f"DEBUG: List {record['list']} (id: {record['id']}) - totalValuesCount: {total_values_count}, sampleValues: {sample_values}, listType: {list_type}")
+                
                 list_item = {
                     "id": record["id"],
                     "sector": sector_str if sector_str != "ALL" else ["ALL"],
@@ -665,6 +760,9 @@ async def get_lists():
                     "listValuesList": listValuesList,
                     "tieredListsList": tieredListsList,
                     "hasIncomingTier": record.get("has_incoming_tier", False),
+                    "tierNumber": tier_number,  # Add tier number (1, 2, 3, etc.) for tier lists
+                    "totalValuesCount": total_values_count,  # Total count of values
+                    "sampleValues": sample_values if isinstance(sample_values, list) else [],  # First 3 values for display - ensure it's a list
                     "variations": variations_count,
                     "variationsList": variations_list,
                     "listType": list_type,
@@ -1515,11 +1613,19 @@ async def get_list(list_id: str):
                      collect(DISTINCT lv.value) as list_values,
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name}) as tiered_lists,
                      count(DISTINCT parent) > 0 as has_incoming_tier,
+                     head(collect(DISTINCT type(parent_tier_rel))) as parent_tier_rel_type,
                      size(collect(DISTINCT tiered.id)) as tiered_count
+                WITH l, sectors, domains, countries, variables_count, list_values, tiered_lists, 
+                     has_incoming_tier, parent_tier_rel_type, tiered_count,
+                     CASE 
+                       WHEN parent_tier_rel_type IS NOT NULL THEN 
+                         toInteger(substring(parent_tier_rel_type, 9))  // Extract number from "HAS_TIER_X" (e.g., "HAS_TIER_2" -> 2)
+                       ELSE NULL 
+                     END as tier_number
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier, tiered_count
+                       sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier, tiered_count, tier_number
             """, {"id": list_id})
             
             record = result.single()
@@ -1552,6 +1658,7 @@ async def get_list(list_id: str):
                     })
             
             tiered_count = record.get("tiered_count") or 0
+            tier_number = record.get("tier_number")
             list_type = 'Multi-Level' if tiered_count > 0 else 'Single'
             number_of_levels = tiered_count + 1 if tiered_count > 0 else 2
             tier_names = [tier.get("list", "") for tier in tieredListsList if tier.get("list")]
@@ -1575,6 +1682,7 @@ async def get_list(list_id: str):
                 "listValuesList": listValuesList,
                 "tieredListsList": tieredListsList,
                 "hasIncomingTier": record.get("has_incoming_tier", False),
+                "tierNumber": tier_number,
                 "listType": list_type,
                 "numberOfLevels": number_of_levels,
                 "tierNames": tier_names

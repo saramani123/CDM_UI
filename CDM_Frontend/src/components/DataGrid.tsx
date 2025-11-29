@@ -1158,6 +1158,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onDrop={(e) => onReorder && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
                 onClick={(e) => {
+                  // Prevent row click for tier lists (lists with hasIncomingTier)
+                  if (gridType === 'lists' && (row as any).hasIncomingTier) {
+                    return; // Don't allow clicking on tier lists
+                  }
+                  
                   // Prevent row click when clicking on inputs or selects
                   const target = e.target as HTMLElement;
                   if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.closest('input') || target.closest('select')) {
@@ -1207,19 +1212,29 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     }
                   }
                 }}
-                className={`flex border-b border-ag-dark-border hover:bg-ag-dark-bg transition-colors cursor-pointer min-w-full ${
-                  // Priority: Cloned (unsaved) > Selected current object (intra-table) > Selected > Current object > Affected
-                  row._isCloned && !row._isSaved
-                    ? 'bg-orange-900 bg-opacity-20 border-orange-500 border-opacity-50' 
-                    : isCurrentObject(row) && relationshipData?.[row.id]?.isSelected 
-                      ? 'bg-blue-700 bg-opacity-60 border-blue-400 border-opacity-80 shadow-md' 
-                      : relationshipData?.[row.id]?.isSelected 
-                        ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
-                        : isRowSelected(row) 
-                          ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
-                          : ''
+                className={`flex border-b border-ag-dark-border transition-colors min-w-full ${
+                  // Tier lists (lists with hasIncomingTier) - grey background, not clickable
+                  gridType === 'lists' && (row as any).hasIncomingTier
+                    ? 'bg-gray-800 bg-opacity-40 cursor-not-allowed opacity-75'
+                    : 'hover:bg-ag-dark-bg cursor-pointer'
                 } ${
-                  isCurrentObject(row) && !relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
+                  // Priority: Cloned (unsaved) > Selected current object (intra-table) > Selected > Current object > Affected
+                  // But skip if it's a tier list
+                  gridType === 'lists' && (row as any).hasIncomingTier
+                    ? ''
+                    : row._isCloned && !row._isSaved
+                      ? 'bg-orange-900 bg-opacity-20 border-orange-500 border-opacity-50' 
+                      : isCurrentObject(row) && relationshipData?.[row.id]?.isSelected 
+                        ? 'bg-blue-700 bg-opacity-60 border-blue-400 border-opacity-80 shadow-md' 
+                        : relationshipData?.[row.id]?.isSelected 
+                          ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
+                          : isRowSelected(row) 
+                            ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
+                            : ''
+                } ${
+                  gridType === 'lists' && (row as any).hasIncomingTier
+                    ? ''
+                    : isCurrentObject(row) && !relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
                 } ${
                   isRowAffected(row) ? 'bg-red-900 bg-opacity-30 border-red-500 border-opacity-50' : ''
                 } ${
@@ -1353,7 +1368,19 @@ export const DataGrid: React.FC<DataGridProps> = ({
                             })() : 
                             (['relationships', 'variants', 'variables'].includes(column.key) 
                               ? (row && typeof row === 'object' && (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined) ? '-' : (row && typeof row === 'object' ? row[column.key] : '-'))
-                              : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
+                              : (column.key === 'list' && gridType === 'lists' && (row as any).hasIncomingTier && (row as any).tierNumber)
+                                ? `Tier ${(row as any).tierNumber}: ${(row && typeof row === 'object' ? (row[column.key] || '-') : '-')}`
+                                : (column.key === 'totalValuesCount')
+                                  ? (row && typeof row === 'object' ? String(row[column.key] ?? 0) : '0')
+                                  : (column.key === 'sampleValues')
+                                    ? (() => {
+                                        if (!row || typeof row !== 'object') return '-';
+                                        const sampleVals = row[column.key];
+                                        if (!Array.isArray(sampleVals) || sampleVals.length === 0) return '-';
+                                        const filtered = sampleVals.filter(v => v && String(v).trim()).slice(0, 3);
+                                        return filtered.length > 0 ? filtered.join(', ') : '-';
+                                      })()
+                                    : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
                         }
                       </span>
                     )}

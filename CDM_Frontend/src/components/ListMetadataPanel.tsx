@@ -11,7 +11,7 @@ import { VariableListRelationshipsGraphModal } from './VariableListRelationships
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
 import { SingleListValuesModal } from './SingleListValuesModal';
-import { apiService } from '../services/api';
+import { apiService, getTieredListValues } from '../services/api';
 
 interface ListMetadataField {
   key: string;
@@ -235,6 +235,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
   const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
   const [singleListValues, setSingleListValues] = useState<string[]>([]);
+  // Store tiered list values locally - only save to Neo4j when clicking Save Changes on metadata panel
+  const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
   
   // Variations state - using string for multiline input
   const [variationsText, setVariationsText] = useState('');
@@ -326,6 +328,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     return ['', ''];
   });
 
+  // Track which list's tiered values we've loaded to avoid reloading unnecessarily
+  const tieredValuesLoadedRef = React.useRef<string | null>(null);
+  
   // Load variations when selectedList changes
   React.useEffect(() => {
     if (selectedList?.id) {
@@ -351,10 +356,34 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             setVariationsText('');
           });
       }
+      
+      // Load tiered list values from API if this is a Multi-Level list
+      // Only load if we haven't loaded for this list ID yet
+      if (selectedList.listType === 'Multi-Level' && tieredValuesLoadedRef.current !== selectedList.id) {
+        tieredValuesLoadedRef.current = selectedList.id;
+        getTieredListValues(selectedList.id)
+          .then((values) => {
+            if (values && Object.keys(values).length > 0) {
+              setTieredListValues(values);
+            } else {
+              setTieredListValues({});
+            }
+          })
+          .catch((error) => {
+            console.error('Error loading tiered list values:', error);
+            setTieredListValues({});
+          });
+      } else if (selectedList.listType === 'Single') {
+        // Clear tiered list values when switching to Single
+        tieredValuesLoadedRef.current = null;
+        setTieredListValues({});
+      }
     } else {
       setVariationsText('');
+      setTieredListValues({});
+      tieredValuesLoadedRef.current = null;
     }
-  }, [selectedList?.id]);
+  }, [selectedList?.id, selectedList?.listType]);
 
   // Update states when selectedList changes
   React.useEffect(() => {
@@ -660,6 +689,13 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       return values.filter(v => v !== 'ALL');
     };
     
+    // Get original list type from selectedList
+    const originalListType = selectedList?.listType || 
+      (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0 ? 'Multi-Level' : 'Single');
+    
+    // Check if list type actually changed
+    const listTypeChanged = listType !== originalListType;
+    
     const saveData: any = {
       ...formData,
       sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
@@ -668,67 +704,70 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached
     };
     
-    // Handle list type and tiered lists
-    if (listType === 'Single') {
-      // Single list - use values from modal if available, otherwise from textarea (for backward compatibility)
-      let listValuesArray: Array<{ id: string; value: string }>;
-      
-      if (singleListValues.length > 0) {
-        // Use values from single list values modal
-        listValuesArray = singleListValues.map((value, index) => ({
-          id: (Date.now() + index).toString(),
-          value
-        }));
-      } else {
-        // Fallback to textarea (for backward compatibility)
-        listValuesArray = listValuesText
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .map((value, index) => ({
+    // Only include listType and tiered list fields if list type actually changed
+    if (listTypeChanged) {
+      if (listType === 'Single') {
+        // Single list - use values from modal if available, otherwise from textarea (for backward compatibility)
+        let listValuesArray: Array<{ id: string; value: string }>;
+        
+        if (singleListValues.length > 0) {
+          // Use values from single list values modal
+          listValuesArray = singleListValues.map((value, index) => ({
             id: (Date.now() + index).toString(),
             value
           }));
-      }
-      
-      // Check for duplicate values (case-insensitive) within the same list
-      const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
-      if (listValuesArray.length !== uniqueValues.size) {
-        const duplicateValues = listValuesArray.filter((lv, index) => 
-          listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
-        ).map(lv => lv.value);
+        } else {
+          // Fallback to textarea (for backward compatibility)
+          listValuesArray = listValuesText
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .map((value, index) => ({
+              id: (Date.now() + index).toString(),
+              value
+            }));
+        }
         
-        alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
-        return;
+        // Check for duplicate values (case-insensitive) within the same list
+        const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
+        if (listValuesArray.length !== uniqueValues.size) {
+          const duplicateValues = listValuesArray.filter((lv, index) => 
+            listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
+          ).map(lv => lv.value);
+          
+          alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
+          return;
+        }
+        
+        saveData.listValuesList = listValuesArray;
+        saveData.tieredListsList = [];
+        saveData.listType = 'Single';
+        // Clear tiered list values if switching from Multi-Level to Single
+        saveData.tieredListValues = {};
+      } else if (listType === 'Multi-Level') {
+        // Multi-Level list - validate tier names and prepare for backend
+        const validTierNames = tierNames.filter(name => name.trim() !== '');
+        if (validTierNames.length !== numberOfLevels) {
+          alert(`Please provide names for all ${numberOfLevels} tier(s).`);
+          return;
+        }
+        
+        // Clear existing list values when switching to Multi-Level
+        saveData.listValuesList = [];
+        saveData.listType = 'Multi-Level';
+        saveData.numberOfLevels = numberOfLevels;
+        saveData.tierNames = validTierNames;
+        console.log('ListMetadataPanel: Saving Multi-Level configuration:', {
+          listType: saveData.listType,
+          numberOfLevels: saveData.numberOfLevels,
+          tierNames: saveData.tierNames
+        });
+        // Backend will create the tier list nodes and relationships
+        // Note: tieredListValues can be saved separately via grid modal or together here
       }
-      
-      saveData.listValuesList = listValuesArray;
-      saveData.tieredListsList = [];
-      saveData.listType = 'Single';
-      // Clear tiered list values if switching from Multi-Level to Single
-      saveData.tieredListValues = {};
-    } else if (listType === 'Multi-Level') {
-      // Multi-Level list - validate tier names and prepare for backend
-      const validTierNames = tierNames.filter(name => name.trim() !== '');
-      if (validTierNames.length !== numberOfLevels) {
-        alert(`Please provide names for all ${numberOfLevels} tier(s).`);
-        return;
-      }
-      
-      // Clear existing list values when switching to Multi-Level
-      // (they will be managed via grid modal instead)
-      saveData.listValuesList = [];
-      saveData.listType = 'Multi-Level';
-      saveData.numberOfLevels = numberOfLevels;
-      saveData.tierNames = validTierNames;
-      console.log('ListMetadataPanel: Saving Multi-Level configuration:', {
-        listType: saveData.listType,
-        numberOfLevels: saveData.numberOfLevels,
-        tierNames: saveData.tierNames
-      });
-      // Backend will create the tier list nodes and relationships
-      // Note: tieredListValues can be saved separately via grid modal or together here
     }
+    // If list type didn't change, don't include listType, tieredListsList, or listValuesList
+    // This prevents accidentally clearing tiered lists when just editing drivers/metadata/variations
     
     // Handle variationsList - parse from textarea and check for duplicates
     const variationsArray = variationsText
@@ -752,7 +791,20 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       saveData.variationsList = variationsArray;
     }
     
+    // Include tiered list values if they exist in local state (from grid modal)
+    // Only include if listType is Multi-Level and we have stored values
+    if (listType === 'Multi-Level' && Object.keys(tieredListValues).length > 0) {
+      saveData.tieredListValues = tieredListValues;
+    } else if (listType === 'Single') {
+      // Clear tiered list values when switching to Single
+      saveData.tieredListValues = {};
+    }
+    // If listType is Multi-Level but no tieredListValues in local state, don't include it
+    // This means user hasn't entered values yet or wants to keep existing values
+    
     console.log('ListMetadataPanel: Calling onSave with data:', saveData);
+    console.log('ListMetadataPanel: listTypeChanged =', listTypeChanged);
+    console.log('ListMetadataPanel: tieredListValues in saveData:', saveData.tieredListValues);
     onSave?.(saveData);
   };
 
@@ -1930,51 +1982,14 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         selectedList={selectedList || null}
         allLists={allData}
         tierNames={tierNames}
-        onSave={async (tieredValues) => {
-          // Save tiered values - include all current form data to preserve list type and tier configuration
-          if (onSave) {
-            // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
-            const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
-              if (values.includes('ALL')) {
-                return allPossibleValues.filter(v => v !== 'ALL');
-              }
-              return values.filter(v => v !== 'ALL');
-            };
-            
-            const saveData: any = {
-              ...formData,
-              sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
-              domain: getDriverValuesForSave(driverSelections.domain, driversData.domains),
-              country: getDriverValuesForSave(driverSelections.country, driversData.countries),
-              variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
-              tieredListValues: tieredValues
-            };
-            
-            // Always preserve Multi-Level configuration when saving from grid
-            if (listType === 'Multi-Level') {
-              const validTierNames = tierNames.filter(name => name.trim() !== '');
-              saveData.listType = 'Multi-Level';
-              saveData.numberOfLevels = numberOfLevels;
-              saveData.tierNames = validTierNames;
-              // Clear regular list values for multi-level lists
-              saveData.listValuesList = [];
-            }
-            
-            // Handle variationsList
-            const variationsArray = variationsText
-              .split('\n')
-              .map(line => line.trim())
-              .filter(line => line.length > 0)
-              .map((name) => ({ name }));
-            
-            if (variationsArray.length > 0) {
-              saveData.variationsList = variationsArray;
-            }
-            
-            // Save immediately
-            await onSave(saveData);
-            setIsTieredListValuesModalOpen(false);
-          }
+        initialValues={tieredListValues}
+        onSave={(tieredValues) => {
+          // Store tiered values locally - don't save to Neo4j yet
+          // Values will be saved to Neo4j when user clicks "Save Changes" on metadata panel
+          setTieredListValues(tieredValues);
+          setIsTieredListValuesModalOpen(false);
+          // Show confirmation that values are stored (but not yet saved to Neo4j)
+          alert('Tiered list values stored. Click "Save Changes" on the metadata panel to save to Neo4j.');
         }}
       />
 

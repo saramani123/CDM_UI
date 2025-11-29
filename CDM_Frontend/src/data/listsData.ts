@@ -23,9 +23,12 @@ export interface ListData {
   variations?: number; // Count of variations
   variationsList?: Array<{ id?: string; name: string }>; // List of variations
   hasIncomingTier?: boolean; // True if this list is already a child of another list
+  tierNumber?: number; // Tier number (1, 2, 3, etc.) if this is a tier list
   listType?: 'Single' | 'Multi-Level'; // Type of list
   numberOfLevels?: number; // Number of levels for Multi-Level lists
   tierNames?: string[]; // Names of tier lists (Tier 2, Tier 3, etc.)
+  totalValuesCount?: number; // Total count of values (for single lists) or across all tiers (for multi-level)
+  sampleValues?: string[]; // First 3 values for display (single lists) or first 3 tier 1 values (multi-level)
 }
 
 export interface VariableAttached {
@@ -199,7 +202,9 @@ export const listColumns = [
   { key: 'set', title: 'Set', sortable: true, filterable: true, width: '140px' },
   { key: 'grouping', title: 'Grouping', sortable: true, filterable: true, width: '120px' },
   { key: 'list', title: 'List', sortable: true, filterable: true, width: '180px' },
-  { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' }
+  { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' },
+  { key: 'totalValuesCount', title: '# Values', sortable: true, filterable: false, width: '100px' },
+  { key: 'sampleValues', title: 'Values', sortable: false, filterable: false, width: '200px' }
 ];
 
 // Dropdown options for list fields

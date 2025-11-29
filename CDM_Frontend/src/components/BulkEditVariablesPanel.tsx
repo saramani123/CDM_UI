@@ -580,19 +580,13 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           // Pass special format: _BULK_RELATIVE_<operator> so backend can use each variable's name
           return { validation: `_BULK_RELATIVE_${validationComponents.operator}` };
         } else if (validationComponents.valType) {
-          // For List, Length, Character - build normally (but we need a dummy value for Range/Relative)
-          // Actually, for bulk edit, we can't build a complete string for Range/Relative
-          // So we only include if it's not Range or Relative
+          // For List, Length, Character - build with Val Type prefix
+          // For Range and Relative, we use special format that backend handles
           if (validationComponents.valType !== 'Range' && validationComponents.valType !== 'Relative') {
-            // For List, Length, Character - we need to build with the actual value
-            // But we don't have a specific variable, so we'll use a placeholder
-            // Actually, for List we can build it, for Length/Character we need the value
-            if (validationComponents.valType === 'List') {
-              return { validation: 'List' };
-            } else if (validationComponents.valType === 'Length' && validationComponents.operator && validationComponents.value) {
-              return { validation: `${validationComponents.operator}${validationComponents.value}` };
-            } else if (validationComponents.valType === 'Character' && validationComponents.value) {
-              return { validation: validationComponents.value };
+            // Use buildValidationString to ensure consistent format with Val Type prefix
+            const validationString = buildValidationString(validationComponents);
+            if (validationString) {
+              return { validation: validationString };
             }
           }
         }

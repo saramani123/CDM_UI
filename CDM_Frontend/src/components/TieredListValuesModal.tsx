@@ -9,6 +9,7 @@ interface TieredListValuesModalProps {
   selectedList: ListData | null;
   allLists: ListData[];
   tierNames?: string[]; // Tier names from List Type section (Tier 2, Tier 3, etc.)
+  initialValues?: Record<string, string[][]>; // Pre-loaded tiered list values from parent
   onSave: (tieredValues: Record<string, string[][]>) => void;
 }
 
@@ -23,6 +24,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   selectedList,
   allLists,
   tierNames = [],
+  initialValues,
   onSave
 }) => {
   const [tieredValueRows, setTieredValueRows] = useState<TieredValueRow[]>([]);
@@ -48,8 +50,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     if (!selectedList) return;
     
     try {
-      // Load existing tiered values from backend
-      const existingValues = await getTieredListValues(selectedList.id);
+      // Use initialValues if provided (from parent component's local state)
+      // Otherwise, load from backend
+      const existingValues = initialValues || await getTieredListValues(selectedList.id);
       
       // Convert the backend format to rows
       // Backend format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
@@ -95,7 +98,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       }
       setTieredValueRows(initialRows);
     }
-  }, [selectedList, columnHeaders]);
+  }, [selectedList, columnHeaders, initialValues]);
 
   // Load existing tiered values when modal opens
   useEffect(() => {
