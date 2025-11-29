@@ -608,7 +608,7 @@ function App() {
           avatarOrders?: Record<string, string[]>;
           objectOrders?: Record<string, string[]>;
         } | null;
-        if (objectsOrder && (objectsOrder.beingOrder?.length > 0 || Object.keys(objectsOrder.avatarOrders || {}).length > 0 || Object.keys(objectsOrder.objectOrders || {}).length > 0)) {
+        if (objectsOrder && ((objectsOrder.beingOrder && objectsOrder.beingOrder.length > 0) || Object.keys(objectsOrder.avatarOrders || {}).length > 0 || Object.keys(objectsOrder.objectOrders || {}).length > 0)) {
           setObjectsOrderSortOrder({
             beingOrder: objectsOrder.beingOrder || [],
             avatarOrders: objectsOrder.avatarOrders || {},
@@ -625,7 +625,7 @@ function App() {
           groupOrders?: Record<string, string[]>;
           variableOrders?: Record<string, string[]>;
         } | null;
-        if (variablesOrder && (variablesOrder.partOrder?.length > 0 || Object.keys(variablesOrder.sectionOrders || {}).length > 0 || Object.keys(variablesOrder.groupOrders || {}).length > 0 || Object.keys(variablesOrder.variableOrders || {}).length > 0)) {
+        if (variablesOrder && ((variablesOrder.partOrder && variablesOrder.partOrder.length > 0) || Object.keys(variablesOrder.sectionOrders || {}).length > 0 || Object.keys(variablesOrder.groupOrders || {}).length > 0 || Object.keys(variablesOrder.variableOrders || {}).length > 0)) {
           setVariablesOrderSortOrder({
             partOrder: variablesOrder.partOrder || [],
             sectionOrders: variablesOrder.sectionOrders || {},
@@ -642,7 +642,7 @@ function App() {
           groupingOrders?: Record<string, string[]>;
           listOrders?: Record<string, string[]>;
         } | null;
-        if (listsOrder && (listsOrder.setOrder?.length > 0 || Object.keys(listsOrder.groupingOrders || {}).length > 0 || Object.keys(listsOrder.listOrders || {}).length > 0)) {
+        if (listsOrder && ((listsOrder.setOrder && listsOrder.setOrder.length > 0) || Object.keys(listsOrder.groupingOrders || {}).length > 0 || Object.keys(listsOrder.listOrders || {}).length > 0)) {
           setListsOrderSortOrder({
             setOrder: listsOrder.setOrder || [],
             groupingOrders: listsOrder.groupingOrders || {},
@@ -659,6 +659,166 @@ function App() {
     
     loadOrderFromBackend();
   }, []); // Only run once on mount
+
+  // Sync order with current data - append new items to order when data changes
+  useEffect(() => {
+    if (activeTab === 'objects' && data.length > 0 && objectsOrderSortOrder) {
+      // Find new beings/avatars/objects that aren't in order and append them
+      const distinctBeings = Array.from(new Set(data.map(o => o.being).filter(Boolean)));
+      const newBeings = distinctBeings.filter(b => !objectsOrderSortOrder.beingOrder.includes(b));
+      if (newBeings.length > 0) {
+        const updatedOrder = { ...objectsOrderSortOrder };
+        updatedOrder.beingOrder = [...updatedOrder.beingOrder, ...newBeings];
+        setObjectsOrderSortOrder(updatedOrder);
+        localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(updatedOrder));
+        apiService.saveObjectsOrder(updatedOrder).catch(err => console.error('Failed to save objects order:', err));
+      }
+      
+      // Similar for avatars and objects - but only append, never reorder
+      distinctBeings.forEach(being => {
+        const avatarsForBeing = Array.from(new Set(data.filter(o => o.being === being).map(o => o.avatar).filter(Boolean)));
+        if (!objectsOrderSortOrder.avatarOrders[being]) {
+          objectsOrderSortOrder.avatarOrders[being] = [];
+        }
+        const newAvatars = avatarsForBeing.filter(a => !objectsOrderSortOrder.avatarOrders[being].includes(a));
+        if (newAvatars.length > 0) {
+          const updatedOrder = { ...objectsOrderSortOrder };
+          if (!updatedOrder.avatarOrders[being]) {
+            updatedOrder.avatarOrders[being] = [];
+          }
+          updatedOrder.avatarOrders[being] = [...updatedOrder.avatarOrders[being], ...newAvatars];
+          setObjectsOrderSortOrder(updatedOrder);
+          localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(updatedOrder));
+          apiService.saveObjectsOrder(updatedOrder).catch(err => console.error('Failed to save objects order:', err));
+        }
+      });
+    }
+  }, [data, objectsOrderSortOrder, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'variables' && variableData.length > 0 && variablesOrderSortOrder) {
+      // Find new parts/sections/groups/variables and append them
+      const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean)));
+      const newParts = distinctParts.filter(p => !variablesOrderSortOrder.partOrder.includes(p));
+      if (newParts.length > 0) {
+        const updatedOrder = { ...variablesOrderSortOrder };
+        updatedOrder.partOrder = [...updatedOrder.partOrder, ...newParts];
+        setVariablesOrderSortOrder(updatedOrder);
+        localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+        apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+      }
+      
+      // Similar for sections, groups, variables - append only
+      distinctParts.forEach(part => {
+        const sectionsForPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean)));
+        if (!variablesOrderSortOrder.sectionOrders[part]) {
+          variablesOrderSortOrder.sectionOrders[part] = [];
+        }
+        const newSections = sectionsForPart.filter(s => !variablesOrderSortOrder.sectionOrders[part].includes(s));
+        if (newSections.length > 0) {
+          const updatedOrder = { ...variablesOrderSortOrder };
+          if (!updatedOrder.sectionOrders[part]) {
+            updatedOrder.sectionOrders[part] = [];
+          }
+          updatedOrder.sectionOrders[part] = [...updatedOrder.sectionOrders[part], ...newSections];
+          setVariablesOrderSortOrder(updatedOrder);
+          localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+          apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+        }
+        
+        sectionsForPart.forEach(section => {
+          const groupsForPartSection = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section).map(v => v.group).filter(Boolean)));
+          const groupKey = `${part}|${section}`;
+          if (!variablesOrderSortOrder.groupOrders[groupKey]) {
+            variablesOrderSortOrder.groupOrders[groupKey] = [];
+          }
+          const newGroups = groupsForPartSection.filter(g => !variablesOrderSortOrder.groupOrders[groupKey].includes(g));
+          if (newGroups.length > 0) {
+            const updatedOrder = { ...variablesOrderSortOrder };
+            if (!updatedOrder.groupOrders[groupKey]) {
+              updatedOrder.groupOrders[groupKey] = [];
+            }
+            updatedOrder.groupOrders[groupKey] = [...updatedOrder.groupOrders[groupKey], ...newGroups];
+            setVariablesOrderSortOrder(updatedOrder);
+            localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+            apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+          }
+          
+          groupsForPartSection.forEach(group => {
+            const variablesForPartSectionGroup = Array.from(new Set(variableData.filter(v => v.part === part && v.section === section && v.group === group).map(v => v.variable).filter(Boolean)));
+            const variableKey = `${part}|${section}|${group}`;
+            if (!variablesOrderSortOrder.variableOrders[variableKey]) {
+              variablesOrderSortOrder.variableOrders[variableKey] = [];
+            }
+            const newVariables = variablesForPartSectionGroup.filter(v => !variablesOrderSortOrder.variableOrders[variableKey].includes(v));
+            if (newVariables.length > 0) {
+              const updatedOrder = { ...variablesOrderSortOrder };
+              if (!updatedOrder.variableOrders[variableKey]) {
+                updatedOrder.variableOrders[variableKey] = [];
+              }
+              updatedOrder.variableOrders[variableKey] = [...updatedOrder.variableOrders[variableKey], ...newVariables];
+              setVariablesOrderSortOrder(updatedOrder);
+              localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+              apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+            }
+          });
+        });
+      });
+    }
+  }, [variableData, variablesOrderSortOrder, activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'lists' && listData.length > 0 && listsOrderSortOrder) {
+      // Find new sets/groupings/lists and append them
+      const distinctSets = Array.from(new Set(listData.map(l => l.set).filter(Boolean)));
+      const newSets = distinctSets.filter(s => !listsOrderSortOrder.setOrder.includes(s));
+      if (newSets.length > 0) {
+        const updatedOrder = { ...listsOrderSortOrder };
+        updatedOrder.setOrder = [...updatedOrder.setOrder, ...newSets];
+        setListsOrderSortOrder(updatedOrder);
+        localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+        apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order:', err));
+      }
+      
+      // Similar for groupings and lists - append only
+      distinctSets.forEach(set => {
+        const groupingsForSet = Array.from(new Set(listData.filter(l => l.set === set).map(l => l.grouping).filter(Boolean)));
+        if (!listsOrderSortOrder.groupingOrders[set]) {
+          listsOrderSortOrder.groupingOrders[set] = [];
+        }
+        const newGroupings = groupingsForSet.filter(g => !listsOrderSortOrder.groupingOrders[set].includes(g));
+        if (newGroupings.length > 0) {
+          const updatedOrder = { ...listsOrderSortOrder };
+          if (!updatedOrder.groupingOrders[set]) {
+            updatedOrder.groupingOrders[set] = [];
+          }
+          updatedOrder.groupingOrders[set] = [...updatedOrder.groupingOrders[set], ...newGroupings];
+          setListsOrderSortOrder(updatedOrder);
+          localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+          apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order:', err));
+        }
+        
+        groupingsForSet.forEach(grouping => {
+          const listsForSetGrouping = Array.from(new Set(listData.filter(l => l.set === set && l.grouping === grouping).map(l => l.list).filter(Boolean)));
+          const listKey = `${set}|${grouping}`;
+          if (!listsOrderSortOrder.listOrders[listKey]) {
+            listsOrderSortOrder.listOrders[listKey] = [];
+          }
+          const newLists = listsForSetGrouping.filter(l => !listsOrderSortOrder.listOrders[listKey].includes(l));
+          if (newLists.length > 0) {
+            const updatedOrder = { ...listsOrderSortOrder };
+            if (!updatedOrder.listOrders[listKey]) {
+              updatedOrder.listOrders[listKey] = [];
+            }
+            updatedOrder.listOrders[listKey] = [...updatedOrder.listOrders[listKey], ...newLists];
+            setListsOrderSortOrder(updatedOrder);
+            localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+            apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order:', err));
+          }
+        });
+      });
+    }
+  }, [listData, listsOrderSortOrder, activeTab]);
 
   // Sync API variables data with local state
   React.useEffect(() => {
@@ -864,6 +1024,352 @@ function App() {
   };
 
 
+  // Utility function to remove deleted item from objects order
+  const removeFromObjectsOrder = (being: string, avatar: string, object: string) => {
+    if (!objectsOrderSortOrder) return;
+    
+    const updatedOrder = { ...objectsOrderSortOrder };
+    
+    // Remove from objectOrders
+    const objectKey = `${being}|${avatar}`;
+    if (updatedOrder.objectOrders[objectKey]) {
+      updatedOrder.objectOrders[objectKey] = updatedOrder.objectOrders[objectKey].filter(obj => obj !== object);
+      // Clean up empty keys
+      if (updatedOrder.objectOrders[objectKey].length === 0) {
+        delete updatedOrder.objectOrders[objectKey];
+      }
+    }
+    
+    // Check if avatar has no more objects, remove from avatarOrders
+    const hasRemainingObjects = Object.keys(updatedOrder.objectOrders).some(key => key.startsWith(`${being}|${avatar}`));
+    if (!hasRemainingObjects && updatedOrder.avatarOrders[being]) {
+      updatedOrder.avatarOrders[being] = updatedOrder.avatarOrders[being].filter(av => av !== avatar);
+      if (updatedOrder.avatarOrders[being].length === 0) {
+        delete updatedOrder.avatarOrders[being];
+      }
+    }
+    
+    // Check if being has no more avatars, remove from beingOrder
+    const hasRemainingAvatars = Object.keys(updatedOrder.avatarOrders).some(key => key === being && updatedOrder.avatarOrders[key].length > 0);
+    if (!hasRemainingAvatars) {
+      updatedOrder.beingOrder = updatedOrder.beingOrder.filter(b => b !== being);
+    }
+    
+    setObjectsOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveObjectsOrder(updatedOrder).catch(err => console.error('Failed to save objects order to backend:', err));
+  };
+
+  // Utility function to remove deleted item from variables order
+  const removeFromVariablesOrder = (part: string, section: string, group: string, variable: string) => {
+    if (!variablesOrderSortOrder) return;
+    
+    const updatedOrder = { ...variablesOrderSortOrder };
+    
+    // Remove from variableOrders
+    const variableKey = `${part}|${section}|${group}`;
+    if (updatedOrder.variableOrders[variableKey]) {
+      updatedOrder.variableOrders[variableKey] = updatedOrder.variableOrders[variableKey].filter(v => v !== variable);
+      if (updatedOrder.variableOrders[variableKey].length === 0) {
+        delete updatedOrder.variableOrders[variableKey];
+      }
+    }
+    
+    // Check if group has no more variables, remove from groupOrders
+    const groupKey = `${part}|${section}`;
+    const hasRemainingVariables = Object.keys(updatedOrder.variableOrders).some(key => key.startsWith(`${part}|${section}|`));
+    if (!hasRemainingVariables && updatedOrder.groupOrders[groupKey]) {
+      updatedOrder.groupOrders[groupKey] = updatedOrder.groupOrders[groupKey].filter(g => g !== group);
+      if (updatedOrder.groupOrders[groupKey].length === 0) {
+        delete updatedOrder.groupOrders[groupKey];
+      }
+    }
+    
+    // Check if section has no more groups, remove from sectionOrders
+    const hasRemainingGroups = Object.keys(updatedOrder.groupOrders).some(key => key.startsWith(`${part}|`) && updatedOrder.groupOrders[key].length > 0);
+    if (!hasRemainingGroups && updatedOrder.sectionOrders[part]) {
+      updatedOrder.sectionOrders[part] = updatedOrder.sectionOrders[part].filter(s => s !== section);
+      if (updatedOrder.sectionOrders[part].length === 0) {
+        delete updatedOrder.sectionOrders[part];
+      }
+    }
+    
+    // Check if part has no more sections, remove from partOrder
+    const hasRemainingSections = Object.keys(updatedOrder.sectionOrders).some(key => key === part && updatedOrder.sectionOrders[key].length > 0);
+    if (!hasRemainingSections) {
+      updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== part);
+    }
+    
+    setVariablesOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order to backend:', err));
+  };
+
+  // Utility function to remove deleted item from lists order
+  const removeFromListsOrder = (set: string, grouping: string, list: string) => {
+    if (!listsOrderSortOrder) return;
+    
+    const updatedOrder = { ...listsOrderSortOrder };
+    
+    // Remove from listOrders
+    const listKey = `${set}|${grouping}`;
+    if (updatedOrder.listOrders[listKey]) {
+      updatedOrder.listOrders[listKey] = updatedOrder.listOrders[listKey].filter(l => l !== list);
+      if (updatedOrder.listOrders[listKey].length === 0) {
+        delete updatedOrder.listOrders[listKey];
+      }
+    }
+    
+    // Check if grouping has no more lists, remove from groupingOrders
+    const hasRemainingLists = Object.keys(updatedOrder.listOrders).some(key => key.startsWith(`${set}|`));
+    if (!hasRemainingLists && updatedOrder.groupingOrders[set]) {
+      updatedOrder.groupingOrders[set] = updatedOrder.groupingOrders[set].filter(g => g !== grouping);
+      if (updatedOrder.groupingOrders[set].length === 0) {
+        delete updatedOrder.groupingOrders[set];
+      }
+    }
+    
+    // Check if set has no more groupings, remove from setOrder
+    const hasRemainingGroupings = Object.keys(updatedOrder.groupingOrders).some(key => key === set && updatedOrder.groupingOrders[key].length > 0);
+    if (!hasRemainingGroupings) {
+      updatedOrder.setOrder = updatedOrder.setOrder.filter(s => s !== set);
+    }
+    
+    setListsOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order to backend:', err));
+  };
+
+  // Utility function to append new item to objects order
+  const appendToObjectsOrder = (being: string, avatar: string, object: string) => {
+    const currentOrder = objectsOrderSortOrder || {
+      beingOrder: [],
+      avatarOrders: {},
+      objectOrders: {}
+    };
+    
+    const updatedOrder = { ...currentOrder };
+    
+    // Append being if not exists
+    if (!updatedOrder.beingOrder.includes(being)) {
+      updatedOrder.beingOrder = [...updatedOrder.beingOrder, being];
+    }
+    
+    // Append avatar if not exists
+    if (!updatedOrder.avatarOrders[being]) {
+      updatedOrder.avatarOrders[being] = [];
+    }
+    if (!updatedOrder.avatarOrders[being].includes(avatar)) {
+      updatedOrder.avatarOrders[being] = [...updatedOrder.avatarOrders[being], avatar];
+    }
+    
+    // Append object if not exists
+    const objectKey = `${being}|${avatar}`;
+    if (!updatedOrder.objectOrders[objectKey]) {
+      updatedOrder.objectOrders[objectKey] = [];
+    }
+    if (!updatedOrder.objectOrders[objectKey].includes(object)) {
+      updatedOrder.objectOrders[objectKey] = [...updatedOrder.objectOrders[objectKey], object];
+    }
+    
+    setObjectsOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveObjectsOrder(updatedOrder).catch(err => console.error('Failed to save objects order to backend:', err));
+  };
+
+  // Utility function to append new item to variables order
+  const appendToVariablesOrder = (part: string, section: string, group: string, variable: string) => {
+    const currentOrder = variablesOrderSortOrder || {
+      partOrder: [],
+      sectionOrders: {},
+      groupOrders: {},
+      variableOrders: {}
+    };
+    
+    const updatedOrder = { ...currentOrder };
+    
+    // Append part if not exists
+    if (!updatedOrder.partOrder.includes(part)) {
+      updatedOrder.partOrder = [...updatedOrder.partOrder, part];
+    }
+    
+    // Append section if not exists
+    if (!updatedOrder.sectionOrders[part]) {
+      updatedOrder.sectionOrders[part] = [];
+    }
+    if (!updatedOrder.sectionOrders[part].includes(section)) {
+      updatedOrder.sectionOrders[part] = [...updatedOrder.sectionOrders[part], section];
+    }
+    
+    // Append group if not exists
+    const groupKey = `${part}|${section}`;
+    if (!updatedOrder.groupOrders[groupKey]) {
+      updatedOrder.groupOrders[groupKey] = [];
+    }
+    if (!updatedOrder.groupOrders[groupKey].includes(group)) {
+      updatedOrder.groupOrders[groupKey] = [...updatedOrder.groupOrders[groupKey], group];
+    }
+    
+    // Append variable if not exists
+    const variableKey = `${part}|${section}|${group}`;
+    if (!updatedOrder.variableOrders[variableKey]) {
+      updatedOrder.variableOrders[variableKey] = [];
+    }
+    if (!updatedOrder.variableOrders[variableKey].includes(variable)) {
+      updatedOrder.variableOrders[variableKey] = [...updatedOrder.variableOrders[variableKey], variable];
+    }
+    
+    setVariablesOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order to backend:', err));
+  };
+
+  // Utility function to update order when object values are edited (in place)
+  const updateObjectsOrderOnEdit = (oldBeing: string, oldAvatar: string, oldObject: string, newBeing: string, newAvatar: string, newObject: string) => {
+    if (!objectsOrderSortOrder) return;
+    
+    const updatedOrder = { ...objectsOrderSortOrder };
+    let orderChanged = false;
+    
+    // Update being if changed
+    if (oldBeing !== newBeing) {
+      const oldIndex = updatedOrder.beingOrder.indexOf(oldBeing);
+      if (oldIndex !== -1) {
+        // Remove old being
+        updatedOrder.beingOrder = updatedOrder.beingOrder.filter(b => b !== oldBeing);
+        // If new being doesn't exist, insert at old position, otherwise append
+        if (!updatedOrder.beingOrder.includes(newBeing)) {
+          updatedOrder.beingOrder.splice(oldIndex, 0, newBeing);
+        } else {
+          // New being already exists, just remove old one
+        }
+        orderChanged = true;
+      }
+    }
+    
+    // Update avatar if changed
+    if (oldAvatar !== newAvatar && updatedOrder.avatarOrders[oldBeing]) {
+      const oldIndex = updatedOrder.avatarOrders[oldBeing].indexOf(oldAvatar);
+      if (oldIndex !== -1) {
+        updatedOrder.avatarOrders[oldBeing] = updatedOrder.avatarOrders[oldBeing].filter(a => a !== oldAvatar);
+        if (updatedOrder.avatarOrders[oldBeing].length === 0) {
+          delete updatedOrder.avatarOrders[oldBeing];
+        }
+        orderChanged = true;
+      }
+      
+      // Add new avatar to new being
+      if (!updatedOrder.avatarOrders[newBeing]) {
+        updatedOrder.avatarOrders[newBeing] = [];
+      }
+      if (!updatedOrder.avatarOrders[newBeing].includes(newAvatar)) {
+        updatedOrder.avatarOrders[newBeing].push(newAvatar);
+        orderChanged = true;
+      }
+    }
+    
+    // Update object if changed
+    const oldObjectKey = `${oldBeing}|${oldAvatar}`;
+    const newObjectKey = `${newBeing}|${newAvatar}`;
+    if (oldObject !== newObject && updatedOrder.objectOrders[oldObjectKey]) {
+      const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
+      if (oldIndex !== -1) {
+        updatedOrder.objectOrders[oldObjectKey] = updatedOrder.objectOrders[oldObjectKey].filter(o => o !== oldObject);
+        if (updatedOrder.objectOrders[oldObjectKey].length === 0) {
+          delete updatedOrder.objectOrders[oldObjectKey];
+        }
+        orderChanged = true;
+      }
+      
+      // Add new object to new key
+      if (!updatedOrder.objectOrders[newObjectKey]) {
+        updatedOrder.objectOrders[newObjectKey] = [];
+      }
+      if (!updatedOrder.objectOrders[newObjectKey].includes(newObject)) {
+        updatedOrder.objectOrders[newObjectKey].push(newObject);
+        orderChanged = true;
+      }
+    }
+    
+    if (orderChanged) {
+      setObjectsOrderSortOrder(updatedOrder);
+      localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(updatedOrder));
+      apiService.saveObjectsOrder(updatedOrder).catch(err => console.error('Failed to save objects order to backend:', err));
+    }
+  };
+
+  // Utility function to update order when variable values are edited (in place)
+  const updateVariablesOrderOnEdit = (oldPart: string, oldSection: string, oldGroup: string, oldVariable: string, newPart: string, newSection: string, newGroup: string, newVariable: string) => {
+    if (!variablesOrderSortOrder) return;
+    
+    const updatedOrder = { ...variablesOrderSortOrder };
+    let orderChanged = false;
+    
+    // Similar logic for part, section, group, variable
+    if (oldPart !== newPart) {
+      const oldIndex = updatedOrder.partOrder.indexOf(oldPart);
+      if (oldIndex !== -1) {
+        updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== oldPart);
+        if (!updatedOrder.partOrder.includes(newPart)) {
+          updatedOrder.partOrder.splice(oldIndex, 0, newPart);
+        }
+        orderChanged = true;
+      }
+    }
+    
+    // Update section, group, variable similarly...
+    // (Similar pattern for section, group, variable updates)
+    
+    if (orderChanged) {
+      setVariablesOrderSortOrder(updatedOrder);
+      localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+      apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order to backend:', err));
+    }
+  };
+
+  // Utility function to append new item to lists order
+  const appendToListsOrder = (set: string, grouping: string, list: string) => {
+    const currentOrder = listsOrderSortOrder || {
+      setOrder: [],
+      groupingOrders: {},
+      listOrders: {}
+    };
+    
+    const updatedOrder = { ...currentOrder };
+    
+    // Append set if not exists
+    if (!updatedOrder.setOrder.includes(set)) {
+      updatedOrder.setOrder = [...updatedOrder.setOrder, set];
+    }
+    
+    // Append grouping if not exists
+    if (!updatedOrder.groupingOrders[set]) {
+      updatedOrder.groupingOrders[set] = [];
+    }
+    if (!updatedOrder.groupingOrders[set].includes(grouping)) {
+      updatedOrder.groupingOrders[set] = [...updatedOrder.groupingOrders[set], grouping];
+    }
+    
+    // Append list if not exists
+    const listKey = `${set}|${grouping}`;
+    if (!updatedOrder.listOrders[listKey]) {
+      updatedOrder.listOrders[listKey] = [];
+    }
+    if (!updatedOrder.listOrders[listKey].includes(list)) {
+      updatedOrder.listOrders[listKey] = [...updatedOrder.listOrders[listKey], list];
+    }
+    
+    setListsOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+    // Save to backend
+    apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order to backend:', err));
+  };
+
   const handleDelete = async (row: Record<string, any>) => {
     console.log('🔴 handleDelete called with row:', row);
     console.log('🔴 activeTab:', activeTab);
@@ -885,6 +1391,10 @@ function App() {
       try {
         if (activeTab === 'objects') {
           console.log('🔴 Deleting object with id:', row.id);
+          // Remove from order BEFORE deleting
+          if (row.being && row.avatar && row.object) {
+            removeFromObjectsOrder(row.being, row.avatar, row.object);
+          }
           await deleteObject(row.id);
           console.log('🔴 Object deleted successfully');
         } else if (activeTab === 'lists') {
@@ -901,6 +1411,10 @@ function App() {
           }
         } else if (activeTab === 'variables') {
           try {
+            // Remove from order BEFORE deleting
+            if (row.part && row.section && row.group && row.variable) {
+              removeFromVariablesOrder(row.part, row.section, row.group, row.variable);
+            }
             await deleteVariable(row.id);
             // Remove from state immediately
             setVariableData(prev => prev.filter(item => item.id !== row.id));
@@ -916,6 +1430,11 @@ function App() {
           } catch (error) {
             console.error('Error deleting variable:', error);
             alert('Failed to delete variable. Please try again.');
+          }
+        } else if (activeTab === 'lists') {
+          // Remove from order BEFORE deleting
+          if (row.set && row.grouping && row.list) {
+            removeFromListsOrder(row.set, row.grouping, row.list);
           }
         }
         
@@ -1095,11 +1614,19 @@ function App() {
       }
       
       await createObject(apiObjectData);
+      // Append to order after successful creation
+      if (newObjectData.being && newObjectData.avatar && newObjectData.object) {
+        appendToObjectsOrder(newObjectData.being, newObjectData.avatar, newObjectData.object);
+      }
       setIsAddObjectOpen(false);
     } catch (error) {
       console.error('Failed to create object:', error);
       // Fallback to local state update
       setData(prev => [...prev, newObjectData]);
+      // Still append to order even if API fails
+      if (newObjectData.being && newObjectData.avatar && newObjectData.object) {
+        appendToObjectsOrder(newObjectData.being, newObjectData.avatar, newObjectData.object);
+      }
       setIsAddObjectOpen(false);
     }
   };
@@ -1133,6 +1660,11 @@ function App() {
         }
       }
       
+      // Append to order after successful creation
+      if (newVariableData.part && newVariableData.section && newVariableData.group && newVariableData.variable) {
+        appendToVariablesOrder(newVariableData.part, newVariableData.section, newVariableData.group, newVariableData.variable);
+      }
+      
       setIsAddVariableOpen(false);
     } catch (error) {
       console.error('Error creating variable:', error);
@@ -1159,8 +1691,14 @@ function App() {
           }
         }
         
-        // Only remove successfully deleted variables from state
+        // Remove from order BEFORE removing from state
         if (successfulDeletions.length > 0) {
+          successfulDeletions.forEach(id => {
+            const variable = variableData.find(v => v.id === id);
+            if (variable && variable.part && variable.section && variable.group && variable.variable) {
+              removeFromVariablesOrder(variable.part, variable.section, variable.group, variable.variable);
+            }
+          });
           setVariableData(prev => prev.filter(item => !successfulDeletions.includes(item.id)));
         }
         
@@ -1202,8 +1740,14 @@ function App() {
           }
         }
         
-        // Only remove successfully deleted lists from state
+        // Remove from order BEFORE removing from state
         if (successfulDeletions.length > 0) {
+          successfulDeletions.forEach(id => {
+            const list = listData.find(l => l.id === id);
+            if (list && list.set && list.grouping && list.list) {
+              removeFromListsOrder(list.set, list.grouping, list.list);
+            }
+          });
           setListData(prev => prev.filter(item => !successfulDeletions.includes(item.id)));
           // Clear selections for successfully deleted items
           setSelectedRows(prev => prev.filter(row => !successfulDeletions.includes(row.id)));
@@ -1862,6 +2406,24 @@ function App() {
           console.log('Update result from API:', result);
           console.log('Validation field in result:', result?.validation);
           
+          // Update order if part/section/group/variable changed
+          const oldVariable = selectedRowForMetadata as VariableData;
+          const newPart = variableUpdateData.part || oldVariable.part;
+          const newSection = variableUpdateData.section || oldVariable.section;
+          const newGroup = variableUpdateData.group || oldVariable.group;
+          const newVariable = variableUpdateData.variable || oldVariable.variable;
+          
+          if (oldVariable.part !== newPart || oldVariable.section !== newSection || oldVariable.group !== newGroup || oldVariable.variable !== newVariable) {
+            // Remove old value from order
+            if (oldVariable.part && oldVariable.section && oldVariable.group && oldVariable.variable) {
+              removeFromVariablesOrder(oldVariable.part, oldVariable.section, oldVariable.group, oldVariable.variable);
+            }
+            // Append new value to order (will append to end if new, or keep existing position if already exists)
+            if (newPart && newSection && newGroup && newVariable) {
+              appendToVariablesOrder(newPart, newSection, newGroup, newVariable);
+            }
+          }
+          
           // Handle object relationships if they exist
           if (objectRelationshipsList && objectRelationshipsList.length > 0) {
             console.log('Creating object relationships:', objectRelationshipsList);
@@ -1976,6 +2538,23 @@ function App() {
           await updateObject(selectedRowForMetadata.id, basicFields);
           console.log('Object updated successfully');
           
+          // Update order if being/avatar/object changed
+          const oldObject = selectedRowForMetadata as ObjectData;
+          const newBeing = updatedData.being || oldObject.being;
+          const newAvatar = updatedData.avatar || oldObject.avatar;
+          const newObjectName = updatedData.object || updatedData.objectName || oldObject.object;
+          
+          if (oldObject.being !== newBeing || oldObject.avatar !== newAvatar || oldObject.object !== newObjectName) {
+            // Remove old value from order
+            if (oldObject.being && oldObject.avatar && oldObject.object) {
+              removeFromObjectsOrder(oldObject.being, oldObject.avatar, oldObject.object);
+            }
+            // Append new value to order
+            if (newBeing && newAvatar && newObjectName) {
+              appendToObjectsOrder(newBeing, newAvatar, newObjectName);
+            }
+          }
+          
           // Reload the object to refresh identifier data
           const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
           setSelectedRowForMetadata(refreshedObject);
@@ -2085,6 +2664,23 @@ function App() {
             console.log('🔄 Updating list - ID:', selectedRowForMetadata.id, 'Name:', selectedRowForMetadata.list, 'Data keys:', Object.keys(apiListData));
             console.log('🔄 Update data:', JSON.stringify(apiListData, null, 2));
             const updatedList = await apiService.updateList(selectedRowForMetadata.id, apiListData) as any;
+            
+            // Update order if set/grouping/list changed
+            const oldList = selectedRowForMetadata as ListData;
+            const newSet = updatedData.set || oldList.set;
+            const newGrouping = updatedData.grouping || oldList.grouping;
+            const newListName = updatedData.list || oldList.list;
+            
+            if (oldList.set !== newSet || oldList.grouping !== newGrouping || oldList.list !== newListName) {
+              // Remove old value from order
+              if (oldList.set && oldList.grouping && oldList.list) {
+                removeFromListsOrder(oldList.set, oldList.grouping, oldList.list);
+              }
+              // Append new value to order
+              if (newSet && newGrouping && newListName) {
+                appendToListsOrder(newSet, newGrouping, newListName);
+              }
+            }
             console.log('🔄 Updated list response:', JSON.stringify(updatedList, null, 2));
             
             // Convert API response to ListData format
@@ -2239,6 +2835,13 @@ function App() {
       };
     });
     
+    // Append all new objects to order
+    parsedObjects.forEach(obj => {
+      if (obj.being && obj.avatar && obj.object) {
+        appendToObjectsOrder(obj.being, obj.avatar, obj.object);
+      }
+    });
+    
     // Add objects to local state immediately for quick UI update
     setData(prev => [...prev, ...parsedObjects]);
     
@@ -2270,6 +2873,18 @@ function App() {
       
       // Refresh variables to show newly uploaded ones
       await fetchVariables();
+      
+      // Append all new variables to order (after fetch to get actual data)
+      // Note: We'll append them after fetchVariables completes, but we need to get the actual variable data
+      // For now, we'll let the useEffect that syncs with apiVariables handle it, but we should also append here
+      // Actually, let's append based on the result if available
+      if (result.created_variables && Array.isArray(result.created_variables)) {
+        result.created_variables.forEach((v: any) => {
+          if (v.part && v.section && v.group && v.variable) {
+            appendToVariablesOrder(v.part, v.section, v.group, v.variable);
+          }
+        });
+      }
       
       setIsBulkVariableUploadOpen(false);
     } catch (error) {
@@ -2549,6 +3164,11 @@ function App() {
       }
       
         const createdList = await apiService.createList(apiListData) as any;
+        
+        // Append to order after successful creation
+        if (newListData.set && newListData.grouping && newListData.list) {
+          appendToListsOrder(newListData.set, newListData.grouping, newListData.list);
+        }
         
         // Convert API response to ListData format
         const listDataFormat: ListData = {
