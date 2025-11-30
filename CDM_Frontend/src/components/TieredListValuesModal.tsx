@@ -339,6 +339,29 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   };
 
   const handleSave = () => {
+    // First, validate that if any tier column (Tier 2+) has values, Tier 1 must also have values
+    const rowsWithTier2PlusValues: number[] = [];
+    const rowsWithMissingTier1: number[] = [];
+    
+    tieredValueRows.forEach((row, rowIndex) => {
+      const tier1Value = row.values[0] ? row.values[0].trim() : '';
+      const tier2PlusValues = row.values.slice(1).filter(v => v && v.trim());
+      
+      // If Tier 2+ has values but Tier 1 is empty, this is invalid
+      if (tier2PlusValues.length > 0 && !tier1Value) {
+        rowsWithTier2PlusValues.push(rowIndex + 1);
+        rowsWithMissingTier1.push(rowIndex + 1);
+      }
+    });
+    
+    // If validation fails, show error and prevent save
+    if (rowsWithMissingTier1.length > 0) {
+      const rowNumbers = rowsWithMissingTier1.join(', ');
+      const tier1ColumnName = columnHeaders[0] || 'Tier 1';
+      alert(`Cannot save: Rows ${rowNumbers} have values in Tier 2+ columns but are missing values in the "${tier1ColumnName}" column. Please enter values in the "${tier1ColumnName}" column for all rows that have Tier 2+ values.`);
+      return;
+    }
+    
     // Convert rows to the format expected by backend
     // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
     // Format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
