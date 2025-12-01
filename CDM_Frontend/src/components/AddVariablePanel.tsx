@@ -1,12 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, X, Trash2, Plus, Link, Upload, ChevronRight, ChevronDown, Database, Users, FileText, Layers, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
-import { variableFieldOptions, concatenateVariableDrivers } from '../data/variablesData';
+import { getVariableFieldOptions, concatenateVariableDrivers } from '../data/variablesData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { useObjects } from '../hooks/useObjects';
 import { parseDriverField } from '../data/mockData';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
+import { apiService } from '../services/api';
 
 interface ObjectRelationship {
   id: string;
@@ -27,6 +28,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   isOpen,
   onClose,
   onAdd,
+  allData = [],
   objectsData = []
 }) => {
   // Basic form data
@@ -89,6 +91,85 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   const validationValueInputRef = useRef<HTMLInputElement>(null);
   const isValidationValueInputFocusedRef = useRef<boolean>(false);
   const lastValidationValueChangeTimeRef = useRef<number>(0);
+
+  // Storage key for part-group associations
+  const PART_GROUP_STORAGE_KEY = 'cdm_variable_part_group_associations';
+
+  // Get dynamic field options from existing variables data
+  const [dynamicFieldOptions, setDynamicFieldOptions] = useState(getVariableFieldOptions(allData));
+
+  // Fetch field options from API on mount and when allData changes
+  useEffect(() => {
+    const fetchFieldOptions = async () => {
+      try {
+        const apiOptions = await apiService.getVariableFieldOptions() as {
+          formatI: string[];
+          formatII: string[];
+          gType: string[];
+          validation: string[];
+          default: string[];
+        };
+        
+        // Merge API options with existing variable options
+        const existingOptions = getVariableFieldOptions(allData);
+        setDynamicFieldOptions({
+          ...existingOptions,
+          formatI: [...new Set([...existingOptions.formatI, ...(apiOptions.formatI || [])])].sort(),
+          formatII: [...new Set([...existingOptions.formatII, ...(apiOptions.formatII || [])])].sort(),
+          gType: [...new Set([...existingOptions.gType, ...(apiOptions.gType || [])])].sort(),
+          validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
+          default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
+        });
+      } catch (error) {
+        console.error('Error fetching field options:', error);
+        // Fall back to existing options if API fails
+        setDynamicFieldOptions(getVariableFieldOptions(allData));
+      }
+    };
+
+    fetchFieldOptions();
+  }, [allData]);
+
+  // Helper functions for part-group associations
+  const getPartGroupAssociations = (): Record<string, string[]> => {
+    try {
+      const stored = localStorage.getItem(PART_GROUP_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error('Error loading part-group associations:', error);
+    }
+    return {};
+  };
+
+  // Get groups filtered by part
+  const getGroupsForPart = (part: string): string[] => {
+    if (!part) return [];
+    
+    // Get groups from existing variables data for this part
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const groupsFromData = [...new Set(
+      variablesData
+        .filter((item: any) => item.part === part && item.group)
+        .map((item: any) => item.group)
+    )].filter(Boolean) as string[];
+    
+    // Get groups from localStorage associations
+    const associations = getPartGroupAssociations();
+    const groupsFromStorage = associations[part] || [];
+    
+    // Combine and deduplicate
+    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
+    return allGroups;
+  };
+
+  // Get distinct parts from variables data
+  const getDistinctParts = (): string[] => {
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
+    return parts.length > 0 ? parts : dynamicFieldOptions.part;
+  };
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -202,8 +283,15 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
 
   // Validation - all required fields must be filled
   const isFormValid = () => {
-    const requiredFields = ['part', 'section', 'group', 'variable', 'formatI', 'formatII'];
-    return requiredFields.every(field => formData[field as keyof typeof formData]);
+    // Required fields: Variable, Part, Section, Group (Ontology), Sector, Domain, Country (Drivers), Format I, Format II (Metadata)
+    const hasVariable = formData.variable && formData.variable.trim();
+    const hasOntologyFields = formData.part && formData.section && formData.section.trim() && formData.group;
+    const hasDriverFields = driverSelections.sector.length > 0 && 
+                           driverSelections.domain.length > 0 && 
+                           driverSelections.country.length > 0;
+    const hasMetadataFields = formData.formatI && formData.formatII;
+    
+    return hasVariable && hasOntologyFields && hasDriverFields && hasMetadataFields;
   };
 
   const handleSortVariations = (direction: 'asc' | 'desc') => {
@@ -241,8 +329,41 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   };
 
   const handleAddVariable = () => {
-    if (!isFormValid()) {
-      alert('Please fill in all required fields');
+    // Validate required fields with specific error messages
+    if (!formData.variable || !formData.variable.trim()) {
+      alert('Please enter a Variable name');
+      return;
+    }
+    if (!formData.part) {
+      alert('Please select a Part');
+      return;
+    }
+    if (!formData.section || !formData.section.trim()) {
+      alert('Please enter a Section');
+      return;
+    }
+    if (!formData.group) {
+      alert('Please select a Group');
+      return;
+    }
+    if (driverSelections.sector.length === 0) {
+      alert('Please select at least one Sector');
+      return;
+    }
+    if (driverSelections.domain.length === 0) {
+      alert('Please select at least one Domain');
+      return;
+    }
+    if (driverSelections.country.length === 0) {
+      alert('Please select at least one Country');
+      return;
+    }
+    if (!formData.formatI) {
+      alert('Please select a Format I');
+      return;
+    }
+    if (!formData.formatII) {
+      alert('Please select a Format II');
       return;
     }
 
@@ -653,7 +774,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Part</option>
-              {variableFieldOptions.part.map((option) => (
+              {getDistinctParts().map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -761,7 +882,10 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             <select
               value={formData.group}
               onChange={(e) => handleChange('group', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              disabled={!formData.part}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.part ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
@@ -770,11 +894,19 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Group</option>
-              {variableFieldOptions.group.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {formData.part ? (
+                getGroupsForPart(formData.part).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              ) : (
+                dynamicFieldOptions.group.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -800,7 +932,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Format I</option>
-              {variableFieldOptions.formatI.map((option) => (
+              {dynamicFieldOptions.formatI.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -824,7 +956,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Format II</option>
-              {variableFieldOptions.formatII.map((option) => (
+              {dynamicFieldOptions.formatII.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -848,7 +980,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select G-Type</option>
-              {variableFieldOptions.gType.map((option) => (
+              {dynamicFieldOptions.gType.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -872,7 +1004,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Default</option>
-              {variableFieldOptions.default.map((option) => (
+              {dynamicFieldOptions.default.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -896,7 +1028,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Graph</option>
-              {variableFieldOptions.graph.map((option) => (
+              {dynamicFieldOptions.graph.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>

@@ -17,6 +17,8 @@ interface VariableObjectRelationshipModalProps {
   onRelationshipsChange?: (relationships: any[]) => void; // Callback to store relationships for temporary/cloned variables
   initialCsvData?: any[] | null; // CSV data to process when modal opens
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
+  previewMode?: boolean; // If true, don't create relationships - just store selections via onSelectionChange
+  onSelectionChange?: (selectedObjectIds: string[]) => void; // Callback to store selected object IDs (for preview mode)
 }
 
 interface SelectedObjectData {
@@ -34,7 +36,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   onSave,
   onRelationshipsChange,
   initialCsvData,
-  isBulkMode = false
+  isBulkMode = false,
+  previewMode = false,
+  onSelectionChange
 }) => {
   // Determine source variables: use selectedVariables if provided (bulk mode), otherwise use selectedVariable (single mode)
   const sourceVariables = isBulkMode && selectedVariables.length > 0 
@@ -99,6 +103,21 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
 
     setLoading(true);
     try {
+      // In preview mode, don't load relationships from API (variable doesn't exist yet)
+      if (previewMode) {
+        // Initialize with empty selection - user will select objects
+        const initialData: Record<string, SelectedObjectData> = {};
+        for (const obj of allObjects) {
+          initialData[obj.id] = {
+            objectId: obj.id,
+            isSelected: false
+          };
+        }
+        setSelectedObjects(initialData);
+        setLoading(false);
+        return;
+      }
+
       // In bulk mode, we don't load existing relationships (they're just for reference)
       // In bulk mode, we're creating new relationships, not editing existing ones
       // For single mode, load existing relationships
@@ -330,6 +349,19 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
 
   const handleSave = async () => {
     if (sourceVariables.length === 0) return;
+
+    // PREVIEW MODE: Just store selections, don't create relationships yet
+    // This is used when adding a new variable that doesn't exist in Neo4j yet
+    if (previewMode && onSelectionChange) {
+      const selectedObjectIds = Object.entries(selectedObjects)
+        .filter(([_, data]) => data.isSelected)
+        .map(([id, _]) => id);
+      
+      onSelectionChange(selectedObjectIds);
+      alert('Object selections saved. Relationships will be created when you save the variable.');
+      onClose();
+      return;
+    }
 
     // Check if this is a cloned unsaved variable - need to store relationships locally
     const isClonedVariable = sourceVariables.length === 1 && 

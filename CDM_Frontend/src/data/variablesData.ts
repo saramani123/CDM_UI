@@ -24,6 +24,8 @@ export interface VariableData {
   // Relationships
   objectRelationships: number;
   objectRelationshipsList?: ObjectRelationship[];
+  // Variations
+  variationsList?: Array<{ id: string; name: string }>;
   // Parsed driver fields for UI (legacy for metadata panel)
   variableClarifier?: string;
   status?: string;
@@ -34,6 +36,10 @@ export interface ObjectRelationship {
   toBeing: string;
   toAvatar: string;
   toObject: string;
+  toSector?: string;
+  toDomain?: string;
+  toCountry?: string;
+  toObjectClarifier?: string;
 }
 
 export const mockVariableData: VariableData[] = [];

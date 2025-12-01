@@ -1733,7 +1733,7 @@ function App() {
 
   const handleAddVariable = async (newVariableData: VariableData) => {
     try {
-      // Create variable via API
+      // Create variable via API with variationsList
       const createdVariable = await createVariable({
         driver: newVariableData.driver,
         part: newVariableData.part,
@@ -1746,18 +1746,27 @@ function App() {
         validation: newVariableData.validation || '',
         default: newVariableData.default || '',
         graph: newVariableData.graph || 'Y',
-        status: newVariableData.status || 'Active'
+        status: newVariableData.status || 'Active',
+        variationsList: newVariableData.variationsList || []
       });
       
       // Create object relationships if any
       if (newVariableData.objectRelationshipsList && newVariableData.objectRelationshipsList.length > 0) {
         for (const relationship of newVariableData.objectRelationshipsList) {
-          await createObjectRelationship(createdVariable.id, {
+          // Use the API service directly to pass all required fields
+          await apiService.createVariableObjectRelationship(createdVariable.id, {
+            relationshipType: 'HAS_SPECIFIC_VARIABLE',
             toBeing: relationship.toBeing,
             toAvatar: relationship.toAvatar,
-            toObject: relationship.toObject
+            toObject: relationship.toObject,
+            toSector: relationship.toSector || '',
+            toDomain: relationship.toDomain || '',
+            toCountry: relationship.toCountry || '',
+            toObjectClarifier: relationship.toObjectClarifier || ''
           });
         }
+        // Refresh variables after creating relationships
+        await fetchVariables();
       }
       
       // Append to order after successful creation
