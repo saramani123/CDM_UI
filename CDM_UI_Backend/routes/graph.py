@@ -867,7 +867,8 @@ async def get_list_ontology_view(
             'listValues': """
                 MATCH (l:List {id: $list_id})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                RETURN l, r, lv
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List {id: $list_id})
@@ -899,7 +900,8 @@ async def get_list_ontology_view(
             'listValues': """
                 MATCH (l:List {name: $list_name})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                RETURN l, r, lv
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List {name: $list_name})
@@ -921,8 +923,8 @@ async def get_list_ontology_view(
                 # First check if this is a parent or child list
                 check_result = session.run("""
                     MATCH (l:List {id: $list_id})
-                    OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                    OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                    OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                    OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
                     WITH l, count(DISTINCT tiered) as child_count, count(DISTINCT parent) as parent_count,
                          collect(DISTINCT type(parent_tier_rel))[0] as parent_tier_type
                     RETURN child_count > 0 as is_parent, parent_count > 0 as is_child, parent_tier_type
@@ -944,29 +946,42 @@ async def get_list_ontology_view(
                 
                 if is_parent:
                     # Parent list: Show tier hierarchy AND tiered values
+                    # For tiered lists, values are connected to tier lists, not parent list
+                    # Show: parent -> tier lists, tier lists -> tier values, tier values -> tier values
+                    # Use UNION to ensure we get all relationships even if some are missing
                     query = """
                         MATCH (l:List {id: $list_id})
-                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                        OPTIONAL MATCH (l)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
-                        OPTIONAL MATCH (lv1)-[r2]->(lv2:ListValue)
-                        WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
-                          AND type(r2) <> 'HAS_LIST_VALUE'
-                        OPTIONAL MATCH (tiered)-[r3:HAS_LIST_VALUE]->(lv2)
-                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, r3
+                        // Get parent list node
+                        WITH l
+                        // Get tier list relationships
+                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        WITH l, tiered, tier_rel
+                        // Get tier list values (Tier 1 values)
+                        OPTIONAL MATCH (tiered)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        WITH l, tiered, tier_rel, lv1, r1
+                        // Get tier value relationships (Tier 1 -> Tier 2, Tier 2 -> Tier 3, etc.)
+                        OPTIONAL MATCH (lv1)-[r2:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
+                        // Also get any further tier relationships (Tier 2 -> Tier 3, etc.)
+                        OPTIONAL MATCH (lv2)-[r3:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv3:ListValue)
+                        // Get value variations for all list values
+                        OPTIONAL MATCH (lv1)-[var_rel1:HAS_VALUE_VARIATION]->(var1:Variation)
+                        OPTIONAL MATCH (lv2)-[var_rel2:HAS_VALUE_VARIATION]->(var2:Variation)
+                        OPTIONAL MATCH (lv3)-[var_rel3:HAS_VALUE_VARIATION]->(var3:Variation)
+                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, lv3, r3, var1, var_rel1, var2, var_rel2, var3, var_rel3
                     """
                 elif is_child:
                     # Child list: Show parent, tier hierarchy, and tiered values up to this tier
-                    # For tier 2, show up to tier 2 values (1 level of tiered values)
-                    # For tier 3, show up to tier 3 values (2 levels of tiered values), etc.
+                    # For tier 1, show parent relationship and tier 1 values
+                    # For tier 2, show parent, tier 1 values, and tier 2 values (HAS_TIER_2_VALUE)
+                    # For tier 3, show parent, tier 1 values, tier 2 values, and tier 3 values, etc.
                     query = """
                         MATCH (l:List {id: $list_id})
-                        OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
-                        OPTIONAL MATCH (parent)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
-                        OPTIONAL MATCH (lv1)-[r2]->(lv2:ListValue)
-                        WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
-                          AND type(r2) <> 'HAS_LIST_VALUE'
-                        OPTIONAL MATCH (l)-[r3:HAS_LIST_VALUE]->(lv2)
-                        RETURN l, parent, parent_tier_rel, lv1, r1, lv2, r2, r3
+                        OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                        OPTIONAL MATCH (l)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        OPTIONAL MATCH (lv1)-[r2:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
+                        OPTIONAL MATCH (parent)-[r3:HAS_LIST_VALUE]->(lv_parent:ListValue)
+                        OPTIONAL MATCH (lv_parent)-[r4:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv1)
+                        RETURN l, parent, parent_tier_rel, lv1, r1, lv2, r2, lv_parent, r3, r4
                     """
                 else:
                     # Normal list: Just show direct list values
@@ -1001,8 +1016,13 @@ async def get_list_ontology_view(
                         if node_id not in node_ids:
                             node_ids.add(node_id)
                             props = dict(value.items()) if hasattr(value, 'items') else {}
-                            # For ListValue nodes, use 'value' property; for others, use 'name'
-                            name = props.get('value') if label == 'ListValue' else props.get('name', node_id)
+                            # For ListValue nodes, use 'value' property; for Variation nodes, use 'name'; for others, use 'name'
+                            if label == 'ListValue':
+                                name = props.get('value', node_id)
+                            elif label == 'Variation':
+                                name = props.get('name', node_id)
+                            else:
+                                name = props.get('name', node_id)
                             
                             nodes[node_id] = {
                                 'id': node_id,

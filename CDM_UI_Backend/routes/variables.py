@@ -435,331 +435,6 @@ async def create_variable(variable_data: VariableCreateRequest):
         print(f"Error creating variable: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create variable: {str(e)}")
 
-@router.put("/variables/bulk-update", response_model=BulkVariableUpdateResponse)
-async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
-    """
-    Bulk update multiple variables with the same changes.
-    Only updates fields that are provided (not None) and not "Keep Current" values.
-    Applies validation rules: overwrites only where new value chosen, leaves Keep Current fields untouched.
-    """
-    driver = get_driver()
-    if not driver:
-        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
-
-    updated_count = 0
-    errors = []
-
-    try:
-        with driver.session() as session:
-            for variable_id in bulk_data.variable_ids:
-                try:
-                    print(f"Processing variable ID: {variable_id}")
-                    # Get current variable data - first check if variable exists
-                    print(f"Running query for variable {variable_id}")
-                    current_result = session.run("""
-                        MATCH (v:Variable {id: $id})
-                        RETURN v
-                    """, {"id": variable_id})
-
-                    print(f"Query executed, getting single record")
-                    current_record = current_result.single()
-                    print(f"Record result: {current_record}")
-                    if not current_record:
-                        print(f"Variable {variable_id} not found in database")
-                        errors.append(f"Variable {variable_id} not found")
-                        continue
-                    
-                    print(f"Variable {variable_id} found, proceeding with update")
-
-                    current_variable = current_record["v"]
-
-                    # Build dynamic SET clause for only provided fields that are not "Keep Current"
-                    set_clauses = []
-                    params = {"id": variable_id}
-                    
-                    # Helper function to check if a field should be updated
-                    def should_update_field(value: Optional[str], keep_current_text: str = "Keep Current") -> bool:
-                        if value is None:
-                            return False
-                        stripped = value.strip()
-                        return stripped != "" and stripped != keep_current_text and not stripped.startswith("Keep Current") and not stripped.startswith("Keep current")
-                    
-                    # Only update fields that are provided, not empty, and not "Keep Current" values
-                    if should_update_field(bulk_data.variable, "Keep current variable"):
-                        set_clauses.append("v.name = $variable")
-                        params["variable"] = bulk_data.variable
-                    if should_update_field(bulk_data.part, "Keep Current Part"):
-                        set_clauses.append("v.part = $part")
-                        params["part"] = bulk_data.part
-                    if should_update_field(bulk_data.section, "Keep current section"):
-                        set_clauses.append("v.section = $section")
-                        params["section"] = bulk_data.section
-                    if should_update_field(bulk_data.group, "Keep Current Group"):
-                        set_clauses.append("v.group = $group")
-                        params["group"] = bulk_data.group
-                    if should_update_field(bulk_data.formatI, "Keep Current Format I"):
-                        set_clauses.append("v.formatI = $formatI")
-                        params["formatI"] = bulk_data.formatI
-                    if should_update_field(bulk_data.formatII, "Keep Current Format II"):
-                        set_clauses.append("v.formatII = $formatII")
-                        params["formatII"] = bulk_data.formatII
-                    if should_update_field(bulk_data.gType, "Keep Current G-Type"):
-                        set_clauses.append("v.gType = $gType")
-                        params["gType"] = bulk_data.gType
-                    if should_update_field(bulk_data.validation, "Keep Current Validation"):
-                        # Handle special bulk validation formats
-                        validation_value = bulk_data.validation
-                        
-                        # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
-                        if validation_value.startswith("_BULK_RANGE_"):
-                            operator = validation_value.replace("_BULK_RANGE_", "")
-                            # Use the variable's formatI as the value, with Val Type prefix
-                            formatI_value = current_variable.get('formatI', '')
-                            validation_value = f"Range {operator} {formatI_value}" if formatI_value else ""
-                        
-                        # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
-                        elif validation_value.startswith("_BULK_RELATIVE_"):
-                            operator = validation_value.replace("_BULK_RELATIVE_", "")
-                            # Use the variable's name as the value, with Val Type prefix
-                            variable_name = current_variable.get('name', '')
-                            validation_value = f"Relative {operator} {variable_name}" if variable_name else ""
-                        
-                        set_clauses.append("v.validation = $validation")
-                        params["validation"] = validation_value
-                    if should_update_field(bulk_data.default, "Keep Current Default"):
-                        set_clauses.append("v.default = $default")
-                        params["default"] = bulk_data.default
-                    if should_update_field(bulk_data.graph, "Keep Current Graph"):
-                        set_clauses.append("v.graph = $graph")
-                        params["graph"] = bulk_data.graph
-                    if should_update_field(bulk_data.status, "Keep Current Status"):
-                        set_clauses.append("v.status = $status")
-                        params["status"] = bulk_data.status
-                    if should_update_field(bulk_data.driver):
-                        set_clauses.append("v.driver = $driver")
-                        params["driver"] = bulk_data.driver
-
-                    # Handle Part/Group relationship updates BEFORE updating node properties
-                    # This is similar to the logic in update_variable
-                    part_provided = should_update_field(bulk_data.part, "Keep Current Part")
-                    group_provided = should_update_field(bulk_data.group, "Keep Current Group")
-                    
-                    if part_provided or group_provided:
-                        # Both Part and Group must be provided for bulk edit
-                        if not (part_provided and group_provided):
-                            errors.append(f"Variable {variable_id}: Both Part and Group must be provided when changing Part/Group in bulk edit")
-                            continue
-                        
-                        print(f"DEBUG: Bulk edit - Processing Part/Group update for variable {variable_id}", flush=True)
-                        
-                        # Get current Part/Group from Neo4j
-                        current_part_group_result = session.run("""
-                            MATCH (v:Variable {id: $id})
-                            OPTIONAL MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                            RETURN p.name as part, g.name as group
-                        """, {"id": variable_id})
-                        
-                        current_part_group_record = current_part_group_result.single()
-                        current_part = current_part_group_record["part"] if current_part_group_record and current_part_group_record.get("part") else ""
-                        current_group = current_part_group_record["group"] if current_part_group_record and current_part_group_record.get("group") else ""
-                        
-                        new_part = bulk_data.part.strip() if part_provided else current_part
-                        new_group = bulk_data.group.strip() if group_provided else current_group
-                        
-                        # Normalize for comparison
-                        current_part_normalized = current_part.strip() if current_part else ""
-                        current_group_normalized = current_group.strip() if current_group else ""
-                        part_value_normalized = new_part.strip() if new_part else ""
-                        group_value_normalized = new_group.strip() if new_group else ""
-                        
-                        part_changed = part_value_normalized != current_part_normalized
-                        group_changed = group_value_normalized != current_group_normalized
-                        
-                        print(f"DEBUG: Bulk edit - Variable {variable_id}: current_part='{current_part}', current_group='{current_group}'", flush=True)
-                        print(f"DEBUG: Bulk edit - Variable {variable_id}: new_part='{new_part}', new_group='{new_group}'", flush=True)
-                        print(f"DEBUG: Bulk edit - Variable {variable_id}: part_changed={part_changed}, group_changed={group_changed}", flush=True)
-                        
-                        if part_changed or group_changed:
-                            print(f"DEBUG: Bulk edit - Part/Group changed for variable {variable_id}. Old: Part={current_part}, Group={current_group}. New: Part={new_part}, Group={new_group}", flush=True)
-                            
-                            # Delete ALL existing Group -> Variable relationships for this variable
-                            try:
-                                session.run("""
-                                    MATCH (g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-                                    DELETE gv
-                                """, variable_id=variable_id)
-                                print(f"DEBUG: Bulk edit - Deleted Group -> Variable relationship(s) for variable {variable_id}", flush=True)
-                            except Exception as e:
-                                print(f"DEBUG: Bulk edit - Error deleting relationships for variable {variable_id}: {e}", flush=True)
-                                import traceback
-                                traceback.print_exc()
-                            
-                            # Ensure Part node exists
-                            if new_part:
-                                session.run("""
-                                    MERGE (p:Part {name: $part})
-                                """, part=new_part)
-                            
-                            # Ensure Group node exists
-                            if new_group:
-                                session.run("""
-                                    MERGE (g:Group {name: $group})
-                                """, group=new_group)
-                            
-                            # Ensure Part -> Group relationship exists (MERGE, don't delete)
-                            if new_part and new_group:
-                                session.run("""
-                                    MATCH (p:Part {name: $part})
-                                    MATCH (g:Group {name: $group})
-                                    MERGE (p)-[:HAS_GROUP]->(g)
-                                """, part=new_part, group=new_group)
-                            
-                            # Create new Group -> Variable relationship
-                            if new_group:
-                                try:
-                                    create_result = session.run("""
-                                        MATCH (g:Group {name: $group})
-                                        MATCH (v:Variable {id: $variable_id})
-                                        MERGE (g)-[r:HAS_VARIABLE]->(v)
-                                        RETURN r, g.name as group_name, v.id as var_id
-                                    """, group=new_group, variable_id=variable_id)
-                                    create_record = create_result.single()
-                                    if create_record and create_record.get("group_name"):
-                                        print(f"DEBUG: Bulk edit - Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
-                                    else:
-                                        print(f"DEBUG: Bulk edit - WARNING - Failed to create Group -> Variable relationship for group={new_group}, variable_id={variable_id}", flush=True)
-                                except Exception as e:
-                                    print(f"DEBUG: Bulk edit - ERROR creating Group -> Variable relationship for variable {variable_id}: {e}", flush=True)
-                                    import traceback
-                                    traceback.print_exc()
-                                    errors.append(f"Variable {variable_id}: Failed to create Group -> Variable relationship: {str(e)}")
-                                    continue
-                            
-                            print(f"DEBUG: Bulk edit - Successfully updated Group -> Variable relationship for variable {variable_id}", flush=True)
-
-                    # Only update if there are fields to update
-                    if set_clauses:
-                        update_query = f"""
-                            MATCH (v:Variable {{id: $id}})
-                            SET {', '.join(set_clauses)}
-                        """
-                        session.run(update_query, params)
-
-                    # Update driver relationships if driver field is provided, not empty, and not "Keep Current"
-                    if bulk_data.driver is not None and bulk_data.driver.strip() != "" and bulk_data.driver.strip() != "Keep Current":
-                        print(f"Updating driver relationships with: {bulk_data.driver}")
-                        await create_driver_relationships(session, variable_id, bulk_data.driver)
-
-                    # Handle object relationships if provided
-                    if bulk_data.objectRelationshipsList is not None and len(bulk_data.objectRelationshipsList) > 0:
-                        # If shouldOverrideRelationships is true, delete all existing relationships first
-                        if bulk_data.shouldOverrideRelationships:
-                            print(f"🗑️ Deleting all existing relationships for variable {variable_id} (override mode)")
-                            try:
-                                # Delete all HAS_SPECIFIC_VARIABLE relationships
-                                delete_specific = session.run("""
-                                    MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
-                                    DELETE r
-                                    RETURN count(r) as deleted_count
-                                """, {"variable_id": variable_id})
-                                specific_count = delete_specific.single()["deleted_count"] if delete_specific.single() else 0
-                                
-                                # Delete all HAS_VARIABLE relationships
-                                delete_all = session.run("""
-                                    MATCH (o:Object)-[r:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-                                    DELETE r
-                                    RETURN count(r) as deleted_count
-                                """, {"variable_id": variable_id})
-                                all_count = delete_all.single()["deleted_count"] if delete_all.single() else 0
-                                
-                                print(f"✅ Deleted {specific_count} HAS_SPECIFIC_VARIABLE and {all_count} HAS_VARIABLE relationships")
-                            except Exception as e:
-                                print(f"⚠️ Error deleting existing relationships for variable {variable_id}: {str(e)}")
-                                errors.append(f"Failed to delete existing relationships for variable {variable_id}: {str(e)}")
-                        
-                        print(f"Processing {len(bulk_data.objectRelationshipsList)} object relationships")
-                        for relationship in bulk_data.objectRelationshipsList:
-                            try:
-                                # Create object relationship for this variable
-                                await create_object_relationship_for_variable(session, variable_id, relationship)
-                            except Exception as e:
-                                print(f"Error creating object relationship for variable {variable_id}: {str(e)}")
-                                errors.append(f"Failed to create object relationship for variable {variable_id}: {str(e)}")
-
-                    # Handle variationsList if provided (append variations to each variable)
-                    if bulk_data.variationsList is not None and len(bulk_data.variationsList) > 0:
-                        print(f"Processing {len(bulk_data.variationsList)} variations for variable {variable_id}")
-                        for var in bulk_data.variationsList:
-                            variation_name = var.get("name", "").strip()
-                            if not variation_name:
-                                continue
-                            
-                            print(f"DEBUG: Processing variation: {variation_name}")
-                            
-                            # Check if variation already exists for this variable (case-insensitive)
-                            existing_variation_for_variable = session.run("""
-                                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
-                                WHERE toLower(var.name) = toLower($variation_name)
-                                RETURN var.id as id, var.name as name
-                            """, variable_id=variable_id, variation_name=variation_name).single()
-                            
-                            if existing_variation_for_variable:
-                                print(f"DEBUG: Variation '{variation_name}' already exists for variable {variable_id}, skipping")
-                                continue
-                            
-                            # Check if variation exists globally (case-insensitive)
-                            existing_variation = session.run("""
-                                MATCH (var:Variation)
-                                WHERE toLower(var.name) = toLower($variation_name)
-                                RETURN var.id as id, var.name as name
-                            """, variation_name=variation_name).single()
-                            
-                            if existing_variation:
-                                # Variation exists globally, connect it to this variable
-                                variation_id = existing_variation["id"]
-                                print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
-                                
-                                session.run("""
-                                    MATCH (v:Variable {id: $variable_id})
-                                    MATCH (var:Variation {id: $variation_id})
-                                    CREATE (v)-[:HAS_VARIATION]->(var)
-                                """, variable_id=variable_id, variation_id=variation_id)
-                            else:
-                                # Create new variation
-                                variation_id = str(uuid.uuid4())
-                                print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
-                                
-                                session.run("""
-                                    CREATE (var:Variation {
-                                        id: $variation_id,
-                                        name: $variation_name
-                                    })
-                                """, variation_id=variation_id, variation_name=variation_name)
-                                
-                                session.run("""
-                                    MATCH (v:Variable {id: $variable_id})
-                                    MATCH (var:Variation {id: $variation_id})
-                                    CREATE (v)-[:HAS_VARIATION]->(var)
-                                """, variable_id=variable_id, variation_id=variation_id)
-
-                    updated_count += 1
-
-                except Exception as e:
-                    print(f"Error updating variable {variable_id}: {str(e)}")
-                    errors.append(f"Failed to update variable {variable_id}: {str(e)}")
-                    continue
-
-        return BulkVariableUpdateResponse(
-            success=updated_count > 0,
-            message=f"Updated {updated_count} variables successfully",
-            updated_count=updated_count,
-            error_count=len(errors),
-            errors=errors
-        )
-
-    except Exception as e:
-        print(f"Error in bulk update: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to bulk update variables: {str(e)}")
 
 @router.put("/variables/{variable_id}", response_model=VariableResponse)
 async def update_variable(variable_id: str, variable_data: VariableUpdateRequest):
@@ -1924,7 +1599,7 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
     errors = []
 
     try:
-        with driver.session() as session:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
             for variable_id in bulk_data.variable_ids:
                 try:
                     print(f"Processing variable ID: {variable_id}")
@@ -1959,18 +1634,14 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         return stripped != "" and stripped != keep_current_text and not stripped.startswith("Keep Current") and not stripped.startswith("Keep current")
                     
                     # Only update fields that are provided, not empty, and not "Keep Current" values
+                    # NOTE: Part and Group are NOT properties on Variable nodes - they are relationships
+                    # Part/Group updates are handled separately in the relationship update section below
                     if should_update_field(bulk_data.variable, "Keep current variable"):
                         set_clauses.append("v.name = $variable")
                         params["variable"] = bulk_data.variable
-                    if should_update_field(bulk_data.part, "Keep Current Part"):
-                        set_clauses.append("v.part = $part")
-                        params["part"] = bulk_data.part
                     if should_update_field(bulk_data.section, "Keep current section"):
                         set_clauses.append("v.section = $section")
                         params["section"] = bulk_data.section
-                    if should_update_field(bulk_data.group, "Keep Current Group"):
-                        set_clauses.append("v.group = $group")
-                        params["group"] = bulk_data.group
                     if should_update_field(bulk_data.formatI, "Keep Current Format I"):
                         set_clauses.append("v.formatI = $formatI")
                         params["formatI"] = bulk_data.formatI
@@ -2053,16 +1724,22 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         print(f"DEBUG: Bulk edit - Variable {variable_id}: new_part='{new_part}', new_group='{new_group}'", flush=True)
                         print(f"DEBUG: Bulk edit - Variable {variable_id}: part_changed={part_changed}, group_changed={group_changed}", flush=True)
                         
-                        if part_changed or group_changed:
-                            print(f"DEBUG: Bulk edit - Part/Group changed for variable {variable_id}. Old: Part={current_part}, Group={current_group}. New: Part={new_part}, Group={new_group}", flush=True)
+                        # Always update if both part and group are provided (even if they match current values)
+                        # This ensures the relationship is properly set even if it was missing or incorrect
+                        if part_provided and group_provided:
+                            print(f"DEBUG: Bulk edit - Part/Group update for variable {variable_id}. Current: Part={current_part}, Group={current_group}. New: Part={new_part}, Group={new_group}", flush=True)
                             
                             # Delete ALL existing Group -> Variable relationships for this variable
+                            # This ensures we don't have duplicate or incorrect relationships
                             try:
-                                session.run("""
+                                delete_result = session.run("""
                                     MATCH (g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
                                     DELETE gv
+                                    RETURN count(gv) as deleted_count
                                 """, variable_id=variable_id)
-                                print(f"DEBUG: Bulk edit - Deleted Group -> Variable relationship(s) for variable {variable_id}", flush=True)
+                                delete_record = delete_result.single()
+                                deleted_count = delete_record["deleted_count"] if delete_record else 0
+                                print(f"DEBUG: Bulk edit - Deleted {deleted_count} Group -> Variable relationship(s) for variable {variable_id}", flush=True)
                             except Exception as e:
                                 print(f"DEBUG: Bulk edit - Error deleting relationships for variable {variable_id}: {e}", flush=True)
                                 import traceback
@@ -2073,12 +1750,14 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                 session.run("""
                                     MERGE (p:Part {name: $part})
                                 """, part=new_part)
+                                print(f"DEBUG: Bulk edit - Ensured Part node exists: {new_part}", flush=True)
                             
                             # Ensure Group node exists
                             if new_group:
                                 session.run("""
                                     MERGE (g:Group {name: $group})
                                 """, group=new_group)
+                                print(f"DEBUG: Bulk edit - Ensured Group node exists: {new_group}", flush=True)
                             
                             # Ensure Part -> Group relationship exists (MERGE, don't delete)
                             if new_part and new_group:
@@ -2087,6 +1766,7 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                     MATCH (g:Group {name: $group})
                                     MERGE (p)-[:HAS_GROUP]->(g)
                                 """, part=new_part, group=new_group)
+                                print(f"DEBUG: Bulk edit - Ensured Part -> Group relationship exists: {new_part} -> {new_group}", flush=True)
                             
                             # Create new Group -> Variable relationship
                             if new_group:
@@ -2099,17 +1779,17 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                     """, group=new_group, variable_id=variable_id)
                                     create_record = create_result.single()
                                     if create_record and create_record.get("group_name"):
-                                        print(f"DEBUG: Bulk edit - Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
+                                        print(f"DEBUG: Bulk edit - ✅ Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
                                     else:
-                                        print(f"DEBUG: Bulk edit - WARNING - Failed to create Group -> Variable relationship for group={new_group}, variable_id={variable_id}", flush=True)
+                                        print(f"DEBUG: Bulk edit - ⚠️ WARNING - Failed to create Group -> Variable relationship for group={new_group}, variable_id={variable_id}", flush=True)
+                                        errors.append(f"Variable {variable_id}: Failed to create Group -> Variable relationship - group or variable not found")
                                 except Exception as e:
-                                    print(f"DEBUG: Bulk edit - ERROR creating Group -> Variable relationship for variable {variable_id}: {e}", flush=True)
+                                    print(f"DEBUG: Bulk edit - ❌ ERROR creating Group -> Variable relationship for variable {variable_id}: {e}", flush=True)
                                     import traceback
                                     traceback.print_exc()
                                     errors.append(f"Variable {variable_id}: Failed to create Group -> Variable relationship: {str(e)}")
-                                    continue
                             
-                            print(f"DEBUG: Bulk edit - Successfully updated Group -> Variable relationship for variable {variable_id}", flush=True)
+                            print(f"DEBUG: Bulk edit - ✅ Successfully updated Group -> Variable relationship for variable {variable_id}", flush=True)
 
                     # Only update if there are fields to update
                     if set_clauses:

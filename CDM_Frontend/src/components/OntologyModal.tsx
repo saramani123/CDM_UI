@@ -1035,24 +1035,12 @@ RETURN o, r, v`;
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Eye Icon - Show details panel */}
-            {(selectedNode || selectedEdge) && (
-              <button
-                onClick={() => setShowDetailsPanel(true)}
-                className="p-2 text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-bg rounded transition-colors"
-                title={selectedNode ? 'View node details' : 'View relationship details'}
-              >
-                <Eye className="w-5 h-5" />
-              </button>
-            )}
-            <button
-              onClick={onClose}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Content */}
@@ -1081,6 +1069,21 @@ RETURN o, r, v`;
           {error && (
             <div className="absolute inset-6 flex items-center justify-center bg-ag-dark-bg/90 z-10 rounded border border-ag-dark-border">
               <div className="text-red-400">{error}</div>
+            </div>
+          )}
+
+          {/* Eye Icon - Show details panel - appears in top right of graph view when node/edge is selected */}
+          {(selectedNode || selectedEdge) && (
+            <div className="absolute top-12 right-12 z-30">
+              <button
+                onClick={() => setShowDetailsPanel(!showDetailsPanel)}
+                className={`bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors shadow-lg ${
+                  showDetailsPanel ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent' : ''
+                }`}
+                title={showDetailsPanel ? "Hide Details" : "Show Details"}
+              >
+                <Eye className="w-4 h-4" />
+              </button>
             </div>
           )}
 
@@ -1256,10 +1259,10 @@ RETURN o, r, v`;
           )}
         </div>
 
-        {/* Footer with Cypher Query Section */}
-        <div className="flex-shrink-0 border-t border-ag-dark-border bg-ag-dark-surface flex flex-col min-h-0" style={{ maxHeight: showCypherQuery ? '40vh' : 'auto' }}>
-          {/* Action Buttons - Side by side */}
-          <div className="px-6 py-3 flex gap-3 flex-shrink-0">
+        {/* Footer with Cypher Query Section - Always visible at bottom, expands upwards */}
+        <div className="relative flex-shrink-0">
+          {/* Action Buttons - Always visible at bottom */}
+          <div className="px-6 py-3 flex gap-3 border-t border-ag-dark-border bg-ag-dark-surface">
             <button
               onClick={() => setShowCypherQuery(!showCypherQuery)}
               className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
@@ -1295,9 +1298,9 @@ RETURN o, r, v`;
             </button>
           </div>
 
-          {/* Cypher Query - Expandable below buttons with scrolling */}
+          {/* Cypher Query - Expandable upwards from bottom */}
           {showCypherQuery && (
-            <div className="px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto flex-1 min-h-0">
+            <div className="absolute bottom-full left-0 right-0 px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto shadow-lg" style={{ maxHeight: '20vh', minHeight: '120px' }}>
               <div className="flex items-center justify-between mb-2 pt-4">
                 <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
                   Cypher Query
@@ -1311,7 +1314,7 @@ RETURN o, r, v`;
                   {copySuccess ? 'Copied!' : 'Copy Query'}
                 </button>
               </div>
-              <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto overflow-y-auto border border-ag-dark-border whitespace-pre-wrap break-words">
+              <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto border border-ag-dark-border whitespace-pre-wrap break-words">
                 {getCypherQuery()}
               </pre>
             </div>

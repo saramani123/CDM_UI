@@ -64,6 +64,7 @@ export const getVariableFieldOptions = (allData: VariableData[] = []) => {
   
   return {
     part: [...new Set(variablesData.map((item: VariableData) => item.part))].filter(Boolean).sort() as string[],
+    section: [...new Set(variablesData.map((item: VariableData) => item.section))].filter(Boolean).sort() as string[],
     group: [...new Set(variablesData.map((item: VariableData) => item.group))].filter(Boolean).sort() as string[],
     formatI: [...new Set(variablesData.map((item: VariableData) => item.formatI))].filter(Boolean).sort() as string[],
     formatII: [...new Set(variablesData.map((item: VariableData) => item.formatII))].filter(Boolean).sort() as string[],

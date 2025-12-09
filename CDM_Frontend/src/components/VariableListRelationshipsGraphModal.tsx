@@ -273,7 +273,7 @@ RETURN v, r, l`;
               group: node.group || 'Unknown'
             });
             setSelectedEdge(null);
-            setShowDetailsPanel(true);
+            // Don't auto-open panel - user will click eye icon
           }
         } else if (params.edges.length > 0) {
           const edgeId = params.edges[0];
@@ -281,8 +281,13 @@ RETURN v, r, l`;
           if (edge) {
             setSelectedEdge(edge);
             setSelectedNode(null);
-            setShowDetailsPanel(true);
+            // Don't auto-open panel - user will click eye icon
           }
+        } else {
+          // Clicked on empty space - deselect and close panel
+          setSelectedNode(null);
+          setSelectedEdge(null);
+          setShowDetailsPanel(false);
         }
       });
 
@@ -360,49 +365,31 @@ RETURN v, r, l`;
         </div>
 
         {/* Graph Container */}
-        <div className="flex-1 relative bg-ag-dark-bg">
+        <div className="flex-1 relative bg-ag-dark-bg p-6">
           {isLoading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg bg-opacity-75 z-10">
+            <div className="absolute inset-6 flex items-center justify-center bg-ag-dark-bg/90 z-10 rounded border border-ag-dark-border">
               <div className="text-ag-dark-text">Loading graph...</div>
             </div>
           )}
           
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-ag-dark-bg bg-opacity-75 z-10">
+            <div className="absolute inset-6 flex items-center justify-center bg-ag-dark-bg/90 z-10 rounded border border-ag-dark-border">
               <div className="text-red-400">{error}</div>
             </div>
           )}
 
           <div 
             ref={containerRef}
-            className="w-full h-full"
+            className="w-full h-full bg-ag-dark-bg border border-ag-dark-border rounded"
             style={{ minHeight: '400px' }}
           />
 
-          {/* Zoom Controls */}
-          <div className="absolute bottom-4 right-4 flex flex-col gap-2">
-            <button
-              onClick={() => networkRef.current?.moveTo({ scale: (networkRef.current?.getScale() || 1) * 1.2 })}
-              className="bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
-              title="Zoom In"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => networkRef.current?.moveTo({ scale: (networkRef.current?.getScale() || 1) * 0.8 })}
-              className="bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
-              title="Zoom Out"
-            >
-              <Minus className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Eye Icon - Show details panel */}
+          {/* Eye Icon - Show details panel - appears in top right of graph view when node/edge is selected */}
           {(selectedNode || selectedEdge) && (
-            <div className="absolute top-4 right-4">
+            <div className="absolute top-12 right-12 z-30">
               <button
                 onClick={() => setShowDetailsPanel(!showDetailsPanel)}
-                className={`bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors ${
+                className={`bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors shadow-lg ${
                   showDetailsPanel ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent' : ''
                 }`}
                 title={showDetailsPanel ? "Hide Details" : "Show Details"}
@@ -411,87 +398,166 @@ RETURN v, r, l`;
               </button>
             </div>
           )}
+
+          {/* Zoom Controls - Adjust position when details panel is open */}
+          <div 
+            className={`absolute bottom-10 flex flex-col gap-2 z-20 transition-all ${
+              showDetailsPanel ? 'right-[22rem]' : 'right-10'
+            }`}
+          >
+            <button
+              onClick={() => networkRef.current?.moveTo({ scale: (networkRef.current?.getScale() || 1) * 1.2 })}
+              className="bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors shadow-lg"
+              title="Zoom In"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => networkRef.current?.moveTo({ scale: (networkRef.current?.getScale() || 1) * 0.8 })}
+              className="bg-ag-dark-surface border border-ag-dark-border rounded p-2 text-ag-dark-text hover:bg-ag-dark-bg transition-colors shadow-lg"
+              title="Zoom Out"
+            >
+              <Minus className="w-4 h-4" />
+            </button>
+          </div>
+
+
+          {/* Details Side Panel - Positioned on the right */}
+          {showDetailsPanel && (selectedNode || selectedEdge) && (
+            <div className="absolute top-6 right-6 bottom-6 w-80 bg-ag-dark-surface border border-ag-dark-border rounded shadow-xl z-30 flex flex-col">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between p-4 border-b border-ag-dark-border">
+                <h3 className="text-sm font-semibold text-ag-dark-text">
+                  {selectedNode ? 'Node Properties' : 'Edge Properties'}
+                </h3>
+                <button
+                  onClick={() => setShowDetailsPanel(false)}
+                  className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-text hover:bg-ag-dark-bg rounded transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Panel Content */}
+              <div className="flex-1 overflow-y-auto p-4">
+                {selectedNode && (
+                  <div className="space-y-4">
+                    {selectedNode.group && (
+                      <div className="mb-4">
+                        <span className="inline-block px-3 py-1 rounded text-xs font-medium bg-ag-dark-accent/20 text-ag-dark-accent border border-ag-dark-accent/30">
+                          {selectedNode.group}
+                        </span>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-ag-dark-text-secondary uppercase mb-3 block">
+                        Properties
+                      </label>
+                      {selectedNode.label && (
+                        <div className="border-b border-ag-dark-border pb-2">
+                          <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">Label</div>
+                          <div className="text-sm text-ag-dark-text break-words">{selectedNode.label}</div>
+                        </div>
+                      )}
+                      {selectedNode.properties && Object.entries(selectedNode.properties).map(([key, value]) => (
+                        <div key={key} className="border-b border-ag-dark-border pb-2 last:border-b-0">
+                          <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">{key}</div>
+                          <div className="text-sm text-ag-dark-text break-words">{String(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selectedEdge && (
+                  <div className="space-y-4">
+                    {selectedEdge.label && (
+                      <div className="mb-4">
+                        <span className="inline-block px-3 py-1 rounded text-xs font-medium bg-ag-dark-accent/20 text-ag-dark-accent border border-ag-dark-accent/30">
+                          {selectedEdge.label || selectedEdge.type || 'Unknown'}
+                        </span>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-ag-dark-text-secondary uppercase mb-3 block">
+                        Properties
+                      </label>
+                      {selectedEdge.properties && Object.entries(selectedEdge.properties).map(([key, value]) => (
+                        <div key={key} className="border-b border-ag-dark-border pb-2 last:border-b-0">
+                          <div className="text-xs font-medium text-ag-dark-text-secondary mb-1">{key}</div>
+                          <div className="text-sm text-ag-dark-text break-words">{String(value)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Details Panel */}
-        {showDetailsPanel && (selectedNode || selectedEdge) && (
-          <div className="border-t border-ag-dark-border p-4 bg-ag-dark-surface max-h-64 overflow-y-auto">
-            {selectedNode && (
-              <div>
-                <h3 className="text-sm font-semibold text-ag-dark-text mb-2">Node Properties</h3>
-                <div className="space-y-1 text-sm">
-                  <div><span className="text-ag-dark-text-secondary">Label:</span> <span className="text-ag-dark-text">{selectedNode.label}</span></div>
-                  <div><span className="text-ag-dark-text-secondary">Type:</span> <span className="text-ag-dark-text">{selectedNode.group}</span></div>
-                  {selectedNode.properties && Object.entries(selectedNode.properties).map(([key, value]) => (
-                    <div key={key}>
-                      <span className="text-ag-dark-text-secondary">{key}:</span> <span className="text-ag-dark-text">{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {selectedEdge && (
-              <div>
-                <h3 className="text-sm font-semibold text-ag-dark-text mb-2">Edge Properties</h3>
-                <div className="space-y-1 text-sm">
-                  <div><span className="text-ag-dark-text-secondary">Type:</span> <span className="text-ag-dark-text">{selectedEdge.label || selectedEdge.type || 'Unknown'}</span></div>
-                  {selectedEdge.properties && Object.entries(selectedEdge.properties).map(([key, value]) => (
-                    <div key={key}>
-                      <span className="text-ag-dark-text-secondary">{key}:</span> <span className="text-ag-dark-text">{String(value)}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="flex items-center justify-between p-4 border-t border-ag-dark-border">
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowCypherQuery(!showCypherQuery)}
-              className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
-            >
-              View Cypher Query
-              {showCypherQuery ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
-            {showCypherQuery && (
+        {/* Footer with Cypher Query Section - Always visible at bottom, expands upwards */}
+        <div className="relative flex-shrink-0">
+          {/* Action Buttons - Always visible at bottom */}
+          <div className="px-6 py-3 flex items-center justify-between border-t border-ag-dark-border bg-ag-dark-surface">
+            <div className="flex gap-2">
               <button
-                onClick={copyCypherToClipboard}
-                className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
-                title="Copy Cypher Query"
+                onClick={() => setShowCypherQuery(!showCypherQuery)}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-border rounded text-sm font-medium text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
               >
-                <Copy className="w-4 h-4" />
-                {copySuccess ? 'Copied!' : 'Copy'}
+                {showCypherQuery ? (
+                  <>
+                    <ChevronUp className="w-4 h-4" />
+                    Hide Cypher Query
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4" />
+                    View Cypher Query
+                  </>
+                )}
               </button>
-            )}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={openNeo4jConsole}
+                className="inline-flex items-center gap-2 px-3 py-2 border border-ag-dark-accent text-ag-dark-accent rounded text-sm font-medium hover:bg-ag-dark-accent hover:text-white transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View in Neo4j Console
+              </button>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={openNeo4jConsole}
-              className="px-4 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
-            >
-              <ExternalLink className="w-4 h-4" />
-              View in Neo4j Console
-            </button>
-            <button
-              onClick={onClose}
-              className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
 
-        {/* Cypher Query Display */}
-        {showCypherQuery && (
-          <div className="border-t border-ag-dark-border p-4 bg-ag-dark-bg max-h-48 overflow-y-auto">
-            <pre className="text-sm text-ag-dark-text font-mono whitespace-pre-wrap">
-              {cypherQuery}
-            </pre>
-          </div>
-        )}
+          {/* Cypher Query Display - Expandable upwards from bottom */}
+          {showCypherQuery && (
+            <div className="absolute bottom-full left-0 right-0 px-6 pb-4 border-t border-ag-dark-border bg-ag-dark-bg overflow-y-auto shadow-lg" style={{ maxHeight: '20vh', minHeight: '120px' }}>
+              <div className="flex items-center justify-between mb-2 pt-4">
+                <label className="text-xs font-medium text-ag-dark-text-secondary uppercase">
+                  Cypher Query
+                </label>
+                <button
+                  onClick={copyCypherToClipboard}
+                  className={`text-xs transition-colors px-2 py-1 rounded ${
+                    copySuccess ? 'text-ag-dark-success' : 'text-ag-dark-accent hover:text-ag-dark-accent-hover hover:bg-ag-dark-surface'
+                  }`}
+                  title="Copy Cypher Query"
+                >
+                  <Copy className="w-4 h-4 inline mr-1" />
+                  {copySuccess ? 'Copied!' : 'Copy Query'}
+                </button>
+              </div>
+              <pre className="text-xs text-ag-dark-text font-mono bg-ag-dark-surface p-3 rounded overflow-x-auto border border-ag-dark-border whitespace-pre-wrap break-words">
+                {cypherQuery}
+              </pre>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

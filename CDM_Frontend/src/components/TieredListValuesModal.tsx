@@ -16,6 +16,7 @@ interface TieredListValuesModalProps {
 interface TieredValueRow {
   id: string;
   values: string[]; // One value per tier column
+  variations: string[]; // One variation per tier column (abbreviated versions)
 }
 
 export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
@@ -30,11 +31,11 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [tieredValueRows, setTieredValueRows] = useState<TieredValueRow[]>([]);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number; isVariation?: boolean } | null>(null);
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Build column headers: only tier names (no parent list name)
+  // Build column headers: tier names + variation columns
   const columnHeaders: string[] = React.useMemo(() => {
     const headers: string[] = [];
     // Add tier names from props (Tier 1, Tier 2, etc.)
@@ -46,13 +47,29 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     return headers;
   }, [tierNames]);
 
+  // Build variation column headers: one for each tier
+  const variationColumnHeaders: string[] = React.useMemo(() => {
+    return columnHeaders.map(header => `${header} Value Variations`);
+  }, [columnHeaders]);
+
   const loadTieredValues = useCallback(async () => {
     if (!selectedList) return;
     
     try {
       // Use initialValues if provided (from parent component's local state)
-      // Otherwise, load from backend
-      const existingValues = initialValues || await getTieredListValues(selectedList.id);
+      // Check if initialValues is explicitly provided (not undefined/null), even if it's an empty object
+      // This ensures that unsaved local changes persist when reopening the modal
+      // The parent component (ListMetadataPanel) always passes tieredListValues as initialValues,
+      // so if it's undefined, it means we should load from backend
+      let existingValues: Record<string, string[][]>;
+      if (initialValues !== undefined && initialValues !== null) {
+        // initialValues was explicitly provided (could be empty object {} for cleared values)
+        // Use it directly - this preserves unsaved local changes
+        existingValues = initialValues;
+      } else {
+        // initialValues not provided, load from backend
+        existingValues = await getTieredListValues(selectedList.id);
+      }
       
       // Convert the backend format to rows
       // Backend format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
@@ -71,7 +88,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             }
             rows.push({
               id: `row-${Date.now()}-${rows.length}`,
-              values: rowValues.slice(0, columnHeaders.length)
+              values: rowValues.slice(0, columnHeaders.length),
+              variations: columnHeaders.map(() => '') // Initialize variations as empty
             });
           });
         });
@@ -81,7 +99,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       while (rows.length < 100) {
         rows.push({
           id: `row-${Date.now()}-${rows.length}`,
-          values: columnHeaders.map(() => '')
+          values: columnHeaders.map(() => ''),
+          variations: columnHeaders.map(() => '')
         });
       }
       
@@ -93,7 +112,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       for (let i = 0; i < 100; i++) {
         initialRows.push({ 
           id: `row-${i + 1}`, 
-          values: columnHeaders.map(() => '') 
+          values: columnHeaders.map(() => ''),
+          variations: columnHeaders.map(() => '')
         });
       }
       setTieredValueRows(initialRows);
@@ -115,7 +135,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const handleAddRow = (index?: number) => {
     const newRow: TieredValueRow = {
       id: Date.now().toString(),
-      values: columnHeaders.map(() => '')
+      values: columnHeaders.map(() => ''),
+      variations: columnHeaders.map(() => '')
     };
     if (index !== undefined) {
       setTieredValueRows(prev => [...prev.slice(0, index), newRow, ...prev.slice(index)]);
@@ -128,8 +149,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     setTieredValueRows(prev => prev.filter(row => row.id !== rowId));
   };
 
-  const handleCellClick = (rowId: string, colIndex: number, currentValue: string) => {
-    setEditingCell({ rowId, colIndex });
+  const handleCellClick = (rowId: string, colIndex: number, currentValue: string, isVariation: boolean = false) => {
+    setEditingCell({ rowId, colIndex, isVariation });
     setEditValue(currentValue);
   };
 
@@ -159,14 +180,20 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       const values = line.split('\t');
       
       const newValues = [...row.values];
+      const newVariations = [...row.variations];
       values.forEach((value, colOffset) => {
         const colIndex = startColIndex + colOffset;
-        if (colIndex < newValues.length) {
-          newValues[colIndex] = value.trim();
+        // Alternate between values and variations columns
+        const isVariation = colOffset % 2 === 1;
+        const actualColIndex = Math.floor(colOffset / 2);
+        if (isVariation && actualColIndex < newVariations.length) {
+          newVariations[actualColIndex] = value.trim();
+        } else if (!isVariation && actualColIndex < newValues.length) {
+          newValues[actualColIndex] = value.trim();
         }
       });
       
-      return { ...row, values: newValues };
+      return { ...row, values: newValues, variations: newVariations };
     });
     
     // Add more rows if needed
@@ -177,10 +204,14 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         const line = lines[lineIndex];
         const values = line.split('\t');
         const newValues = columnHeaders.map((_, colIndex) => {
-          const colOffset = colIndex - startColIndex;
+          const colOffset = colIndex * 2 - startColIndex; // *2 because we have value + variation columns
           return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
         });
-        additionalRows.push({ id: `row-${i + 1}`, values: newValues });
+        const newVariations = columnHeaders.map((_, colIndex) => {
+          const colOffset = colIndex * 2 + 1 - startColIndex; // +1 for variation column
+          return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
+        });
+        additionalRows.push({ id: `row-${i + 1}`, values: newValues, variations: newVariations });
       }
       setTieredValueRows([...newRows, ...additionalRows]);
     } else {
@@ -193,11 +224,19 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
 
   const handleCellBlur = () => {
     if (editingCell) {
+      const currentEditValue = editValue; // Capture current value
+      const currentEditingCell = editingCell; // Capture current cell info
       setTieredValueRows(prev => prev.map(row => {
-        if (row.id === editingCell.rowId) {
-          const newValues = [...row.values];
-          newValues[editingCell.colIndex] = editValue;
-          return { ...row, values: newValues };
+        if (row.id === currentEditingCell.rowId) {
+          if (currentEditingCell.isVariation) {
+            const newVariations = [...row.variations];
+            newVariations[currentEditingCell.colIndex] = currentEditValue;
+            return { ...row, variations: newVariations };
+          } else {
+            const newValues = [...row.values];
+            newValues[currentEditingCell.colIndex] = currentEditValue;
+            return { ...row, values: newValues };
+          }
         }
         return row;
       }));
@@ -206,17 +245,55 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     }
   };
 
-  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string, colIndex: number) => {
+  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string, colIndex: number, isVariation: boolean = false) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      // Move to next row, same column
-      const currentRowIndex = tieredValueRows.findIndex(r => r.id === rowId);
-      if (currentRowIndex < tieredValueRows.length - 1) {
-        const nextRow = tieredValueRows[currentRowIndex + 1];
-        setEditingCell({ rowId: nextRow.id, colIndex });
-        setEditValue(nextRow.values[colIndex] || '');
+      // Save current cell first before moving
+      const currentEditValue = editValue;
+      const currentEditingCell = editingCell;
+      
+      if (currentEditingCell) {
+        // Update the row with the current edit value
+        setTieredValueRows(prev => {
+          const updated = prev.map(row => {
+            if (row.id === currentEditingCell.rowId) {
+              if (currentEditingCell.isVariation) {
+                const newVariations = [...row.variations];
+                newVariations[currentEditingCell.colIndex] = currentEditValue;
+                return { ...row, variations: newVariations };
+              } else {
+                const newValues = [...row.values];
+                newValues[currentEditingCell.colIndex] = currentEditValue;
+                return { ...row, values: newValues };
+              }
+            }
+            return row;
+          });
+          
+          // Move to next row using the updated rows
+          const currentRowIndex = updated.findIndex(r => r.id === rowId);
+          if (currentRowIndex < updated.length - 1) {
+            const nextRow = updated[currentRowIndex + 1];
+            setEditingCell({ rowId: nextRow.id, colIndex, isVariation });
+            setEditValue(isVariation ? (nextRow.variations[colIndex] || '') : (nextRow.values[colIndex] || ''));
+          } else {
+            setEditingCell(null);
+            setEditValue('');
+          }
+          
+          return updated;
+        });
       } else {
-        handleCellBlur();
+        // No cell currently editing, just move to next row
+        const currentRowIndex = tieredValueRows.findIndex(r => r.id === rowId);
+        if (currentRowIndex < tieredValueRows.length - 1) {
+          const nextRow = tieredValueRows[currentRowIndex + 1];
+          setEditingCell({ rowId: nextRow.id, colIndex, isVariation });
+          setEditValue(isVariation ? (nextRow.variations[colIndex] || '') : (nextRow.values[colIndex] || ''));
+        } else {
+          setEditingCell(null);
+          setEditValue('');
+        }
       }
     } else if (e.key === 'Tab') {
       e.preventDefault();
@@ -343,6 +420,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     const rowsWithTier2PlusValues: number[] = [];
     const rowsWithMissingTier1: number[] = [];
     
+    // Also validate that variations can only exist if the corresponding value exists
+    const rowsWithVariationsButNoValue: number[] = [];
+    
     tieredValueRows.forEach((row, rowIndex) => {
       const tier1Value = row.values[0] ? row.values[0].trim() : '';
       const tier2PlusValues = row.values.slice(1).filter(v => v && v.trim());
@@ -352,6 +432,19 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         rowsWithTier2PlusValues.push(rowIndex + 1);
         rowsWithMissingTier1.push(rowIndex + 1);
       }
+      
+      // Check if variations exist without corresponding values
+      // Tier 1 variation requires Tier 1 value
+      if (row.variations[0] && row.variations[0].trim() && !tier1Value) {
+        rowsWithVariationsButNoValue.push(rowIndex + 1);
+      }
+      // Tier 2+ variations require corresponding tier values
+      row.variations.slice(1).forEach((variation, index) => {
+        const correspondingValue = row.values[index + 1] ? row.values[index + 1].trim() : '';
+        if (variation && variation.trim() && !correspondingValue) {
+          rowsWithVariationsButNoValue.push(rowIndex + 1);
+        }
+      });
     });
     
     // If validation fails, show error and prevent save
@@ -362,10 +455,18 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       return;
     }
     
+    if (rowsWithVariationsButNoValue.length > 0) {
+      const rowNumbers = [...new Set(rowsWithVariationsButNoValue)].join(', ');
+      alert(`Cannot save: Rows ${rowNumbers} have variations but are missing the corresponding values. Please enter values before adding variations.`);
+      return;
+    }
+    
     // Convert rows to the format expected by backend
     // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
     // Format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
+    // Also include variations: { "Tier1Value": { values: [...], variations: { "Tier1Value": ["var1", "var2"], "Tier2Value1": ["var3"], ... } } }
     const tieredValues: Record<string, string[][]> = {};
+    const variations: Record<string, Record<string, string[]>> = {}; // Changed to array to support multiple variations per value
     
     tieredValueRows.forEach(row => {
       if (row.values[0] && row.values[0].trim()) { // Tier 1 value (first column)
@@ -378,13 +479,52 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           }
           // Add the array of tier values (Tier 2, Tier 3, etc.)
           tieredValues[tier1Value].push(remainingTierValues);
+          
+          // Store variations for tier 1 value if present (can be comma-separated)
+          if (row.variations[0] && row.variations[0].trim()) {
+            if (!variations[tier1Value]) {
+              variations[tier1Value] = {};
+            }
+            // Parse comma-separated variations
+            const tier1Variations = row.variations[0].split(',').map(v => v.trim()).filter(v => v);
+            if (tier1Variations.length > 0) {
+              if (!variations[tier1Value][tier1Value]) {
+                variations[tier1Value][tier1Value] = [];
+              }
+              variations[tier1Value][tier1Value].push(...tier1Variations);
+            }
+          }
+          
+          // Store variations for tier 2+ values (can be comma-separated)
+          remainingTierValues.forEach((value, index) => {
+            const variationIndex = index + 1; // +1 because variations[0] is for tier 1
+            if (row.variations[variationIndex] && row.variations[variationIndex].trim()) {
+              if (!variations[tier1Value]) {
+                variations[tier1Value] = {};
+              }
+              // Parse comma-separated variations
+              const valueVariations = row.variations[variationIndex].split(',').map(v => v.trim()).filter(v => v);
+              if (valueVariations.length > 0) {
+                if (!variations[tier1Value][value]) {
+                  variations[tier1Value][value] = [];
+                }
+                variations[tier1Value][value].push(...valueVariations);
+              }
+            }
+          });
         }
       }
     });
 
+    // Include variations in the save data as a special key
+    const saveData: any = tieredValues;
+    if (Object.keys(variations).length > 0) {
+      saveData._variations = variations;
+    }
+
     // Only save if there are values
     if (Object.keys(tieredValues).length > 0) {
-      onSave(tieredValues);
+      onSave(saveData);
     } else {
       // If no values, still save to clear existing tiered values
       onSave({});
@@ -551,6 +691,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             // Handle paste at table level if a cell is selected
             if (editingCell) {
               e.preventDefault();
+              // For paste, we need to map the logical column index to the grid column
+              // Since we have value + variation columns, we need to handle this differently
+              // For now, paste will work on the current column type (value or variation)
               handlePaste(e, editingCell.rowId, editingCell.colIndex);
             }
           }}
@@ -558,28 +701,33 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           <div className="border border-ag-dark-border rounded">
             {/* Table Header */}
             <div className="sticky top-0 bg-ag-dark-bg border-b border-ag-dark-border z-10">
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 250px) auto` }}>
+              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 2}, 250px) auto` }}>
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                 {columnHeaders.map((header, index) => (
-                  <div key={index} className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
-                    <span>{header}</span>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleSortColumn(index, 'asc')}
-                        className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
-                        title="Sort A-Z"
-                      >
-                        <ArrowUpAZ className="w-3 h-3" />
-                      </button>
-                      <button
-                        onClick={() => handleSortColumn(index, 'desc')}
-                        className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
-                        title="Sort Z-A"
-                      >
-                        <ArrowDownZA className="w-3 h-3" />
-                      </button>
+                  <React.Fragment key={index}>
+                    <div className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
+                      <span>{header}</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => handleSortColumn(index, 'asc')}
+                          className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
+                          title="Sort A-Z"
+                        >
+                          <ArrowUpAZ className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleSortColumn(index, 'desc')}
+                          className="p-0.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded"
+                          title="Sort Z-A"
+                        >
+                          <ArrowDownZA className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                    <div className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
+                      <span>{variationColumnHeaders[index]}</span>
+                    </div>
+                  </React.Fragment>
                 ))}
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
               </div>
@@ -591,35 +739,165 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                   <div 
                     key={row.id} 
                     className="grid gap-2 p-2 hover:bg-ag-dark-bg/50"
-                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length}, 250px) auto` }}
+                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 2}, 250px) auto` }}
                   >
                     <div className="flex items-center text-xs text-ag-dark-text-secondary">
                       {rowIndex + 1}
                     </div>
                     {row.values.map((value, colIndex) => (
-                      <div key={colIndex} className="flex items-center">
-                        {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex ? (
-                          <input
-                            type="text"
-                            value={editValue}
-                            onChange={(e) => handleCellChange(e.target.value)}
-                            onBlur={handleCellBlur}
-                            onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex)}
-                            onPaste={(e) => handlePaste(e, row.id, colIndex)}
-                            autoFocus
-                            className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
-                          />
-                        ) : (
-                          <div
-                            onClick={() => handleCellClick(row.id, colIndex, value)}
-                            className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
-                            tabIndex={0}
-                            onFocus={() => handleCellClick(row.id, colIndex, value)}
-                          >
-                            {value || <span className="text-ag-dark-text-secondary opacity-0">Click to edit</span>}
-                          </div>
-                        )}
-                      </div>
+                      <React.Fragment key={colIndex}>
+                        {/* Value Column */}
+                        <div className="flex items-center">
+                          {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex && !editingCell?.isVariation ? (
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => handleCellChange(e.target.value)}
+                              onBlur={handleCellBlur}
+                              onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, false)}
+                              onPaste={(e) => handlePaste(e, row.id, colIndex)}
+                              autoFocus
+                              className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
+                            />
+                          ) : (
+                            <div
+                              onClick={() => {
+                                // Save any currently editing cell before switching
+                                if (editingCell) {
+                                  const currentEditValue = editValue;
+                                  const currentEditingCell = editingCell;
+                                  setTieredValueRows(prev => prev.map(r => {
+                                    if (r.id === currentEditingCell.rowId) {
+                                      if (currentEditingCell.isVariation) {
+                                        const newVariations = [...r.variations];
+                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, variations: newVariations };
+                                      } else {
+                                        const newValues = [...r.values];
+                                        newValues[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, values: newValues };
+                                      }
+                                    }
+                                    return r;
+                                  }));
+                                  setEditingCell(null);
+                                  setEditValue('');
+                                }
+                                // Small delay to ensure state is saved before switching
+                                setTimeout(() => {
+                                  handleCellClick(row.id, colIndex, value, false);
+                                }, 0);
+                              }}
+                              className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
+                              tabIndex={0}
+                              onFocus={() => {
+                                // Save any currently editing cell before switching
+                                if (editingCell) {
+                                  const currentEditValue = editValue;
+                                  const currentEditingCell = editingCell;
+                                  setTieredValueRows(prev => prev.map(r => {
+                                    if (r.id === currentEditingCell.rowId) {
+                                      if (currentEditingCell.isVariation) {
+                                        const newVariations = [...r.variations];
+                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, variations: newVariations };
+                                      } else {
+                                        const newValues = [...r.values];
+                                        newValues[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, values: newValues };
+                                      }
+                                    }
+                                    return r;
+                                  }));
+                                  setEditingCell(null);
+                                  setEditValue('');
+                                }
+                                // Small delay to ensure state is saved before switching
+                                setTimeout(() => {
+                                  handleCellClick(row.id, colIndex, value, false);
+                                }, 0);
+                              }}
+                            >
+                              {value || <span className="text-ag-dark-text-secondary opacity-0">Click to edit</span>}
+                            </div>
+                          )}
+                        </div>
+                        {/* Variation Column */}
+                        <div className="flex items-center">
+                          {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex && editingCell?.isVariation ? (
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => handleCellChange(e.target.value)}
+                              onBlur={handleCellBlur}
+                              onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, true)}
+                              autoFocus
+                              className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
+                            />
+                          ) : (
+                            <div
+                              onClick={() => {
+                                // Save any currently editing cell before switching
+                                if (editingCell) {
+                                  const currentEditValue = editValue;
+                                  const currentEditingCell = editingCell;
+                                  setTieredValueRows(prev => prev.map(r => {
+                                    if (r.id === currentEditingCell.rowId) {
+                                      if (currentEditingCell.isVariation) {
+                                        const newVariations = [...r.variations];
+                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, variations: newVariations };
+                                      } else {
+                                        const newValues = [...r.values];
+                                        newValues[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, values: newValues };
+                                      }
+                                    }
+                                    return r;
+                                  }));
+                                  setEditingCell(null);
+                                  setEditValue('');
+                                }
+                                // Small delay to ensure state is saved before switching
+                                setTimeout(() => {
+                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', true);
+                                }, 0);
+                              }}
+                              className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
+                              tabIndex={0}
+                              onFocus={() => {
+                                // Save any currently editing cell before switching
+                                if (editingCell) {
+                                  const currentEditValue = editValue;
+                                  const currentEditingCell = editingCell;
+                                  setTieredValueRows(prev => prev.map(r => {
+                                    if (r.id === currentEditingCell.rowId) {
+                                      if (currentEditingCell.isVariation) {
+                                        const newVariations = [...r.variations];
+                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, variations: newVariations };
+                                      } else {
+                                        const newValues = [...r.values];
+                                        newValues[currentEditingCell.colIndex] = currentEditValue;
+                                        return { ...r, values: newValues };
+                                      }
+                                    }
+                                    return r;
+                                  }));
+                                  setEditingCell(null);
+                                  setEditValue('');
+                                }
+                                // Small delay to ensure state is saved before switching
+                                setTimeout(() => {
+                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', true);
+                                }, 0);
+                              }}
+                            >
+                              {row.variations[colIndex] || <span className="text-ag-dark-text-secondary opacity-0">Click to edit</span>}
+                            </div>
+                          )}
+                        </div>
+                      </React.Fragment>
                     ))}
                     <div className="flex items-center gap-1">
                       <button

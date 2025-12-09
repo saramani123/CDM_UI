@@ -6,12 +6,13 @@ interface SingleListValuesModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedList: ListData | null;
-  onSave: (values: string[]) => void;
+  onSave: (values: string[], variations?: Record<string, string[]>) => void;
 }
 
 interface ListValueRow {
   id: string;
   value: string;
+  variation: string; // Abbreviated version of the value
 }
 
 export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
@@ -22,7 +23,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
 }) => {
   const [listValueRows, setListValueRows] = useState<ListValueRow[]>([]);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
-  const [editingCell, setEditingCell] = useState<{ rowId: string } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowId: string; isVariation?: boolean } | null>(null);
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -33,10 +34,11 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     const rows: ListValueRow[] = [];
     if (selectedList.listValuesList && selectedList.listValuesList.length > 0) {
       selectedList.listValuesList.forEach((lv: any) => {
-        rows.push({
-          id: lv.id || `row-${Date.now()}-${rows.length}`,
-          value: lv.value || ''
-        });
+      rows.push({
+        id: lv.id || `row-${Date.now()}-${rows.length}`,
+        value: lv.value || '',
+        variation: '' // Variations will be loaded from backend if available
+      });
       });
     }
     
@@ -44,7 +46,8 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     while (rows.length < 100) {
       rows.push({
         id: `row-${Date.now()}-${rows.length}`,
-        value: ''
+        value: '',
+        variation: ''
       });
     }
     
@@ -66,7 +69,8 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
   const handleAddRow = (index?: number) => {
     const newRow: ListValueRow = {
       id: Date.now().toString(),
-      value: ''
+      value: '',
+      variation: ''
     };
     if (index !== undefined) {
       setListValueRows(prev => [...prev.slice(0, index), newRow, ...prev.slice(index)]);
@@ -79,8 +83,8 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     setListValueRows(prev => prev.filter(row => row.id !== rowId));
   };
 
-  const handleCellClick = (rowId: string, currentValue: string) => {
-    setEditingCell({ rowId });
+  const handleCellClick = (rowId: string, currentValue: string, isVariation: boolean = false) => {
+    setEditingCell({ rowId, isVariation });
     setEditValue(currentValue);
   };
 
@@ -90,9 +94,13 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
 
   const handleCellBlur = () => {
     if (editingCell) {
+      const currentEditValue = editValue; // Capture current value
+      const currentEditingCell = editingCell; // Capture current cell info
       setListValueRows(prev => prev.map(row => 
-        row.id === editingCell.rowId 
-          ? { ...row, value: editValue }
+        row.id === currentEditingCell.rowId 
+          ? currentEditingCell.isVariation 
+            ? { ...row, variation: currentEditValue }
+            : { ...row, value: currentEditValue }
           : row
       ));
       setEditingCell(null);
@@ -100,24 +108,43 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     }
   };
 
-  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string) => {
+  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string, isVariation: boolean = false) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      handleCellBlur();
+      // Save current cell first before moving
+      if (editingCell) {
+        setListValueRows(prev => prev.map(row => 
+          row.id === editingCell.rowId 
+            ? editingCell.isVariation 
+              ? { ...row, variation: editValue }
+              : { ...row, value: editValue }
+            : row
+        ));
+      }
       // Move to next row
       const currentRowIndex = listValueRows.findIndex(r => r.id === rowId);
       if (currentRowIndex < listValueRows.length - 1) {
         const nextRow = listValueRows[currentRowIndex + 1];
-        setEditingCell({ rowId: nextRow.id });
-        setEditValue(nextRow.value || '');
+        setEditingCell({ rowId: nextRow.id, isVariation });
+        setEditValue(isVariation ? (nextRow.variation || '') : (nextRow.value || ''));
       } else {
         // Add new row if at the end
         handleAddRow();
         const newRowId = Date.now().toString();
-        setEditingCell({ rowId: newRowId });
+        setEditingCell({ rowId: newRowId, isVariation });
         setEditValue('');
       }
     } else if (e.key === 'Escape') {
+      // Save before canceling
+      if (editingCell) {
+        setListValueRows(prev => prev.map(row => 
+          row.id === editingCell.rowId 
+            ? editingCell.isVariation 
+              ? { ...row, variation: editValue }
+              : { ...row, value: editValue }
+            : row
+        ));
+      }
       setEditingCell(null);
       setEditValue('');
     }
@@ -203,7 +230,36 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
       return;
     }
 
-    onSave(values);
+    // Validate that variations only exist for rows with values
+    const rowsWithVariationsButNoValue: number[] = [];
+    listValueRows.forEach((row, index) => {
+      if (row.variation.trim() && !row.value.trim()) {
+        rowsWithVariationsButNoValue.push(index + 1);
+      }
+    });
+    
+    if (rowsWithVariationsButNoValue.length > 0) {
+      const rowNumbers = rowsWithVariationsButNoValue.join(', ');
+      alert(`Cannot save: Rows ${rowNumbers} have variations but are missing values. Please enter values before adding variations.`);
+      return;
+    }
+
+    // Extract variations for values that have them (can be comma-separated for multiple variations)
+    const variations: Record<string, string[]> = {};
+    listValueRows.forEach(row => {
+      if (row.value.trim() && row.variation.trim()) {
+        // Parse comma-separated variations
+        const varList = row.variation.split(',').map(v => v.trim()).filter(v => v);
+        if (varList.length > 0) {
+          if (!variations[row.value.trim()]) {
+            variations[row.value.trim()] = [];
+          }
+          variations[row.value.trim()].push(...varList);
+        }
+      }
+    });
+
+    onSave(values, Object.keys(variations).length > 0 ? variations : undefined);
     onClose();
   };
 
@@ -268,7 +324,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
       for (let i = rows.length; i < startRowIndex + lines.length; i++) {
         const lineIndex = i - startRowIndex;
         const value = lines[lineIndex] ? lines[lineIndex].trim() : '';
-        additionalRows.push({ id: `row-${Date.now()}-${i}`, value });
+        additionalRows.push({ id: `row-${Date.now()}-${i}`, value, variation: '' });
       }
       setListValueRows([...newRows, ...additionalRows]);
     } else {
@@ -284,6 +340,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
       <div 
         className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[50vw] max-w-[600px] h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-ag-dark-border flex-shrink-0">
@@ -325,7 +382,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
         <div className="flex-1 overflow-auto p-4">
           <div className="min-w-full">
             {/* Table Header */}
-            <div className="grid grid-cols-[50px_1fr_80px] gap-2 mb-2 pb-2 border-b border-ag-dark-border sticky top-0 bg-ag-dark-surface z-10">
+            <div className="grid grid-cols-[50px_1fr_1fr_80px] gap-2 mb-2 pb-2 border-b border-ag-dark-border sticky top-0 bg-ag-dark-surface z-10">
               <div className="text-sm font-medium text-ag-dark-text-secondary">#</div>
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium text-ag-dark-text">{listName}</span>
@@ -346,6 +403,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
                   </button>
                 </div>
               </div>
+              <div className="text-sm font-medium text-ag-dark-text">{listName} Value Variations</div>
               <div className="text-sm font-medium text-ag-dark-text-secondary">Actions</div>
             </div>
 
@@ -354,34 +412,105 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
               {listValueRows.map((row, index) => (
                 <div
                   key={row.id}
-                  className="grid grid-cols-[50px_1fr_80px] gap-2 items-center p-2 hover:bg-ag-dark-bg rounded"
+                  className="grid grid-cols-[50px_1fr_1fr_80px] gap-2 items-center p-2 hover:bg-ag-dark-bg rounded"
                 >
                   {/* Row Number */}
                   <div className="text-sm text-ag-dark-text-secondary">{index + 1}</div>
 
-                  {/* Editable Cell */}
+                  {/* Value Cell */}
                   <div
                     className="min-h-[32px] px-2 py-1 bg-ag-dark-bg border border-ag-dark-border rounded cursor-text focus-within:border-ag-dark-accent focus-within:ring-1 focus-within:ring-ag-dark-accent"
-                    onClick={() => handleCellClick(row.id, row.value)}
-                    onPaste={(e) => handlePaste(e, row.id)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      // Save any currently editing cell before switching
+                      if (editingCell && editingCell.rowId !== row.id) {
+                        const currentEditValue = editValue;
+                        const currentEditingCell = editingCell;
+                        setListValueRows(prev => prev.map(r => 
+                          r.id === currentEditingCell.rowId 
+                            ? currentEditingCell.isVariation 
+                              ? { ...r, variation: currentEditValue }
+                              : { ...r, value: currentEditValue }
+                            : r
+                        ));
+                      }
+                      // Start editing this cell
+                      handleCellClick(row.id, row.value, false);
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                    onPaste={(e) => {
+                      e.stopPropagation();
+                      handlePaste(e, row.id);
+                    }}
                   >
-                    {editingCell?.rowId === row.id ? (
+                    {editingCell?.rowId === row.id && !editingCell?.isVariation ? (
                       <input
                         type="text"
                         value={editValue}
                         onChange={(e) => handleCellChange(e.target.value)}
                         onBlur={handleCellBlur}
-                        onKeyDown={(e) => handleCellKeyDown(e, row.id)}
+                        onKeyDown={(e) => handleCellKeyDown(e, row.id, false)}
                         onPaste={(e) => {
                           e.stopPropagation();
                           handlePaste(e, row.id);
                         }}
                         className="w-full bg-transparent text-ag-dark-text outline-none"
                         autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
                       />
                     ) : (
                       <div className="min-h-[20px] text-ag-dark-text">
                         {row.value || <span className="text-ag-dark-text-secondary italic">Click to edit</span>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Variation Cell */}
+                  <div
+                    className="min-h-[32px] px-2 py-1 bg-ag-dark-bg border border-ag-dark-border rounded cursor-text focus-within:border-ag-dark-accent focus-within:ring-1 focus-within:ring-ag-dark-accent"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      // Save any currently editing cell before switching
+                      if (editingCell && editingCell.rowId !== row.id) {
+                        const currentEditValue = editValue;
+                        const currentEditingCell = editingCell;
+                        setListValueRows(prev => prev.map(r => 
+                          r.id === currentEditingCell.rowId 
+                            ? currentEditingCell.isVariation 
+                              ? { ...r, variation: currentEditValue }
+                              : { ...r, value: currentEditValue }
+                            : r
+                        ));
+                      }
+                      // Start editing this cell
+                      handleCellClick(row.id, row.variation, true);
+                    }}
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                    }}
+                  >
+                    {editingCell?.rowId === row.id && editingCell?.isVariation ? (
+                      <input
+                        type="text"
+                        value={editValue}
+                        onChange={(e) => handleCellChange(e.target.value)}
+                        onBlur={handleCellBlur}
+                        onKeyDown={(e) => handleCellKeyDown(e, row.id, true)}
+                        className="w-full bg-transparent text-ag-dark-text outline-none"
+                        autoFocus
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <div className="min-h-[20px] text-ag-dark-text">
+                        {row.variation || <span className="text-ag-dark-text-secondary italic">Click to edit</span>}
                       </div>
                     )}
                   </div>

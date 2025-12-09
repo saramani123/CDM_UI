@@ -1774,10 +1774,17 @@ function App() {
         appendToVariablesOrder(newVariableData.part, newVariableData.section, newVariableData.group, newVariableData.variable);
       }
       
+      // Refresh variables to show the new variable in the grid
+      await fetchVariables();
+      
       setIsAddVariableOpen(false);
+      
+      // Show success message
+      alert(`Variable "${newVariableData.variable}" created successfully!`);
     } catch (error) {
       console.error('Error creating variable:', error);
-      alert('Failed to create variable. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to create variable: ${errorMessage}. Please try again.`);
     }
   };
 
@@ -3130,16 +3137,19 @@ function App() {
       listsDataFormat.forEach(list => {
         if (list.tieredListsList && list.tieredListsList.length > 0) {
           const childIds = list.tieredListsList
-            .map(tier => {
+            .map((tier, index) => {
               const childList = listsDataFormat.find(l => l.id === tier.listId);
-              if (childList && childList.tierNumber) {
-                return { id: tier.listId!, tierNumber: childList.tierNumber };
+              if (childList) {
+                // Use tierNumber from childList if available, otherwise use index + 1 (Tier 1, Tier 2, etc.)
+                // The tierNumber from backend should match the tier property (1, 2, 3, etc.)
+                const tierNumber = childList.tierNumber || (index + 1);
+                return { id: tier.listId!, tierNumber: tierNumber };
               }
               return null;
             })
             .filter((item): item is { id: string; tierNumber: number } => item !== null && allListIds.has(item.id));
           
-          // Sort by tier number
+          // Sort by tier number to ensure correct order (Tier 1, Tier 2, etc.)
           childIds.sort((a, b) => a.tierNumber - b.tierNumber);
           
           if (childIds.length > 0) {

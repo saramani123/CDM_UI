@@ -6,6 +6,9 @@ import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { AddSetValueModal } from './AddSetValueModal';
+import { AddGroupingValueModal } from './AddGroupingValueModal';
+import { apiService } from '../services/api';
 
 interface VariableAttached {
   id: string;
@@ -44,23 +47,90 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     variableClarifiers: []
   };
 
-  // Get distinct Set values from actual lists data
+  // Local state to track Sets and Groupings (for immediate UI updates)
+  const [localSets, setLocalSets] = useState<string[]>([]);
+  const [localGroupings, setLocalGroupings] = useState<Record<string, string[]>>({});
+  
+  // Initialize local Sets and Groupings from allData
+  useEffect(() => {
+    const sets = [...new Set(allData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
+    setLocalSets(sets);
+    
+    const groupingsMap: Record<string, string[]> = {};
+    allData.forEach((list: any) => {
+      if (list.set && list.grouping) {
+        if (!groupingsMap[list.set]) {
+          groupingsMap[list.set] = [];
+        }
+        if (!groupingsMap[list.set].includes(list.grouping)) {
+          groupingsMap[list.set].push(list.grouping);
+        }
+      }
+    });
+    Object.keys(groupingsMap).forEach(set => {
+      groupingsMap[set].sort();
+    });
+    setLocalGroupings(groupingsMap);
+  }, [allData]);
+
+  // Get distinct Set values from actual lists data + local state
   const getDistinctSets = (): string[] => {
     const listsData = allData.length > 0 ? allData : [];
-    const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
-    return sets;
+    const setsFromData = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean) as string[];
+    const allSets = [...new Set([...setsFromData, ...localSets])].sort();
+    return allSets;
   };
 
-  // Get distinct Grouping values for a specific Set from actual lists data
+  // Get distinct Grouping values for a specific Set from actual lists data + local state
   const getGroupingsForSet = (set: string): string[] => {
     if (!set) return [];
     const listsData = allData.length > 0 ? allData : [];
-    const groupings = [...new Set(
+    const groupingsFromData = [...new Set(
       listsData
         .filter((list: any) => list.set === set && list.grouping)
         .map((list: any) => list.grouping)
-    )].filter(Boolean).sort() as string[];
-    return groupings;
+    )].filter(Boolean) as string[];
+    const groupingsFromLocal = localGroupings[set] || [];
+    const allGroupings = [...new Set([...groupingsFromData, ...groupingsFromLocal])].sort();
+    return allGroupings;
+  };
+
+  const handleAddSetValue = async (setValue: string) => {
+    try {
+      await apiService.addSetValue(setValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalSets(prev => {
+        if (!prev.includes(setValue)) {
+          return [...prev, setValue].sort();
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Set
+      handleChange('set', setValue);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
+    try {
+      await apiService.addGroupingValue(set, groupingValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalGroupings(prev => {
+        const currentGroupings = prev[set] || [];
+        if (!currentGroupings.includes(groupingValue)) {
+          return {
+            ...prev,
+            [set]: [...currentGroupings, groupingValue].sort()
+          };
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Grouping
+      handleChange('grouping', groupingValue);
+    } catch (error) {
+      throw error;
+    }
   };
 
   // Driver selections state
@@ -121,6 +191,10 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
+  
+  // Modal state for add set/grouping values
+  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
+  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   
   // Collapsible sections state
@@ -677,9 +751,21 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Set <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Set <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSetValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Set value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.set}
               onChange={(e) => handleChange('set', e.target.value)}
@@ -701,9 +787,22 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Grouping <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Grouping <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddGroupingValueModalOpen(true);
+                }}
+                disabled={!formData.set}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Grouping value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.grouping}
               onChange={(e) => handleChange('grouping', e.target.value)}
@@ -1233,6 +1332,26 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         onUpload={handleVariableAttachedCsvUpload}
       />
       
+      {/* Add Set Value Modal */}
+      <AddSetValueModal
+        isOpen={isAddSetValueModalOpen}
+        onClose={() => {
+          setIsAddSetValueModalOpen(false);
+        }}
+        onSave={handleAddSetValue}
+      />
+
+      {/* Add Grouping Value Modal */}
+      <AddGroupingValueModal
+        isOpen={isAddGroupingValueModalOpen}
+        onClose={() => {
+          setIsAddGroupingValueModalOpen(false);
+        }}
+        onSave={handleAddGroupingValue}
+        availableSets={getDistinctSets()}
+        defaultSet={formData.set || ''}
+      />
+
       <ListCsvUploadModal
         isOpen={isListValuesUploadOpen}
         onClose={() => setIsListValuesUploadOpen(false)}

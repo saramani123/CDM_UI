@@ -1,40 +1,40 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 
-interface AddGroupValueModalProps {
+interface AddGroupingValueModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (part: string, groupValue: string) => Promise<void>;
-  availableParts: string[];
-  defaultPart?: string; // Optional: Part value to pre-fill
+  onSave: (set: string, groupingValue: string) => Promise<void>;
+  availableSets: string[];
+  defaultSet?: string; // Optional: Set value to pre-fill
 }
 
-export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
+export const AddGroupingValueModal: React.FC<AddGroupingValueModalProps> = ({
   isOpen,
   onClose,
   onSave,
-  availableParts,
-  defaultPart = ''
+  availableSets,
+  defaultSet = ''
 }) => {
-  const [selectedPart, setSelectedPart] = useState('');
-  const [groupValue, setGroupValue] = useState('');
+  const [selectedSet, setSelectedSet] = useState('');
+  const [groupingValue, setGroupingValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Update selectedPart when defaultPart changes or modal opens
+  // Update selectedSet when defaultSet changes or modal opens
   React.useEffect(() => {
-    if (isOpen && defaultPart) {
-      setSelectedPart(defaultPart);
-    } else if (isOpen && !defaultPart) {
-      setSelectedPart('');
+    if (isOpen && defaultSet) {
+      setSelectedSet(defaultSet);
+    } else if (isOpen && !defaultSet) {
+      setSelectedSet('');
     }
-  }, [isOpen, defaultPart]);
+  }, [isOpen, defaultSet]);
 
   // Reset form when modal closes
   React.useEffect(() => {
     if (!isOpen) {
-      setSelectedPart('');
-      setGroupValue('');
+      setSelectedSet('');
+      setGroupingValue('');
       setError(null);
     }
   }, [isOpen]);
@@ -42,12 +42,12 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
   if (!isOpen) return null;
 
   const handleSave = async () => {
-    if (!selectedPart.trim()) {
-      setError('Please select a Part');
+    if (!selectedSet.trim()) {
+      setError('Please select a Set');
       return;
     }
-    if (!groupValue.trim()) {
-      setError('Please enter a Group value');
+    if (!groupingValue.trim()) {
+      setError('Please enter a Grouping value');
       return;
     }
 
@@ -55,19 +55,19 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
     setError(null);
 
     try {
-      await onSave(selectedPart.trim(), groupValue.trim());
-      setSelectedPart('');
-      setGroupValue('');
+      await onSave(selectedSet.trim(), groupingValue.trim());
+      setSelectedSet('');
+      setGroupingValue('');
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add group value');
+      setError(err instanceof Error ? err.message : 'Failed to add grouping value');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !isSaving && selectedPart && groupValue.trim()) {
+    if (e.key === 'Enter' && !isSaving && selectedSet && groupingValue.trim()) {
       handleSave();
     }
   };
@@ -77,7 +77,7 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
       <div className="bg-ag-dark-surface border border-ag-dark-border rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-ag-dark-text">
-            Add Group Value
+            Add Grouping Value
           </h3>
           <button
             onClick={onClose}
@@ -91,12 +91,12 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Part <span className="text-ag-dark-error">*</span>
+              Set <span className="text-ag-dark-error">*</span>
             </label>
             <select
-              value={selectedPart}
+              value={selectedSet}
               onChange={(e) => {
-                setSelectedPart(e.target.value);
+                setSelectedSet(e.target.value);
                 setError(null);
               }}
               className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
@@ -108,10 +108,10 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
               }}
               disabled={isSaving}
             >
-              <option value="">Select Part</option>
-              {availableParts.map((part) => (
-                <option key={part} value={part}>
-                  {part}
+              <option value="">Select Set</option>
+              {availableSets.map((set) => (
+                <option key={set} value={set}>
+                  {set}
                 </option>
               ))}
             </select>
@@ -119,17 +119,17 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
 
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              New Group Value <span className="text-ag-dark-error">*</span>
+              New Grouping Value <span className="text-ag-dark-error">*</span>
             </label>
             <input
               type="text"
-              value={groupValue}
+              value={groupingValue}
               onChange={(e) => {
-                setGroupValue(e.target.value);
+                setGroupingValue(e.target.value);
                 setError(null);
               }}
               onKeyPress={handleKeyPress}
-              placeholder="Enter Group value..."
+              placeholder="Enter Grouping value..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
               disabled={isSaving}
               autoFocus
@@ -150,7 +150,7 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || !selectedPart.trim() || !groupValue.trim()}
+            disabled={isSaving || !selectedSet.trim() || !groupingValue.trim()}
             className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <Save className="w-4 h-4" />
@@ -161,4 +161,3 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
     </div>
   );
 };
-

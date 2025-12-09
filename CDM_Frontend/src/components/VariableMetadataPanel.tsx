@@ -7,6 +7,7 @@ import { VariableObjectRelationshipModal } from './VariableObjectRelationshipMod
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
+import { AddSectionValueModal } from './AddSectionValueModal';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
@@ -85,6 +86,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   
   // State for add group value modal
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
+  
+  // State for add section value modal
+  const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
   
   // Storage key for part-group associations
   const PART_GROUP_STORAGE_KEY = 'cdm_variable_part_group_associations';
@@ -212,6 +216,27 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         group: [...new Set([...prev.group, groupValue])].sort()
       }));
     }
+  };
+
+  const handleAddSectionValue = async (sectionValue: string) => {
+    // Update dynamic field options to include the new section
+    setDynamicFieldOptions(prev => ({
+      ...prev,
+      section: [...new Set([...prev.section, sectionValue])].sort()
+    }));
+    
+    // Also update the form data to select the newly added section
+    handleChange('section', sectionValue);
+  };
+
+  // Get distinct sections from all variables data (irrespective of part/group)
+  const getDistinctSections = (): string[] => {
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const sectionsFromData = [...new Set(variablesData.map((item: any) => item.section))].filter(Boolean).sort() as string[];
+    
+    // Combine with dynamic field options
+    const allSections = [...new Set([...sectionsFromData, ...dynamicFieldOptions.section])].sort();
+    return allSections;
   };
 
   // Get distinct parts from variables data
@@ -428,9 +453,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     setFormData(prev => {
       const newData = { ...prev, [key]: value };
       
-      // When part changes, clear group (groups are part-specific)
+      // When part changes, clear section and group (sequential dependency)
       if (key === 'part' && value !== prev.part) {
-        console.log(`🟡 Part changed from ${prev.part} to ${value}, clearing group`);
+        console.log(`🟡 Part changed from ${prev.part} to ${value}, clearing section and group`);
+        newData.section = '';
+        newData.group = '';
+      }
+      
+      // When section changes, clear group (sequential dependency)
+      if (key === 'section' && value !== prev.section) {
+        console.log(`🟡 Section changed from ${prev.section} to ${value}, clearing group`);
         newData.group = '';
       }
       
@@ -941,99 +973,43 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Section
-            </label>
-            <input
-              ref={sectionInputRef}
-              type="text"
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Section
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSectionValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Section value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            <select
               value={formData.section}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastSectionChangeTimeRef.current = Date.now();
-                
-                // Update state
-                handleChange('section', newValue);
-                
-                // Aggressively maintain focus - use multiple strategies
-                const restoreFocus = () => {
-                  if (sectionInputRef.current) {
-                    sectionInputRef.current.focus();
-                    const maxPos = sectionInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    sectionInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                
-                // Try immediately
-                restoreFocus();
-                
-                // Also try after microtask
-                Promise.resolve().then(restoreFocus);
-                
-                // Also try after animation frame
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => {
-                // Also handle onChange as fallback
-                e.stopPropagation();
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onKeyPress={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onFocus={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-                isSectionInputFocusedRef.current = true;
-              }}
-              onBlur={(e) => {
-                // Prevent blur if it happened right after typing
-                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
-                
-                // Check if blur was intentional
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && 
-                  (relatedTarget.tagName === 'INPUT' || 
-                   relatedTarget.tagName === 'TEXTAREA' || 
-                   relatedTarget.isContentEditable);
-                
-                // If it was recent typing and user didn't click on another input, prevent blur
-                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // Force focus back immediately
-                  setTimeout(() => {
-                    if (sectionInputRef.current) {
-                      sectionInputRef.current.focus();
-                    }
-                  }, 0);
-                } else if (!wasRecentTyping) {
-                  isSectionInputFocusedRef.current = false;
-                }
-              }}
-              disabled={!isPanelEnabled}
-              placeholder="Enter section..."
-              className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              onChange={(e) => handleChange('section', e.target.value)}
+              disabled={!isPanelEnabled || !formData.part}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled || !formData.part ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-            />
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">Select Section</option>
+              {getDistinctSections().map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -1046,7 +1022,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 onClick={() => {
                   setIsAddGroupValueModalOpen(true);
                 }}
-                disabled={!isPanelEnabled}
+                disabled={!isPanelEnabled || !formData.part}
                 className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Add new Group value"
               >
@@ -1056,9 +1032,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <select
               value={formData.group}
               onChange={(e) => handleChange('group', e.target.value)}
-              disabled={!isPanelEnabled || !formData.part}
+              disabled={!isPanelEnabled || !formData.part || !formData.section}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled || !formData.part ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || !formData.part || !formData.section ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1816,6 +1792,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         }}
         onSave={handleAddGroupValue}
         availableParts={getDistinctParts()}
+        defaultPart={formData.part || ''}
+      />
+
+      {/* Add Section Value Modal */}
+      <AddSectionValueModal
+        isOpen={isAddSectionValueModalOpen}
+        onClose={() => {
+          setIsAddSectionValueModalOpen(false);
+        }}
+        onSave={handleAddSectionValue}
       />
 
       {/* Ontology Modal */}

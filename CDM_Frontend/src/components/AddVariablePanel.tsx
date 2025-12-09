@@ -4,6 +4,9 @@ import { getVariableFieldOptions, concatenateVariableDrivers } from '../data/var
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { AddSectionValueModal } from './AddSectionValueModal';
+import { AddGroupValueModal } from './AddGroupValueModal';
+import { AddFieldValueModal } from './AddFieldValueModal';
 import { useObjects } from '../hooks/useObjects';
 import { parseDriverField } from '../data/mockData';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
@@ -70,6 +73,14 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
+  
+  // Modal state for add section/group values
+  const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
+  const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
+  
+  // Modal state for add field value (Format I, Format II, G-Type, Default)
+  const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
+  const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
   
   // Get objects data - use hook if not provided as prop
   const { objects: objectsFromHook } = useObjects();
@@ -171,6 +182,98 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     return parts.length > 0 ? parts : dynamicFieldOptions.part;
   };
 
+  // Get distinct sections from all variables data (irrespective of part/group)
+  const getDistinctSections = (): string[] => {
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const sectionsFromData = [...new Set(variablesData.map((item: any) => item.section))].filter(Boolean).sort() as string[];
+    
+    // Combine with dynamic field options
+    const allSections = [...new Set([...sectionsFromData, ...dynamicFieldOptions.section])].sort();
+    return allSections;
+  };
+
+  const handleAddSectionValue = async (sectionValue: string) => {
+    console.log('handleAddSectionValue - adding section:', sectionValue);
+    
+    // Update dynamic field options to include the new section
+    setDynamicFieldOptions(prev => {
+      const updated = {
+        ...prev,
+        section: [...new Set([...prev.section, sectionValue])].sort()
+      };
+      console.log('Updated dynamicFieldOptions.section:', updated.section);
+      return updated;
+    });
+    
+    // Also update the form data to select the newly added section
+    // Use setFormData directly to ensure it's set immediately
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        section: sectionValue
+      };
+      console.log('Updated formData.section:', updated.section);
+      return updated;
+    });
+  };
+
+  const handleAddGroupValue = async (part: string, groupValue: string) => {
+    // Save to localStorage
+    const associations = getPartGroupAssociations();
+    if (!associations[part]) {
+      associations[part] = [];
+    }
+    if (!associations[part].includes(groupValue)) {
+      associations[part].push(groupValue);
+      associations[part].sort();
+      localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
+    }
+    
+    // Update dynamic field options if the current part is selected
+    if (formData.part === part) {
+      setDynamicFieldOptions(prev => ({
+        ...prev,
+        group: [...new Set([...prev.group, groupValue])].sort()
+      }));
+      
+      // Also update the form data to select the newly added group
+      handleChange('group', groupValue);
+    }
+  };
+
+  const handleAddFieldValue = async (value: string) => {
+    if (!selectedFieldForAdd) return;
+    
+    try {
+      await apiService.addVariableFieldOption(selectedFieldForAdd.name, value);
+      
+      // Refresh field options from API
+      const apiOptions = await apiService.getVariableFieldOptions() as {
+        formatI: string[];
+        formatII: string[];
+        gType: string[];
+        validation: string[];
+        default: string[];
+      };
+      
+      // Update dynamic field options
+      const existingOptions = getVariableFieldOptions(allData);
+      setDynamicFieldOptions({
+        ...existingOptions,
+        formatI: [...new Set([...existingOptions.formatI, ...(apiOptions.formatI || [])])].sort(),
+        formatII: [...new Set([...existingOptions.formatII, ...(apiOptions.formatII || [])])].sort(),
+        gType: [...new Set([...existingOptions.gType, ...(apiOptions.gType || [])])].sort(),
+        validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
+        default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
+      });
+      
+      // Also update the form data to select the newly added value
+      handleChange(selectedFieldForAdd.name, value);
+    } catch (error) {
+      throw error;
+    }
+  };
+
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
@@ -256,10 +359,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   };
 
   const handleChange = (key: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    setFormData(prev => {
+      const newData = { ...prev, [key]: value };
+      
+      // When part changes, clear section and group (sequential dependency)
+      if (key === 'part' && value !== prev.part) {
+        newData.section = '';
+        newData.group = '';
+      }
+      
+      // When section changes, clear group (sequential dependency)
+      if (key === 'section' && value !== prev.section) {
+        newData.group = '';
+      }
+      
+      return newData;
+    });
   };
 
   const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
@@ -329,6 +444,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   };
 
   const handleAddVariable = () => {
+    // Debug: Log form data before validation
+    console.log('handleAddVariable - formData:', formData);
+    
     // Validate required fields with specific error messages
     if (!formData.variable || !formData.variable.trim()) {
       alert('Please enter a Variable name');
@@ -339,7 +457,8 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       return;
     }
     if (!formData.section || !formData.section.trim()) {
-      alert('Please enter a Section');
+      console.error('Section validation failed - formData.section:', formData.section);
+      alert('Please select a Section');
       return;
     }
     if (!formData.group) {
@@ -466,6 +585,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       variationsList: variationsList
     };
 
+    console.log('handleAddVariable - calling onAdd with:', newVariable);
     onAdd(newVariable);
     
     // Reset form
@@ -783,108 +903,79 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Section <span className="text-ag-dark-error">*</span>
-            </label>
-            <input
-              ref={sectionInputRef}
-              type="text"
-              value={formData.section}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastSectionChangeTimeRef.current = Date.now();
-                
-                // Update state
-                handleChange('section', newValue);
-                
-                // Aggressively maintain focus - use multiple strategies
-                const restoreFocus = () => {
-                  if (sectionInputRef.current) {
-                    sectionInputRef.current.focus();
-                    const maxPos = sectionInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    sectionInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                
-                // Try immediately
-                restoreFocus();
-                
-                // Also try after microtask
-                Promise.resolve().then(restoreFocus);
-                
-                // Also try after animation frame
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => {
-                // Also handle onChange as fallback
-                e.stopPropagation();
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onKeyPress={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onFocus={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-                isSectionInputFocusedRef.current = true;
-              }}
-              onBlur={(e) => {
-                // Prevent blur if it happened right after typing
-                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
-                
-                // Check if blur was intentional
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && 
-                  (relatedTarget.tagName === 'INPUT' || 
-                   relatedTarget.tagName === 'TEXTAREA' || 
-                   relatedTarget.isContentEditable);
-                
-                // If it was recent typing and user didn't click on another input, prevent blur
-                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // Force focus back immediately
-                  setTimeout(() => {
-                    if (sectionInputRef.current) {
-                      sectionInputRef.current.focus();
-                    }
-                  }, 0);
-                } else if (!wasRecentTyping) {
-                  isSectionInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter section..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Group <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Section <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSectionValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Section value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
-              value={formData.group}
-              onChange={(e) => handleChange('group', e.target.value)}
+              value={formData.section}
+              onChange={(e) => handleChange('section', e.target.value)}
               disabled={!formData.part}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 !formData.part ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">Select Section</option>
+              {getDistinctSections().map((option) => {
+                // Ensure the selected section value is in the options
+                if (formData.section && !getDistinctSections().includes(formData.section) && option === formData.section) {
+                  console.log('Section value not in options, but formData has it:', formData.section);
+                }
+                return (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                );
+              })}
+              {/* If formData.section is set but not in the options list, add it */}
+              {formData.section && !getDistinctSections().includes(formData.section) && (
+                <option key={formData.section} value={formData.section}>
+                  {formData.section}
+                </option>
+              )}
+            </select>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Group <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddGroupValueModalOpen(true);
+                }}
+                disabled={!formData.part}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Group value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            <select
+              value={formData.group}
+              onChange={(e) => handleChange('group', e.target.value)}
+              disabled={!formData.part || !formData.section}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.part || !formData.section ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -917,9 +1008,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format I <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Format I <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'formatI', label: 'Format I' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Format I value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.formatI}
               onChange={(e) => handleChange('formatI', e.target.value)}
@@ -941,9 +1045,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format II <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Format II <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Format II value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
@@ -965,9 +1082,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              G-Type
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                G-Type
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'gType', label: 'G-Type' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new G-Type value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.gType}
               onChange={(e) => handleChange('gType', e.target.value)}
@@ -989,9 +1119,22 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Default
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Default
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFieldForAdd({ name: 'default', label: 'Default' });
+                  setIsAddFieldValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Default value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.default}
               onChange={(e) => handleChange('default', e.target.value)}
@@ -1462,6 +1605,38 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             setIsVariableObjectRelationshipModalOpen(true);
           }
         }}
+      />
+
+      {/* Add Section Value Modal */}
+      <AddSectionValueModal
+        isOpen={isAddSectionValueModalOpen}
+        onClose={() => {
+          setIsAddSectionValueModalOpen(false);
+        }}
+        onSave={handleAddSectionValue}
+      />
+
+      {/* Add Group Value Modal */}
+      <AddGroupValueModal
+        isOpen={isAddGroupValueModalOpen}
+        onClose={() => {
+          setIsAddGroupValueModalOpen(false);
+        }}
+        onSave={handleAddGroupValue}
+        availableParts={getDistinctParts()}
+        defaultPart={formData.part || ''}
+      />
+
+      {/* Add Field Value Modal */}
+      <AddFieldValueModal
+        isOpen={isAddFieldValueModalOpen}
+        onClose={() => {
+          setIsAddFieldValueModalOpen(false);
+          setSelectedFieldForAdd(null);
+        }}
+        onSave={handleAddFieldValue}
+        fieldName={selectedFieldForAdd?.name || ''}
+        fieldLabel={selectedFieldForAdd?.label || ''}
       />
 
       {/* Variations CSV Upload Modal */}

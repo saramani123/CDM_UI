@@ -3,10 +3,13 @@ import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, Ch
 import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { AddSectionValueModal } from './AddSectionValueModal';
+import { AddFieldValueModal } from './AddFieldValueModal';
 import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
+import { apiService } from '../services/api';
 
 interface ObjectRelationship {
   id: string;
@@ -79,6 +82,13 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
   const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
   const [isCloneVariableRelationshipsModalOpen, setIsCloneVariableRelationshipsModalOpen] = useState(false);
+  
+  // Modal state for add section value
+  const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
+  
+  // Modal state for add field value (Format I, Format II, G-Type, Default)
+  const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
+  const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
   
   // Confirmation dialog state
   const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
@@ -245,8 +255,13 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const getDistinctSections = () => {
-    const sections = [...new Set(allData.map(item => item.section))];
-    return ['Keep Current Section', ...sections];
+    const sections = [...new Set(allData.map(item => item.section).filter(Boolean))];
+    return ['Keep Current Section', ...sections.sort()];
+  };
+
+  const handleAddSectionValue = async (sectionValue: string) => {
+    // Update the section in formData to the newly added value
+    handleChange('section', sectionValue);
   };
 
   const getDistinctVariables = () => {
@@ -254,16 +269,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     return ['Keep Current Variable', ...variables];
   };
 
-  // Get distinct values for metadata dropdowns
-  const getDistinctFormatI = () => {
-    const formatIValues = [...new Set(allData.map(item => item.formatI).filter(val => val && val.trim() !== ''))];
-    return ['Keep Current Format I', ...formatIValues];
-  };
-
-  const getDistinctFormatII = () => {
-    const formatIIValues = [...new Set(allData.map(item => item.formatII).filter(val => val && val.trim() !== ''))];
-    return ['Keep Current Format II', ...formatIIValues];
-  };
 
   const getDistinctValidation = () => {
     const validationValues = [...new Set(allData.map(item => item.validation).filter(val => val && val.trim() !== ''))];
@@ -273,6 +278,106 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const getDistinctGraph = () => {
     const graphValues = [...new Set(allData.map(item => item.graph).filter(val => val && val.trim() !== ''))];
     return ['Keep Current Graph', ...graphValues];
+  };
+
+  // State to track field options from API (for Format I, Format II, G-Type, Default)
+  const [fieldOptions, setFieldOptions] = useState<{
+    formatI: string[];
+    formatII: string[];
+    gType: string[];
+    default: string[];
+  }>({
+    formatI: [],
+    formatII: [],
+    gType: [],
+    default: []
+  });
+
+  // Fetch field options from API on mount
+  useEffect(() => {
+    const fetchFieldOptions = async () => {
+      try {
+        const apiOptions = await apiService.getVariableFieldOptions() as {
+          formatI: string[];
+          formatII: string[];
+          gType: string[];
+          validation: string[];
+          default: string[];
+        };
+        setFieldOptions({
+          formatI: apiOptions.formatI || [],
+          formatII: apiOptions.formatII || [],
+          gType: apiOptions.gType || [],
+          default: apiOptions.default || []
+        });
+      } catch (error) {
+        console.error('Error fetching field options:', error);
+      }
+    };
+    fetchFieldOptions();
+  }, []);
+
+  const getDistinctGType = () => {
+    const gTypeValuesFromData = [...new Set(allData.map(item => item.gType).filter(val => val && val.trim() !== ''))];
+    const allGTypes = [...new Set([...gTypeValuesFromData, ...fieldOptions.gType])];
+    return ['Keep Current G-Type', ...allGTypes.sort()];
+  };
+
+  const getDistinctDefault = () => {
+    const defaultValuesFromData = [...new Set(allData.map(item => item.default).filter(val => val && val.trim() !== ''))];
+    const allDefaults = [...new Set([...defaultValuesFromData, ...fieldOptions.default])];
+    return ['Keep Current Default', ...allDefaults.sort()];
+  };
+
+  const getDistinctFormatI = () => {
+    const formatIValuesFromData = [...new Set(allData.map(item => item.formatI).filter(val => val && val.trim() !== ''))];
+    const allFormatI = [...new Set([...formatIValuesFromData, ...fieldOptions.formatI])];
+    return ['Keep Current Format I', ...allFormatI.sort()];
+  };
+
+  const getDistinctFormatII = () => {
+    const formatIIValuesFromData = [...new Set(allData.map(item => item.formatII).filter(val => val && val.trim() !== ''))];
+    const allFormatII = [...new Set([...formatIIValuesFromData, ...fieldOptions.formatII])];
+    return ['Keep Current Format II', ...allFormatII.sort()];
+  };
+
+  const handleAddFieldValue = async (value: string) => {
+    if (!selectedFieldForAdd) return;
+    
+    try {
+      await apiService.addVariableFieldOption(selectedFieldForAdd.name, value);
+      
+      // Refresh field options from API
+      const apiOptions = await apiService.getVariableFieldOptions() as {
+        formatI: string[];
+        formatII: string[];
+        gType: string[];
+        validation: string[];
+        default: string[];
+      };
+      
+      // Update field options state to include the new value
+      setFieldOptions(prev => ({
+        formatI: apiOptions.formatI || prev.formatI,
+        formatII: apiOptions.formatII || prev.formatII,
+        gType: apiOptions.gType || prev.gType,
+        default: apiOptions.default || prev.default
+      }));
+      
+      // Update the metadata state to include the new value in the dropdown
+      // This ensures the new value appears in the dropdown immediately
+      if (selectedFieldForAdd.name === 'formatI') {
+        handleMetadataChange('formatI', value);
+      } else if (selectedFieldForAdd.name === 'formatII') {
+        handleMetadataChange('formatII', value);
+      } else if (selectedFieldForAdd.name === 'gType') {
+        handleMetadataChange('gType', value);
+      } else if (selectedFieldForAdd.name === 'default') {
+        handleMetadataChange('default', value);
+      }
+    } catch (error) {
+      throw error;
+    }
   };
   
   const toggleSection = (sectionKey: string) => {
@@ -286,8 +391,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     setFormData(prev => {
       const newData = { ...prev, [key]: value };
       
-      // When part changes, clear group (groups are part-specific)
+      // When part changes, clear section and group (sequential dependency)
       if (key === 'part' && value !== prev.part) {
+        newData.section = '';
+        newData.group = '';
+      }
+      
+      // When section changes, clear group (sequential dependency)
+      if (key === 'section' && value !== prev.section) {
         newData.group = '';
       }
       
@@ -932,96 +1043,41 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Section
-            </label>
-            <input
-              ref={sectionInputRef}
-              type="text"
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Section
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSectionValueModalOpen(true);
+                }}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Section value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+            <select
               value={formData.section}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastSectionChangeTimeRef.current = Date.now();
-                
-                // Update state
-                handleChange('section', newValue);
-                
-                // Aggressively maintain focus - use multiple strategies
-                const restoreFocus = () => {
-                  if (sectionInputRef.current) {
-                    sectionInputRef.current.focus();
-                    const maxPos = sectionInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    sectionInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                
-                // Try immediately
-                restoreFocus();
-                
-                // Also try after microtask
-                Promise.resolve().then(restoreFocus);
-                
-                // Also try after animation frame
-                requestAnimationFrame(restoreFocus);
+              onChange={(e) => handleChange('section', e.target.value)}
+              disabled={!formData.part || formData.part === 'Keep Current Part'}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.part || formData.part === 'Keep Current Part' ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
               }}
-              onChange={(e) => {
-                // Also handle onChange as fallback
-                e.stopPropagation();
-              }}
-              onKeyDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onKeyPress={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onFocus={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-                isSectionInputFocusedRef.current = true;
-              }}
-              onBlur={(e) => {
-                // Prevent blur if it happened right after typing
-                const timeSinceLastChange = Date.now() - lastSectionChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300; // 300ms window
-                
-                // Check if blur was intentional
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && 
-                  (relatedTarget.tagName === 'INPUT' || 
-                   relatedTarget.tagName === 'TEXTAREA' || 
-                   relatedTarget.isContentEditable);
-                
-                // If it was recent typing and user didn't click on another input, prevent blur
-                if (wasRecentTyping && !clickedOnInput && sectionInputRef.current && isSectionInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // Force focus back immediately
-                  setTimeout(() => {
-                    if (sectionInputRef.current) {
-                      sectionInputRef.current.focus();
-                    }
-                  }, 0);
-                } else if (!wasRecentTyping) {
-                  isSectionInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Keep current section"
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
+            >
+              {getDistinctSections().map((option) => (
+                <option key={option} value={option === 'Keep Current Section' ? '' : option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -1031,9 +1087,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.group}
               onChange={(e) => handleChange('group', e.target.value)}
-              disabled={!formData.part || formData.part === 'Keep Current Part'}
+              disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section'}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !formData.part || formData.part === 'Keep Current Part' ? 'opacity-50 cursor-not-allowed' : ''
+                !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section' ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1059,9 +1115,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Format I
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Format I
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFieldForAdd({ name: 'formatI', label: 'Format I' });
+                    setIsAddFieldValueModalOpen(true);
+                  }}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new Format I value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
               <select
                 value={metadata.formatI}
                 onChange={(e) => handleMetadataChange('formatI', e.target.value)}
@@ -1083,9 +1152,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Format II
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Format II
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
+                    setIsAddFieldValueModalOpen(true);
+                  }}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new Format II value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
               <select
                 value={metadata.formatII}
                 onChange={(e) => handleMetadataChange('formatII', e.target.value)}
@@ -1109,34 +1191,79 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                G-Type
-              </label>
-              <input
-                type="text"
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  G-Type
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFieldForAdd({ name: 'gType', label: 'G-Type' });
+                    setIsAddFieldValueModalOpen(true);
+                  }}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new G-Type value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <select
                 value={metadata.gType}
                 onChange={(e) => handleMetadataChange('gType', e.target.value)}
-                placeholder="Keep current G-Type"
-                onClick={(e) => e.stopPropagation()}
-                className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-              />
+                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Keep Current G-Type</option>
+                {getDistinctGType().filter(g => g !== 'Keep Current G-Type').map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Default
-              </label>
-              <input
-                type="text"
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Default
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedFieldForAdd({ name: 'default', label: 'Default' });
+                    setIsAddFieldValueModalOpen(true);
+                  }}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new Default value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <select
                 value={metadata.default}
                 onChange={(e) => handleMetadataChange('default', e.target.value)}
-                placeholder="Keep current Default"
-                onClick={(e) => e.stopPropagation()}
-                className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-              />
+                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Keep Current Default</option>
+                {getDistinctDefault().filter(d => d !== 'Keep Current Default').map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
 
             <div>
               <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1161,7 +1288,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 ))}
               </select>
             </div>
-          </div>
         </div>
       </CollapsibleSection>
 
@@ -1658,6 +1784,27 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       )}
 
       {/* Ontology Modal */}
+      {/* Add Section Value Modal */}
+      <AddSectionValueModal
+        isOpen={isAddSectionValueModalOpen}
+        onClose={() => {
+          setIsAddSectionValueModalOpen(false);
+        }}
+        onSave={handleAddSectionValue}
+      />
+
+      {/* Add Field Value Modal */}
+      <AddFieldValueModal
+        isOpen={isAddFieldValueModalOpen}
+        onClose={() => {
+          setIsAddFieldValueModalOpen(false);
+          setSelectedFieldForAdd(null);
+        }}
+        onSave={handleAddFieldValue}
+        fieldName={selectedFieldForAdd?.name || ''}
+        fieldLabel={selectedFieldForAdd?.label || ''}
+      />
+
       {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && hasSelectedVariables && (
         <OntologyModal
           isOpen={ontologyModalOpen.isOpen}

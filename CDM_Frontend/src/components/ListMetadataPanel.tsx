@@ -12,6 +12,8 @@ import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
 import { SingleListValuesModal } from './SingleListValuesModal';
 import { apiService, getTieredListValues } from '../services/api';
+import { AddSetValueModal } from './AddSetValueModal';
+import { AddGroupingValueModal } from './AddGroupingValueModal';
 
 interface ListMetadataField {
   key: string;
@@ -234,7 +236,38 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [listValuesGraphModalOpen, setListValuesGraphModalOpen] = useState(false);
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
   const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
+  
+  // Modal state for add set/grouping values
+  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
+  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
+  
+  // Local state to track Sets and Groupings (for immediate UI updates)
+  const [localSets, setLocalSets] = useState<string[]>([]);
+  const [localGroupings, setLocalGroupings] = useState<Record<string, string[]>>({});
+  
+  // Initialize local Sets and Groupings from allData
+  React.useEffect(() => {
+    const sets = [...new Set(allData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
+    setLocalSets(sets);
+    
+    const groupingsMap: Record<string, string[]> = {};
+    allData.forEach((list: any) => {
+      if (list.set && list.grouping) {
+        if (!groupingsMap[list.set]) {
+          groupingsMap[list.set] = [];
+        }
+        if (!groupingsMap[list.set].includes(list.grouping)) {
+          groupingsMap[list.set].push(list.grouping);
+        }
+      }
+    });
+    Object.keys(groupingsMap).forEach(set => {
+      groupingsMap[set].sort();
+    });
+    setLocalGroupings(groupingsMap);
+  }, [allData]);
   const [singleListValues, setSingleListValues] = useState<string[]>([]);
+  const [singleListValuesVariations, setSingleListValuesVariations] = useState<Record<string, string>>({});
   // Store tiered list values locally - only save to Neo4j when clicking Save Changes on metadata panel
   const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
   
@@ -330,6 +363,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
 
   // Track which list's tiered values we've loaded to avoid reloading unnecessarily
   const tieredValuesLoadedRef = React.useRef<string | null>(null);
+  // Track whether user has interacted with grid modal (to know if we should save tieredListValues)
+  const tieredValuesEditedRef = React.useRef<boolean>(false);
   
   // Load variations when selectedList changes
   React.useEffect(() => {
@@ -358,30 +393,61 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       }
       
       // Load tiered list values from API if this is a Multi-Level list
-      // Only load if we haven't loaded for this list ID yet
-      if (selectedList.listType === 'Multi-Level' && tieredValuesLoadedRef.current !== selectedList.id) {
-        tieredValuesLoadedRef.current = selectedList.id;
-        getTieredListValues(selectedList.id)
-          .then((values) => {
-            if (values && Object.keys(values).length > 0) {
-              setTieredListValues(values);
-            } else {
+      // Only load if we haven't loaded for this list ID yet OR if we're switching to a different list
+      // This ensures local unsaved changes persist until metadata panel save
+      if (selectedList.listType === 'Multi-Level') {
+        // Only reload from backend if:
+        // 1. We haven't loaded for this list yet, OR
+        // 2. We're switching to a different list (tieredValuesLoadedRef.current !== selectedList.id)
+        // AND we haven't edited values locally (tieredValuesEditedRef.current === false)
+        if (tieredValuesLoadedRef.current !== selectedList.id && !tieredValuesEditedRef.current) {
+          tieredValuesLoadedRef.current = selectedList.id;
+          getTieredListValues(selectedList.id)
+            .then((values) => {
+              if (values && Object.keys(values).length > 0) {
+                setTieredListValues(values);
+              } else {
+                // Only clear if we don't have local unsaved changes
+                // Keep existing local state if it exists (user may have entered values in grid modal)
+                setTieredListValues(prev => Object.keys(prev).length > 0 ? prev : {});
+              }
+            })
+            .catch((error) => {
+              console.error('Error loading tiered list values:', error);
+              // Don't clear local state on error - preserve any unsaved changes
+              setTieredListValues(prev => Object.keys(prev).length > 0 ? prev : {});
+            });
+        } else if (tieredValuesLoadedRef.current !== selectedList.id && tieredValuesEditedRef.current) {
+          // Switching to a different list but we have unsaved changes for the previous list
+          // Reset the ref and flag for the new list
+          tieredValuesLoadedRef.current = selectedList.id;
+          tieredValuesEditedRef.current = false;
+          // Load values for the new list
+          getTieredListValues(selectedList.id)
+            .then((values) => {
+              if (values && Object.keys(values).length > 0) {
+                setTieredListValues(values);
+              } else {
+                setTieredListValues({});
+              }
+            })
+            .catch((error) => {
+              console.error('Error loading tiered list values:', error);
               setTieredListValues({});
-            }
-          })
-          .catch((error) => {
-            console.error('Error loading tiered list values:', error);
-            setTieredListValues({});
-          });
+            });
+        }
+        // If we've already loaded for this list, keep the current local state (may have unsaved changes)
       } else if (selectedList.listType === 'Single') {
         // Clear tiered list values when switching to Single
         tieredValuesLoadedRef.current = null;
+        tieredValuesEditedRef.current = false;
         setTieredListValues({});
       }
     } else {
       setVariationsText('');
       setTieredListValues({});
       tieredValuesLoadedRef.current = null;
+      tieredValuesEditedRef.current = false;
     }
   }, [selectedList?.id, selectedList?.listType]);
 
@@ -473,23 +539,64 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     )].filter(Boolean);
   };
 
-  // Get distinct Set values from actual lists data
+  // Get distinct Set values from actual lists data + local state
   const getDistinctSets = (): string[] => {
     const listsData = allData.length > 0 ? allData : [];
-    const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
-    return sets;
+    const setsFromData = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean) as string[];
+    const allSets = [...new Set([...setsFromData, ...localSets])].sort();
+    return allSets;
   };
 
-  // Get distinct Grouping values for a specific Set from actual lists data
+  // Get distinct Grouping values for a specific Set from actual lists data + local state
   const getGroupingsForSet = (set: string): string[] => {
     if (!set) return [];
     const listsData = allData.length > 0 ? allData : [];
-    const groupings = [...new Set(
+    const groupingsFromData = [...new Set(
       listsData
         .filter((list: any) => list.set === set && list.grouping)
         .map((list: any) => list.grouping)
-    )].filter(Boolean).sort() as string[];
-    return groupings;
+    )].filter(Boolean) as string[];
+    const groupingsFromLocal = localGroupings[set] || [];
+    const allGroupings = [...new Set([...groupingsFromData, ...groupingsFromLocal])].sort();
+    return allGroupings;
+  };
+
+  const handleAddSetValue = async (setValue: string) => {
+    try {
+      await apiService.addSetValue(setValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalSets(prev => {
+        if (!prev.includes(setValue)) {
+          return [...prev, setValue].sort();
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Set
+      handleChange('set', setValue);
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
+    try {
+      await apiService.addGroupingValue(set, groupingValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalGroupings(prev => {
+        const currentGroupings = prev[set] || [];
+        if (!currentGroupings.includes(groupingValue)) {
+          return {
+            ...prev,
+            [set]: [...currentGroupings, groupingValue].sort()
+          };
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Grouping
+      handleChange('grouping', groupingValue);
+    } catch (error) {
+      throw error;
+    }
   };
   
   // Get lists for a specific Set and Grouping, excluding current list and previously selected tiered lists
@@ -704,8 +811,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached
     };
     
-    // Only include listType and tiered list fields if list type actually changed
-    if (listTypeChanged) {
+    // Include listType and tiered list fields if:
+    // 1. List type changed, OR
+    // 2. List type is Multi-Level (to allow updating tier names even if type didn't change)
+    if (listTypeChanged || listType === 'Multi-Level') {
       if (listType === 'Single') {
         // Single list - use values from modal if available, otherwise from textarea (for backward compatibility)
         let listValuesArray: Array<{ id: string; value: string }>;
@@ -740,6 +849,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         }
         
         saveData.listValuesList = listValuesArray;
+        saveData.listValuesVariations = singleListValuesVariations;
         saveData.tieredListsList = [];
         saveData.listType = 'Single';
         // Clear tiered list values if switching from Multi-Level to Single
@@ -765,8 +875,27 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         // Backend will create the tier list nodes and relationships
         // Note: tieredListValues can be saved separately via grid modal or together here
       }
+    } else if (listType === 'Multi-Level' && !listTypeChanged) {
+      // List type is Multi-Level but didn't change - still include tierNames if they were edited
+      // This allows updating tier names without changing list type
+      const originalTierNames = selectedList?.tierNames || [];
+      const tierNamesChanged = JSON.stringify(tierNames) !== JSON.stringify(originalTierNames);
+      
+      if (tierNamesChanged && tierNames.length > 0) {
+        const validTierNames = tierNames.filter(name => name.trim() !== '');
+        if (validTierNames.length === numberOfLevels) {
+          saveData.listType = 'Multi-Level';
+          saveData.numberOfLevels = numberOfLevels;
+          saveData.tierNames = validTierNames;
+          console.log('ListMetadataPanel: Updating tier names for Multi-Level list:', {
+            listType: saveData.listType,
+            numberOfLevels: saveData.numberOfLevels,
+            tierNames: saveData.tierNames
+          });
+        }
+      }
     }
-    // If list type didn't change, don't include listType, tieredListsList, or listValuesList
+    // If list type didn't change and it's not Multi-Level, don't include listType, tieredListsList, or listValuesList
     // This prevents accidentally clearing tiered lists when just editing drivers/metadata/variations
     
     // Handle variationsList - parse from textarea and check for duplicates
@@ -791,20 +920,52 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       saveData.variationsList = variationsArray;
     }
     
-    // Include tiered list values if they exist in local state (from grid modal)
-    // Only include if listType is Multi-Level and we have stored values
-    if (listType === 'Multi-Level' && Object.keys(tieredListValues).length > 0) {
+    // Include tiered list values if listType is Multi-Level and user has edited them
+    // Only include tieredListValues if user has interacted with grid modal (tieredValuesEditedRef)
+    // This ensures:
+    // 1. If user entered values in grid modal, they get saved
+    // 2. If user cleared values in grid modal, they get cleared in backend
+    // 3. If user hasn't opened grid modal, we preserve existing backend values by not including it
+    if (listType === 'Multi-Level' && tieredValuesEditedRef.current) {
+      // Include tieredListValues (even if empty, to clear backend values if user cleared them)
       saveData.tieredListValues = tieredListValues;
+      // ALWAYS include tierNames and numberOfLevels when saving tieredListValues
+      // This is critical - backend needs tierNames to create tier lists if they don't exist
+      // Use tierNames from state if available, otherwise try to get from selectedList
+      const tierNamesToSave = tierNames.filter(n => n.trim()).length > 0 
+        ? tierNames.filter(n => n.trim()) 
+        : (selectedList?.tierNames && selectedList.tierNames.length > 0 ? selectedList.tierNames : []);
+      const numberOfLevelsToSave = numberOfLevels > 0 
+        ? numberOfLevels 
+        : (selectedList?.numberOfLevels || tierNamesToSave.length || 2);
+      
+      if (tierNamesToSave.length > 0) {
+        saveData.tierNames = tierNamesToSave;
+        saveData.numberOfLevels = numberOfLevelsToSave;
+        saveData.listType = 'Multi-Level';
+        console.log('✅ ListMetadataPanel: Including tierNames when saving tieredListValues:', tierNamesToSave);
+        console.log('✅ ListMetadataPanel: Including numberOfLevels:', numberOfLevelsToSave);
+        console.log('✅ ListMetadataPanel: tieredListValues count:', Object.keys(tieredListValues).length);
+      } else {
+        console.error('❌ ListMetadataPanel: ERROR - No tierNames available when saving tieredListValues!');
+        console.error('   tierNames state:', tierNames);
+        console.error('   selectedList.tierNames:', selectedList?.tierNames);
+        alert('Error: Cannot save tiered list values without tier names. Please configure the list type (Multi-Level) with tier names first.');
+        return; // Don't save if we don't have tier names
+      }
+      // Reset the flag after including in save data
+      tieredValuesEditedRef.current = false;
     } else if (listType === 'Single') {
       // Clear tiered list values when switching to Single
       saveData.tieredListValues = {};
+      tieredValuesEditedRef.current = false;
     }
-    // If listType is Multi-Level but no tieredListValues in local state, don't include it
-    // This means user hasn't entered values yet or wants to keep existing values
     
-    console.log('ListMetadataPanel: Calling onSave with data:', saveData);
+    console.log('📤 ListMetadataPanel: Calling onSave with data:', {
+      ...saveData,
+      tieredListValues: saveData.tieredListValues ? `${Object.keys(saveData.tieredListValues).length} tier 1 values` : 'none'
+    });
     console.log('ListMetadataPanel: listTypeChanged =', listTypeChanged);
-    console.log('ListMetadataPanel: tieredListValues in saveData:', saveData.tieredListValues);
     onSave?.(saveData);
   };
 
@@ -1091,9 +1252,22 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Set
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Set
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddSetValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Set value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.set}
               onChange={(e) => handleChange('set', e.target.value)}
@@ -1118,9 +1292,22 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Grouping
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Grouping
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAddGroupingValueModalOpen(true);
+                }}
+                disabled={!isPanelEnabled || !formData.set}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Grouping value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.grouping}
               onChange={(e) => handleChange('grouping', e.target.value)}
@@ -1986,11 +2173,38 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onSave={(tieredValues) => {
           // Store tiered values locally - don't save to Neo4j yet
           // Values will be saved to Neo4j when user clicks "Save Changes" on metadata panel
+          console.log('TieredListValuesModal: Saving tiered values to local state:', tieredValues);
           setTieredListValues(tieredValues);
+          tieredValuesEditedRef.current = true; // Mark that user has edited tiered values
           setIsTieredListValuesModalOpen(false);
           // Show confirmation that values are stored (but not yet saved to Neo4j)
-          alert('Tiered list values stored. Click "Save Changes" on the metadata panel to save to Neo4j.');
+          const totalRows = Object.values(tieredValues).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+          if (totalRows > 0) {
+            alert(`Tiered list values stored (${totalRows} row${totalRows !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
+          } else {
+            alert('Tiered list values cleared. Click "Save Changes" on the metadata panel to save changes to Neo4j.');
+          }
         }}
+      />
+
+      {/* Add Set Value Modal */}
+      <AddSetValueModal
+        isOpen={isAddSetValueModalOpen}
+        onClose={() => {
+          setIsAddSetValueModalOpen(false);
+        }}
+        onSave={handleAddSetValue}
+      />
+
+      {/* Add Grouping Value Modal */}
+      <AddGroupingValueModal
+        isOpen={isAddGroupingValueModalOpen}
+        onClose={() => {
+          setIsAddGroupingValueModalOpen(false);
+        }}
+        onSave={handleAddGroupingValue}
+        availableSets={getDistinctSets()}
+        defaultSet={formData.set || ''}
       />
 
       {/* Single List Values Modal */}
@@ -1998,9 +2212,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         isOpen={isSingleListValuesModalOpen}
         onClose={() => setIsSingleListValuesModalOpen(false)}
         selectedList={selectedList || null}
-        onSave={(values) => {
-          // Store values to be used when saving the list
+        onSave={(values, variations) => {
+          // Store values and variations to be used when saving the list
           setSingleListValues(values);
+          setSingleListValuesVariations(variations || {});
           setIsSingleListValuesModalOpen(false);
           // Trigger save with the new values
           if (onSave) {

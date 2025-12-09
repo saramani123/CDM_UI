@@ -892,6 +892,26 @@ class ApiService {
     return this.request('/variables/field-options', { method: 'GET' });
   }
 
+  // Lists API - Set and Grouping
+  async addSetValue(setValue: string) {
+    return this.request('/lists/set', {
+      method: 'POST',
+      body: JSON.stringify({
+        set: setValue
+      }),
+    });
+  }
+
+  async addGroupingValue(set: string, groupingValue: string) {
+    return this.request('/lists/grouping', {
+      method: 'POST',
+      body: JSON.stringify({
+        set: set,
+        grouping: groupingValue
+      }),
+    });
+  }
+
   // Order API - for default sort order persistence
   async getObjectsOrder() {
     return this.request('/order/objects', { method: 'GET' });

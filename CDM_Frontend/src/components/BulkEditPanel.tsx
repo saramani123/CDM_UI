@@ -8,6 +8,9 @@ import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { CloneIdentifiersModal } from './CloneIdentifiersModal';
 import { AddBeingValueModal } from './AddBeingValueModal';
 import { AddAvatarValueModal } from './AddAvatarValueModal';
+import { AddSetValueModal } from './AddSetValueModal';
+import { AddGroupingValueModal } from './AddGroupingValueModal';
+import { apiService } from '../services/api';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
@@ -15,7 +18,6 @@ import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
-import { apiService } from '../services/api';
 
 interface CompositeKey {
   id: string;
@@ -141,6 +143,39 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
   const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
   const [beingAvatarUpdateTrigger, setBeingAvatarUpdateTrigger] = useState(0);
+  
+  // Modal state for add set/grouping values (lists)
+  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
+  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
+  
+  // Local state to track Sets and Groupings for lists (for immediate UI updates)
+  const [localSets, setLocalSets] = useState<string[]>([]);
+  const [localGroupings, setLocalGroupings] = useState<Record<string, string[]>>({});
+  
+  // Initialize local Sets and Groupings from allData (for lists tab)
+  useEffect(() => {
+    if (activeTab === 'lists') {
+      const listsData = allData as any[];
+      const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
+      setLocalSets(sets);
+      
+      const groupingsMap: Record<string, string[]> = {};
+      listsData.forEach((list: any) => {
+        if (list.set && list.grouping) {
+          if (!groupingsMap[list.set]) {
+            groupingsMap[list.set] = [];
+          }
+          if (!groupingsMap[list.set].includes(list.grouping)) {
+            groupingsMap[list.set].push(list.grouping);
+          }
+        }
+      });
+      Object.keys(groupingsMap).forEach(set => {
+        groupingsMap[set].sort();
+      });
+      setLocalGroupings(groupingsMap);
+    }
+  }, [allData, activeTab]);
   const variantsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isTextareaFocusedRef = useRef<boolean>(false);
   const lastChangeTimeRef = useRef<number>(0);
@@ -499,27 +534,72 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     }));
   };
 
-  // Get distinct Set values from actual lists data
+  // Get distinct Set values from actual lists data + local state
   const getDistinctSets = (): string[] => {
     if (activeTab !== 'lists') return [];
     const listsData = allData as any[];
-    const sets = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean).sort() as string[];
-    return sets;
+    const setsFromData = [...new Set(listsData.map((list: any) => list.set))].filter(Boolean) as string[];
+    const allSets = [...new Set([...setsFromData, ...localSets])].sort();
+    return allSets;
   };
 
-  // Get groupings for a specific set from lists data
+  // Get groupings for a specific set from lists data + local state
   const getGroupingsForSet = (set: string): string[] => {
     if (!set || activeTab !== 'lists') return [];
     
     // Get groupings from existing lists data for this set
     const listsData = allData as any[];
-    const groupings = [...new Set(
+    const groupingsFromData = [...new Set(
       listsData
         .filter((list: any) => list.set === set && list.grouping)
         .map((list: any) => list.grouping)
     )].filter(Boolean) as string[];
     
-    return groupings;
+    const groupingsFromLocal = localGroupings[set] || [];
+    const allGroupings = [...new Set([...groupingsFromData, ...groupingsFromLocal])].sort();
+    return allGroupings;
+  };
+
+  const handleAddSetValue = async (setValue: string) => {
+    try {
+      await apiService.addSetValue(setValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalSets(prev => {
+        if (!prev.includes(setValue)) {
+          return [...prev, setValue].sort();
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Set
+      if (activeTab === 'lists') {
+        handleChange('set', setValue);
+      }
+    } catch (error) {
+      throw error;
+    }
+  };
+
+  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
+    try {
+      await apiService.addGroupingValue(set, groupingValue);
+      // Update local state immediately so it appears in dropdown
+      setLocalGroupings(prev => {
+        const currentGroupings = prev[set] || [];
+        if (!currentGroupings.includes(groupingValue)) {
+          return {
+            ...prev,
+            [set]: [...currentGroupings, groupingValue].sort()
+          };
+        }
+        return prev;
+      });
+      // Also update formData to select the newly added Grouping
+      if (activeTab === 'lists') {
+        handleChange('grouping', groupingValue);
+      }
+    } catch (error) {
+      throw error;
+    }
   };
 
   const handleChange = (key: string, value: string) => {
@@ -1334,9 +1414,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           >
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Set
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-ag-dark-text">
+                    Set
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddSetValueModalOpen(true);
+                    }}
+                    className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                    title="Add new Set value"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
                 <select
                   value={listFormData.set}
                   onChange={(e) => handleChange('set', e.target.value)}
@@ -1358,9 +1450,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Grouping
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-ag-dark-text">
+                    Grouping
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddGroupingValueModalOpen(true);
+                    }}
+                    disabled={!listFormData.set || listFormData.set.trim() === ''}
+                    className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Add new Grouping value"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
                 <select
                   value={listFormData.grouping}
                   onChange={(e) => handleChange('grouping', e.target.value)}
@@ -2487,6 +2592,26 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           setIsAddBeingValueModalOpen(false);
         }}
         onSave={handleAddBeingValue}
+      />
+
+      {/* Add Set Value Modal */}
+      <AddSetValueModal
+        isOpen={isAddSetValueModalOpen}
+        onClose={() => {
+          setIsAddSetValueModalOpen(false);
+        }}
+        onSave={handleAddSetValue}
+      />
+
+      {/* Add Grouping Value Modal */}
+      <AddGroupingValueModal
+        isOpen={isAddGroupingValueModalOpen}
+        onClose={() => {
+          setIsAddGroupingValueModalOpen(false);
+        }}
+        onSave={handleAddGroupingValue}
+        availableSets={getDistinctSets()}
+        defaultSet={listFormData.set || ''}
       />
 
       {/* Add Avatar Value Modal */}
