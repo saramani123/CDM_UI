@@ -32,6 +32,12 @@ interface VariableMetadataPanelProps {
   objectsData?: any[];
   selectedCount?: number;
   onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
+  objectsOrderSortOrder?: {
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  };
+  isObjectsOrderEnabled?: boolean;
 }
 
 export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
@@ -43,7 +49,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   allData = [],
   objectsData = [],
   selectedCount = 0,
-  onObjectsRefresh
+  onObjectsRefresh,
+  objectsOrderSortOrder,
+  isObjectsOrderEnabled = false
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     const initial: Record<string, any> = {};
@@ -1737,6 +1745,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           }
         }}
         initialCsvData={pendingCsvData}
+        objectsOrderSortOrder={objectsOrderSortOrder}
+        isObjectsOrderEnabled={isObjectsOrderEnabled}
       />
 
       {/* CSV Upload Modal removed - moved to VariableObjectRelationshipModal */}

@@ -49,6 +49,13 @@ interface BulkEditPanelProps {
   activeTab?: string;
   selectedObjects?: any[]; // Array of selected objects for bulk ontology view
   onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
+  variablesOrderSortOrder?: {
+    partOrder: string[];
+    sectionOrders: Record<string, string[]>;
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  };
+  isVariablesOrderEnabled?: boolean;
 }
 
 export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
@@ -59,7 +66,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   allData = [],
   activeTab = 'objects',
   selectedObjects = [],
-  onObjectsRefresh
+  onObjectsRefresh,
+  variablesOrderSortOrder,
+  isVariablesOrderEnabled = false
 }) => {
   // Basic form data - Objects
   const [formData, setFormData] = useState({
@@ -2701,6 +2710,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               }
             }}
             isBulkMode={true}
+            variablesOrderSortOrder={variablesOrderSortOrder}
+            isVariablesOrderEnabled={isVariablesOrderEnabled}
           />
         </>
       )}

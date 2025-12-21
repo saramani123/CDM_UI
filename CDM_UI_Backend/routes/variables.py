@@ -206,6 +206,16 @@ async def get_variables():
 
     try:
         with driver.session() as session:
+            # First, get all possible driver values to check if "ALL" should be used
+            all_sectors_result = session.run("MATCH (s:Sector) WHERE s.name <> 'ALL' RETURN s.name as name")
+            all_sectors = {record["name"] for record in all_sectors_result}
+            
+            all_domains_result = session.run("MATCH (d:Domain) WHERE d.name <> 'ALL' RETURN d.name as name")
+            all_domains = {record["name"] for record in all_domains_result}
+            
+            all_countries_result = session.run("MATCH (c:Country) WHERE c.name <> 'ALL' RETURN c.name as name")
+            all_countries = {record["name"] for record in all_countries_result}
+            
             # Get all variables with their taxonomy and relationships
             result = session.run("""
                 MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
@@ -242,10 +252,21 @@ async def get_variables():
                 countries = record["countries"] or []
                 variable_clarifiers = record["variableClarifiers"] or []
                 
-                # Create driver string in the expected format: "Sector, Domain, Country, VariableClarifier"
-                sector_str = "ALL" if "ALL" in sectors else (", ".join(sectors) if sectors else "ALL")
-                domain_str = "ALL" if "ALL" in domains else (", ".join(domains) if domains else "ALL")
-                country_str = "ALL" if "ALL" in countries else (", ".join(countries) if countries else "ALL")
+                # Normalize driver strings: if all values are present, use "ALL"
+                # Filter out "ALL" from the lists (it's not a real node, just a UI convenience)
+                sectors_filtered = [s for s in sectors if s != "ALL"]
+                domains_filtered = [d for d in domains if d != "ALL"]
+                countries_filtered = [c for c in countries if c != "ALL"]
+                
+                # Check if all possible values are selected
+                sectors_set = set(sectors_filtered)
+                domains_set = set(domains_filtered)
+                countries_set = set(countries_filtered)
+                
+                # Use "ALL" if all values are present, or if "ALL" was explicitly in the list
+                sector_str = "ALL" if ("ALL" in sectors or (len(all_sectors) > 0 and sectors_set == all_sectors)) else (", ".join(sectors_filtered) if sectors_filtered else "ALL")
+                domain_str = "ALL" if ("ALL" in domains or (len(all_domains) > 0 and domains_set == all_domains)) else (", ".join(domains_filtered) if domains_filtered else "ALL")
+                country_str = "ALL" if ("ALL" in countries or (len(all_countries) > 0 and countries_set == all_countries)) else (", ".join(countries_filtered) if countries_filtered else "ALL")
                 clarifier_str = variable_clarifiers[0] if variable_clarifiers else "None"
                 
                 driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"

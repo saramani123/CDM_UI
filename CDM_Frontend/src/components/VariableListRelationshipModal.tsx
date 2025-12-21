@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Save, Link } from 'lucide-react';
+import { X, Save, Link, ArrowUpAZ } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { variableColumns } from '../data/variablesData';
 import { apiService } from '../services/api';
 import type { VariableData } from '../data/variablesData';
+import { VariablesCustomSortModal } from './VariablesCustomSortModal';
 
 interface VariableListRelationshipModalProps {
   isOpen: boolean;
@@ -13,6 +14,13 @@ interface VariableListRelationshipModalProps {
   allVariables: VariableData[];
   onSave?: () => void; // Callback to refresh main data
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
+  variablesOrderSortOrder?: {
+    partOrder: string[];
+    sectionOrders: Record<string, string[]>;
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  };
+  isVariablesOrderEnabled?: boolean;
 }
 
 interface SelectedVariableData {
@@ -27,7 +35,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
   selectedLists = [],
   allVariables,
   onSave,
-  isBulkMode = false
+  isBulkMode = false,
+  variablesOrderSortOrder,
+  isVariablesOrderEnabled = false
 }) => {
   // Determine source lists: use selectedLists if provided (bulk mode), otherwise use selectedList (single mode)
   const sourceLists = isBulkMode && selectedLists.length > 0 
@@ -39,6 +49,14 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
   const [selectedVariables, setSelectedVariables] = useState<Record<string, SelectedVariableData>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
+  const [customSortRules, setCustomSortRules] = useState<Array<{
+    id: string;
+    column: string;
+    sortOn: string;
+    order: 'asc' | 'desc';
+  }>>([]);
+  const [isApplicabilityOrderEnabled, setIsApplicabilityOrderEnabled] = useState(isVariablesOrderEnabled);
   
   // Selection mode: 'manual' (default), 'any', or 'keyword'
   const [selectionMode, setSelectionMode] = useState<'manual' | 'any' | 'keyword'>('manual');
@@ -567,13 +585,14 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
   }, [allVariables, selectedVariables]);
 
   // Custom columns for the variable-list relationship modal
-  // Only show sector, domain, country, and variable columns (removed part, group, section)
+  // Show sector, domain, country, part, section, group, and variable columns
+  // Part, section, group are needed for DSO but may be hidden in display
   // Increase variable column width to prevent truncation
   // Must be before early return to follow Rules of Hooks
   const relationshipColumns = useMemo(() => {
     return variableColumns
       .filter(col => 
-        ['sector', 'domain', 'country', 'variable'].includes(col.key)
+        ['sector', 'domain', 'country', 'part', 'section', 'group', 'variable'].includes(col.key)
       )
       .map(col => {
         if (col.key === 'variable') {
@@ -611,6 +630,14 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
                 ? `Configuring Variable Applicability (${sourceLists.length} lists)` 
                 : `Configuring Variable Applicability for ${sourceLists[0]?.list || 'List'}`}
             </h2>
+            <button
+              onClick={() => setIsCustomSortOpen(true)}
+              className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+              title="Custom Sort"
+            >
+              <ArrowUpAZ className="w-4 h-4" />
+              Custom Sort
+            </button>
           </div>
           <button
             onClick={handleClose}
@@ -690,16 +717,18 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
                 selectedRows={[]}
                 affectedIds={new Set()}
                 deletedDriverType={null}
-                customSortRules={[]}
-                onClearCustomSort={() => {}}
+                customSortRules={customSortRules}
+                onClearCustomSort={() => setCustomSortRules([])}
                 onColumnSort={() => {}}
-                isCustomSortActive={false}
+                isCustomSortActive={customSortRules.length > 0}
                 isColumnSortActive={false}
                 highlightCurrentObject={false}
                 showActionsColumn={false}
                 relationshipData={selectedVariables}
                 onRelationshipRowClick={handleRowClick}
                 selectionMode="row"
+                isPredefinedSortEnabled={isApplicabilityOrderEnabled}
+                predefinedSortOrder={variablesOrderSortOrder}
               />
               </div>
             </>
@@ -724,6 +753,22 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
           </button>
         </div>
       </div>
+
+      {/* Custom Sort Modal */}
+      <VariablesCustomSortModal
+        isOpen={isCustomSortOpen}
+        onClose={() => setIsCustomSortOpen(false)}
+        onApplySort={(sortRules, isDefaultOrderEnabled = false) => {
+          setCustomSortRules(sortRules);
+          setIsApplicabilityOrderEnabled(isDefaultOrderEnabled);
+        }}
+        columns={relationshipColumns}
+        currentSortRules={customSortRules}
+        isDefaultOrderEnabled={isApplicabilityOrderEnabled}
+        onDefaultOrderToggle={(enabled) => {
+          setIsApplicabilityOrderEnabled(enabled);
+        }}
+      />
     </div>
   );
 };

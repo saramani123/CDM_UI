@@ -25,6 +25,12 @@ interface RelationshipModalProps {
   initialRelationships?: InitialRelationship[]; // Pre-selected relationships from CSV upload
   onRelationshipsChange?: (relationships: any[]) => void; // Callback to store relationships for temporary objects
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
+  objectsOrderSortOrder?: {
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  };
+  isObjectsOrderEnabled?: boolean;
 }
 
 interface RelationshipData {
@@ -46,7 +52,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   onSave,
   initialRelationships = [],
   onRelationshipsChange,
-  isBulkMode = false
+  isBulkMode = false,
+  objectsOrderSortOrder,
+  isObjectsOrderEnabled = false
 }) => {
   // Determine source objects: use selectedObjects if provided (bulk mode), otherwise use selectedObject (single mode)
   const sourceObjects = isBulkMode && selectedObjects.length > 0 
@@ -65,6 +73,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     sortOn: string;
     order: 'asc' | 'desc';
   }>>([]);
+  const [isRelationshipOrderEnabled, setIsRelationshipOrderEnabled] = useState(isObjectsOrderEnabled);
   const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set()); // Track selected rows for bulk editing
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false); // Bulk edit modal state
@@ -1281,6 +1290,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                 relationshipData={relationshipData}
                 onRelationshipRowClick={handleRowClick}
                 selectionMode="checkbox"
+                isPredefinedSortEnabled={isRelationshipOrderEnabled}
+                predefinedSortOrder={objectsOrderSortOrder}
               />
             </div>
           )}
@@ -1309,10 +1320,15 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       <RelationshipCustomSortModal
         isOpen={isCustomSortOpen}
         onClose={() => setIsCustomSortOpen(false)}
-        onApplySort={(sortRules) => {
+        onApplySort={(sortRules, isDefaultOrderEnabled = false) => {
           setCustomSortRules(sortRules);
+          setIsRelationshipOrderEnabled(isDefaultOrderEnabled);
         }}
         currentSortRules={customSortRules}
+        isDefaultOrderEnabled={isRelationshipOrderEnabled}
+        onDefaultOrderToggle={(enabled) => {
+          setIsRelationshipOrderEnabled(enabled);
+        }}
       />
 
       {/* Bulk Edit Relationships Modal */}

@@ -19,6 +19,12 @@ interface VariableObjectRelationshipModalProps {
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
   previewMode?: boolean; // If true, don't create relationships - just store selections via onSelectionChange
   onSelectionChange?: (selectedObjectIds: string[]) => void; // Callback to store selected object IDs (for preview mode)
+  objectsOrderSortOrder?: {
+    beingOrder: string[];
+    avatarOrders: Record<string, string[]>;
+    objectOrders: Record<string, string[]>;
+  };
+  isObjectsOrderEnabled?: boolean;
 }
 
 interface SelectedObjectData {
@@ -38,7 +44,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   initialCsvData,
   isBulkMode = false,
   previewMode = false,
-  onSelectionChange
+  onSelectionChange,
+  objectsOrderSortOrder,
+  isObjectsOrderEnabled = false
 }) => {
   // Determine source variables: use selectedVariables if provided (bulk mode), otherwise use selectedVariable (single mode)
   const sourceVariables = isBulkMode && selectedVariables.length > 0 
@@ -59,6 +67,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     sortOn: string;
     order: 'asc' | 'desc';
   }>>([]);
+  const [isRelevanceOrderEnabled, setIsRelevanceOrderEnabled] = useState(isObjectsOrderEnabled);
 
   // Initialize selected objects when modal opens
   useEffect(() => {
@@ -852,6 +861,8 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
                   relationshipData={selectedObjects}
                   onRelationshipRowClick={handleRowClick}
                   selectionMode="row"
+                  isPredefinedSortEnabled={isRelevanceOrderEnabled}
+                  predefinedSortOrder={objectsOrderSortOrder}
                 />
               </div>
             )}
@@ -889,10 +900,15 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       <RelationshipCustomSortModal
         isOpen={isCustomSortOpen}
         onClose={() => setIsCustomSortOpen(false)}
-        onApplySort={(sortRules) => {
+        onApplySort={(sortRules, isDefaultOrderEnabled = false) => {
           setCustomSortRules(sortRules);
+          setIsRelevanceOrderEnabled(isDefaultOrderEnabled);
         }}
         currentSortRules={customSortRules}
+        isDefaultOrderEnabled={isRelevanceOrderEnabled}
+        onDefaultOrderToggle={(enabled) => {
+          setIsRelevanceOrderEnabled(enabled);
+        }}
       />
     </>
   );

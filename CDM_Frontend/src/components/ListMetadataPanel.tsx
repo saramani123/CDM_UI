@@ -53,6 +53,13 @@ interface ListMetadataPanelProps {
   selectedList?: any;
   allData?: any[];
   selectedCount?: number;
+  variablesOrderSortOrder?: {
+    partOrder: string[];
+    sectionOrders: Record<string, string[]>;
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+  };
+  isVariablesOrderEnabled?: boolean;
 }
 
 export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
@@ -62,7 +69,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   onClose,
   selectedList,
   allData = [],
-  selectedCount = 0
+  selectedCount = 0,
+  variablesOrderSortOrder,
+  isVariablesOrderEnabled = false
 }) => {
   // Use API drivers data
   const { drivers: apiDrivers } = useDrivers();
@@ -401,6 +410,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         // 2. We're switching to a different list (tieredValuesLoadedRef.current !== selectedList.id)
         // AND we haven't edited values locally (tieredValuesEditedRef.current === false)
         if (tieredValuesLoadedRef.current !== selectedList.id && !tieredValuesEditedRef.current) {
+          // New list or haven't loaded yet - load from backend
           tieredValuesLoadedRef.current = selectedList.id;
           getTieredListValues(selectedList.id)
             .then((values) => {
@@ -435,8 +445,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               console.error('Error loading tiered list values:', error);
               setTieredListValues({});
             });
+        } else if (tieredValuesLoadedRef.current === selectedList.id && tieredValuesEditedRef.current) {
+          // Same list, but we have unsaved changes - preserve the local state
+          console.log('✅ Same list with unsaved changes - preserving tieredListValues state');
+          // Don't reload from backend - keep the current local state with unsaved changes
         }
-        // If we've already loaded for this list, keep the current local state (may have unsaved changes)
+        // If we've already loaded for this list and no edits, keep the current local state (may have unsaved changes)
       } else if (selectedList.listType === 'Single') {
         // Clear tiered list values when switching to Single
         tieredValuesLoadedRef.current = null;
@@ -825,6 +839,13 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             id: (Date.now() + index).toString(),
             value
           }));
+        } else if (selectedList?.listValuesList && selectedList.listValuesList.length > 0) {
+          // If singleListValues is empty but we have variations, use existing list values
+          // This handles the case where user only adds variations without changing values
+          listValuesArray = selectedList.listValuesList.map((lv: any) => ({
+            id: lv.id || (Date.now() + Math.random()).toString(),
+            value: lv.value || ''
+          })).filter((lv: any) => lv.value.trim().length > 0);
         } else {
           // Fallback to textarea (for backward compatibility)
           listValuesArray = listValuesText
@@ -848,12 +869,43 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           return;
         }
         
-        saveData.listValuesList = listValuesArray;
-        saveData.listValuesVariations = singleListValuesVariations;
+        // CRITICAL: Always include listValuesList when saving
+        // If we have new values from modal, use those
+        // If we only have variations, use existing values to preserve them
+        // This prevents data loss - the backend will replace values, so we must include existing ones
+        if (listValuesArray.length > 0) {
+          // User edited values in modal - use the new values
+          saveData.listValuesList = listValuesArray;
+        } else if (Object.keys(singleListValuesVariations).length > 0) {
+          // User only added variations - preserve existing values
+          if (selectedList?.listValuesList && selectedList.listValuesList.length > 0) {
+            saveData.listValuesList = selectedList.listValuesList.map((lv: any) => ({
+              id: lv.id || (Date.now() + Math.random()).toString(),
+              value: lv.value || ''
+            })).filter((lv: any) => lv.value.trim().length > 0);
+          }
+        } else if (listValuesText.trim().length > 0) {
+          // Fallback to textarea values
+          saveData.listValuesList = listValuesArray;
+        }
+        // If none of the above, don't include listValuesList (backend will preserve existing values)
+        
+        // Always include variations if they exist
+        if (Object.keys(singleListValuesVariations).length > 0) {
+          saveData.listValuesVariations = singleListValuesVariations;
+        }
+        
         saveData.tieredListsList = [];
         saveData.listType = 'Single';
-        // Clear tiered list values if switching from Multi-Level to Single
-        saveData.tieredListValues = {};
+        // Only clear tiered list values if we're actually switching FROM Multi-Level TO Single
+        // Don't include tieredListValues if list is already Single (prevents false "cleared" messages)
+        const wasMultiLevel = selectedList?.listType === 'Multi-Level' || 
+          (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0);
+        if (wasMultiLevel) {
+          // Switching from Multi-Level to Single - clear tiered values
+          saveData.tieredListValues = {};
+        }
+        // If already Single, don't include tieredListValues (prevents false change detection)
       } else if (listType === 'Multi-Level') {
         // Multi-Level list - validate tier names and prepare for backend
         const validTierNames = tierNames.filter(name => name.trim() !== '');
@@ -862,8 +914,16 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           return;
         }
         
-        // Clear existing list values when switching to Multi-Level
-        saveData.listValuesList = [];
+        // Only clear list values if we're actually switching FROM Single TO Multi-Level
+        // Don't clear if the list is already Multi-Level (preserves existing tiered values)
+        const wasSingleLevel = selectedList?.listType === 'Single' || 
+          (!selectedList?.listType && !selectedList?.tieredListsList);
+        if (wasSingleLevel) {
+          // Switching from Single to Multi-Level - clear single-level values
+          saveData.listValuesList = [];
+        }
+        // If already Multi-Level, don't touch listValuesList (preserves data)
+        
         saveData.listType = 'Multi-Level';
         saveData.numberOfLevels = numberOfLevels;
         saveData.tierNames = validTierNames;
@@ -927,8 +987,37 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     // 2. If user cleared values in grid modal, they get cleared in backend
     // 3. If user hasn't opened grid modal, we preserve existing backend values by not including it
     if (listType === 'Multi-Level' && tieredValuesEditedRef.current) {
-      // Include tieredListValues (even if empty, to clear backend values if user cleared them)
-      saveData.tieredListValues = tieredListValues;
+      // Check if tieredListValues only has _variations (user only added variations, didn't edit values)
+      const hasOnlyVariations = Object.keys(tieredListValues).length === 1 && tieredListValues._variations;
+      const hasActualValues = Object.keys(tieredListValues).some(k => k !== '_variations' && 
+        Array.isArray(tieredListValues[k]) && tieredListValues[k].length > 0);
+      
+      if (hasOnlyVariations && !hasActualValues) {
+        // User only added variations - merge with existing tiered values to preserve them
+        // Get existing tiered values from selectedList
+        // If selectedList doesn't have tieredListValues loaded, we'll need to preserve by not including it
+        // (backend will preserve existing values if tieredListValues is not included)
+        const existingTieredValues = selectedList?.tieredListValues;
+        
+        if (existingTieredValues && Object.keys(existingTieredValues).length > 0) {
+          // Merge: keep existing values, add new variations
+          saveData.tieredListValues = {
+            ...existingTieredValues,
+            _variations: tieredListValues._variations
+          };
+        } else {
+          // Existing values not loaded - don't include tieredListValues to preserve backend values
+          // Only include variations separately if possible, or skip this save
+          console.warn('⚠️ Cannot merge variations: existing tiered values not loaded. Variations will be saved separately.');
+          // For now, include only _variations - backend should handle this
+          saveData.tieredListValues = {
+            _variations: tieredListValues._variations
+          };
+        }
+      } else {
+        // User edited actual tiered values - use the edited values
+        saveData.tieredListValues = tieredListValues;
+      }
       // ALWAYS include tierNames and numberOfLevels when saving tieredListValues
       // This is critical - backend needs tierNames to create tier lists if they don't exist
       // Use tierNames from state if available, otherwise try to get from selectedList
@@ -956,8 +1045,15 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       // Reset the flag after including in save data
       tieredValuesEditedRef.current = false;
     } else if (listType === 'Single') {
-      // Clear tiered list values when switching to Single
-      saveData.tieredListValues = {};
+      // Only clear tiered list values if we're switching FROM Multi-Level TO Single
+      // Don't include tieredListValues if list is already Single (prevents false "cleared" messages)
+      const wasMultiLevel = selectedList?.listType === 'Multi-Level' || 
+        (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0);
+      if (wasMultiLevel) {
+        // Switching from Multi-Level to Single - clear tiered values
+        saveData.tieredListValues = {};
+      }
+      // If already Single, don't include tieredListValues (prevents false change detection)
       tieredValuesEditedRef.current = false;
     }
     
@@ -2110,6 +2206,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           }
         }}
         isBulkMode={false}
+        variablesOrderSortOrder={variablesOrderSortOrder}
+        isVariablesOrderEnabled={isVariablesOrderEnabled}
       />
 
       {/* Lists Ontology Modal */}
@@ -2173,17 +2271,16 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         onSave={(tieredValues) => {
           // Store tiered values locally - don't save to Neo4j yet
           // Values will be saved to Neo4j when user clicks "Save Changes" on metadata panel
-          console.log('TieredListValuesModal: Saving tiered values to local state:', tieredValues);
+          console.log('📥 ListMetadataPanel: Received tiered values from modal:', {
+            keys: Object.keys(tieredValues),
+            hasVariations: !!(tieredValues as any)._variations,
+            tieredValues: tieredValues
+          });
           setTieredListValues(tieredValues);
           tieredValuesEditedRef.current = true; // Mark that user has edited tiered values
-          setIsTieredListValuesModalOpen(false);
-          // Show confirmation that values are stored (but not yet saved to Neo4j)
-          const totalRows = Object.values(tieredValues).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
-          if (totalRows > 0) {
-            alert(`Tiered list values stored (${totalRows} row${totalRows !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
-          } else {
-            alert('Tiered list values cleared. Click "Save Changes" on the metadata panel to save changes to Neo4j.');
-          }
+          console.log('✅ ListMetadataPanel: Updated tieredListValues state and set tieredValuesEditedRef to true');
+          // DO NOT close the modal - let user see the saved variations
+          // Modal will stay open - user can continue editing or close manually
         }}
       />
 
@@ -2212,51 +2309,15 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         isOpen={isSingleListValuesModalOpen}
         onClose={() => setIsSingleListValuesModalOpen(false)}
         selectedList={selectedList || null}
+        initialVariations={singleListValuesVariations}
         onSave={(values, variations) => {
           // Store values and variations to be used when saving the list
+          // DO NOT close the modal - let user see the saved variations
+          // DO NOT trigger parent save - only save locally in modal
+          // Parent save will happen when user clicks "Save Changes" on metadata panel
           setSingleListValues(values);
           setSingleListValuesVariations(variations || {});
-          setIsSingleListValuesModalOpen(false);
-          // Trigger save with the new values
-          if (onSave) {
-            // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
-            const getDriverValuesForSave = (values: string[], allPossibleValues: string[]): string[] => {
-              if (values.includes('ALL')) {
-                return allPossibleValues.filter(v => v !== 'ALL');
-              }
-              return values.filter(v => v !== 'ALL');
-            };
-            
-            const listValuesArray = values.map((value, index) => ({
-              id: (Date.now() + index).toString(),
-              value
-            }));
-            
-            const saveData: any = {
-              ...formData,
-              sector: getDriverValuesForSave(driverSelections.sector, driversData.sectors),
-              domain: getDriverValuesForSave(driverSelections.domain, driversData.domains),
-              country: getDriverValuesForSave(driverSelections.country, driversData.countries),
-              variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
-              listValuesList: listValuesArray,
-              listType: 'Single',
-              tieredListsList: [],
-              tieredListValues: {}
-            };
-            
-            // Handle variationsList
-            const variationsArray = variationsText
-              .split('\n')
-              .map(line => line.trim())
-              .filter(line => line.length > 0)
-              .map((name) => ({ name }));
-            
-            if (variationsArray.length > 0) {
-              saveData.variationsList = variationsArray;
-            }
-            
-            onSave(saveData);
-          }
+          // Modal will stay open - user can continue editing or close manually
         }}
       />
     </div>

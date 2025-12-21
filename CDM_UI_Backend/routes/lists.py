@@ -1,7 +1,7 @@
-from fastapi import APIRouter, HTTPException, status, Body, UploadFile, File, Request
+from fastapi import APIRouter, HTTPException, status, Body, UploadFile, File, Request, Depends
 from fastapi.encoders import jsonable_encoder
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import uuid
 import re
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -41,6 +41,28 @@ class ListCreateRequest(BaseModel):
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
     variationsList: Optional[List[dict]] = None  # List of variations to create for the list
+    
+    @model_validator(mode='before')
+    @classmethod
+    def preprocess_tiered_list_values(cls, data: Any) -> Any:
+        """
+        Preprocess the data before validation to handle _variations in tieredListValues.
+        This runs before any field validation, preventing Pydantic from trying to validate
+        the nested _variations structure. We convert the entire tieredListValues to a
+        plain dict that Pydantic will accept as Any without deep validation.
+        """
+        if isinstance(data, dict) and 'tieredListValues' in data:
+            tiered_values = data.get('tieredListValues')
+            if tiered_values is not None:
+                # Convert to a plain dict to prevent Pydantic from validating nested structures
+                # This preserves _variations and all other nested data without validation
+                if isinstance(tiered_values, dict):
+                    # Create a new dict with all items, preserving _variations as-is
+                    data['tieredListValues'] = {k: v for k, v in tiered_values.items()}
+                else:
+                    # If it's not a dict, preserve as-is
+                    data['tieredListValues'] = tiered_values
+        return data
 
 class ListUpdateRequest(BaseModel):
     model_config = ConfigDict(extra='allow')  # Allow extra fields like _variations in tieredListValues
@@ -65,6 +87,9 @@ class ListUpdateRequest(BaseModel):
     listType: Optional[str] = None  # 'Single' or 'Multi-Level'
     numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
     tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
+    
+    # Removed model_validator - it was causing validation issues with _variations
+    # We handle tieredListValues manually in the route handler using model_construct
 
 async def get_child_lists(session, parent_list_id: str) -> List[str]:
     """
@@ -1325,21 +1350,27 @@ async def update_list(list_id: str, request: Request):
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        # Get raw request body to handle _variations in tieredListValues
-        raw_data = await request.json()
+        # Read raw body bytes and parse manually to completely bypass FastAPI validation
+        # This ensures no validation happens at the FastAPI level
+        body_bytes = await request.body()
+        raw_data = json.loads(body_bytes.decode('utf-8'))
         
-        # Extract tieredListValues with _variations before validation
-        tiered_list_values_raw = raw_data.get('tieredListValues')
+        # Debug: Print the raw data to see what we're receiving
+        print(f"DEBUG: Raw request data keys: {list(raw_data.keys())}")
+        if 'tieredListValues' in raw_data:
+            print(f"DEBUG: tieredListValues type: {type(raw_data['tieredListValues'])}")
+            if isinstance(raw_data['tieredListValues'], dict):
+                print(f"DEBUG: tieredListValues keys: {list(raw_data['tieredListValues'].keys())}")
+                if '_variations' in raw_data['tieredListValues']:
+                    print(f"DEBUG: _variations type: {type(raw_data['tieredListValues']['_variations'])}")
+                    print(f"DEBUG: _variations sample: {str(raw_data['tieredListValues']['_variations'])[:200]}")
         
-        # Create a copy of raw_data without tieredListValues for validation
-        data_for_validation = {k: v for k, v in raw_data.items() if k != 'tieredListValues'}
+        # Use model_construct to create the instance without ANY validation
+        # This completely bypasses Pydantic validation, including model_validator
+        # which allows _variations in tieredListValues to pass through untouched
+        list_data = ListUpdateRequest.model_construct(**raw_data)
         
-        # Validate the rest of the data
-        list_data = ListUpdateRequest(**data_for_validation)
-        
-        # Manually set tieredListValues after validation (as Any type)
-        if tiered_list_values_raw is not None:
-            list_data.tieredListValues = tiered_list_values_raw
+        print(f"DEBUG: Successfully created list_data with tieredListValues: {list_data.tieredListValues is not None}")
         
         with driver.session() as session:
             # Check if list exists
@@ -1494,6 +1525,7 @@ async def update_list(list_id: str, request: Request):
             
             # Update list values if provided (replace all existing with new ones)
             # Note: Even if listValuesList is an empty array, we still want to replace (clear all values)
+            # CRITICAL: If listValuesList is None, we don't touch existing values (preserves data)
             if list_data.listValuesList is not None:
                 await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=list_data.listValuesVariations)
             

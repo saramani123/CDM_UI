@@ -794,73 +794,80 @@ function App() {
       // Filter out any undefined/null items first
       const validVariableData = variableData.filter(v => v && typeof v === 'object');
       
-      // Find new parts/sections/groups/variables and append them
+      // Create a deep copy to avoid mutating state
+      const currentOrder = {
+        partOrder: [...variablesOrderSortOrder.partOrder],
+        sectionOrders: { ...variablesOrderSortOrder.sectionOrders },
+        groupOrders: { ...variablesOrderSortOrder.groupOrders },
+        variableOrders: { ...variablesOrderSortOrder.variableOrders }
+      };
+      
+      // Deep copy nested arrays
+      Object.keys(currentOrder.sectionOrders).forEach(key => {
+        currentOrder.sectionOrders[key] = [...currentOrder.sectionOrders[key]];
+      });
+      Object.keys(currentOrder.groupOrders).forEach(key => {
+        currentOrder.groupOrders[key] = [...currentOrder.groupOrders[key]];
+      });
+      Object.keys(currentOrder.variableOrders).forEach(key => {
+        currentOrder.variableOrders[key] = [...currentOrder.variableOrders[key]];
+      });
+      
+      let orderChanged = false;
+      
+      // Find new parts/sections/groups/variables and append them to the END
       const distinctParts = Array.from(new Set(validVariableData.map(v => v?.part).filter(Boolean)));
-      const newParts = distinctParts.filter(p => !variablesOrderSortOrder.partOrder.includes(p));
+      const newParts = distinctParts.filter(p => !currentOrder.partOrder.includes(p));
       if (newParts.length > 0) {
-        const updatedOrder = { ...variablesOrderSortOrder };
-        updatedOrder.partOrder = [...updatedOrder.partOrder, ...newParts];
-        setVariablesOrderSortOrder(updatedOrder);
-        localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
-        apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+        currentOrder.partOrder = [...currentOrder.partOrder, ...newParts];
+        orderChanged = true;
       }
       
-      // Similar for sections, groups, variables - append only
+      // Similar for sections, groups, variables - append only to END
       distinctParts.forEach(part => {
         const sectionsForPart = Array.from(new Set(validVariableData.filter(v => v?.part === part).map(v => v?.section).filter(Boolean)));
-        if (!variablesOrderSortOrder.sectionOrders[part]) {
-          variablesOrderSortOrder.sectionOrders[part] = [];
+        if (!currentOrder.sectionOrders[part]) {
+          currentOrder.sectionOrders[part] = [];
         }
-        const newSections = sectionsForPart.filter(s => !variablesOrderSortOrder.sectionOrders[part].includes(s));
+        const newSections = sectionsForPart.filter(s => !currentOrder.sectionOrders[part].includes(s));
         if (newSections.length > 0) {
-          const updatedOrder = { ...variablesOrderSortOrder };
-          if (!updatedOrder.sectionOrders[part]) {
-            updatedOrder.sectionOrders[part] = [];
-          }
-          updatedOrder.sectionOrders[part] = [...updatedOrder.sectionOrders[part], ...newSections];
-          setVariablesOrderSortOrder(updatedOrder);
-          localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
-          apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+          currentOrder.sectionOrders[part] = [...currentOrder.sectionOrders[part], ...newSections];
+          orderChanged = true;
         }
         
         sectionsForPart.forEach(section => {
           const groupsForPartSection = Array.from(new Set(validVariableData.filter(v => v?.part === part && v?.section === section).map(v => v?.group).filter(Boolean)));
           const groupKey = `${part}|${section}`;
-          if (!variablesOrderSortOrder.groupOrders[groupKey]) {
-            variablesOrderSortOrder.groupOrders[groupKey] = [];
+          if (!currentOrder.groupOrders[groupKey]) {
+            currentOrder.groupOrders[groupKey] = [];
           }
-          const newGroups = groupsForPartSection.filter(g => !variablesOrderSortOrder.groupOrders[groupKey].includes(g));
+          const newGroups = groupsForPartSection.filter(g => !currentOrder.groupOrders[groupKey].includes(g));
           if (newGroups.length > 0) {
-            const updatedOrder = { ...variablesOrderSortOrder };
-            if (!updatedOrder.groupOrders[groupKey]) {
-              updatedOrder.groupOrders[groupKey] = [];
-            }
-            updatedOrder.groupOrders[groupKey] = [...updatedOrder.groupOrders[groupKey], ...newGroups];
-            setVariablesOrderSortOrder(updatedOrder);
-            localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
-            apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+            currentOrder.groupOrders[groupKey] = [...currentOrder.groupOrders[groupKey], ...newGroups];
+            orderChanged = true;
           }
           
           groupsForPartSection.forEach(group => {
             const variablesForPartSectionGroup = Array.from(new Set(validVariableData.filter(v => v?.part === part && v?.section === section && v?.group === group).map(v => v?.variable).filter(Boolean)));
             const variableKey = `${part}|${section}|${group}`;
-            if (!variablesOrderSortOrder.variableOrders[variableKey]) {
-              variablesOrderSortOrder.variableOrders[variableKey] = [];
+            if (!currentOrder.variableOrders[variableKey]) {
+              currentOrder.variableOrders[variableKey] = [];
             }
-            const newVariables = variablesForPartSectionGroup.filter(v => !variablesOrderSortOrder.variableOrders[variableKey].includes(v));
+            const newVariables = variablesForPartSectionGroup.filter(v => !currentOrder.variableOrders[variableKey].includes(v));
             if (newVariables.length > 0) {
-              const updatedOrder = { ...variablesOrderSortOrder };
-              if (!updatedOrder.variableOrders[variableKey]) {
-                updatedOrder.variableOrders[variableKey] = [];
-              }
-              updatedOrder.variableOrders[variableKey] = [...updatedOrder.variableOrders[variableKey], ...newVariables];
-              setVariablesOrderSortOrder(updatedOrder);
-              localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
-              apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order:', err));
+              currentOrder.variableOrders[variableKey] = [...currentOrder.variableOrders[variableKey], ...newVariables];
+              orderChanged = true;
             }
           });
         });
       });
+      
+      // Only update if order actually changed (new values added)
+      if (orderChanged) {
+        setVariablesOrderSortOrder(currentOrder);
+        localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(currentOrder));
+        apiService.saveVariablesOrder(currentOrder).catch(err => console.error('Failed to save variables order:', err));
+      }
     }
   }, [variableData, variablesOrderSortOrder, activeTab]);
 
@@ -1336,64 +1343,152 @@ function App() {
     const updatedOrder = { ...objectsOrderSortOrder };
     let orderChanged = false;
     
-    // Update being if changed
+    // Update being if changed - rename in place
     if (oldBeing !== newBeing) {
       const oldIndex = updatedOrder.beingOrder.indexOf(oldBeing);
       if (oldIndex !== -1) {
         // Remove old being
         updatedOrder.beingOrder = updatedOrder.beingOrder.filter(b => b !== oldBeing);
-        // If new being doesn't exist, insert at old position, otherwise append
+        // If new being doesn't exist, insert at old position, otherwise keep existing position
         if (!updatedOrder.beingOrder.includes(newBeing)) {
           updatedOrder.beingOrder.splice(oldIndex, 0, newBeing);
         } else {
-          // New being already exists, just remove old one
+          // New being already exists, just remove old one (order preserved)
         }
         orderChanged = true;
       }
     }
     
-    // Update avatar if changed
-    if (oldAvatar !== newAvatar && updatedOrder.avatarOrders[oldBeing]) {
-      const oldIndex = updatedOrder.avatarOrders[oldBeing].indexOf(oldAvatar);
+    // Update avatar if changed - rename in place
+    const oldBeingKey = oldBeing !== newBeing ? newBeing : oldBeing; // Use new being if being changed
+    if (oldAvatar !== newAvatar) {
+      if (updatedOrder.avatarOrders[oldBeingKey]) {
+        const oldIndex = updatedOrder.avatarOrders[oldBeingKey].indexOf(oldAvatar);
       if (oldIndex !== -1) {
-        updatedOrder.avatarOrders[oldBeing] = updatedOrder.avatarOrders[oldBeing].filter(a => a !== oldAvatar);
-        if (updatedOrder.avatarOrders[oldBeing].length === 0) {
-          delete updatedOrder.avatarOrders[oldBeing];
+          // Remove old avatar
+          updatedOrder.avatarOrders[oldBeingKey] = updatedOrder.avatarOrders[oldBeingKey].filter(a => a !== oldAvatar);
+          if (updatedOrder.avatarOrders[oldBeingKey].length === 0) {
+            delete updatedOrder.avatarOrders[oldBeingKey];
         }
         orderChanged = true;
+        }
       }
       
-      // Add new avatar to new being
+      // Add new avatar to new being (preserve position if possible)
       if (!updatedOrder.avatarOrders[newBeing]) {
         updatedOrder.avatarOrders[newBeing] = [];
       }
       if (!updatedOrder.avatarOrders[newBeing].includes(newAvatar)) {
+        // If we had an old position, try to preserve it
+        const newBeingIndex = updatedOrder.beingOrder.indexOf(newBeing);
+        if (newBeingIndex !== -1 && oldAvatar !== newAvatar && updatedOrder.avatarOrders[oldBeingKey]) {
+          const oldAvatarIndex = updatedOrder.avatarOrders[oldBeingKey]?.indexOf(oldAvatar) ?? -1;
+          if (oldAvatarIndex !== -1) {
+            updatedOrder.avatarOrders[newBeing].splice(oldAvatarIndex, 0, newAvatar);
+          } else {
         updatedOrder.avatarOrders[newBeing].push(newAvatar);
+          }
+        } else {
+          updatedOrder.avatarOrders[newBeing].push(newAvatar);
+        }
         orderChanged = true;
       }
     }
     
-    // Update object if changed
-    const oldObjectKey = `${oldBeing}|${oldAvatar}`;
+    // Update object if changed - rename in place
+    const oldObjectKey = `${oldBeingKey}|${oldAvatar !== newAvatar ? newAvatar : oldAvatar}`;
     const newObjectKey = `${newBeing}|${newAvatar}`;
-    if (oldObject !== newObject && updatedOrder.objectOrders[oldObjectKey]) {
+    if (oldObject !== newObject) {
+      if (updatedOrder.objectOrders[oldObjectKey]) {
       const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
       if (oldIndex !== -1) {
+          // Remove old object
         updatedOrder.objectOrders[oldObjectKey] = updatedOrder.objectOrders[oldObjectKey].filter(o => o !== oldObject);
         if (updatedOrder.objectOrders[oldObjectKey].length === 0) {
           delete updatedOrder.objectOrders[oldObjectKey];
         }
         orderChanged = true;
+        }
       }
       
-      // Add new object to new key
+      // Add new object to new key (preserve position if possible)
       if (!updatedOrder.objectOrders[newObjectKey]) {
         updatedOrder.objectOrders[newObjectKey] = [];
       }
       if (!updatedOrder.objectOrders[newObjectKey].includes(newObject)) {
+        // If we had an old position, try to preserve it
+        if (oldObjectKey !== newObjectKey && updatedOrder.objectOrders[oldObjectKey]) {
+          const oldObjectIndex = updatedOrder.objectOrders[oldObjectKey]?.indexOf(oldObject) ?? -1;
+          if (oldObjectIndex !== -1) {
+            updatedOrder.objectOrders[newObjectKey].splice(oldObjectIndex, 0, newObject);
+          } else {
         updatedOrder.objectOrders[newObjectKey].push(newObject);
+          }
+        } else if (oldObjectKey === newObjectKey && updatedOrder.objectOrders[oldObjectKey]) {
+          // Same key, preserve position
+          const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
+          if (oldIndex !== -1) {
+            updatedOrder.objectOrders[newObjectKey].splice(oldIndex, 0, newObject);
+          } else {
+            updatedOrder.objectOrders[newObjectKey].push(newObject);
+          }
+        } else {
+          updatedOrder.objectOrders[newObjectKey].push(newObject);
+        }
         orderChanged = true;
       }
+    }
+    
+    // Handle cascading changes when being/avatar changes
+    // If being changed, migrate avatar/object orders to new being
+    if (oldBeing !== newBeing) {
+      // Migrate avatar orders
+      if (updatedOrder.avatarOrders[oldBeing]) {
+        updatedOrder.avatarOrders[newBeing] = updatedOrder.avatarOrders[newBeing] || [];
+        // Merge avatars, preserving order
+        const avatarsToMigrate = updatedOrder.avatarOrders[oldBeing].filter(a => 
+          !updatedOrder.avatarOrders[newBeing].includes(a)
+        );
+        updatedOrder.avatarOrders[newBeing] = [...updatedOrder.avatarOrders[newBeing], ...avatarsToMigrate];
+        // Clean up old being if no longer needed
+        if (updatedOrder.avatarOrders[oldBeing].length === 0) {
+          delete updatedOrder.avatarOrders[oldBeing];
+        }
+      }
+      
+      // Migrate object orders
+      Object.keys(updatedOrder.objectOrders).forEach(key => {
+        if (key.startsWith(`${oldBeing}|`)) {
+          const [being, avatar] = key.split('|');
+          const newKey = `${newBeing}|${avatar}`;
+          if (!updatedOrder.objectOrders[newKey]) {
+            updatedOrder.objectOrders[newKey] = [];
+          }
+          const objectsToMigrate = updatedOrder.objectOrders[key].filter(o => 
+            !updatedOrder.objectOrders[newKey].includes(o)
+          );
+          updatedOrder.objectOrders[newKey] = [...updatedOrder.objectOrders[newKey], ...objectsToMigrate];
+          delete updatedOrder.objectOrders[key];
+        }
+      });
+    }
+    
+    // If avatar changed, migrate object orders to new avatar
+    if (oldAvatar !== newAvatar && oldBeing === newBeing) {
+      const beingKey = newBeing;
+      Object.keys(updatedOrder.objectOrders).forEach(key => {
+        if (key === `${beingKey}|${oldAvatar}`) {
+          const newKey = `${beingKey}|${newAvatar}`;
+          if (!updatedOrder.objectOrders[newKey]) {
+            updatedOrder.objectOrders[newKey] = [];
+          }
+          const objectsToMigrate = updatedOrder.objectOrders[key].filter(o => 
+            !updatedOrder.objectOrders[newKey].includes(o)
+          );
+          updatedOrder.objectOrders[newKey] = [...updatedOrder.objectOrders[newKey], ...objectsToMigrate];
+          delete updatedOrder.objectOrders[key];
+        }
+      });
     }
     
     if (orderChanged) {
@@ -1410,20 +1505,185 @@ function App() {
     const updatedOrder = { ...variablesOrderSortOrder };
     let orderChanged = false;
     
-    // Similar logic for part, section, group, variable
+    // Update part if changed - rename in place
     if (oldPart !== newPart) {
       const oldIndex = updatedOrder.partOrder.indexOf(oldPart);
       if (oldIndex !== -1) {
+        // Remove old part
         updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== oldPart);
+        // If new part doesn't exist, insert at old position, otherwise keep existing position
         if (!updatedOrder.partOrder.includes(newPart)) {
           updatedOrder.partOrder.splice(oldIndex, 0, newPart);
+        } else {
+          // New part already exists, just remove old one (order preserved)
         }
         orderChanged = true;
       }
     }
     
-    // Update section, group, variable similarly...
-    // (Similar pattern for section, group, variable updates)
+    // Update section if changed - rename in place
+    if (oldSection !== newSection) {
+      const oldPartKey = oldPart !== newPart ? newPart : oldPart; // Use new part if part changed
+      if (updatedOrder.sectionOrders[oldPartKey]) {
+        const oldIndex = updatedOrder.sectionOrders[oldPartKey].indexOf(oldSection);
+        if (oldIndex !== -1) {
+          // Remove old section
+          updatedOrder.sectionOrders[oldPartKey] = updatedOrder.sectionOrders[oldPartKey].filter(s => s !== oldSection);
+          // If new section doesn't exist, insert at old position, otherwise append to end
+          if (!updatedOrder.sectionOrders[oldPartKey].includes(newSection)) {
+            updatedOrder.sectionOrders[oldPartKey].splice(oldIndex, 0, newSection);
+          } else {
+            // New section already exists, just remove old one (order preserved)
+          }
+          orderChanged = true;
+        }
+      }
+    }
+    
+    // Update group if changed - rename in place
+    if (oldGroup !== newGroup) {
+      const oldPartKey = oldPart !== newPart ? newPart : oldPart;
+      const oldSectionKey = oldSection !== newSection ? newSection : oldSection;
+      const groupKey = `${oldPartKey}|${oldSectionKey}`;
+      if (updatedOrder.groupOrders[groupKey]) {
+        const oldIndex = updatedOrder.groupOrders[groupKey].indexOf(oldGroup);
+        if (oldIndex !== -1) {
+          // Remove old group
+          updatedOrder.groupOrders[groupKey] = updatedOrder.groupOrders[groupKey].filter(g => g !== oldGroup);
+          // If new group doesn't exist, insert at old position, otherwise append to end
+          if (!updatedOrder.groupOrders[groupKey].includes(newGroup)) {
+            updatedOrder.groupOrders[groupKey].splice(oldIndex, 0, newGroup);
+          } else {
+            // New group already exists, just remove old one (order preserved)
+          }
+          orderChanged = true;
+        }
+      }
+    }
+    
+    // Update variable if changed - rename in place
+    if (oldVariable !== newVariable) {
+      const oldPartKey = oldPart !== newPart ? newPart : oldPart;
+      const oldSectionKey = oldSection !== newSection ? newSection : oldSection;
+      const oldGroupKey = oldGroup !== newGroup ? newGroup : oldGroup;
+      const variableKey = `${oldPartKey}|${oldSectionKey}|${oldGroupKey}`;
+      if (updatedOrder.variableOrders[variableKey]) {
+        const oldIndex = updatedOrder.variableOrders[variableKey].indexOf(oldVariable);
+        if (oldIndex !== -1) {
+          // Remove old variable
+          updatedOrder.variableOrders[variableKey] = updatedOrder.variableOrders[variableKey].filter(v => v !== oldVariable);
+          // If new variable doesn't exist, insert at old position, otherwise append to end
+          if (!updatedOrder.variableOrders[variableKey].includes(newVariable)) {
+            updatedOrder.variableOrders[variableKey].splice(oldIndex, 0, newVariable);
+          } else {
+            // New variable already exists, just remove old one (order preserved)
+          }
+          orderChanged = true;
+        }
+      }
+    }
+    
+    // Handle cascading changes when part/section/group changes
+    // If part changed, migrate section/group/variable orders to new part
+    if (oldPart !== newPart) {
+      // Migrate section orders
+      if (updatedOrder.sectionOrders[oldPart]) {
+        updatedOrder.sectionOrders[newPart] = updatedOrder.sectionOrders[newPart] || [];
+        // Merge sections, preserving order
+        const sectionsToMigrate = updatedOrder.sectionOrders[oldPart].filter(s => 
+          !updatedOrder.sectionOrders[newPart].includes(s)
+        );
+        updatedOrder.sectionOrders[newPart] = [...updatedOrder.sectionOrders[newPart], ...sectionsToMigrate];
+        // Clean up old part if no longer needed
+        if (updatedOrder.sectionOrders[oldPart].length === 0) {
+          delete updatedOrder.sectionOrders[oldPart];
+        }
+      }
+      
+      // Migrate group orders
+      Object.keys(updatedOrder.groupOrders).forEach(key => {
+        if (key.startsWith(`${oldPart}|`)) {
+          const [part, section] = key.split('|');
+          const newKey = `${newPart}|${section}`;
+          if (!updatedOrder.groupOrders[newKey]) {
+            updatedOrder.groupOrders[newKey] = [];
+          }
+          const groupsToMigrate = updatedOrder.groupOrders[key].filter(g => 
+            !updatedOrder.groupOrders[newKey].includes(g)
+          );
+          updatedOrder.groupOrders[newKey] = [...updatedOrder.groupOrders[newKey], ...groupsToMigrate];
+          delete updatedOrder.groupOrders[key];
+        }
+      });
+      
+      // Migrate variable orders
+      Object.keys(updatedOrder.variableOrders).forEach(key => {
+        if (key.startsWith(`${oldPart}|`)) {
+          const [part, section, group] = key.split('|');
+          const newKey = `${newPart}|${section}|${group}`;
+          if (!updatedOrder.variableOrders[newKey]) {
+            updatedOrder.variableOrders[newKey] = [];
+          }
+          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
+            !updatedOrder.variableOrders[newKey].includes(v)
+          );
+          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
+          delete updatedOrder.variableOrders[key];
+        }
+      });
+    }
+    
+    // If section changed, migrate group/variable orders to new section
+    if (oldSection !== newSection && oldPart === newPart) {
+      const partKey = newPart;
+      Object.keys(updatedOrder.groupOrders).forEach(key => {
+        if (key === `${partKey}|${oldSection}`) {
+          const newKey = `${partKey}|${newSection}`;
+          if (!updatedOrder.groupOrders[newKey]) {
+            updatedOrder.groupOrders[newKey] = [];
+          }
+          const groupsToMigrate = updatedOrder.groupOrders[key].filter(g => 
+            !updatedOrder.groupOrders[newKey].includes(g)
+          );
+          updatedOrder.groupOrders[newKey] = [...updatedOrder.groupOrders[newKey], ...groupsToMigrate];
+          delete updatedOrder.groupOrders[key];
+        }
+      });
+      
+      Object.keys(updatedOrder.variableOrders).forEach(key => {
+        if (key.startsWith(`${partKey}|${oldSection}|`)) {
+          const [part, section, group] = key.split('|');
+          const newKey = `${part}|${newSection}|${group}`;
+          if (!updatedOrder.variableOrders[newKey]) {
+            updatedOrder.variableOrders[newKey] = [];
+          }
+          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
+            !updatedOrder.variableOrders[newKey].includes(v)
+          );
+          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
+          delete updatedOrder.variableOrders[key];
+        }
+      });
+    }
+    
+    // If group changed, migrate variable orders to new group
+    if (oldGroup !== newGroup && oldPart === newPart && oldSection === newSection) {
+      const partKey = newPart;
+      const sectionKey = newSection;
+      Object.keys(updatedOrder.variableOrders).forEach(key => {
+        if (key === `${partKey}|${sectionKey}|${oldGroup}`) {
+          const newKey = `${partKey}|${sectionKey}|${newGroup}`;
+          if (!updatedOrder.variableOrders[newKey]) {
+            updatedOrder.variableOrders[newKey] = [];
+          }
+          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
+            !updatedOrder.variableOrders[newKey].includes(v)
+          );
+          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
+          delete updatedOrder.variableOrders[key];
+        }
+      });
+    }
     
     if (orderChanged) {
       setVariablesOrderSortOrder(updatedOrder);
@@ -1468,6 +1728,156 @@ function App() {
     localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
     // Save to backend
     apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order to backend:', err));
+  };
+
+  // Utility function to update order when list values are edited (in place)
+  const updateListsOrderOnEdit = (oldSet: string, oldGrouping: string, oldList: string, newSet: string, newGrouping: string, newList: string) => {
+    if (!listsOrderSortOrder) return;
+    
+    const updatedOrder = { ...listsOrderSortOrder };
+    let orderChanged = false;
+    
+    // Update set if changed - rename in place
+    if (oldSet !== newSet) {
+      const oldIndex = updatedOrder.setOrder.indexOf(oldSet);
+      if (oldIndex !== -1) {
+        // Remove old set
+        updatedOrder.setOrder = updatedOrder.setOrder.filter(s => s !== oldSet);
+        // If new set doesn't exist, insert at old position, otherwise keep existing position
+        if (!updatedOrder.setOrder.includes(newSet)) {
+          updatedOrder.setOrder.splice(oldIndex, 0, newSet);
+        } else {
+          // New set already exists, just remove old one (order preserved)
+        }
+        orderChanged = true;
+      }
+    }
+    
+    // Update grouping if changed - rename in place
+    const oldSetKey = oldSet !== newSet ? newSet : oldSet; // Use new set if set changed
+    if (oldGrouping !== newGrouping) {
+      if (updatedOrder.groupingOrders[oldSetKey]) {
+        const oldIndex = updatedOrder.groupingOrders[oldSetKey].indexOf(oldGrouping);
+        if (oldIndex !== -1) {
+          // Remove old grouping
+          updatedOrder.groupingOrders[oldSetKey] = updatedOrder.groupingOrders[oldSetKey].filter(g => g !== oldGrouping);
+          if (updatedOrder.groupingOrders[oldSetKey].length === 0) {
+            delete updatedOrder.groupingOrders[oldSetKey];
+          }
+          orderChanged = true;
+        }
+      }
+      
+      // Add new grouping to new set (preserve position if possible)
+      if (!updatedOrder.groupingOrders[newSet]) {
+        updatedOrder.groupingOrders[newSet] = [];
+      }
+      if (!updatedOrder.groupingOrders[newSet].includes(newGrouping)) {
+        updatedOrder.groupingOrders[newSet].push(newGrouping);
+        orderChanged = true;
+      }
+    }
+    
+    // Update list if changed - rename in place
+    const oldListKey = `${oldSetKey}|${oldGrouping !== newGrouping ? newGrouping : oldGrouping}`;
+    const newListKey = `${newSet}|${newGrouping}`;
+    if (oldList !== newList) {
+      if (updatedOrder.listOrders[oldListKey]) {
+        const oldIndex = updatedOrder.listOrders[oldListKey].indexOf(oldList);
+        if (oldIndex !== -1) {
+          // Remove old list
+          updatedOrder.listOrders[oldListKey] = updatedOrder.listOrders[oldListKey].filter(l => l !== oldList);
+          if (updatedOrder.listOrders[oldListKey].length === 0) {
+            delete updatedOrder.listOrders[oldListKey];
+          }
+          orderChanged = true;
+        }
+      }
+      
+      // Add new list to new key (preserve position if possible)
+      if (!updatedOrder.listOrders[newListKey]) {
+        updatedOrder.listOrders[newListKey] = [];
+      }
+      if (!updatedOrder.listOrders[newListKey].includes(newList)) {
+        if (oldListKey !== newListKey && updatedOrder.listOrders[oldListKey]) {
+          const oldListIndex = updatedOrder.listOrders[oldListKey]?.indexOf(oldList) ?? -1;
+          if (oldListIndex !== -1) {
+            updatedOrder.listOrders[newListKey].splice(oldListIndex, 0, newList);
+          } else {
+            updatedOrder.listOrders[newListKey].push(newList);
+          }
+        } else if (oldListKey === newListKey && updatedOrder.listOrders[oldListKey]) {
+          // Same key, preserve position
+          const oldIndex = updatedOrder.listOrders[oldListKey].indexOf(oldList);
+          if (oldIndex !== -1) {
+            updatedOrder.listOrders[newListKey].splice(oldIndex, 0, newList);
+          } else {
+            updatedOrder.listOrders[newListKey].push(newList);
+          }
+        } else {
+          updatedOrder.listOrders[newListKey].push(newList);
+        }
+        orderChanged = true;
+      }
+    }
+    
+    // Handle cascading changes when set/grouping changes
+    // If set changed, migrate grouping/list orders to new set
+    if (oldSet !== newSet) {
+      // Migrate grouping orders
+      if (updatedOrder.groupingOrders[oldSet]) {
+        updatedOrder.groupingOrders[newSet] = updatedOrder.groupingOrders[newSet] || [];
+        // Merge groupings, preserving order
+        const groupingsToMigrate = updatedOrder.groupingOrders[oldSet].filter(g => 
+          !updatedOrder.groupingOrders[newSet].includes(g)
+        );
+        updatedOrder.groupingOrders[newSet] = [...updatedOrder.groupingOrders[newSet], ...groupingsToMigrate];
+        // Clean up old set if no longer needed
+        if (updatedOrder.groupingOrders[oldSet].length === 0) {
+          delete updatedOrder.groupingOrders[oldSet];
+        }
+      }
+      
+      // Migrate list orders
+      Object.keys(updatedOrder.listOrders).forEach(key => {
+        if (key.startsWith(`${oldSet}|`)) {
+          const [set, grouping] = key.split('|');
+          const newKey = `${newSet}|${grouping}`;
+          if (!updatedOrder.listOrders[newKey]) {
+            updatedOrder.listOrders[newKey] = [];
+          }
+          const listsToMigrate = updatedOrder.listOrders[key].filter(l => 
+            !updatedOrder.listOrders[newKey].includes(l)
+          );
+          updatedOrder.listOrders[newKey] = [...updatedOrder.listOrders[newKey], ...listsToMigrate];
+          delete updatedOrder.listOrders[key];
+        }
+      });
+    }
+    
+    // If grouping changed, migrate list orders to new grouping
+    if (oldGrouping !== newGrouping && oldSet === newSet) {
+      const setKey = newSet;
+      Object.keys(updatedOrder.listOrders).forEach(key => {
+        if (key === `${setKey}|${oldGrouping}`) {
+          const newKey = `${setKey}|${newGrouping}`;
+          if (!updatedOrder.listOrders[newKey]) {
+            updatedOrder.listOrders[newKey] = [];
+          }
+          const listsToMigrate = updatedOrder.listOrders[key].filter(l => 
+            !updatedOrder.listOrders[newKey].includes(l)
+          );
+          updatedOrder.listOrders[newKey] = [...updatedOrder.listOrders[newKey], ...listsToMigrate];
+          delete updatedOrder.listOrders[key];
+        }
+      });
+    }
+    
+    if (orderChanged) {
+      setListsOrderSortOrder(updatedOrder);
+      localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(updatedOrder));
+      apiService.saveListsOrder(updatedOrder).catch(err => console.error('Failed to save lists order to backend:', err));
+    }
   };
 
   const handleDelete = async (row: Record<string, any>) => {
@@ -2559,6 +2969,7 @@ function App() {
           console.log('Validation field in result:', result?.validation);
           
           // Update order if part/section/group/variable changed
+          // Use updateVariablesOrderOnEdit to rename in place, preserving order
           const oldVariable = selectedRowForMetadata as VariableData;
           const newPart = variableUpdateData.part || oldVariable.part;
           const newSection = variableUpdateData.section || oldVariable.section;
@@ -2566,14 +2977,17 @@ function App() {
           const newVariable = variableUpdateData.variable || oldVariable.variable;
           
           if (oldVariable.part !== newPart || oldVariable.section !== newSection || oldVariable.group !== newGroup || oldVariable.variable !== newVariable) {
-            // Remove old value from order
-            if (oldVariable.part && oldVariable.section && oldVariable.group && oldVariable.variable) {
-              removeFromVariablesOrder(oldVariable.part, oldVariable.section, oldVariable.group, oldVariable.variable);
-            }
-            // Append new value to order (will append to end if new, or keep existing position if already exists)
-            if (newPart && newSection && newGroup && newVariable) {
-              appendToVariablesOrder(newPart, newSection, newGroup, newVariable);
-            }
+            // Update order in place (rename) - preserves position
+            updateVariablesOrderOnEdit(
+              oldVariable.part || '',
+              oldVariable.section || '',
+              oldVariable.group || '',
+              oldVariable.variable || '',
+              newPart || '',
+              newSection || '',
+              newGroup || '',
+              newVariable || ''
+            );
           }
           
           // Handle object relationships if they exist
@@ -2691,20 +3105,22 @@ function App() {
           console.log('Object updated successfully');
           
           // Update order if being/avatar/object changed
+          // Use updateObjectsOrderOnEdit to rename in place, preserving order
           const oldObject = selectedRowForMetadata as ObjectData;
           const newBeing = updatedData.being || oldObject.being;
           const newAvatar = updatedData.avatar || oldObject.avatar;
           const newObjectName = updatedData.object || updatedData.objectName || oldObject.object;
           
           if (oldObject.being !== newBeing || oldObject.avatar !== newAvatar || oldObject.object !== newObjectName) {
-            // Remove old value from order
-            if (oldObject.being && oldObject.avatar && oldObject.object) {
-              removeFromObjectsOrder(oldObject.being, oldObject.avatar, oldObject.object);
-            }
-            // Append new value to order
-            if (newBeing && newAvatar && newObjectName) {
-              appendToObjectsOrder(newBeing, newAvatar, newObjectName);
-            }
+            // Update order in place (rename) - preserves position
+            updateObjectsOrderOnEdit(
+              oldObject.being || '',
+              oldObject.avatar || '',
+              oldObject.object || '',
+              newBeing || '',
+              newAvatar || '',
+              newObjectName || ''
+            );
           }
           
           // Reload the object to refresh identifier data
@@ -2832,14 +3248,15 @@ function App() {
             const newListName = updatedData.list || oldList.list;
             
             if (oldList.set !== newSet || oldList.grouping !== newGrouping || oldList.list !== newListName) {
-              // Remove old value from order
-              if (oldList.set && oldList.grouping && oldList.list) {
-                removeFromListsOrder(oldList.set, oldList.grouping, oldList.list);
-              }
-              // Append new value to order
-              if (newSet && newGrouping && newListName) {
-                appendToListsOrder(newSet, newGrouping, newListName);
-              }
+              // Update order in place (rename) - preserves position
+              updateListsOrderOnEdit(
+                oldList.set || '',
+                oldList.grouping || '',
+                oldList.list || '',
+                newSet || '',
+                newGrouping || '',
+                newListName || ''
+              );
             }
             console.log('🔄 Updated list response:', JSON.stringify(updatedList, null, 2));
             
@@ -2885,7 +3302,19 @@ function App() {
             const listTypeChanged = apiListData.listType !== undefined;
             const tieredListsChanged = isListData && apiListData.tieredListsList !== undefined && 
               JSON.stringify((selectedRowForMetadata as any)?.tieredListsList || []) !== JSON.stringify(apiListData.tieredListsList);
+            // Only consider tieredListValues changed if it's explicitly provided
+            // But check if it's actually different from existing values (not just an empty object from type switching)
             const tieredListValuesChanged = isListData && apiListData.tieredListValues !== undefined;
+            
+            // Check if tieredListValues is actually empty (intentional clear) vs just being set to {} for type switching
+            const isTieredValuesEmpty = tieredListValuesChanged && 
+              Object.keys(apiListData.tieredListValues).length === 0 &&
+              !(apiListData.tieredListValues as any)?._variations;
+            
+            // Only show "cleared" message if it's an intentional clear (empty and no variations)
+            // AND the list was previously Multi-Level (not just a Single list that never had tiered values)
+            const wasMultiLevel = (selectedRowForMetadata as any)?.listType === 'Multi-Level' ||
+              ((selectedRowForMetadata as any)?.tieredListsList && (selectedRowForMetadata as any).tieredListsList.length > 0);
             
             // Track if drivers, metadata, variations, or applicability changed (but not listType)
             const driversChanged = isListData && (
@@ -2929,12 +3358,27 @@ function App() {
             // Show success message if tiered list values were updated
             if (tieredListValuesChanged) {
               const tieredValues = apiListData.tieredListValues || {};
-              const totalRows = Object.values(tieredValues).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+              // Check if there are actual values (excluding _variations key)
+              const valueKeys = Object.keys(tieredValues).filter(k => k !== '_variations');
+              const totalRows = valueKeys.reduce((sum: number, key: string) => {
+                const arr = tieredValues[key];
+                return sum + (Array.isArray(arr) ? arr.length : 0);
+              }, 0);
+              
+              // Check if there are variations
+              const hasVariations = tieredValues._variations && Object.keys(tieredValues._variations).length > 0;
+              
               if (totalRows > 0) {
                 alert(`Tiered list values saved successfully! ${totalRows} row${totalRows !== 1 ? 's' : ''} saved.`);
-              } else {
+              } else if (hasVariations && totalRows === 0) {
+                // If only variations were added (no tiered values changed), don't show "cleared" message
+                // Variations are being saved, which is a positive action, not a clear
+                // Don't show any message - the modal already showed "Variations saved locally"
+              } else if (isTieredValuesEmpty && wasMultiLevel) {
+                // Only show "cleared" if it's an intentional clear (empty, no variations, was Multi-Level)
                 alert('Tiered list values cleared successfully!');
               }
+              // If tieredListValues is {} but list was already Single, don't show any message
             }
             
             // Show success message if tiered lists were updated (only if tiered list values weren't updated)
@@ -4489,6 +4933,8 @@ function App() {
                   activeTab={activeTab}
                   selectedObjects={selectedRows}
                   onObjectsRefresh={activeTab === 'objects' ? fetchObjects : undefined}
+                  variablesOrderSortOrder={variablesOrderSortOrder}
+                  isVariablesOrderEnabled={isVariablesOrderEnabled}
                 />
               </div>
             </div>
@@ -4570,6 +5016,8 @@ function App() {
                     selectedList={selectedRowForMetadata}
                     allData={listData}
                     selectedCount={selectedRows.length}
+                    variablesOrderSortOrder={variablesOrderSortOrder}
+                    isVariablesOrderEnabled={isVariablesOrderEnabled}
                   />
                 ) : activeTab === 'variables' ? (
                   <VariableMetadataPanel
@@ -4581,6 +5029,8 @@ function App() {
                     objectsData={data}
                     selectedCount={selectedRows.length}
                     onObjectsRefresh={fetchObjects}
+                    objectsOrderSortOrder={objectsOrderSortOrder}
+                    isObjectsOrderEnabled={isObjectsOrderEnabled}
                   />
                 ) : (
                   <MetadataPanel
@@ -4792,6 +5242,8 @@ function App() {
           setInitialRelationships([]); // Clear after saving
           fetchObjects();
         }}
+        objectsOrderSortOrder={objectsOrderSortOrder}
+        isObjectsOrderEnabled={isObjectsOrderEnabled}
         onRelationshipsChange={(relationships) => {
           // For cloned unsaved objects, update the relationshipsList in local state
           if (selectedRowForMetadata?._isCloned && !selectedRowForMetadata?._isSaved) {

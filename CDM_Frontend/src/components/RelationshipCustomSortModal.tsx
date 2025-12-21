@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, RotateCcw, Check } from 'lucide-react';
 
 interface SortRule {
@@ -11,21 +11,31 @@ interface SortRule {
 interface RelationshipCustomSortModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApplySort: (sortRules: SortRule[]) => void;
+  onApplySort: (sortRules: SortRule[], isDefaultOrderEnabled?: boolean) => void;
   currentSortRules?: SortRule[];
+  isDefaultOrderEnabled?: boolean;
+  onDefaultOrderToggle?: (enabled: boolean) => void;
 }
 
 export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalProps> = ({
   isOpen,
   onClose,
   onApplySort,
-  currentSortRules = []
+  currentSortRules = [],
+  isDefaultOrderEnabled = false,
+  onDefaultOrderToggle
 }) => {
   const [sortRules, setSortRules] = useState<SortRule[]>(
     currentSortRules.length > 0 ? currentSortRules : [
       { id: '1', column: '', sortOn: 'cellValues', order: 'asc' }
     ]
   );
+  const [defaultOrderEnabled, setDefaultOrderEnabled] = useState(isDefaultOrderEnabled);
+
+  // Sync defaultOrderEnabled with prop when it changes
+  useEffect(() => {
+    setDefaultOrderEnabled(isDefaultOrderEnabled);
+  }, [isDefaultOrderEnabled]);
 
   const addSortRule = () => {
     const newId = (sortRules.length + 1).toString();
@@ -54,8 +64,21 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
   const handleApplySort = () => {
     // Filter out rules with no column selected
     const validRules = sortRules.filter(rule => rule.column);
-    onApplySort(validRules);
+    onApplySort(validRules, defaultOrderEnabled);
     onClose();
+  };
+
+  const handleDefaultOrderToggle = (enabled: boolean) => {
+    setDefaultOrderEnabled(enabled);
+    if (onDefaultOrderToggle) {
+      onDefaultOrderToggle(enabled);
+    }
+    // When enabling default order, remove any rules that use Being, Avatar, or Object
+    if (enabled) {
+      setSortRules(prev => prev.filter(rule => 
+        !rule.column || !['being', 'avatar', 'object'].includes(rule.column)
+      ));
+    }
   };
 
   const handleCancel = () => {
@@ -69,11 +92,22 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
   };
 
   // Available columns: Being, Avatar, Object
-  const availableColumns = [
-    { key: 'being', title: 'Being' },
-    { key: 'avatar', title: 'Avatar' },
-    { key: 'object', title: 'Object' }
-  ];
+  // When default order is enabled: only Sector, Domain, Country
+  // When default order is disabled: Sector, Domain, Country, Being, Avatar, Object
+  const availableColumns = defaultOrderEnabled
+    ? [
+        { key: 'sector', title: 'Sector' },
+        { key: 'domain', title: 'Domain' },
+        { key: 'country', title: 'Country' }
+      ]
+    : [
+        { key: 'sector', title: 'Sector' },
+        { key: 'domain', title: 'Domain' },
+        { key: 'country', title: 'Country' },
+        { key: 'being', title: 'Being' },
+        { key: 'avatar', title: 'Avatar' },
+        { key: 'object', title: 'Object' }
+      ];
 
   if (!isOpen) return null;
 
@@ -91,11 +125,34 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
           </button>
         </div>
 
+        {/* Enable Default Order Toggle */}
+        <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={defaultOrderEnabled}
+              onChange={(e) => handleDefaultOrderToggle(e.target.checked)}
+              className="w-5 h-5 text-ag-dark-accent bg-ag-dark-surface border-ag-dark-border rounded focus:ring-ag-dark-accent"
+            />
+            <span className="text-sm font-medium text-ag-dark-text">Enable default order</span>
+          </label>
+          {defaultOrderEnabled && (
+            <p className="text-xs text-ag-dark-text-secondary mt-2 ml-8">
+              When enabled, sorting will be: Sector, Domain, Country (custom sort), then Being, Avatar, Object (default order).
+              Being, Avatar, and Object columns are not available in custom sort when default order is enabled.
+            </p>
+          )}
+        </div>
+
         {/* Instructions */}
         <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
           <p className="text-sm text-ag-dark-text-secondary">
             Define multi-column sorting rules. The first rule will be the primary sort, 
             the second will be the secondary sort, and so on.
+            {defaultOrderEnabled 
+              ? ' Available columns: Sector, Domain, Country. Default order (Being, Avatar, Object) will be applied after custom sort.'
+              : ' Available columns: Sector, Domain, Country, Being, Avatar, Object.'
+            }
           </p>
         </div>
 

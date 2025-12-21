@@ -34,6 +34,10 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number; isVariation?: boolean } | null>(null);
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Track if we've loaded initial data to prevent reloading when parent state updates
+  const hasLoadedInitialData = useRef(false);
+  // Track current tieredValueRows to avoid stale closure issues
+  const tieredValueRowsRef = useRef<TieredValueRow[]>([]);
 
   // Build column headers: tier names + variation columns
   const columnHeaders: string[] = React.useMemo(() => {
@@ -55,6 +59,25 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const loadTieredValues = useCallback(async () => {
     if (!selectedList) return;
     
+    // CRITICAL: Don't reload if we already have data in the modal (user is editing)
+    // Only load when modal first opens
+    if (hasLoadedInitialData.current) {
+      console.log('⚠️ Skipping reload - modal already loaded initial data. Preserving current tieredValueRows.');
+      return;
+    }
+    
+    // Double-check: if we have rows with actual data, don't reload
+    // Use ref to avoid stale closure issues
+    const currentRows = tieredValueRowsRef.current;
+    const hasData = currentRows.some(row => 
+      row.values.some(v => v && v.trim()) || row.variations.some(v => v && v.trim())
+    );
+    if (hasData) {
+      console.log('⚠️ Skipping reload - modal has user-entered data. Preserving current state.');
+      hasLoadedInitialData.current = true; // Mark as loaded to prevent future reloads
+      return;
+    }
+    
     try {
       // Use initialValues if provided (from parent component's local state)
       // Check if initialValues is explicitly provided (not undefined/null), even if it's an empty object
@@ -62,14 +85,37 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       // The parent component (ListMetadataPanel) always passes tieredListValues as initialValues,
       // so if it's undefined, it means we should load from backend
       let existingValues: Record<string, string[][]>;
-      if (initialValues !== undefined && initialValues !== null) {
-        // initialValues was explicitly provided (could be empty object {} for cleared values)
-        // Use it directly - this preserves unsaved local changes
-        existingValues = initialValues;
+      // Use the current initialValues prop (not from closure) - but we'll access it directly
+      const currentInitialValues = initialValues;
+      
+      // Extract variations FIRST (before filtering out _variations from existingValues)
+      const savedVariations = (currentInitialValues as any)?._variations || {};
+      
+      // Determine where to get the actual tiered values from
+      if (currentInitialValues !== undefined && currentInitialValues !== null) {
+        // initialValues was explicitly provided
+        // Filter out _variations to get only the actual tiered values
+        const { _variations, ...tieredValuesOnly } = currentInitialValues as any;
+        existingValues = tieredValuesOnly;
+        
+        // If initialValues only had _variations (no actual values), try to load from backend
+        // But preserve the variations we extracted
+        if (Object.keys(existingValues).length === 0 && Object.keys(savedVariations).length > 0) {
+          console.log('⚠️ initialValues only has _variations, loading actual values from backend');
+          const backendValues = await getTieredListValues(selectedList.id);
+          existingValues = backendValues || {};
+        }
       } else {
         // initialValues not provided, load from backend
         existingValues = await getTieredListValues(selectedList.id);
       }
+      
+      console.log('📦 Loading tiered values:', {
+        hasInitialValues: currentInitialValues !== undefined && currentInitialValues !== null,
+        existingValuesKeys: Object.keys(existingValues || {}).length,
+        hasVariations: Object.keys(savedVariations).length > 0,
+        existingValues: existingValues
+      });
       
       // Convert the backend format to rows
       // Backend format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
@@ -86,10 +132,32 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             while (rowValues.length < columnHeaders.length) {
               rowValues.push('');
             }
+            
+            // Initialize variations array
+            const rowVariations: string[] = columnHeaders.map(() => '');
+            
+            // Load variations for this row's values from savedVariations
+            // Variations format: { "Tier1Value": { "Tier1Value": ["var1", "var2"], "Tier2Value": ["var3"] } }
+            if (savedVariations[tier1Value]) {
+              const tierVariations = savedVariations[tier1Value];
+              
+              // Tier 1 variations (index 0)
+              if (tierVariations[tier1Value] && Array.isArray(tierVariations[tier1Value])) {
+                rowVariations[0] = tierVariations[tier1Value].join(', ');
+              }
+              
+              // Tier 2+ variations
+              rowValues.slice(1).forEach((value, index) => {
+                if (value && value.trim() && tierVariations[value] && Array.isArray(tierVariations[value])) {
+                  rowVariations[index + 1] = tierVariations[value].join(', ');
+                }
+              });
+            }
+            
             rows.push({
               id: `row-${Date.now()}-${rows.length}`,
               values: rowValues.slice(0, columnHeaders.length),
-              variations: columnHeaders.map(() => '') // Initialize variations as empty
+              variations: rowVariations
             });
           });
         });
@@ -105,32 +173,71 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       }
       
       setTieredValueRows(rows);
+      console.log('✅ Loaded tiered values into modal:', {
+        totalRows: rows.length,
+        rowsWithValues: rows.filter(r => r.values.some(v => v && v.trim())).length,
+        rowsWithVariations: rows.filter(r => r.variations.some(v => v && v.trim())).length
+      });
     } catch (error) {
       console.error('Error loading tiered values:', error);
-      // On error, initialize with empty rows
-      const initialRows: TieredValueRow[] = [];
-      for (let i = 0; i < 100; i++) {
-        initialRows.push({ 
-          id: `row-${i + 1}`, 
-          values: columnHeaders.map(() => ''),
-          variations: columnHeaders.map(() => '')
-        });
+      // On error, initialize with empty rows only if we don't already have data
+      if (tieredValueRows.length === 0) {
+        const initialRows: TieredValueRow[] = [];
+        for (let i = 0; i < 100; i++) {
+          initialRows.push({ 
+            id: `row-${i + 1}`, 
+            values: columnHeaders.map(() => ''),
+            variations: columnHeaders.map(() => '')
+          });
+        }
+        setTieredValueRows(initialRows);
       }
-      setTieredValueRows(initialRows);
     }
-  }, [selectedList, columnHeaders, initialValues]);
+    // Include initialValues in dependencies but guard against reloading when it changes after initial load
+    // The hasLoadedInitialData ref prevents reloading after initial load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedList?.id, columnHeaders.length, initialValues]);
 
-  // Load existing tiered values when modal opens
+  // Load existing tiered values when modal opens (only once, not on every initialValues change)
   useEffect(() => {
     if (isOpen && selectedList && columnHeaders.length >= 1) {
-      loadTieredValues();
+      // Always reload when modal opens (after being closed)
+      // This ensures we load the latest initialValues when reopening
+      if (!hasLoadedInitialData.current) {
+        console.log('🔄 Modal opened - loading initial tiered values. initialValues:', initialValues);
+        loadTieredValues();
+        hasLoadedInitialData.current = true;
+      } else {
+        console.log('✅ Modal already loaded data, skipping reload');
+      }
     } else if (!isOpen) {
-      // Reset when modal closes
+      // Reset when modal closes - this allows reloading when reopening
+      console.log('🔄 Modal closed, resetting state and flag');
       setTieredValueRows([]);
       setEditingCell(null);
       setEditValue('');
+      hasLoadedInitialData.current = false; // Reset flag so we load again when reopening
     }
-  }, [isOpen, selectedList, columnHeaders.length, loadTieredValues]);
+    // Only depend on isOpen and selectedList.id - don't depend on loadTieredValues or initialValues
+    // to prevent reloading when parent state updates after saving
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedList?.id, columnHeaders.length]);
+  
+  // Sync ref with state to avoid stale closure issues
+  useEffect(() => {
+    tieredValueRowsRef.current = tieredValueRows;
+  }, [tieredValueRows]);
+  
+  // CRITICAL: Prevent any state reset when initialValues changes after initial load
+  // This ensures values persist in the modal after saving
+  useEffect(() => {
+    // If modal is open and we've already loaded data, DO NOT reset or reload
+    // This prevents values from disappearing when parent updates initialValues after save
+    if (isOpen && hasLoadedInitialData.current && tieredValueRows.length > 0) {
+      console.log('✅ Modal is open with data - ignoring initialValues change to preserve user input');
+      return;
+    }
+  }, [initialValues, isOpen, tieredValueRows.length]);
 
   const handleAddRow = (index?: number) => {
     const newRow: TieredValueRow = {
@@ -158,7 +265,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     setEditValue(value);
   };
 
-  const handlePaste = (e: React.ClipboardEvent, startRowId: string, startColIndex: number) => {
+  const handlePaste = (e: React.ClipboardEvent, startRowId: string, startColIndex: number, isVariation: boolean = false) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData('text');
     
@@ -181,15 +288,20 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       
       const newValues = [...row.values];
       const newVariations = [...row.variations];
+      
+      // Paste into the same column type (values or variations) starting from startColIndex
       values.forEach((value, colOffset) => {
-        const colIndex = startColIndex + colOffset;
-        // Alternate between values and variations columns
-        const isVariation = colOffset % 2 === 1;
-        const actualColIndex = Math.floor(colOffset / 2);
-        if (isVariation && actualColIndex < newVariations.length) {
-          newVariations[actualColIndex] = value.trim();
-        } else if (!isVariation && actualColIndex < newValues.length) {
-          newValues[actualColIndex] = value.trim();
+        const targetColIndex = startColIndex + colOffset;
+        if (isVariation) {
+          // Pasting into variations column - paste into consecutive variation columns
+          if (targetColIndex >= 0 && targetColIndex < newVariations.length) {
+            newVariations[targetColIndex] = value.trim();
+          }
+        } else {
+          // Pasting into values column - paste into consecutive value columns
+          if (targetColIndex >= 0 && targetColIndex < newValues.length) {
+            newValues[targetColIndex] = value.trim();
+          }
         }
       });
       
@@ -203,15 +315,24 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         const lineIndex = i - startRowIndex;
         const line = lines[lineIndex];
         const values = line.split('\t');
+        
         const newValues = columnHeaders.map((_, colIndex) => {
-          const colOffset = colIndex * 2 - startColIndex; // *2 because we have value + variation columns
+          const colOffset = colIndex - startColIndex;
           return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
         });
-        const newVariations = columnHeaders.map((_, colIndex) => {
-          const colOffset = colIndex * 2 + 1 - startColIndex; // +1 for variation column
-          return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
-        });
-        additionalRows.push({ id: `row-${i + 1}`, values: newValues, variations: newVariations });
+        const newVariations = columnHeaders.map(() => '');
+        
+        // If pasting into variations, populate variations instead
+        if (isVariation) {
+          columnHeaders.forEach((_, colIndex) => {
+            const colOffset = colIndex - startColIndex;
+            if (colOffset >= 0 && colOffset < values.length) {
+              newVariations[colIndex] = values[colOffset].trim();
+            }
+          });
+        }
+        
+        additionalRows.push({ id: `row-${Date.now()}-${i}`, values: newValues, variations: newVariations });
       }
       setTieredValueRows([...newRows, ...additionalRows]);
     } else {
@@ -464,72 +585,132 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     // Convert rows to the format expected by backend
     // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
     // Format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
-    // Also include variations: { "Tier1Value": { values: [...], variations: { "Tier1Value": ["var1", "var2"], "Tier2Value1": ["var3"], ... } } }
+    // Also include variations: { "Tier1Value": { "Tier1Value": ["var1", "var2"], "Tier2Value1": ["var3"], ... } }
     const tieredValues: Record<string, string[][]> = {};
-    const variations: Record<string, Record<string, string[]>> = {}; // Changed to array to support multiple variations per value
+    const variations: Record<string, Record<string, string[]>> = {}; // Aggregate variations for distinct values
     
     tieredValueRows.forEach(row => {
       if (row.values[0] && row.values[0].trim()) { // Tier 1 value (first column)
         const tier1Value = row.values[0].trim();
         // Get remaining tier values (Tier 2, Tier 3, etc.)
         const remainingTierValues = row.values.slice(1).filter(v => v && v.trim());
+        
+        // Always include Tier 1 value, even if there are no Tier 2+ values
+        // This ensures single-tier entries or entries with only Tier 1 are preserved
+        if (!tieredValues[tier1Value]) {
+          tieredValues[tier1Value] = [];
+        }
+        
+        // If there are Tier 2+ values, add them; otherwise add empty array to preserve Tier 1 entry
         if (remainingTierValues.length > 0) {
-          if (!tieredValues[tier1Value]) {
-            tieredValues[tier1Value] = [];
-          }
           // Add the array of tier values (Tier 2, Tier 3, etc.)
           tieredValues[tier1Value].push(remainingTierValues);
-          
-          // Store variations for tier 1 value if present (can be comma-separated)
-          if (row.variations[0] && row.variations[0].trim()) {
+        } else {
+          // No Tier 2+ values, but we still want to preserve the Tier 1 value
+          // Add an empty array to indicate this Tier 1 value exists (for single-tier lists or Tier 1 only)
+          tieredValues[tier1Value].push([]);
+        }
+        
+        // Store variations for tier 1 value if present (can be comma-separated)
+        // Aggregate variations for the same distinct value across multiple rows
+        // This should work even if there are no Tier 2+ values
+        if (row.variations[0] && row.variations[0].trim()) {
+          if (!variations[tier1Value]) {
+            variations[tier1Value] = {};
+          }
+          // Parse comma-separated variations
+          const tier1Variations = row.variations[0].split(',').map(v => v.trim()).filter(v => v);
+          if (tier1Variations.length > 0) {
+            if (!variations[tier1Value][tier1Value]) {
+              variations[tier1Value][tier1Value] = [];
+            }
+            // Add variations, avoiding duplicates for the same distinct value
+            tier1Variations.forEach(v => {
+              if (!variations[tier1Value][tier1Value].includes(v)) {
+                variations[tier1Value][tier1Value].push(v);
+              }
+            });
+          }
+        }
+        
+        // Store variations for tier 2+ values (can be comma-separated)
+        // Aggregate variations for the same distinct value across multiple rows
+        remainingTierValues.forEach((value, index) => {
+          const variationIndex = index + 1; // +1 because variations[0] is for tier 1
+          if (row.variations[variationIndex] && row.variations[variationIndex].trim()) {
             if (!variations[tier1Value]) {
               variations[tier1Value] = {};
             }
             // Parse comma-separated variations
-            const tier1Variations = row.variations[0].split(',').map(v => v.trim()).filter(v => v);
-            if (tier1Variations.length > 0) {
-              if (!variations[tier1Value][tier1Value]) {
-                variations[tier1Value][tier1Value] = [];
+            const valueVariations = row.variations[variationIndex].split(',').map(v => v.trim()).filter(v => v);
+            if (valueVariations.length > 0) {
+              if (!variations[tier1Value][value]) {
+                variations[tier1Value][value] = [];
               }
-              variations[tier1Value][tier1Value].push(...tier1Variations);
+              // Add variations, avoiding duplicates for the same distinct value
+              valueVariations.forEach(v => {
+                if (!variations[tier1Value][value].includes(v)) {
+                  variations[tier1Value][value].push(v);
+                }
+              });
             }
           }
-          
-          // Store variations for tier 2+ values (can be comma-separated)
-          remainingTierValues.forEach((value, index) => {
-            const variationIndex = index + 1; // +1 because variations[0] is for tier 1
-            if (row.variations[variationIndex] && row.variations[variationIndex].trim()) {
-              if (!variations[tier1Value]) {
-                variations[tier1Value] = {};
-              }
-              // Parse comma-separated variations
-              const valueVariations = row.variations[variationIndex].split(',').map(v => v.trim()).filter(v => v);
-              if (valueVariations.length > 0) {
-                if (!variations[tier1Value][value]) {
-                  variations[tier1Value][value] = [];
-                }
-                variations[tier1Value][value].push(...valueVariations);
-              }
-            }
-          });
-        }
+        });
       }
     });
 
     // Include variations in the save data as a special key
-    const saveData: any = tieredValues;
+    // If user only added variations (no tiered values edited), preserve existing tiered values
+    const saveData: any = { ...tieredValues };
     if (Object.keys(variations).length > 0) {
       saveData._variations = variations;
     }
 
-    // Only save if there are values
-    if (Object.keys(tieredValues).length > 0) {
-      onSave(saveData);
-    } else {
-      // If no values, still save to clear existing tiered values
-      onSave({});
+    // Update parent component's state (local only, no backend call)
+    // Always save, even if only variations were added (tieredValues is empty)
+    // The parent component will merge with existing values if needed
+    console.log('💾 Saving tiered values to parent state:', {
+      tieredValueRowsCount: tieredValueRows.length,
+      tieredValuesKeys: Object.keys(tieredValues).length,
+      variationsKeys: Object.keys(variations).length,
+      saveDataKeys: Object.keys(saveData).length,
+      saveData: saveData,
+      hasVariations: !!saveData._variations
+    });
+    onSave(saveData);
+    
+    // CRITICAL: DO NOT clear or reload the modal's local state after saving
+    // The tieredValueRows state should persist so values remain visible in the modal
+    // The hasLoadedInitialData ref prevents the useEffect from reloading when initialValues changes
+    // DO NOT call setTieredValueRows here - keep the current state!
+    console.log('✅ Save complete. tieredValueRows should remain unchanged:', tieredValueRows.length, 'rows');
+    
+    // Show success message - variations are saved locally in modal
+    const totalRows = Object.values(tieredValues).reduce((sum: number, arr: any) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    const totalVariations = Object.values(variations).reduce((sum: number, tierVariations: any) => {
+      if (typeof tierVariations === 'object') {
+        return sum + Object.values(tierVariations).reduce((tierSum: number, vars: any) => 
+          tierSum + (Array.isArray(vars) ? vars.length : 0), 0);
+      }
+      return sum;
+    }, 0);
+    
+    if (totalVariations > 0) {
+      alert(`Variations saved locally (${totalVariations} variation${totalVariations !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
+    } else if (totalRows > 0) {
+      alert(`Tiered list values saved locally (${totalRows} row${totalRows !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
     }
-    onClose();
+    
+    // CRITICAL: Ensure values persist in the modal state
+    // The tieredValueRows state should remain unchanged - values should stay visible
+    // DO NOT call setTieredValueRows or any function that would clear/reset the state
+    
+    // Optionally close the modal after save (user can reopen to see saved values)
+    // Closing and reopening ensures a clean state reload from parent's saved state
+    // This might help if there are any state persistence issues
+    setTimeout(() => {
+      onClose();
+    }, 100); // Small delay to ensure state is saved to parent
   };
 
   if (!isOpen || !selectedList || columnHeaders.length < 1) return null;
@@ -691,10 +872,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             // Handle paste at table level if a cell is selected
             if (editingCell) {
               e.preventDefault();
-              // For paste, we need to map the logical column index to the grid column
-              // Since we have value + variation columns, we need to handle this differently
-              // For now, paste will work on the current column type (value or variation)
-              handlePaste(e, editingCell.rowId, editingCell.colIndex);
+              // Paste into the same column type (value or variation) that's currently being edited
+              handlePaste(e, editingCell.rowId, editingCell.colIndex, editingCell.isVariation || false);
             }
           }}
         >
@@ -755,7 +934,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                               onChange={(e) => handleCellChange(e.target.value)}
                               onBlur={handleCellBlur}
                               onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, false)}
-                              onPaste={(e) => handlePaste(e, row.id, colIndex)}
+                              onPaste={(e) => handlePaste(e, row.id, colIndex, false)}
                               autoFocus
                               className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
                             />
@@ -831,6 +1010,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                               onChange={(e) => handleCellChange(e.target.value)}
                               onBlur={handleCellBlur}
                               onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, true)}
+                              onPaste={(e) => handlePaste(e, row.id, colIndex, true)}
                               autoFocus
                               className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
                             />

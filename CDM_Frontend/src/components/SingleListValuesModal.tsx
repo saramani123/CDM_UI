@@ -6,6 +6,7 @@ interface SingleListValuesModalProps {
   isOpen: boolean;
   onClose: () => void;
   selectedList: ListData | null;
+  initialVariations?: Record<string, string[]>; // Saved variations from parent component
   onSave: (values: string[], variations?: Record<string, string[]>) => void;
 }
 
@@ -19,6 +20,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
   isOpen,
   onClose,
   selectedList,
+  initialVariations,
   onSave
 }) => {
   const [listValueRows, setListValueRows] = useState<ListValueRow[]>([]);
@@ -34,11 +36,18 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     const rows: ListValueRow[] = [];
     if (selectedList.listValuesList && selectedList.listValuesList.length > 0) {
       selectedList.listValuesList.forEach((lv: any) => {
-      rows.push({
-        id: lv.id || `row-${Date.now()}-${rows.length}`,
-        value: lv.value || '',
-        variation: '' // Variations will be loaded from backend if available
-      });
+        const value = lv.value || '';
+        // Load variations for this value from initialVariations (saved locally)
+        let variationText = '';
+        if (initialVariations && initialVariations[value] && Array.isArray(initialVariations[value])) {
+          variationText = initialVariations[value].join(', ');
+        }
+        
+        rows.push({
+          id: lv.id || `row-${Date.now()}-${rows.length}`,
+          value: value,
+          variation: variationText
+        });
       });
     }
     
@@ -54,7 +63,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     setListValueRows(rows);
   };
 
-  // Load existing list values when modal opens
+  // Load existing list values when modal opens or when variations are updated
   useEffect(() => {
     if (isOpen && selectedList) {
       loadListValues();
@@ -64,7 +73,7 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
       setEditingCell(null);
       setEditValue('');
     }
-  }, [isOpen, selectedList?.id, selectedList?.listValuesList]);
+  }, [isOpen, selectedList?.id, selectedList?.listValuesList, initialVariations]);
 
   const handleAddRow = (index?: number) => {
     const newRow: ListValueRow = {
@@ -245,22 +254,40 @@ export const SingleListValuesModal: React.FC<SingleListValuesModalProps> = ({
     }
 
     // Extract variations for values that have them (can be comma-separated for multiple variations)
+    // Aggregate variations for the same value across multiple rows
     const variations: Record<string, string[]> = {};
     listValueRows.forEach(row => {
       if (row.value.trim() && row.variation.trim()) {
+        const valueKey = row.value.trim();
         // Parse comma-separated variations
         const varList = row.variation.split(',').map(v => v.trim()).filter(v => v);
         if (varList.length > 0) {
-          if (!variations[row.value.trim()]) {
-            variations[row.value.trim()] = [];
+          if (!variations[valueKey]) {
+            variations[valueKey] = [];
           }
-          variations[row.value.trim()].push(...varList);
+          // Add variations, avoiding duplicates
+          varList.forEach(v => {
+            if (!variations[valueKey].includes(v)) {
+              variations[valueKey].push(v);
+            }
+          });
         }
       }
     });
 
+    // Update parent component's state (local only, no backend call)
     onSave(values, Object.keys(variations).length > 0 ? variations : undefined);
-    onClose();
+    
+    // Show success message - variations are saved locally in modal
+    const variationCount = Object.values(variations).reduce((sum, vars) => sum + vars.length, 0);
+    if (variationCount > 0) {
+      alert(`Variations saved locally (${variationCount} variation${variationCount !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
+    } else if (values.length > 0) {
+      alert(`List values saved locally (${values.length} value${values.length !== 1 ? 's' : ''}). Click "Save Changes" on the metadata panel to save to Neo4j.`);
+    }
+    
+    // DO NOT close the modal - keep it open so variations persist in UI
+    // Modal will only close when user clicks "Cancel" or the X button
   };
 
   if (!isOpen || !selectedList) return null;

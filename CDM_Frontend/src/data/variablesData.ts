@@ -213,13 +213,23 @@ export const parseVariableDriverString = (driverString: string) => {
   const processField = (values: string[], allValues: string[]): string[] => {
     if (values.length === 0) return [];
     
-    // If "ALL" is in values, or if all possible values are selected, return ALL + all values
-    if (values[0] === 'ALL' || containsAllValues(values.join(', '), allValues)) {
+    // Filter out "ALL" from values (it's not a real node, just a UI convenience)
+    const filteredValues = values.filter(v => v !== 'ALL');
+    
+    // If "ALL" was in the original values, or if all possible values are selected, return ALL + all values
+    const hasAll = values.includes('ALL');
+    const allSelected = filteredValues.length > 0 && 
+                       allValues.length > 0 && 
+                       filteredValues.length === allValues.length &&
+                       new Set(filteredValues).size === new Set(allValues).size &&
+                       filteredValues.every(v => allValues.includes(v));
+    
+    if (hasAll || allSelected) {
       return ['ALL', ...allValues];
     }
     
     // Otherwise return the actual selected values
-    return values;
+    return filteredValues;
   };
   
   return {
