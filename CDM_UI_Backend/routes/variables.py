@@ -264,9 +264,14 @@ async def get_variables():
                 countries_set = set(countries_filtered)
                 
                 # Use "ALL" if all values are present, or if "ALL" was explicitly in the list
-                sector_str = "ALL" if ("ALL" in sectors or (len(all_sectors) > 0 and sectors_set == all_sectors)) else (", ".join(sectors_filtered) if sectors_filtered else "ALL")
-                domain_str = "ALL" if ("ALL" in domains or (len(all_domains) > 0 and domains_set == all_domains)) else (", ".join(domains_filtered) if domains_filtered else "ALL")
-                country_str = "ALL" if ("ALL" in countries or (len(all_countries) > 0 and countries_set == all_countries)) else (", ".join(countries_filtered) if countries_filtered else "ALL")
+                # Check if sets match (all values selected)
+                sector_all_selected = len(all_sectors) > 0 and len(sectors_set) > 0 and sectors_set == all_sectors
+                domain_all_selected = len(all_domains) > 0 and len(domains_set) > 0 and domains_set == all_domains
+                country_all_selected = len(all_countries) > 0 and len(countries_set) > 0 and countries_set == all_countries
+                
+                sector_str = "ALL" if ("ALL" in sectors or sector_all_selected) else (", ".join(sectors_filtered) if sectors_filtered else "ALL")
+                domain_str = "ALL" if ("ALL" in domains or domain_all_selected) else (", ".join(domains_filtered) if domains_filtered else "ALL")
+                country_str = "ALL" if ("ALL" in countries or country_all_selected) else (", ".join(countries_filtered) if countries_filtered else "ALL")
                 clarifier_str = variable_clarifiers[0] if variable_clarifiers else "None"
                 
                 driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"

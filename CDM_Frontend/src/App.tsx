@@ -596,6 +596,15 @@ function App() {
         // Apply saved order from localStorage if available
         const orderedDrivers = applySavedOrder(filteredDrivers);
         setDriversState(orderedDrivers);
+        
+        // Set drivers data on window for getDriversData() to access
+        (window as any).driversData = {
+          sectors: orderedDrivers.sectors || [],
+          domains: orderedDrivers.domains || [],
+          countries: orderedDrivers.countries || [],
+          objectClarifiers: orderedDrivers.objectClarifiers || [],
+          variableClarifiers: orderedDrivers.variableClarifiers || []
+        };
       }
     }
   }, [apiDrivers, driversError, driversLoading, activeTab]);
