@@ -144,7 +144,7 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
     // Check if the value contains commas (multiple values)
     if (fullName.includes(',')) {
       // Split by comma and process each value
-      // Filter out "ALL" from the values as it's not an actual value
+      // Handle both "Value1, Value2" and "Value1,Value2" formats
       const values = fullName.split(',').map(v => v.trim()).filter(Boolean).filter(v => v !== 'ALL');
       
       // If no values remain after filtering, return "ALL"
@@ -153,17 +153,20 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
       }
       
       // Check if all possible values are selected (compare sets)
-      const selectedSet = new Set(values);
-      const allSet = new Set(allPossibleValues);
-      const isAllSelected = allPossibleValues.length > 0 && 
-                           selectedSet.size === allSet.size && 
-                           [...selectedSet].every(val => allSet.has(val));
-      
-      if (isAllSelected) {
-        return 'ALL';
+      // Only do this check if we have driver data loaded
+      if (allPossibleValues.length > 0) {
+        const selectedSet = new Set(values);
+        const allSet = new Set(allPossibleValues);
+        const isAllSelected = selectedSet.size === allSet.size && 
+                             selectedSet.size > 0 &&
+                             [...selectedSet].every(val => allSet.has(val));
+        
+        if (isAllSelected) {
+          return 'ALL';
+        }
       }
       
-      // Not all values selected - show formatted comma-separated string
+      // Not all values selected (or driver data not loaded yet) - show formatted comma-separated string
       const displayValues = values.map(value => {
         const abbreviation = getDriverAbbreviation(type!, value);
         return abbreviation || value;
