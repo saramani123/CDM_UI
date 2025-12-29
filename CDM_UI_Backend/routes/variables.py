@@ -234,7 +234,8 @@ async def get_variables():
                 RETURN v.id as id, v.name as variable, v.section as section,
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
-                       v.status as status, p.name as part, g.name as group,
+                       v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                       p.name as part, g.name as group,
                        objectRelationships, variations, sectors, domains, countries, variableClarifiers
                 ORDER BY v.id
             """)
@@ -293,6 +294,7 @@ async def get_variables():
                     "default": str(record["default"]) if record["default"] else "",
                     "graph": str(record["graph"]) if record["graph"] else "Yes",
                     "status": str(record["status"]) if record["status"] else "Active",
+                    "is_meme": record.get("is_meme", False),
                     "objectRelationships": int(record["objectRelationships"]) if record["objectRelationships"] is not None else 0,
                     "objectRelationshipsList": [],
                     "variations": int(record["variations"]) if record["variations"] is not None else 0
@@ -343,7 +345,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                     default: $default,
                     graph: $graph,
                     status: $status,
-                    driver: $driver
+                    driver: $driver,
+                    is_meme: $is_meme
                 })
                 
                 // Create relationship Group -> Variable
@@ -353,7 +356,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                 RETURN v.id as id, v.name as variable, v.section as section,
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
-                       v.status as status, $part as part, $group as group
+                       v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                       $part as part, $group as group
             """, {
                 "id": variable_id,
                 "part": variable_data.part,
@@ -367,7 +371,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                 "default": variable_data.default or "",
                 "graph": variable_data.graph or "Yes",
                 "status": variable_data.status or "Active",
-                "driver": variable_data.driver or "ALL, ALL, ALL, None"
+                "driver": variable_data.driver or "ALL, ALL, ALL, None",
+                "is_meme": getattr(variable_data, 'isMeme', False) or False
             })
 
             record = result.single()
@@ -451,6 +456,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 default=record["default"],
                 graph=record["graph"],
                 status=record["status"],
+                is_meme=record.get("is_meme", False),
                 objectRelationships=0,
                 objectRelationshipsList=[],
                 variations=variations_count,
@@ -469,6 +475,8 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
     Supports partial updates - only updates fields that are provided.
     Also handles variationsList for variations management.
     """
+    print(f"🎭 update_variable called with variable_id={variable_id}, variable_data={variable_data}")
+    print(f"🎭 variable_data.isMeme={variable_data.isMeme}, type={type(variable_data.isMeme)}")
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -496,6 +504,8 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             current_variable = current_record["v"]
             current_part = current_record["part"] if current_record["part"] else ""
             current_group = current_record["group"] if current_record["group"] else ""
+            # Get is_meme from node properties
+            current_is_meme = current_variable.get("is_meme", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_meme', False)
             
             import sys
             sys.stdout.flush()
@@ -537,6 +547,11 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             if variable_data.driver is not None:
                 set_clauses.append("v.driver = $driver")
                 params["driver"] = variable_data.driver
+            if variable_data.isMeme is not None:
+                is_meme_value = bool(variable_data.isMeme)
+                set_clauses.append("v.is_meme = $is_meme")
+                params["is_meme"] = is_meme_value
+                print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for variable {variable_id}")
 
             # Only update if there are fields to update
             if set_clauses:
@@ -546,11 +561,14 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                     RETURN v.id as id, v.name as variable, v.section as section,
                            v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                            v.validation as validation, v.default as default, v.graph as graph,
-                           v.status as status
+                           v.status as status, COALESCE(v.is_meme, false) as is_meme
                 """
                 
+                print(f"DEBUG: 🎭 Executing variable update query with is_meme: {params.get('is_meme', 'NOT_SET')}")
                 result = session.run(update_query, params)
                 record = result.single()
+                if record:
+                    print(f"DEBUG: 🎭 ✅ Variable update successful - is_meme: {record.get('is_meme')}")
             else:
                 # No fields to update, use current data
                 record = {
@@ -563,7 +581,8 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                     "validation": current_variable["validation"],
                     "default": current_variable["default"],
                     "graph": current_variable["graph"],
-                    "status": current_variable["status"]
+                    "status": current_variable["status"],
+                    "is_meme": current_is_meme
                 }
 
             # Handle Part/Group changes - only update Group -> Variable relationship
@@ -816,6 +835,7 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                 default=record["default"],
                 graph=record["graph"],
                 status=record["status"],
+                is_meme=record.get("is_meme", False),
                 objectRelationships=relationships_count,
                 objectRelationshipsList=[],
                 variations=variations_count,

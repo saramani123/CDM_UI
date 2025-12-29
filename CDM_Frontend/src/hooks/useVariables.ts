@@ -28,7 +28,12 @@ export const useVariables = () => {
       console.log('First variable:', data?.[0]);
       console.log('Data type:', typeof data);
       console.log('Is array:', Array.isArray(data));
-      setVariables(data || []);
+      // Map is_meme from backend to isMeme for frontend
+      const mappedData = (data || []).map((v: any) => ({
+        ...v,
+        isMeme: v.is_meme ?? v.isMeme ?? false
+      }));
+      setVariables(mappedData);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch variables';
       setError(errorMessage);
@@ -54,9 +59,14 @@ export const useVariables = () => {
 
   const updateVariable = async (id: string, variableData: Partial<VariableData>) => {
     try {
-      const updatedVariable = await apiService.updateVariable(id, variableData) as VariableData;
-      setVariables(prev => prev.map(v => v.id === id ? updatedVariable : v));
-      return updatedVariable;
+      const updatedVariable = await apiService.updateVariable(id, variableData) as any;
+      // Map is_meme from backend to isMeme for frontend
+      const variableWithMeme: VariableData = {
+        ...updatedVariable,
+        isMeme: updatedVariable.is_meme ?? updatedVariable.isMeme ?? false
+      };
+      setVariables(prev => prev.map(v => v.id === id ? variableWithMeme : v));
+      return variableWithMeme;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update variable');
       // Refresh data to ensure consistency after error

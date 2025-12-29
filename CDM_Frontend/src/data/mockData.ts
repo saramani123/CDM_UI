@@ -18,6 +18,7 @@ export interface ObjectData {
   status?: string;
   relationshipsList?: Relationship[];
   variantsList?: Variant[];
+  isMeme?: boolean; // Meme flag
 }
 
 export interface Relationship {
@@ -43,6 +44,7 @@ export const objectColumns = [
   { key: 'being', title: 'Being', sortable: true, filterable: true, width: '120px' },
   { key: 'avatar', title: 'Avatar', sortable: true, filterable: true, width: '180px' },
   { key: 'object', title: 'Object', sortable: true, filterable: true, width: '140px' },
+  { key: 'isMeme', title: 'Is Meme', sortable: true, filterable: true, width: '100px' },
   { key: 'relationships', title: 'Relationships', sortable: true, filterable: false, width: '160px' },
   { key: 'variants', title: 'Variants', sortable: true, filterable: false, width: '120px' },
   { key: 'variables', title: 'Variables', sortable: true, filterable: false, width: '140px' }

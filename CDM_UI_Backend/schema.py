@@ -398,6 +398,7 @@ class ObjectCreateRequest(BaseModel):
     variants: Optional[List[str]] = Field(default=[], description="List of variants")
     relationships: Optional[List[dict]] = Field(default=[], description="List of relationships")
     status: Optional[str] = Field(default="Active", description="Object status")
+    isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
 
 class ObjectResponse(BaseModel):
     id: str
@@ -411,6 +412,7 @@ class ObjectResponse(BaseModel):
     variables: int = 0
     relationshipsList: List[dict] = []
     variantsList: List[dict] = []
+    is_meme: Optional[bool] = False
 
 class CSVRowData(BaseModel):
     """Schema for validating individual CSV rows"""
@@ -442,6 +444,7 @@ class VariableCreateRequest(BaseModel):
     graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
     status: Optional[str] = Field("Active", description="Status")
     variationsList: Optional[List[dict]] = None  # List of variations to create for the variable
+    isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
 
 class VariableUpdateRequest(BaseModel):
     """Schema for updating a variable - all fields optional for partial updates"""
@@ -458,6 +461,7 @@ class VariableUpdateRequest(BaseModel):
     graph: Optional[str] = None
     status: Optional[str] = None
     variationsList: Optional[List[dict]] = None  # List of variations to append to the variable
+    isMeme: Optional[bool] = None
 
 class BulkVariableUpdateRequest(BaseModel):
     """Schema for bulk updating variables"""
@@ -505,6 +509,7 @@ class VariableResponse(BaseModel):
     objectRelationshipsList: List[dict] = []
     variations: int = 0
     variationsList: List[dict] = []
+    is_meme: Optional[bool] = False
 
 class VariableCSVRowData(BaseModel):
     """Schema for a single CSV row for variable upload"""

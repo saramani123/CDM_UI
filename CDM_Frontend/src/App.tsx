@@ -605,6 +605,11 @@ function App() {
           objectClarifiers: orderedDrivers.objectClarifiers || [],
           variableClarifiers: orderedDrivers.variableClarifiers || []
         };
+        console.log('[App] Set window.driversData:', {
+          sectors: (window as any).driversData.sectors.length,
+          domains: (window as any).driversData.domains.length,
+          countries: (window as any).driversData.countries.length
+        });
       }
     }
   }, [apiDrivers, driversError, driversLoading, activeTab]);
@@ -1985,6 +1990,66 @@ function App() {
         if (selectedRowForMetadata?.id === row.id) {
           setSelectedRowForMetadata(null);
         }
+      }
+    }
+  };
+
+  const handleIsMemeChange = async (rowId: string, checked: boolean) => {
+    console.log('🎭 handleIsMemeChange called:', { rowId, checked, activeTab });
+    
+    // Optimistically update UI immediately with loading state
+    if (activeTab === 'objects') {
+      setData(prev => prev.map(obj => 
+        obj.id === rowId 
+          ? { ...obj, isMeme: checked, _isMemeLoading: true }
+          : obj
+      ));
+    } else if (activeTab === 'variables') {
+      setVariableData(prev => prev.map(v => 
+        v.id === rowId 
+          ? { ...v, isMeme: checked, _isMemeLoading: true }
+          : v
+      ));
+    }
+
+    try {
+      if (activeTab === 'objects') {
+        console.log('🎭 Calling updateObject with:', { id: rowId, isMeme: checked });
+        const updated = await updateObject(rowId, { isMeme: checked });
+        console.log('🎭 updateObject response:', updated);
+        // The useEffect will sync apiObjects to data, but we need to remove loading state
+        // Also ensure the updated value is reflected
+        setData(prev => prev.map(obj => 
+          obj.id === rowId 
+            ? { ...obj, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
+            : obj
+        ));
+      } else if (activeTab === 'variables') {
+        console.log('🎭 Calling updateVariable with:', { id: rowId, isMeme: checked });
+        const updated = await updateVariable(rowId, { isMeme: checked });
+        console.log('🎭 updateVariable response:', updated);
+        // Remove loading state and ensure updated value is reflected
+        setVariableData(prev => prev.map(v => 
+          v.id === rowId 
+            ? { ...v, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
+            : v
+        ));
+      }
+    } catch (error) {
+      console.error('❌ Error updating isMeme:', error);
+      // Revert on error
+      if (activeTab === 'objects') {
+        setData(prev => prev.map(obj => 
+          obj.id === rowId 
+            ? { ...obj, isMeme: !checked, _isMemeLoading: false }
+            : obj
+        ));
+      } else if (activeTab === 'variables') {
+        setVariableData(prev => prev.map(v => 
+          v.id === rowId 
+            ? { ...v, isMeme: !checked, _isMemeLoading: false }
+            : v
+        ));
       }
     }
   };
@@ -4874,6 +4939,7 @@ function App() {
                 onRowSelect={handleRowSelect}
                 onDelete={handleDelete}
                 onClone={handleClone}
+                onIsMemeChange={handleIsMemeChange}
                 selectionMode={activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists' ? 'row' : 'checkbox'}
                 selectedRows={selectedRows}
                 onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}

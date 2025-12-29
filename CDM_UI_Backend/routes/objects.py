@@ -71,6 +71,7 @@ async def get_objects():
                        o.avatar as avatar, 
                        o.object as object, 
                        o.status as status,
+                       COALESCE(o.is_meme, false) as is_meme,
                        relationships,
                        variant_names,
                        variables_count,
@@ -124,6 +125,7 @@ async def get_objects():
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",
+                    "is_meme": record.get("is_meme", False),
                     "relationshipsList": relationships,
                     "variantsList": variants
                 }
@@ -150,7 +152,8 @@ async def get_object(object_id: str):
             result = session.run("""
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.driver as driver, o.being as being,
-                       o.avatar as avatar, o.object as object, o.status as status
+                       o.avatar as avatar, o.object as object, o.status as status,
+                       COALESCE(o.is_meme, false) as is_meme
             """, object_id=object_id)
 
             record = result.single()
@@ -182,6 +185,7 @@ async def get_object(object_id: str):
                 "avatar": record["avatar"],
                 "object": record["object"],
                 "status": record["status"],
+                "is_meme": record.get("is_meme", False),
                 "relationships": rel_count_result["rel_count"] if rel_count_result else 0,
                 "variants": var_count_result["var_count"] if var_count_result else 0,
                 "variables": variables_count_result["variables_count"] if variables_count_result else 0,
@@ -310,6 +314,9 @@ async def create_object(object_data: ObjectCreateRequest):
             if existing.single():
                 raise HTTPException(status_code=409, detail="Object with this Being/Avatar/Object/Driver combination already exists")
             
+            # Get is_meme value (default to False)
+            is_meme = getattr(object_data, 'isMeme', False) or False
+            
             # Create the Object node
             session.run("""
                 CREATE (o:Object {
@@ -319,7 +326,8 @@ async def create_object(object_data: ObjectCreateRequest):
                     being: $being,
                     avatar: $avatar,
                     object: $object,
-                    status: $status
+                    status: $status,
+                    is_meme: $is_meme
                 })
             """, 
             id=new_id,
@@ -327,7 +335,8 @@ async def create_object(object_data: ObjectCreateRequest):
             being=object_data.being,
             avatar=object_data.avatar,
             object=object_data.object,
-            status=getattr(object_data, 'status', 'Active'))
+            status=getattr(object_data, 'status', 'Active'),
+            is_meme=is_meme)
             
             # Create Being, Avatar, Object taxonomy relationships if they don't exist
             session.run("""
@@ -565,6 +574,7 @@ async def create_object(object_data: ObjectCreateRequest):
                 "avatar": object_data.avatar,
                 "object": object_data.object,
                 "status": getattr(object_data, 'status', 'Active'),
+                "is_meme": is_meme,
                 "relationships": rel_count,
                 "variants": len(variants),
                 "variables": 0,
@@ -595,6 +605,7 @@ async def update_object(
     """
     Update an existing object.
     """
+    print(f"🎭 update_object called with object_id={object_id}, request_data={request_data}")
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -742,6 +753,7 @@ async def update_object(
                 print(f"DEBUG: Avatar field: {request_data.get('avatar', 'NOT_FOUND')}")
                 print(f"DEBUG: Object field: {request_data.get('object', 'NOT_FOUND')}")
                 print(f"DEBUG: ObjectName field: {request_data.get('objectName', 'NOT_FOUND')}")
+                print(f"DEBUG: isMeme field: {request_data.get('isMeme', 'NOT_FOUND')} (type: {type(request_data.get('isMeme'))})")
                 
                 # Build dynamic SET clause for basic fields
                 set_clauses = []
@@ -766,15 +778,26 @@ async def update_object(
                     set_clauses.append("o.discreteId = $discreteId")
                     params["discreteId"] = request_data['discreteId']
                 
+                # Handle isMeme - check if key exists (even if value is False)
+                if 'isMeme' in request_data:
+                    is_meme_value = bool(request_data['isMeme'])
+                    set_clauses.append("o.is_meme = $is_meme")
+                    params["is_meme"] = is_meme_value
+                    print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for object {object_id}")
+                
                 # Update basic fields if any
                 if set_clauses:
                     update_query = f"""
                         MATCH (o:Object {{id: $object_id}})
                         SET {', '.join(set_clauses)}
+                        RETURN o.id as id, o.is_meme as is_meme
                     """
                     print(f"DEBUG: Executing update query: {update_query}")
                     print(f"DEBUG: With parameters: {params}")
-                    session.run(update_query, params)
+                    result = session.run(update_query, params)
+                    updated_record = result.single()
+                    if updated_record:
+                        print(f"DEBUG: ✅ Update successful - is_meme is now: {updated_record.get('is_meme')}")
                     print(f"DEBUG: Updated basic fields: {set_clauses}")
                     
                     # Verify the update was successful
@@ -1096,7 +1119,8 @@ async def update_object(
                 updated_object = session.run("""
                     MATCH (o:Object {id: $object_id})
                     RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
-                           o.driver as driver, o.relationships as relationships, o.variants as variants
+                           o.driver as driver, o.relationships as relationships, o.variants as variants,
+                           COALESCE(o.is_meme, false) as is_meme
                 """, object_id=object_id).single()
                 
                 if updated_object:
@@ -1107,7 +1131,8 @@ async def update_object(
                         "object": updated_object["object"],
                         "driver": updated_object["driver"],
                         "relationships": updated_object["relationships"],
-                        "variants": updated_object["variants"]
+                        "variants": updated_object["variants"],
+                        "is_meme": updated_object.get("is_meme", False)
                     }
                 else:
                     return {"message": "Object relationships and variants updated successfully"}
@@ -1116,7 +1141,8 @@ async def update_object(
             updated_object = session.run("""
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
-                       o.driver as driver, o.relationships as relationships, o.variants as variants
+                       o.driver as driver, o.relationships as relationships, o.variants as variants,
+                       COALESCE(o.is_meme, false) as is_meme
             """, object_id=object_id).single()
             
             if updated_object:
@@ -1127,7 +1153,8 @@ async def update_object(
                     "object": updated_object["object"],
                     "driver": updated_object["driver"],
                     "relationships": updated_object["relationships"],
-                    "variants": updated_object["variants"]
+                    "variants": updated_object["variants"],
+                    "is_meme": updated_object.get("is_meme", False)
                 }
             else:
                 return {"message": "Object updated successfully"}
@@ -1382,7 +1409,8 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             being: $being,
                             avatar: $avatar,
                             object: $object,
-                            status: $status
+                            status: $status,
+                            is_meme: false
                         })
                     """, 
                     id=new_id,

@@ -26,7 +26,8 @@ export const useObjects = () => {
           sector: parsed.sector,
           domain: parsed.domain,
           country: parsed.country,
-          classifier: parsed.classifier
+          classifier: parsed.classifier,
+          isMeme: (obj as any).is_meme ?? (obj as any).isMeme ?? false
         };
       });
       
@@ -75,12 +76,14 @@ export const useObjects = () => {
       
       // Parse driver string and add parsed fields
       const parsed = parseDriverField(updatedObject.driver);
+      // Map is_meme from backend to isMeme for frontend
       const parsedObject = {
         ...updatedObject,
         sector: parsed.sector,
         domain: parsed.domain,
         country: parsed.country,
-        classifier: parsed.classifier
+        classifier: parsed.classifier,
+        isMeme: (updatedObject as any).is_meme ?? (updatedObject as any).isMeme ?? false
       };
       
       setObjects(prev => {

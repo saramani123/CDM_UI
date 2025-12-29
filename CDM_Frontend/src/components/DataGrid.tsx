@@ -58,6 +58,7 @@ interface DataGridProps {
   relationshipData?: Record<string, any>;
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
+  onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
   gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
@@ -86,6 +87,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   relationshipData,
   onRelationshipCheckboxChange,
   onRelationshipRowClick,
+  onIsMemeChange,
   gridType = 'objects', // Default to 'objects' for backward compatibility
   isPredefinedSortEnabled = false,
   predefinedSortOrder,
@@ -1288,6 +1290,24 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   >
                     {column.render ? (
                       column.render(row)
+                    ) : column.key === 'isMeme' ? (
+                      <div className="flex items-center justify-center">
+                        {row._isMemeLoading ? (
+                          <div className="w-4 h-4 border-2 border-ag-dark-accent border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            checked={!!row.isMeme}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              onIsMemeChange?.(row.id, e.target.checked);
+                            }}
+                            className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0 cursor-pointer w-4 h-4"
+                            onClick={(e) => e.stopPropagation()}
+                            disabled={row._isMemeLoading}
+                          />
+                        )}
+                      </div>
                     ) : (
                       <span className={`flex-1 ${
                         column.key === 'object' 
