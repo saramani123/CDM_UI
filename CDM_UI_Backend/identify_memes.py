@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-Script to automatically identify and set is_meme property based on naming pattern.
-Objects and Variables whose names start with "[[" and end with "]]" are considered memes.
+Script to automatically identify and set is_meme property for Variables based on naming pattern.
+Variables are considered memes if:
+1. Their name starts with "[" and ends with "]" (single brackets), OR
+2. Their section property equals "[Meme]"
 
 Usage:
     python identify_memes.py
 
 This script:
 1. Connects to Neo4j using environment variables from .env.dev (dev) or Render env vars (prod)
-2. Finds all Object and Variable nodes
-3. Checks if their names match the pattern: starts with "[[" and ends with "]]"
+2. Finds all Variable nodes
+3. Checks if they match the meme criteria (name pattern or section = "[Meme]")
 4. Sets is_meme = true for matches, false for non-matches
 5. Reports the number of nodes updated
 
@@ -68,69 +70,66 @@ def get_driver():
     
     return driver
 
-def is_meme_name(name):
-    """Check if a name matches the meme pattern: starts with '[[' and ends with ']]'"""
+def is_meme_variable(name, section):
+    """
+    Check if a Variable is a meme based on:
+    1. Name starts with "[" and ends with "]" (single brackets), OR
+    2. Section equals "[Meme]"
+    """
     if not name:
-        return False
-    name_str = str(name).strip()
-    return name_str.startswith("[[") and name_str.endswith("]]")
+        name_str = ""
+    else:
+        name_str = str(name).strip()
+    
+    # Check name pattern: starts with "[" and ends with "]"
+    name_is_meme = name_str.startswith("[") and name_str.endswith("]")
+    
+    # Check section pattern: equals "[Meme]"
+    section_is_meme = False
+    if section:
+        section_str = str(section).strip()
+        section_is_meme = section_str == "[Meme]"
+    
+    return name_is_meme or section_is_meme
 
 def identify_memes():
-    """Identify and set is_meme property based on naming pattern"""
+    """Identify and set is_meme property for Variables based on naming pattern or section"""
     driver = get_driver()
     
     try:
         with driver.session() as session:
             print("\n" + "="*60)
-            print("Identifying memes based on naming pattern: [[...]]")
+            print("Identifying Variable memes based on:")
+            print("  1. Name pattern: starts with '[' and ends with ']'")
+            print("  2. Section equals '[Meme]'")
             print("="*60 + "\n")
             
-            # Process Objects
-            print("Processing Objects...")
-            objects_result = session.run("""
-                MATCH (o:Object)
-                RETURN o.id as id, o.object as name
-            """)
-            
-            objects_processed = 0
-            objects_set_to_meme = 0
-            objects_set_to_not_meme = 0
-            
-            for record in objects_result:
-                obj_id = record["id"]
-                obj_name = record["name"]
-                is_meme = is_meme_name(obj_name)
-                
-                session.run("""
-                    MATCH (o:Object {id: $id})
-                    SET o.is_meme = $is_meme
-                """, id=obj_id, is_meme=is_meme)
-                
-                objects_processed += 1
-                if is_meme:
-                    objects_set_to_meme += 1
-                else:
-                    objects_set_to_not_meme += 1
-            
-            print(f"  ✅ Processed {objects_processed} Objects")
-            print(f"     - Set is_meme = true: {objects_set_to_meme}")
-            print(f"     - Set is_meme = false: {objects_set_to_not_meme}")
-            
             # Process Variables
-            print("\nProcessing Variables...")
+            print("Processing Variables...")
             variables_result = session.run("""
                 MATCH (v:Variable)
-                RETURN v.id as id, v.name as name
+                RETURN v.id as id, v.name as name, v.section as section
             """)
             
             variables_processed = 0
             variables_set_to_meme = 0
             variables_set_to_not_meme = 0
+            meme_by_name = 0
+            meme_by_section = 0
             
             for record in variables_result:
                 var_id = record["id"]
                 var_name = record["name"]
-                is_meme = is_meme_name(var_name)
+                var_section = record.get("section")
+                is_meme = is_meme_variable(var_name, var_section)
+                
+                # Track why it's a meme
+                if is_meme:
+                    name_str = str(var_name).strip() if var_name else ""
+                    if name_str.startswith("[") and name_str.endswith("]"):
+                        meme_by_name += 1
+                    if var_section and str(var_section).strip() == "[Meme]":
+                        meme_by_section += 1
                 
                 session.run("""
                     MATCH (v:Variable {id: $id})
@@ -145,6 +144,8 @@ def identify_memes():
             
             print(f"  ✅ Processed {variables_processed} Variables")
             print(f"     - Set is_meme = true: {variables_set_to_meme}")
+            print(f"       • By name pattern [...]: {meme_by_name}")
+            print(f"       • By section = '[Meme]': {meme_by_section}")
             print(f"     - Set is_meme = false: {variables_set_to_not_meme}")
             
             # Verification
@@ -152,19 +153,12 @@ def identify_memes():
             print("Verification:")
             print("-"*60)
             
-            objects_meme_count = session.run("""
-                MATCH (o:Object)
-                WHERE o.is_meme = true
-                RETURN count(o) as count
-            """).single()
-            
             variables_meme_count = session.run("""
                 MATCH (v:Variable)
                 WHERE v.is_meme = true
                 RETURN count(v) as count
             """).single()
             
-            print(f"Objects with is_meme = true: {objects_meme_count['count'] if objects_meme_count else 0}")
             print(f"Variables with is_meme = true: {variables_meme_count['count'] if variables_meme_count else 0}")
             
             print("\n" + "="*60)
@@ -181,9 +175,11 @@ def identify_memes():
         print("Neo4j connection closed")
 
 if __name__ == "__main__":
-    print("🚀 Starting meme identification script...")
-    print("📋 Pattern: Names starting with '[[' and ending with ']]' are memes")
-    print("⚠️  This will update is_meme property for all Objects and Variables\n")
+    print("🚀 Starting Variable meme identification script...")
+    print("📋 Criteria for Variables:")
+    print("  1. Name starts with '[' and ends with ']' (single brackets), OR")
+    print("  2. Section property equals '[Meme]'")
+    print("⚠️  This will update is_meme property for all Variables\n")
     
     identify_memes()
 
