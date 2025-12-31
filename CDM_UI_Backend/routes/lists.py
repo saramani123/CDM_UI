@@ -4,7 +4,7 @@ import json
 from typing import List, Dict, Any, Optional, Union
 import uuid
 import re
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from neo4j import WRITE_ACCESS
 from db import get_driver
 from schema import CSVUploadResponse
@@ -37,6 +37,7 @@ class ListCreateRequest(BaseModel):
     graph: Optional[str] = ""
     origin: Optional[str] = ""
     status: Optional[str] = "Active"
+    isMeme: Optional[bool] = Field(False, alias="is_meme", description="Is this list a meme?")
     listValuesList: Optional[List[ListValueRequest]] = []
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
@@ -79,6 +80,7 @@ class ListUpdateRequest(BaseModel):
     graph: Optional[str] = None
     origin: Optional[str] = None
     status: Optional[str] = None
+    isMeme: Optional[bool] = Field(None, alias="is_meme", description="Is this list a meme?")
     listValuesList: Optional[List[ListValueRequest]] = None
     listValuesVariations: Optional[Dict[str, List[str]]] = None  # Dict mapping list value to list of its variations (abbreviated versions, can have multiple)
     tieredListsList: Optional[List[TieredListRequest]] = None
@@ -977,6 +979,7 @@ async def get_lists():
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
+                       COALESCE(l.is_meme, false) as is_meme,
                        s.name as set_name, g.name as grouping_name,
                        sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
                        variations_count, variations, tiered_count, tier_number
@@ -1141,6 +1144,7 @@ async def get_lists():
                     "graph": record["graph"] or "",
                     "origin": record["origin"] or "",
                     "status": record["status"] or "Active",
+                    "is_meme": record.get("is_meme", False),  # Added for the "Memez" feature
                     "variables": record["variables_count"] or 0,
                     "variablesAttachedList": [],
                     "listValuesList": listValuesList,
@@ -1199,7 +1203,8 @@ async def create_list(list_data: ListCreateRequest):
                     upkeep: $upkeep,
                     graph: $graph,
                     origin: $origin,
-                    status: $status
+                    status: $status,
+                    is_meme: $is_meme
                 })
                 
                 // Create relationship Grouping -> List
@@ -1208,7 +1213,8 @@ async def create_list(list_data: ListCreateRequest):
                 // Return the list data for response
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
-                       l.graph as graph, l.origin as origin, l.status as status
+                       l.graph as graph, l.origin as origin, l.status as status,
+                       COALESCE(l.is_meme, false) as is_meme
             """, {
                 "id": list_id,
                 "set": list_data.set,
@@ -1217,6 +1223,7 @@ async def create_list(list_data: ListCreateRequest):
                 "format": list_data.format or "",
                 "source": list_data.source or "",
                 "upkeep": list_data.upkeep or "",
+                "is_meme": getattr(list_data, 'isMeme', False) or False,
                 "graph": list_data.graph or "",
                 "origin": list_data.origin or "",
                 "status": list_data.status or "Active"
@@ -1330,6 +1337,7 @@ async def create_list(list_data: ListCreateRequest):
                 "graph": record["graph"],
                 "origin": record["origin"],
                 "status": record["status"],
+                "is_meme": record.get("is_meme", False),  # Added for the "Memez" feature
                 "variablesAttachedList": [],
                 "listValuesList": list_data.listValuesList if list_data.listValuesList else [],
                 "variations": variations_count,
@@ -1355,24 +1363,12 @@ async def update_list(list_id: str, request: Request):
         body_bytes = await request.body()
         raw_data = json.loads(body_bytes.decode('utf-8'))
         
-        # Debug: Print the raw data to see what we're receiving
-        print(f"DEBUG: Raw request data keys: {list(raw_data.keys())}")
-        if 'tieredListValues' in raw_data:
-            print(f"DEBUG: tieredListValues type: {type(raw_data['tieredListValues'])}")
-            if isinstance(raw_data['tieredListValues'], dict):
-                print(f"DEBUG: tieredListValues keys: {list(raw_data['tieredListValues'].keys())}")
-                if '_variations' in raw_data['tieredListValues']:
-                    print(f"DEBUG: _variations type: {type(raw_data['tieredListValues']['_variations'])}")
-                    print(f"DEBUG: _variations sample: {str(raw_data['tieredListValues']['_variations'])[:200]}")
-        
         # Use model_construct to create the instance without ANY validation
         # This completely bypasses Pydantic validation, including model_validator
         # which allows _variations in tieredListValues to pass through untouched
         list_data = ListUpdateRequest.model_construct(**raw_data)
         
-        print(f"DEBUG: Successfully created list_data with tieredListValues: {list_data.tieredListValues is not None}")
-        
-        with driver.session() as session:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
             # Check if list exists
             check_result = session.run("""
                 MATCH (l:List {id: $id})
@@ -1381,6 +1377,9 @@ async def update_list(list_id: str, request: Request):
             
             if not check_result.single():
                 raise HTTPException(status_code=404, detail="List not found")
+            
+            # Store is_meme value if provided (we'll use it in the response)
+            is_meme_updated_value = None
             
             # Build update query dynamically based on provided fields
             update_fields = []
@@ -1414,13 +1413,58 @@ async def update_list(list_id: str, request: Request):
                 update_fields.append("l.status = $status")
                 params["status"] = list_data.status
             
+            # Handle isMeme - check both the model field and raw_data (since model_construct might not handle alias correctly)
+            # We need to explicitly check for the key in raw_data because False values might be missed
+            is_meme_value = None
+            is_meme_provided = False
+            
+            # Check raw_data first (most reliable)
+            if 'isMeme' in raw_data:
+                is_meme_value = bool(raw_data['isMeme'])
+                is_meme_provided = True
+            elif 'is_meme' in raw_data:
+                is_meme_value = bool(raw_data['is_meme'])
+                is_meme_provided = True
+            
+            # Fallback to list_data if not in raw_data
+            if not is_meme_provided and hasattr(list_data, 'isMeme'):
+                if list_data.isMeme is not None:
+                    is_meme_value = bool(list_data.isMeme)
+                    is_meme_provided = True
+            
+            # Always update if isMeme is provided (even if False)
+            if is_meme_provided:
+                # Ensure we have a boolean value
+                if is_meme_value is None:
+                    is_meme_value = False
+                
+                update_fields.append("l.is_meme = $is_meme")
+                params["is_meme"] = is_meme_value
+                is_meme_updated_value = is_meme_value  # Store for use in response
+            
             if update_fields:
                 update_query = f"""
                     MATCH (l:List {{id: $id}})
                     SET {', '.join(update_fields)}
-                    RETURN l
+                    RETURN l.id as id, l.is_meme as is_meme
                 """
-                session.run(update_query, params)
+                try:
+                    result = session.run(update_query, params)
+                    updated_record = result.single()
+                except Exception as e:
+                    print(f"Error executing update query: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
+            else:
+                # Even if no update, we should still return is_meme in the response
+                # Fetch current value from database
+                current_result = session.run("""
+                    MATCH (l:List {id: $id})
+                    RETURN COALESCE(l.is_meme, false) as is_meme
+                """, {"id": list_id}).single()
+                if current_result:
+                    is_meme_updated_value = current_result.get("is_meme", False)
             
             # Update taxonomy relationships if set or grouping changed
             if list_data.set is not None or list_data.grouping is not None:
@@ -1803,8 +1847,6 @@ async def update_list(list_id: str, request: Request):
                 await cascade_parent_changes_to_children(session, list_id, list_data)
             
             # Return updated list
-            print(f"DEBUG: Fetching updated list data for {list_id}")
-            print(f"DEBUG: list_data.listType={list_data.listType}, list_data.tierNames={list_data.tierNames}, list_data.numberOfLevels={list_data.numberOfLevels}")
             # First get the list with basic info
             list_result = session.run("""
                 MATCH (l:List {id: $id})
@@ -1844,7 +1886,7 @@ async def update_list(list_id: str, request: Request):
                         "list": tier_record["list"]
                     })
             
-            # Get other data
+            # Get other data - fetch fresh from database to ensure we have the latest is_meme value
             result = session.run("""
                 MATCH (l:List {id: $id})
                 OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(l)
@@ -1862,6 +1904,7 @@ async def update_list(list_id: str, request: Request):
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
+                       COALESCE(l.is_meme, false) as is_meme,
                        sectors, domains, countries, list_values, variations_count, variations
             """, {"id": list_id})
             
@@ -1910,9 +1953,6 @@ async def update_list(list_id: str, request: Request):
                         "listId": tier.get("listId")
                     })
             
-            print(f"DEBUG: Response tiered_lists_raw: {tiered_lists_raw}")
-            print(f"DEBUG: Response tieredListsList: {tieredListsList}")
-            print(f"DEBUG: Response tiered_count: {record.get('tiered_count')}")
             
             variations_list = record.get("variations") or []
             variations_count = record.get("variations_count") or 0
@@ -1937,7 +1977,17 @@ async def update_list(list_id: str, request: Request):
             else:
                 tier_names = [tier.get("list", "") for tier in tieredListsList if tier and isinstance(tier, dict) and tier.get("list")]
             
-            return {
+            # Get is_meme value - use the updated value if we just updated it, otherwise from record
+            is_meme_response_value = False
+            if is_meme_updated_value is not None:
+                # We just updated it, use the value we set
+                is_meme_response_value = is_meme_updated_value
+            else:
+                # Use value from record
+                is_meme_response_value = record.get("is_meme", False)
+            
+            # Ensure is_meme is always in the response
+            response_data = {
                 "id": record["id"],
                 "sector": sector_str if sector_str != "ALL" else ["ALL"],
                 "domain": domain_str if domain_str != "ALL" else ["ALL"],
@@ -1960,6 +2010,17 @@ async def update_list(list_id: str, request: Request):
                 "numberOfLevels": number_of_levels,
                 "tierNames": tier_names
             }
+            
+            # ALWAYS include is_meme - use updated value if we set it, otherwise from record
+            # Ensure is_meme_response_value is never None
+            if is_meme_response_value is None:
+                is_meme_response_value = False
+            
+            # Force set both snake_case and camelCase versions
+            response_data["is_meme"] = bool(is_meme_response_value)
+            response_data["isMeme"] = bool(is_meme_response_value)
+            
+            return response_data
 
     except HTTPException:
         raise

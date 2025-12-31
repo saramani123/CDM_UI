@@ -1995,9 +1995,15 @@ function App() {
   };
 
   const handleIsMemeChange = async (rowId: string, checked: boolean) => {
-    console.log('🎭 handleIsMemeChange called:', { rowId, checked, activeTab });
+    // Early return for tiered lists
+    if (activeTab === 'lists') {
+      const listToUpdate = listData.find(l => l.id === rowId);
+      if (listToUpdate && listToUpdate.hasIncomingTier) {
+        return; // Don't allow updates for tiered lists
+      }
+    }
     
-    // Optimistically update UI immediately with loading state
+    // Optimistically update UI immediately with loading state (non-blocking)
     if (activeTab === 'objects') {
       setData(prev => prev.map(obj => 
         obj.id === rowId 
@@ -2010,48 +2016,64 @@ function App() {
           ? { ...v, isMeme: checked, _isMemeLoading: true }
           : v
       ));
+    } else if (activeTab === 'lists') {
+      setListData(prev => prev.map(l => 
+        l.id === rowId 
+          ? { ...l, isMeme: checked, _isMemeLoading: true }
+          : l
+      ));
     }
 
-    try {
-      if (activeTab === 'objects') {
-        console.log('🎭 Calling updateObject with:', { id: rowId, isMeme: checked });
-        const updated = await updateObject(rowId, { isMeme: checked });
-        console.log('🎭 updateObject response:', updated);
-        // The useEffect will sync apiObjects to data, but we need to remove loading state
-        // Also ensure the updated value is reflected
-        setData(prev => prev.map(obj => 
-          obj.id === rowId 
-            ? { ...obj, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
-            : obj
-        ));
-      } else if (activeTab === 'variables') {
-        console.log('🎭 Calling updateVariable with:', { id: rowId, isMeme: checked });
-        const updated = await updateVariable(rowId, { isMeme: checked });
-        console.log('🎭 updateVariable response:', updated);
-        // Remove loading state and ensure updated value is reflected
-        setVariableData(prev => prev.map(v => 
-          v.id === rowId 
-            ? { ...v, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
-            : v
-        ));
+    // Perform API call asynchronously (non-blocking)
+    (async () => {
+      try {
+        if (activeTab === 'objects') {
+          const updated = await updateObject(rowId, { isMeme: checked });
+          setData(prev => prev.map(obj => 
+            obj.id === rowId 
+              ? { ...obj, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
+              : obj
+          ));
+        } else if (activeTab === 'variables') {
+          const updated = await updateVariable(rowId, { isMeme: checked });
+          setVariableData(prev => prev.map(v => 
+            v.id === rowId 
+              ? { ...v, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
+              : v
+          ));
+        } else if (activeTab === 'lists') {
+          const updated = await apiService.updateList(rowId, { isMeme: checked });
+          const isMemeValue = (updated as any)?.is_meme ?? (updated as any)?.isMeme ?? checked;
+          setListData(prev => prev.map(l => 
+            l.id === rowId 
+              ? { ...l, isMeme: isMemeValue, _isMemeLoading: false }
+              : l
+          ));
+        }
+      } catch (error) {
+        console.error('❌ Error updating isMeme:', error);
+        // Revert on error
+        if (activeTab === 'objects') {
+          setData(prev => prev.map(obj => 
+            obj.id === rowId 
+              ? { ...obj, isMeme: !checked, _isMemeLoading: false }
+              : obj
+          ));
+        } else if (activeTab === 'variables') {
+          setVariableData(prev => prev.map(v => 
+            v.id === rowId 
+              ? { ...v, isMeme: !checked, _isMemeLoading: false }
+              : v
+          ));
+        } else if (activeTab === 'lists') {
+          setListData(prev => prev.map(l => 
+            l.id === rowId 
+              ? { ...l, isMeme: !checked, _isMemeLoading: false }
+              : l
+          ));
+        }
       }
-    } catch (error) {
-      console.error('❌ Error updating isMeme:', error);
-      // Revert on error
-      if (activeTab === 'objects') {
-        setData(prev => prev.map(obj => 
-          obj.id === rowId 
-            ? { ...obj, isMeme: !checked, _isMemeLoading: false }
-            : obj
-        ));
-      } else if (activeTab === 'variables') {
-        setVariableData(prev => prev.map(v => 
-          v.id === rowId 
-            ? { ...v, isMeme: !checked, _isMemeLoading: false }
-            : v
-        ));
-      }
-    }
+    })();
   };
 
   const handleClone = async (row: Record<string, any>) => {
@@ -3643,7 +3665,8 @@ function App() {
           numberOfLevels: list.numberOfLevels || (list.tieredListsList ? list.tieredListsList.length + 1 : 2),
           tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : []),
           totalValuesCount: list.totalValuesCount ?? 0, // Total count of values
-          sampleValues: Array.isArray(list.sampleValues) ? list.sampleValues.filter(v => v && String(v).trim()) : [] // First 3 values for display
+          sampleValues: Array.isArray(list.sampleValues) ? list.sampleValues.filter(v => v && String(v).trim()) : [], // First 3 values for display
+          isMeme: (list as any).is_meme ?? (list as any).isMeme ?? false // Map is_meme from backend
         };
       });
       
