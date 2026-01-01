@@ -2076,6 +2076,52 @@ function App() {
     })();
   };
 
+  const handleIsGroupKeyChange = async (rowId: string, checked: boolean) => {
+    // Only for variables tab
+    if (activeTab !== 'variables') {
+      return;
+    }
+    
+    const variableToUpdate = variableData.find(v => v.id === rowId);
+    if (!variableToUpdate) {
+      return;
+    }
+    
+    const currentGroup = variableToUpdate.group;
+    
+    // Optimistically update UI immediately with loading state
+    setVariableData(prev => {
+      const updated = prev.map(v => {
+        if (v.id === rowId) {
+          return { ...v, isGroupKey: checked, _isGroupKeyLoading: true };
+        }
+        // If checking this one, uncheck others in the same group
+        if (checked && v.group === currentGroup && v.id !== rowId) {
+          return { ...v, isGroupKey: false, _isGroupKeyLoading: true };
+        }
+        return v;
+      });
+      return updated;
+    });
+
+    // Perform API call asynchronously
+    // Note: Backend will automatically uncheck other variables in the same group when checking one
+    (async () => {
+      try {
+        // Update the variable that was clicked
+        // Backend will handle unchecking others in the same group if checked = true
+        await updateVariable(rowId, { isGroupKey: checked });
+        
+        // Refresh variables to get the latest state from backend
+        await fetchVariables();
+      } catch (error) {
+        console.error('❌ Error updating isGroupKey:', error);
+        // Revert on error - refresh from backend
+        await fetchVariables();
+      }
+    })();
+  };
+
   const handleClone = async (row: Record<string, any>) => {
     console.log('🧬 handleClone called with row:', row);
     console.log('🧬 activeTab:', activeTab);
@@ -4963,6 +5009,7 @@ function App() {
                 onDelete={handleDelete}
                 onClone={handleClone}
                 onIsMemeChange={handleIsMemeChange}
+                onIsGroupKeyChange={handleIsGroupKeyChange}
                 selectionMode={activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists' ? 'row' : 'checkbox'}
                 selectedRows={selectedRows}
                 onReorder={activeTab === 'lists' ? (newData: Record<string, any>[]) => setListData(newData as ListData[]) : activeTab === 'variables' ? (newData: Record<string, any>[]) => setVariableData(newData as VariableData[]) : (newData: Record<string, any>[]) => setData(newData as ObjectData[])}

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Body
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Body, Request
 from typing import List, Dict, Any, Optional
 import uuid
 import io
@@ -235,6 +235,7 @@ async def get_variables():
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
                        v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                       COALESCE(v.is_group_key, false) as is_group_key,
                        p.name as part, g.name as group,
                        objectRelationships, variations, sectors, domains, countries, variableClarifiers
                 ORDER BY v.id
@@ -295,6 +296,7 @@ async def get_variables():
                     "graph": str(record["graph"]) if record["graph"] else "Yes",
                     "status": str(record["status"]) if record["status"] else "Active",
                     "is_meme": record.get("is_meme", False),
+                    "is_group_key": record.get("is_group_key", False),
                     "objectRelationships": int(record["objectRelationships"]) if record["objectRelationships"] is not None else 0,
                     "objectRelationshipsList": [],
                     "variations": int(record["variations"]) if record["variations"] is not None else 0
@@ -346,7 +348,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                     graph: $graph,
                     status: $status,
                     driver: $driver,
-                    is_meme: $is_meme
+                    is_meme: $is_meme,
+                    is_group_key: $is_group_key
                 })
                 
                 // Create relationship Group -> Variable
@@ -357,6 +360,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
                        v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                       COALESCE(v.is_group_key, false) as is_group_key,
                        $part as part, $group as group
             """, {
                 "id": variable_id,
@@ -372,7 +376,8 @@ async def create_variable(variable_data: VariableCreateRequest):
                 "graph": variable_data.graph or "Yes",
                 "status": variable_data.status or "Active",
                 "driver": variable_data.driver or "ALL, ALL, ALL, None",
-                "is_meme": getattr(variable_data, 'isMeme', False) or False
+                "is_meme": getattr(variable_data, 'isMeme', False) or False,
+                "is_group_key": getattr(variable_data, 'isGroupKey', False) or False
             })
 
             record = result.single()
@@ -457,6 +462,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 graph=record["graph"],
                 status=record["status"],
                 is_meme=record.get("is_meme", False),
+                is_group_key=record.get("is_group_key", False),
                 objectRelationships=0,
                 objectRelationshipsList=[],
                 variations=variations_count,
@@ -475,8 +481,29 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
     Supports partial updates - only updates fields that are provided.
     Also handles variationsList for variations management.
     """
+    # Log the parsed Pydantic model
     print(f"🎭 update_variable called with variable_id={variable_id}, variable_data={variable_data}")
     print(f"🎭 variable_data.isMeme={variable_data.isMeme}, type={type(variable_data.isMeme)}")
+    
+    # Check if isGroupKey exists as an attribute
+    print(f"🔑 hasattr(variable_data, 'isGroupKey'): {hasattr(variable_data, 'isGroupKey')}")
+    if hasattr(variable_data, 'isGroupKey'):
+        print(f"🔑 variable_data.isGroupKey={variable_data.isGroupKey}, type={type(variable_data.isGroupKey)}")
+    else:
+        print(f"🔑 ERROR: isGroupKey attribute does not exist on variable_data!")
+    
+    # Use model_dump() to see all fields
+    try:
+        model_dict = variable_data.model_dump()
+        print(f"🔑 variable_data.model_dump() keys: {list(model_dict.keys())}")
+        print(f"🔑 isGroupKey in model_dump: {model_dict.get('isGroupKey')}")
+        print(f"🔑 Full model_dump: {model_dict}")
+    except Exception as e:
+        print(f"🔑 Could not get model_dump: {e}")
+        try:
+            print(f"🔑 variable_data.__dict__: {variable_data.__dict__}")
+        except:
+            print(f"🔑 Could not get __dict__ either")
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -504,8 +531,9 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             current_variable = current_record["v"]
             current_part = current_record["part"] if current_record["part"] else ""
             current_group = current_record["group"] if current_record["group"] else ""
-            # Get is_meme from node properties
+            # Get is_meme and is_group_key from node properties
             current_is_meme = current_variable.get("is_meme", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_meme', False)
+            current_is_group_key = current_variable.get("is_group_key", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_group_key', False)
             
             import sys
             sys.stdout.flush()
@@ -552,6 +580,71 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                 set_clauses.append("v.is_meme = $is_meme")
                 params["is_meme"] = is_meme_value
                 print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for variable {variable_id}")
+            
+            # Handle isGroupKey with validation - only one per group
+            # Check both camelCase and snake_case (similar to isMeme handling)
+            is_group_key_provided = False
+            is_group_key_value = None
+            
+            # First, check what attributes the variable_data object actually has
+            print(f"DEBUG: 🔑 Checking isGroupKey - hasattr isGroupKey: {hasattr(variable_data, 'isGroupKey')}")
+            print(f"DEBUG: 🔑 Checking isGroupKey - hasattr is_group_key: {hasattr(variable_data, 'is_group_key')}")
+            if hasattr(variable_data, 'isGroupKey'):
+                print(f"DEBUG: 🔑 variable_data.isGroupKey value: {variable_data.isGroupKey}, type: {type(variable_data.isGroupKey)}")
+            if hasattr(variable_data, 'is_group_key'):
+                print(f"DEBUG: 🔑 variable_data.is_group_key value: {variable_data.is_group_key}, type: {type(variable_data.is_group_key)}")
+            
+            # Check if isGroupKey is provided (camelCase from frontend)
+            if hasattr(variable_data, 'isGroupKey') and variable_data.isGroupKey is not None:
+                is_group_key_value = bool(variable_data.isGroupKey)
+                is_group_key_provided = True
+                print(f"DEBUG: 🔑 Received isGroupKey (camelCase): {is_group_key_value} for variable {variable_id}")
+            # Also check for snake_case (in case it comes through that way)
+            elif hasattr(variable_data, 'is_group_key') and variable_data.is_group_key is not None:
+                is_group_key_value = bool(variable_data.is_group_key)
+                is_group_key_provided = True
+                print(f"DEBUG: 🔑 Received is_group_key (snake_case): {is_group_key_value} for variable {variable_id}")
+            else:
+                print(f"DEBUG: 🔑 WARNING: isGroupKey not found or is None in variable_data")
+            
+            if is_group_key_provided:
+                print(f"DEBUG: 🔑 Processing is_group_key update: {is_group_key_value} for variable {variable_id}")
+                
+                # If setting to true, first uncheck all other variables in the same group
+                if is_group_key_value:
+                    # Get the current group for this variable
+                    group_result = session.run("""
+                        MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $id})
+                        RETURN g.name as group_name
+                    """, {"id": variable_id})
+                    
+                    group_record = group_result.single()
+                    if group_record and group_record.get("group_name"):
+                        group_name = group_record["group_name"]
+                        print(f"DEBUG: 🔑 Found group '{group_name}' for variable {variable_id}")
+                        
+                        # Uncheck all other variables in the same group
+                        uncheck_result = session.run("""
+                            MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group_name})-[:HAS_VARIABLE]->(v:Variable)
+                            WHERE v.id <> $variable_id AND v.is_group_key = true
+                            SET v.is_group_key = false
+                            RETURN count(v) as unchecked_count
+                        """, {"group_name": group_name, "variable_id": variable_id})
+                        
+                        unchecked_record = uncheck_result.single()
+                        if unchecked_record:
+                            unchecked_count = unchecked_record["unchecked_count"]
+                            if unchecked_count > 0:
+                                print(f"DEBUG: 🔑 Unchecked {unchecked_count} other variables in group '{group_name}'")
+                            else:
+                                print(f"DEBUG: 🔑 No other variables in group '{group_name}' had is_group_key = true")
+                    else:
+                        print(f"DEBUG: 🔑 WARNING: Could not find group for variable {variable_id}, but will still set is_group_key")
+                
+                # Now set this variable's is_group_key
+                set_clauses.append("v.is_group_key = $is_group_key")
+                params["is_group_key"] = is_group_key_value
+                print(f"DEBUG: 🔑 Added is_group_key = {is_group_key_value} to update query for variable {variable_id}")
 
             # Only update if there are fields to update
             if set_clauses:
@@ -561,14 +654,15 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                     RETURN v.id as id, v.name as variable, v.section as section,
                            v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                            v.validation as validation, v.default as default, v.graph as graph,
-                           v.status as status, COALESCE(v.is_meme, false) as is_meme
+                           v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                           COALESCE(v.is_group_key, false) as is_group_key
                 """
                 
-                print(f"DEBUG: 🎭 Executing variable update query with is_meme: {params.get('is_meme', 'NOT_SET')}")
+                print(f"DEBUG: 🎭 Executing variable update query with is_meme: {params.get('is_meme', 'NOT_SET')}, is_group_key: {params.get('is_group_key', 'NOT_SET')}")
                 result = session.run(update_query, params)
                 record = result.single()
                 if record:
-                    print(f"DEBUG: 🎭 ✅ Variable update successful - is_meme: {record.get('is_meme')}")
+                    print(f"DEBUG: 🎭 ✅ Variable update successful - is_meme: {record.get('is_meme')}, is_group_key: {record.get('is_group_key')}")
             else:
                 # No fields to update, use current data
                 record = {
@@ -582,7 +676,8 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                     "default": current_variable["default"],
                     "graph": current_variable["graph"],
                     "status": current_variable["status"],
-                    "is_meme": current_is_meme
+                    "is_meme": current_is_meme,
+                    "is_group_key": current_is_group_key
                 }
 
             # Handle Part/Group changes - only update Group -> Variable relationship
@@ -836,6 +931,7 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                 graph=record["graph"],
                 status=record["status"],
                 is_meme=record.get("is_meme", False),
+                is_group_key=record.get("is_group_key", False),
                 objectRelationships=relationships_count,
                 objectRelationshipsList=[],
                 variations=variations_count,

@@ -28,10 +28,14 @@ export const useVariables = () => {
       console.log('First variable:', data?.[0]);
       console.log('Data type:', typeof data);
       console.log('Is array:', Array.isArray(data));
-      // Map is_meme from backend to isMeme for frontend
+      // Map is_meme and is_group_key from backend to isMeme and isGroupKey for frontend
+      // Also clear any loading states
       const mappedData = (data || []).map((v: any) => ({
         ...v,
-        isMeme: v.is_meme ?? v.isMeme ?? false
+        isMeme: v.is_meme ?? v.isMeme ?? false,
+        isGroupKey: v.is_group_key ?? v.isGroupKey ?? false,
+        _isMemeLoading: false, // Clear loading state
+        _isGroupKeyLoading: false // Clear loading state
       }));
       setVariables(mappedData);
     } catch (err) {
@@ -60,10 +64,11 @@ export const useVariables = () => {
   const updateVariable = async (id: string, variableData: Partial<VariableData>) => {
     try {
       const updatedVariable = await apiService.updateVariable(id, variableData) as any;
-      // Map is_meme from backend to isMeme for frontend
+      // Map is_meme and is_group_key from backend to isMeme and isGroupKey for frontend
       const variableWithMeme: VariableData = {
         ...updatedVariable,
-        isMeme: updatedVariable.is_meme ?? updatedVariable.isMeme ?? false
+        isMeme: updatedVariable.is_meme ?? updatedVariable.isMeme ?? false,
+        isGroupKey: updatedVariable.is_group_key ?? updatedVariable.isGroupKey ?? false
       };
       setVariables(prev => prev.map(v => v.id === id ? variableWithMeme : v));
       return variableWithMeme;

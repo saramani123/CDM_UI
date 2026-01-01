@@ -445,6 +445,7 @@ class VariableCreateRequest(BaseModel):
     status: Optional[str] = Field("Active", description="Status")
     variationsList: Optional[List[dict]] = None  # List of variations to create for the variable
     isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
+    isGroupKey: Optional[bool] = Field(default=False, description="Is Group Key flag")
 
 class VariableUpdateRequest(BaseModel):
     """Schema for updating a variable - all fields optional for partial updates"""
@@ -462,6 +463,7 @@ class VariableUpdateRequest(BaseModel):
     status: Optional[str] = None
     variationsList: Optional[List[dict]] = None  # List of variations to append to the variable
     isMeme: Optional[bool] = None
+    isGroupKey: Optional[bool] = None
 
 class BulkVariableUpdateRequest(BaseModel):
     """Schema for bulk updating variables"""
@@ -510,6 +512,7 @@ class VariableResponse(BaseModel):
     variations: int = 0
     variationsList: List[dict] = []
     is_meme: Optional[bool] = False
+    is_group_key: Optional[bool] = False
 
 class VariableCSVRowData(BaseModel):
     """Schema for a single CSV row for variable upload"""

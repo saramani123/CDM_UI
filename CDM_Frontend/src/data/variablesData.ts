@@ -30,6 +30,7 @@ export interface VariableData {
   variableClarifier?: string;
   status?: string;
   isMeme?: boolean; // Meme flag
+  isGroupKey?: boolean; // Group Key flag
 }
 
 export interface ObjectRelationship {
@@ -54,6 +55,7 @@ export const variableColumns = [
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '200px' },
   { key: 'isMeme', title: 'Is Meme', sortable: true, filterable: true, width: '100px' },
+  { key: 'isGroupKey', title: 'Is Group Key', sortable: true, filterable: true, width: '120px' },
   { key: 'formatI', title: 'Format I', sortable: true, filterable: true, width: '120px' },
   { key: 'formatII', title: 'Format II', sortable: true, filterable: true, width: '140px' },
   { key: 'gType', title: 'G-Type', sortable: true, filterable: true, width: '120px' },

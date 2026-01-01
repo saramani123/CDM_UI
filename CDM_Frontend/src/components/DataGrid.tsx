@@ -59,6 +59,7 @@ interface DataGridProps {
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
   onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
+  onIsGroupKeyChange?: (rowId: string, checked: boolean) => void; // Handler for isGroupKey checkbox changes
   gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
@@ -88,6 +89,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onRelationshipCheckboxChange,
   onRelationshipRowClick,
   onIsMemeChange,
+  onIsGroupKeyChange,
   gridType = 'objects', // Default to 'objects' for backward compatibility
   isPredefinedSortEnabled = false,
   predefinedSortOrder,
@@ -1322,6 +1324,47 @@ export const DataGrid: React.FC<DataGridProps> = ({
                             />
                           )}
                         </div>
+                      )
+                    ) : column.key === 'isGroupKey' ? (
+                      // Only show for variables tab
+                      gridType === 'variables' ? (
+                        <div className="flex items-center justify-center">
+                          {row._isGroupKeyLoading ? (
+                            <div className="w-4 h-4 border-2 border-ag-dark-accent border-t-transparent rounded-full animate-spin"></div>
+                          ) : (() => {
+                            // Check if another variable in the same group has isGroupKey = true
+                            const currentGroup = (row as any).group;
+                            const isGroupKeyChecked = !!row.isGroupKey;
+                            const anotherInGroupHasKey = data.some((otherRow: any) => 
+                              otherRow.id !== row.id && 
+                              otherRow.group === currentGroup && 
+                              otherRow.isGroupKey === true
+                            );
+                            const isDisabled = anotherInGroupHasKey && !isGroupKeyChecked;
+                            
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={isGroupKeyChecked}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  onIsGroupKeyChange?.(row.id, e.target.checked);
+                                }}
+                                className={`rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0 w-4 h-4 ${
+                                  isDisabled 
+                                    ? 'opacity-50 cursor-not-allowed' 
+                                    : 'cursor-pointer'
+                                }`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                                disabled={isDisabled || row._isGroupKeyLoading}
+                              />
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center w-4 h-4"></div>
                       )
                     ) : (
                       <span className={`flex-1 ${
