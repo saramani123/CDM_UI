@@ -4066,9 +4066,9 @@ function App() {
         examples: ''
       });
       
-      // The hook will automatically update the metadata list
-      // Refresh to ensure we have the latest data
-      await fetchMetadata();
+      // Note: createMetadataItem already updates the state optimistically
+      // No need to fetchMetadata() immediately as it might overwrite with stale data
+      // The optimistic update will show the item immediately
     } catch (error) {
       console.error('Failed to create metadata:', error);
       throw error;
