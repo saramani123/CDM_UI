@@ -12,6 +12,8 @@ import { BulkVariableUploadModal } from './components/BulkVariableUploadModal';
 import { BulkEditVariablesPanel } from './components/BulkEditVariablesPanel';
 import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
+import { AddMetadataModal } from './components/AddMetadataModal';
+import { MetadataDetailModal } from './components/MetadataDetailModal';
 import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseDriverString, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
@@ -20,6 +22,7 @@ import { removeDriverAbbreviation } from './utils/driverAbbreviations';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
+import { useMetadata, type MetadataData } from './hooks/useMetadata';
 import { apiService } from './services/api';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
@@ -82,6 +85,9 @@ function App() {
   // Use API hook for variables data
   const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
   
+  // Use API hook for metadata data
+  const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem } = useMetadata();
+  
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
@@ -98,6 +104,19 @@ function App() {
   const [listData, setListData] = useState(mockListData);
   const [isBulkListUploadOpen, setIsBulkListUploadOpen] = useState(false);
   const [isAddListOpen, setIsAddListOpen] = useState(false);
+  
+  // Metadata tab state
+  const [isAddMetadataOpen, setIsAddMetadataOpen] = useState(false);
+  const [isMetadataDetailModalOpen, setIsMetadataDetailModalOpen] = useState(false);
+  const [selectedMetadataRow, setSelectedMetadataRow] = useState<MetadataData | null>(null);
+  
+  // Metadata tab columns - larger widths for better visibility
+  const metadataColumns = [
+    { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
+    { key: 'concept', title: 'Concept', sortable: true, filterable: true, width: '350px' },
+    { key: 'number', title: 'Number', sortable: true, filterable: true, width: '200px' },
+    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' }
+  ];
   
   // Custom Sort state
   const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
@@ -433,10 +452,12 @@ function App() {
   // Dynamic tabs with calculated counts
   const dynamicTabs = useMemo(() => [
     { id: 'drivers', label: 'Drivers', count: driversCount },
+    { id: 'metadata', label: 'Metadata' },
     { id: 'objects', label: 'Objects', count: objectsCount },
     { id: 'variables', label: 'Variables', count: variablesCount },
     { id: 'lists', label: 'Lists', count: 45 }, // Keep lists as static for now
     { id: 'ledgers', label: 'Ledgers' },
+    { id: 'heuristics', label: 'Heuristics' },
     { id: 'sources', label: 'Sources' }
   ], [driversCount, objectsCount, variablesCount]);
   const [selectedItem, setSelectedItem] = useState<string | undefined>();
@@ -680,6 +701,18 @@ function App() {
       });
     }
   }, [activeTab]);
+
+  // Handle metadata loading
+  React.useEffect(() => {
+    if (activeTab === 'metadata') {
+      if (metadataLoading) {
+        setIsLoading(true);
+        setLoadingType('metadata');
+      } else {
+        setIsLoading(false);
+      }
+    }
+  }, [activeTab, metadataLoading]);
 
   // Sync selectedRowForMetadata with updated data
   React.useEffect(() => {
@@ -3921,6 +3954,45 @@ function App() {
     }
   };
 
+  const handleAddMetadata = async (metadataData: { layer: string; concept: string }) => {
+    try {
+      // Check for uniqueness: Layer + Concept combination must be unique
+      const existing = apiMetadata.find(
+        m => m.layer.toLowerCase() === metadataData.layer.toLowerCase() && 
+             m.concept.toLowerCase() === metadataData.concept.toLowerCase()
+      );
+      
+      if (existing) {
+        throw new Error(`A metadata item with Layer "${metadataData.layer}" and Concept "${metadataData.concept}" already exists. Each combination must be unique.`);
+      }
+      
+      // Generate a unique ID (use timestamp + random to ensure uniqueness)
+      const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Create metadata item via API
+      // Number and Examples will be empty strings initially (backend will handle them later)
+      await createMetadataItem({
+        id: newId,
+        layer: metadataData.layer,
+        concept: metadataData.concept,
+        number: '',
+        examples: ''
+      });
+      
+      // The hook will automatically update the metadata list
+      // Refresh to ensure we have the latest data
+      await fetchMetadata();
+    } catch (error) {
+      console.error('Failed to create metadata:', error);
+      throw error;
+    }
+  };
+
+  const handleMetadataRowClick = (row: MetadataData) => {
+    setSelectedMetadataRow(row);
+    setIsMetadataDetailModalOpen(true);
+  };
+
   const handleAddList = async (newListData: ListData) => {
     try {
       // Convert to API format
@@ -4571,13 +4643,77 @@ function App() {
       {/* Main Content */}
       <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden flex flex-col" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
-        {['ledgers', 'sources'].includes(activeTab) ? (
+        {['ledgers', 'heuristics', 'sources'].includes(activeTab) ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
               <div className="text-6xl mb-4">🚧</div>
               <h2 className="text-2xl font-semibold text-ag-dark-text mb-2 capitalize">{activeTab}</h2>
               <p className="text-lg text-ag-dark-text-secondary">Coming Soon</p>
             </div>
+          </div>
+        ) : activeTab === 'metadata' ? (
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            {/* Add Button */}
+            <div className="mb-4 flex items-center justify-start">
+              <button
+                onClick={() => setIsAddMetadataOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
+                title="Add Metadata"
+              >
+                <Plus className="w-4 h-4" />
+                Add
+              </button>
+            </div>
+            
+            {/* Data Grid */}
+            {metadataLoading ? (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-ag-dark-text-secondary">Loading metadata...</div>
+              </div>
+            ) : metadataError ? (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center">
+                  <div className="text-ag-dark-error mb-2">Error: {metadataError}</div>
+                  <div className="text-sm text-ag-dark-text-secondary">Please ensure the backend server is running and the metadata endpoint is available.</div>
+                </div>
+              </div>
+            ) : apiMetadata && apiMetadata.length > 0 ? (
+              <div className="flex-1 min-h-0 overflow-auto" style={{ height: '100%' }}>
+                <div style={{ 
+                  transform: 'scale(1.3)', 
+                  transformOrigin: 'top left',
+                  width: '76.92%',
+                  minHeight: '76.92%'
+                }}>
+                  <div style={{ fontSize: '18px' }}>
+                    <DataGrid
+                      key="metadata"
+                      columns={metadataColumns}
+                      data={apiMetadata}
+                      onRowSelect={(rows) => {
+                        if (rows.length > 0) {
+                          handleMetadataRowClick(rows[0] as MetadataData);
+                        }
+                      }}
+                      selectedRows={[]}
+                      affectedIds={new Set()}
+                      deletedDriverType={null}
+                      customSortRules={[]}
+                      isCustomSortActive={false}
+                      isColumnSortActive={false}
+                      highlightCurrentObject={false}
+                      showActionsColumn={false}
+                      selectionMode="row"
+                      gridType="objects"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-ag-dark-text-secondary">No metadata available</div>
+              </div>
+            )}
           </div>
         ) : activeTab === 'drivers' ? (
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
@@ -5401,6 +5537,26 @@ function App() {
           }
         }}
         initialRelationships={initialRelationships}
+      />
+
+      {/* Add Metadata Modal */}
+      <AddMetadataModal
+        isOpen={isAddMetadataOpen}
+        onClose={() => setIsAddMetadataOpen(false)}
+        onAdd={handleAddMetadata}
+      />
+
+      {/* Metadata Detail Modal */}
+      <MetadataDetailModal
+        isOpen={isMetadataDetailModalOpen}
+        onClose={() => {
+          setIsMetadataDetailModalOpen(false);
+          setSelectedMetadataRow(null);
+        }}
+        metadataItem={selectedMetadataRow}
+        onSave={async () => {
+          await fetchMetadata();
+        }}
       />
 
     </div>

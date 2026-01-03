@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError
-from routes import objects, drivers, variables, graph, lists, order
+from routes import objects, drivers, variables, graph, lists, order, metadata
 
 app = FastAPI(
     title="CDM_U Backend API",
@@ -66,6 +66,7 @@ app.include_router(variables.router, prefix="/api/v1")
 app.include_router(graph.router, prefix="/api/v1")
 app.include_router(lists.router, prefix="/api/v1")
 app.include_router(order.router, prefix="/api/v1")
+app.include_router(metadata.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

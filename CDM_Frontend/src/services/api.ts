@@ -958,6 +958,47 @@ class ApiService {
       body: JSON.stringify(order),
     });
   }
+
+  // Metadata API
+  async getMetadata() {
+    return this.request('/metadata', { method: 'GET' });
+  }
+
+  async getMetadataItem(id: string) {
+    return this.request(`/metadata/${id}`, { method: 'GET' });
+  }
+
+  async createMetadataItem(item: {
+    id: string;
+    layer: string;
+    concept: string;
+    number: string;
+    examples: string;
+  }) {
+    return this.request('/metadata', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  }
+
+  async updateMetadataItem(id: string, update: {
+    layer?: string;
+    concept?: string;
+    number?: string;
+    examples?: string;
+    detailData?: string;
+  }) {
+    return this.request(`/metadata/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+  }
+
+  async deleteMetadataItem(id: string) {
+    return this.request(`/metadata/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiService = new ApiService();
