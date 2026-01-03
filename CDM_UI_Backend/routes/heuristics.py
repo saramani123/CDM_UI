@@ -392,3 +392,39 @@ async def delete_heuristic_item(item_id: str):
     except Exception as e:
         print(f"Error deleting heuristic item: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete heuristic item: {str(e)}")
+
+@router.delete("/heuristics")
+async def clear_all_heuristics():
+    """Clear ALL heuristics data - use with caution!"""
+    try:
+        deleted_count = 0
+        
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    deleted_count = db.query(HeuristicModel).delete()
+                    db.commit()
+                    print(f"✅ Cleared {deleted_count} heuristics entries from PostgreSQL")
+                except Exception as e:
+                    db.rollback()
+                    print(f"⚠️  Error clearing PostgreSQL heuristics: {e}")
+                finally:
+                    db.close()
+        
+        # Also clear JSON files
+        file_path = get_heuristics_file_path()
+        if file_path.exists():
+            heuristics = load_heuristics_json()
+            json_count = len(heuristics)
+            save_heuristics_json([])
+            deleted_count += json_count
+            print(f"✅ Cleared {json_count} heuristics entries from JSON file")
+        
+        return {
+            "message": "All heuristics data cleared successfully",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        print(f"Error clearing heuristics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear heuristics: {str(e)}")

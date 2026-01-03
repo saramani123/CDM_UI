@@ -382,3 +382,39 @@ async def delete_metadata_item(item_id: str):
     except Exception as e:
         print(f"Error deleting metadata item: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete metadata item: {str(e)}")
+
+@router.delete("/metadata")
+async def clear_all_metadata():
+    """Clear ALL metadata data - use with caution!"""
+    try:
+        deleted_count = 0
+        
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    deleted_count = db.query(MetadataModel).delete()
+                    db.commit()
+                    print(f"✅ Cleared {deleted_count} metadata entries from PostgreSQL")
+                except Exception as e:
+                    db.rollback()
+                    print(f"⚠️  Error clearing PostgreSQL metadata: {e}")
+                finally:
+                    db.close()
+        
+        # Also clear JSON files
+        file_path = get_metadata_file_path()
+        if file_path.exists():
+            metadata = load_metadata_json()
+            json_count = len(metadata)
+            save_metadata_json([])
+            deleted_count += json_count
+            print(f"✅ Cleared {json_count} metadata entries from JSON file")
+        
+        return {
+            "message": "All metadata data cleared successfully",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        print(f"Error clearing metadata: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear metadata: {str(e)}")
