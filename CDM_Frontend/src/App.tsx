@@ -4033,8 +4033,9 @@ function App() {
         best: ''
       });
       
-      // Refresh to ensure we have the latest data
-      await fetchHeuristics();
+      // Note: createHeuristicItem already updates the state optimistically
+      // No need to fetchHeuristics() immediately as it might overwrite with stale data
+      // The optimistic update will show the item immediately
     } catch (error) {
       console.error('Failed to create heuristic:', error);
       throw error;
