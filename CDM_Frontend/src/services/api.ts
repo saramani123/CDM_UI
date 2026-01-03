@@ -999,6 +999,53 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // Heuristics API
+  async getHeuristics() {
+    return this.request('/heuristics', { method: 'GET' });
+  }
+
+  async getHeuristicItem(id: string) {
+    return this.request(`/heuristics/${id}`, { method: 'GET' });
+  }
+
+  async createHeuristicItem(item: {
+    id: string;
+    sector: string;
+    domain: string;
+    country: string;
+    agent: string;
+    procedure: string;
+    rules: string;
+    best: string;
+  }) {
+    return this.request('/heuristics', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  }
+
+  async updateHeuristicItem(id: string, update: {
+    sector?: string;
+    domain?: string;
+    country?: string;
+    agent?: string;
+    procedure?: string;
+    rules?: string;
+    best?: string;
+    detailData?: string;
+  }) {
+    return this.request(`/heuristics/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+  }
+
+  async deleteHeuristicItem(id: string) {
+    return this.request(`/heuristics/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiService = new ApiService();

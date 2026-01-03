@@ -162,8 +162,13 @@ export const getGridDriverDisplayValue = (columnKey: string, fullName: string): 
                              [...selectedSet].every(val => allSet.has(val));
         
         if (isAllSelected) {
+          console.log(`[getGridDriverDisplayValue] Normalized ${columnKey} to ALL:`, { fullName, values: Array.from(selectedSet), allValues: Array.from(allSet) });
           return 'ALL';
+        } else {
+          console.log(`[getGridDriverDisplayValue] Not all selected for ${columnKey}:`, { fullName, selectedCount: selectedSet.size, allCount: allSet.size, selected: Array.from(selectedSet).slice(0, 5), all: Array.from(allSet).slice(0, 5) });
         }
+      } else {
+        console.warn(`[getGridDriverDisplayValue] No driver data available for ${columnKey}, cannot normalize. fullName:`, fullName);
       }
       
       // Not all values selected (or driver data not loaded yet) - show formatted comma-separated string
