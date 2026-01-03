@@ -1,7 +1,8 @@
 """
 API routes for managing Heuristics.
-Stores heuristics data in a JSON file (not in Neo4j as this is not graph data).
-Uses environment-specific files to separate dev and prod data.
+Stores heuristics data in PostgreSQL database for permanent persistence.
+Falls back to JSON files if PostgreSQL is not available.
+This ensures data survives Render deployments and redeploys.
 """
 
 import json
@@ -10,6 +11,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from pathlib import Path
+
+# Try to import PostgreSQL, fall back to JSON if not available
+try:
+    from db_postgres import get_db_session, HeuristicModel
+    POSTGRES_AVAILABLE = True
+except Exception as e:
+    print(f"⚠️  PostgreSQL not available, using JSON files: {e}")
+    POSTGRES_AVAILABLE = False
 
 router = APIRouter()
 
@@ -36,35 +45,27 @@ class HeuristicUpdateRequest(BaseModel):
 
 def get_environment():
     """Get the current environment (development or production)"""
-    # Check if running on Render (production)
-    # RENDER env var is set by Render platform, so if it exists and is not empty, we're in production
     render_env = os.getenv("RENDER")
     if render_env and render_env.strip():
         return "production"
-    # Otherwise check ENVIRONMENT variable (set in render.yaml)
     environment = os.getenv("ENVIRONMENT", "development")
     return environment
 
-# Path to heuristics JSON file (environment-specific)
+# JSON file fallback functions
 def get_heuristics_file_path():
     """Get the path to the heuristics JSON file for the current environment"""
-    # Get the backend directory (parent of routes directory)
     backend_dir = Path(__file__).parent.parent
     environment = get_environment()
-    # Use environment-specific filename: heuristics.development.json or heuristics.production.json
     heuristics_file = backend_dir / f"heuristics.{environment}.json"
-    # Ensure the directory exists
     backend_dir.mkdir(parents=True, exist_ok=True)
-    # Debug logging
     print(f"DEBUG: Heuristics file path - Environment: {environment}, File: {heuristics_file}", flush=True)
     return heuristics_file
 
-def load_heuristics() -> List[dict]:
-    """Load heuristics from JSON file"""
+def load_heuristics_json() -> List[dict]:
+    """Load heuristics from JSON file (fallback)"""
     file_path = get_heuristics_file_path()
     if not file_path.exists():
-        # Initialize with empty data if file doesn't exist
-        save_heuristics([])
+        save_heuristics_json([])
         return []
     
     try:
@@ -74,8 +75,8 @@ def load_heuristics() -> List[dict]:
         print(f"Error loading heuristics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to load heuristics: {str(e)}")
 
-def save_heuristics(data: List[dict]):
-    """Save heuristics to JSON file"""
+def save_heuristics_json(data: List[dict]):
+    """Save heuristics to JSON file (fallback)"""
     file_path = get_heuristics_file_path()
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -84,16 +85,52 @@ def save_heuristics(data: List[dict]):
         print(f"Error saving heuristics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save heuristics: {str(e)}")
 
+# PostgreSQL functions
+def load_heuristics_postgres() -> List[dict]:
+    """Load heuristics from PostgreSQL"""
+    db = get_db_session()
+    if not db:
+        return load_heuristics_json()  # Fallback to JSON
+    
+    try:
+        items = db.query(HeuristicModel).all()
+        heuristics = []
+        for item in items:
+            result = {
+                "id": item.id,
+                "sector": item.sector or "",
+                "domain": item.domain or "",
+                "country": item.country or "",
+                "agent": item.agent or "",
+                "procedure": item.procedure or "",
+                "rules": item.rules or "",
+                "best": item.best or "",
+            }
+            if item.detailData:
+                result["detailData"] = item.detailData
+            heuristics.append(result)
+        return heuristics
+    except Exception as e:
+        print(f"Error loading heuristics from PostgreSQL: {e}")
+        db.close()
+        return load_heuristics_json()  # Fallback to JSON
+    finally:
+        db.close()
+
+def load_heuristics() -> List[dict]:
+    """Load heuristics - tries PostgreSQL first, falls back to JSON"""
+    if POSTGRES_AVAILABLE:
+        try:
+            return load_heuristics_postgres()
+        except:
+            return load_heuristics_json()
+    return load_heuristics_json()
+
 @router.get("/heuristics")
 async def get_heuristics():
-    """
-    Get all heuristics items.
-    """
+    """Get all heuristics items"""
     try:
         print("DEBUG: /api/v1/heuristics endpoint called")
-        file_path = get_heuristics_file_path()
-        print(f"DEBUG: Heuristics file path: {file_path}")
-        print(f"DEBUG: File exists: {file_path.exists()}")
         heuristics = load_heuristics()
         print(f"DEBUG: Loaded {len(heuristics)} heuristics items")
         return heuristics
@@ -107,11 +144,32 @@ async def get_heuristics():
 
 @router.get("/heuristics/{item_id}")
 async def get_heuristic_item(item_id: str):
-    """
-    Get a specific heuristic item by ID.
-    """
+    """Get a specific heuristic item by ID"""
     try:
-        heuristics = load_heuristics()
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    item = db.query(HeuristicModel).filter(HeuristicModel.id == item_id).first()
+                    if item:
+                        result = {
+                            "id": item.id,
+                            "sector": item.sector or "",
+                            "domain": item.domain or "",
+                            "country": item.country or "",
+                            "agent": item.agent or "",
+                            "procedure": item.procedure or "",
+                            "rules": item.rules or "",
+                            "best": item.best or "",
+                        }
+                        if item.detailData:
+                            result["detailData"] = item.detailData
+                        return result
+                finally:
+                    db.close()
+        
+        # Fallback to JSON
+        heuristics = load_heuristics_json()
         item = next((h for h in heuristics if h.get("id") == item_id), None)
         if not item:
             raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
@@ -124,17 +182,61 @@ async def get_heuristic_item(item_id: str):
 
 @router.post("/heuristics")
 async def create_heuristic_item(item: HeuristicItem):
-    """
-    Create a new heuristic item.
-    """
+    """Create a new heuristic item"""
     try:
-        heuristics = load_heuristics()
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    # Check if ID exists
+                    existing = db.query(HeuristicModel).filter(HeuristicModel.id == item.id).first()
+                    if existing:
+                        raise HTTPException(status_code=400, detail=f"Heuristic item with id {item.id} already exists")
+                    
+                    # Check uniqueness
+                    duplicate = db.query(HeuristicModel).filter(
+                        HeuristicModel.sector.ilike(item.sector),
+                        HeuristicModel.domain.ilike(item.domain),
+                        HeuristicModel.country.ilike(item.country),
+                        HeuristicModel.agent.ilike(item.agent),
+                        HeuristicModel.procedure.ilike(item.procedure)
+                    ).first()
+                    if duplicate:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Heuristic item with this combination already exists."
+                        )
+                    
+                    # Create new item
+                    new_item = HeuristicModel(
+                        id=item.id,
+                        sector=item.sector,
+                        domain=item.domain,
+                        country=item.country,
+                        agent=item.agent,
+                        procedure=item.procedure,
+                        rules=item.rules,
+                        best=item.best,
+                        detailData=None
+                    )
+                    db.add(new_item)
+                    db.commit()
+                    return item.dict()
+                except HTTPException:
+                    db.rollback()
+                    raise
+                except Exception as e:
+                    db.rollback()
+                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                finally:
+                    db.close()
         
-        # Check if ID already exists
+        # Fallback to JSON
+        heuristics = load_heuristics_json()
+        
         if any(h.get("id") == item.id for h in heuristics):
             raise HTTPException(status_code=400, detail=f"Heuristic item with id {item.id} already exists")
         
-        # Check for uniqueness: S + D + C + Agent + Procedure combination must be unique
         existing = next((
             h for h in heuristics 
             if h.get("sector", "").lower() == item.sector.lower() and 
@@ -147,12 +249,12 @@ async def create_heuristic_item(item: HeuristicItem):
         if existing:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Heuristic item with this combination of Sector, Domain, Country, Agent, and Procedure already exists. Each combination must be unique."
+                detail=f"Heuristic item with this combination already exists."
             )
         
         new_item = item.dict()
         heuristics.append(new_item)
-        save_heuristics(heuristics)
+        save_heuristics_json(heuristics)
         return new_item
     except HTTPException:
         raise
@@ -162,17 +264,60 @@ async def create_heuristic_item(item: HeuristicItem):
 
 @router.put("/heuristics/{item_id}")
 async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
-    """
-    Update a heuristic item by ID.
-    """
+    """Update a heuristic item by ID"""
     try:
-        heuristics = load_heuristics()
-        item_index = next((i for i, h in enumerate(heuristics) if h.get("id") == item_id), None)
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    item = db.query(HeuristicModel).filter(HeuristicModel.id == item_id).first()
+                    if not item:
+                        raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
+                    
+                    if update.sector is not None:
+                        item.sector = update.sector
+                    if update.domain is not None:
+                        item.domain = update.domain
+                    if update.country is not None:
+                        item.country = update.country
+                    if update.agent is not None:
+                        item.agent = update.agent
+                    if update.procedure is not None:
+                        item.procedure = update.procedure
+                    if update.rules is not None:
+                        item.rules = update.rules
+                    if update.best is not None:
+                        item.best = update.best
+                    if update.detailData is not None:
+                        item.detailData = update.detailData
+                    
+                    db.commit()
+                    return {
+                        "id": item.id,
+                        "sector": item.sector or "",
+                        "domain": item.domain or "",
+                        "country": item.country or "",
+                        "agent": item.agent or "",
+                        "procedure": item.procedure or "",
+                        "rules": item.rules or "",
+                        "best": item.best or "",
+                        "detailData": item.detailData
+                    }
+                except HTTPException:
+                    db.rollback()
+                    raise
+                except Exception as e:
+                    db.rollback()
+                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                finally:
+                    db.close()
         
+        # Fallback to JSON
+        heuristics = load_heuristics_json()
+        item_index = next((i for i, h in enumerate(heuristics) if h.get("id") == item_id), None)
         if item_index is None:
             raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
         
-        # Update only provided fields
         item = heuristics[item_index]
         if update.sector is not None:
             item["sector"] = update.sector
@@ -191,7 +336,7 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
         if update.detailData is not None:
             item["detailData"] = update.detailData
         
-        save_heuristics(heuristics)
+        save_heuristics_json(heuristics)
         return item
     except HTTPException:
         raise
@@ -201,22 +346,49 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
 
 @router.delete("/heuristics/{item_id}")
 async def delete_heuristic_item(item_id: str):
-    """
-    Delete a heuristic item by ID.
-    """
+    """Delete a heuristic item by ID"""
     try:
-        heuristics = load_heuristics()
-        item_index = next((i for i, h in enumerate(heuristics) if h.get("id") == item_id), None)
+        if POSTGRES_AVAILABLE:
+            db = get_db_session()
+            if db:
+                try:
+                    item = db.query(HeuristicModel).filter(HeuristicModel.id == item_id).first()
+                    if not item:
+                        raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
+                    
+                    deleted_item = {
+                        "id": item.id,
+                        "sector": item.sector or "",
+                        "domain": item.domain or "",
+                        "country": item.country or "",
+                        "agent": item.agent or "",
+                        "procedure": item.procedure or "",
+                        "rules": item.rules or "",
+                        "best": item.best or ""
+                    }
+                    db.delete(item)
+                    db.commit()
+                    return {"message": f"Heuristic item {item_id} deleted successfully", "deleted": deleted_item}
+                except HTTPException:
+                    db.rollback()
+                    raise
+                except Exception as e:
+                    db.rollback()
+                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                finally:
+                    db.close()
         
+        # Fallback to JSON
+        heuristics = load_heuristics_json()
+        item_index = next((i for i, h in enumerate(heuristics) if h.get("id") == item_id), None)
         if item_index is None:
             raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
         
         deleted_item = heuristics.pop(item_index)
-        save_heuristics(heuristics)
+        save_heuristics_json(heuristics)
         return {"message": f"Heuristic item {item_id} deleted successfully", "deleted": deleted_item}
     except HTTPException:
         raise
     except Exception as e:
         print(f"Error deleting heuristic item: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete heuristic item: {str(e)}")
-
