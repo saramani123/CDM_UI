@@ -35,8 +35,9 @@ def get_environment():
     render_env = os.getenv("RENDER")
     if render_env and render_env.strip():
         return "production"
-    # Otherwise check ENVIRONMENT variable
-    return os.getenv("ENVIRONMENT", "development")
+    # Otherwise check ENVIRONMENT variable (set in render.yaml)
+    environment = os.getenv("ENVIRONMENT", "development")
+    return environment
 
 # Path to metadata JSON file - use absolute path based on current file location
 # Uses environment-specific filename to separate dev and prod data
@@ -45,35 +46,45 @@ def get_metadata_file_path():
     # Get the backend directory (parent of routes directory)
     backend_dir = Path(__file__).parent.parent
     environment = get_environment()
-    # Use environment-specific filename: metadata.dev.json or metadata.prod.json
+    # Use environment-specific filename: metadata.development.json or metadata.production.json
     metadata_file = backend_dir / f"metadata.{environment}.json"
     # Ensure the directory exists
     backend_dir.mkdir(parents=True, exist_ok=True)
+    # Debug logging
+    print(f"DEBUG: Metadata file path - Environment: {environment}, File: {metadata_file}", flush=True)
     return metadata_file
 
 def load_metadata() -> List[dict]:
     """Load metadata from JSON file"""
     file_path = get_metadata_file_path()
+    environment = get_environment()
+    
     if not file_path.exists():
-        # Initialize with default data if file doesn't exist
-        default_data = [
-            {"id": "1", "layer": "Format", "concept": "Source", "number": "", "examples": ""},
-            {"id": "2", "layer": "Format", "concept": "Vulqan", "number": "", "examples": ""},
-            {"id": "3", "layer": "Format", "concept": "Metric", "number": "", "examples": ""},
-            {"id": "4", "layer": "Ontology", "concept": "Element", "number": "", "examples": ""},
-            {"id": "5", "layer": "Ontology", "concept": "Being", "number": "", "examples": ""},
-            {"id": "6", "layer": "Ontology", "concept": "Avatar", "number": "", "examples": ""},
-            {"id": "7", "layer": "Ontology", "concept": "Tier", "number": "", "examples": ""},
-            {"id": "8", "layer": "Ontology", "concept": "Variant", "number": "", "examples": ""},
-            {"id": "9", "layer": "Ontology", "concept": "Universal", "number": "", "examples": ""},
-            {"id": "10", "layer": "Ontology", "concept": "Part", "number": "", "examples": ""},
-            {"id": "11", "layer": "Ontology", "concept": "Section", "number": "", "examples": ""},
-            {"id": "12", "layer": "Ontology", "concept": "Group-Type", "number": "", "examples": ""},
-            {"id": "13", "layer": "Ontology", "concept": "List Set", "number": "", "examples": ""},
-            {"id": "14", "layer": "Ontology", "concept": "List Grouping", "number": "", "examples": ""}
-        ]
-        save_metadata(default_data)
-        return default_data
+        # Only initialize with default data in development
+        # Production should start with empty data
+        if environment == "development":
+            default_data = [
+                {"id": "1", "layer": "Format", "concept": "Source", "number": "", "examples": ""},
+                {"id": "2", "layer": "Format", "concept": "Vulqan", "number": "", "examples": ""},
+                {"id": "3", "layer": "Format", "concept": "Metric", "number": "", "examples": ""},
+                {"id": "4", "layer": "Ontology", "concept": "Element", "number": "", "examples": ""},
+                {"id": "5", "layer": "Ontology", "concept": "Being", "number": "", "examples": ""},
+                {"id": "6", "layer": "Ontology", "concept": "Avatar", "number": "", "examples": ""},
+                {"id": "7", "layer": "Ontology", "concept": "Tier", "number": "", "examples": ""},
+                {"id": "8", "layer": "Ontology", "concept": "Variant", "number": "", "examples": ""},
+                {"id": "9", "layer": "Ontology", "concept": "Universal", "number": "", "examples": ""},
+                {"id": "10", "layer": "Ontology", "concept": "Part", "number": "", "examples": ""},
+                {"id": "11", "layer": "Ontology", "concept": "Section", "number": "", "examples": ""},
+                {"id": "12", "layer": "Ontology", "concept": "Group-Type", "number": "", "examples": ""},
+                {"id": "13", "layer": "Ontology", "concept": "List Set", "number": "", "examples": ""},
+                {"id": "14", "layer": "Ontology", "concept": "List Grouping", "number": "", "examples": ""}
+            ]
+            save_metadata(default_data)
+            return default_data
+        else:
+            # Production: start with empty array
+            save_metadata([])
+            return []
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -142,7 +153,10 @@ async def create_metadata_item(item: MetadataItem):
     Create a new metadata item.
     """
     try:
+        file_path = get_metadata_file_path()
+        print(f"DEBUG: Creating metadata item - File: {file_path}, Environment: {get_environment()}", flush=True)
         metadata = load_metadata()
+        print(f"DEBUG: Loaded {len(metadata)} metadata items from {file_path}", flush=True)
         
         # Check if ID already exists
         if any(m.get("id") == item.id for m in metadata):
@@ -156,6 +170,7 @@ async def create_metadata_item(item: MetadataItem):
         ), None)
         
         if existing:
+            print(f"DEBUG: Duplicate found - Existing item: {existing}, Trying to add: Layer={item.layer}, Concept={item.concept}", flush=True)
             raise HTTPException(
                 status_code=400, 
                 detail=f"Metadata item with Layer '{item.layer}' and Concept '{item.concept}' already exists. Each combination must be unique."

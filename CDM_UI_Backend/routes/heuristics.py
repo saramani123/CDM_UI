@@ -41,8 +41,9 @@ def get_environment():
     render_env = os.getenv("RENDER")
     if render_env and render_env.strip():
         return "production"
-    # Otherwise check ENVIRONMENT variable
-    return os.getenv("ENVIRONMENT", "development")
+    # Otherwise check ENVIRONMENT variable (set in render.yaml)
+    environment = os.getenv("ENVIRONMENT", "development")
+    return environment
 
 # Path to heuristics JSON file (environment-specific)
 def get_heuristics_file_path():
@@ -50,10 +51,12 @@ def get_heuristics_file_path():
     # Get the backend directory (parent of routes directory)
     backend_dir = Path(__file__).parent.parent
     environment = get_environment()
-    # Use environment-specific filename: heuristics.dev.json or heuristics.prod.json
+    # Use environment-specific filename: heuristics.development.json or heuristics.production.json
     heuristics_file = backend_dir / f"heuristics.{environment}.json"
     # Ensure the directory exists
     backend_dir.mkdir(parents=True, exist_ok=True)
+    # Debug logging
+    print(f"DEBUG: Heuristics file path - Environment: {environment}, File: {heuristics_file}", flush=True)
     return heuristics_file
 
 def load_heuristics() -> List[dict]:
