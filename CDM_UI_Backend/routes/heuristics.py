@@ -1,6 +1,7 @@
 """
 API routes for managing Heuristics.
 Stores heuristics data in a JSON file (not in Neo4j as this is not graph data).
+Uses environment-specific files to separate dev and prod data.
 """
 
 import json
@@ -33,12 +34,24 @@ class HeuristicUpdateRequest(BaseModel):
     best: Optional[str] = None
     detailData: Optional[str] = None
 
-# Path to heuristics JSON file
+def get_environment():
+    """Get the current environment (development or production)"""
+    # Check if running on Render (production)
+    # RENDER env var is set by Render platform, so if it exists and is not empty, we're in production
+    render_env = os.getenv("RENDER")
+    if render_env and render_env.strip():
+        return "production"
+    # Otherwise check ENVIRONMENT variable
+    return os.getenv("ENVIRONMENT", "development")
+
+# Path to heuristics JSON file (environment-specific)
 def get_heuristics_file_path():
-    """Get the path to the heuristics JSON file"""
+    """Get the path to the heuristics JSON file for the current environment"""
     # Get the backend directory (parent of routes directory)
     backend_dir = Path(__file__).parent.parent
-    heuristics_file = backend_dir / "heuristics.json"
+    environment = get_environment()
+    # Use environment-specific filename: heuristics.dev.json or heuristics.prod.json
+    heuristics_file = backend_dir / f"heuristics.{environment}.json"
     # Ensure the directory exists
     backend_dir.mkdir(parents=True, exist_ok=True)
     return heuristics_file

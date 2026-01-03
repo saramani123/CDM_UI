@@ -1,0 +1,100 @@
+[
+  {
+    "id": "1",
+    "layer": "Format",
+    "concept": "Source",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "2",
+    "layer": "Format",
+    "concept": "Vulqan",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "3",
+    "layer": "Format",
+    "concept": "Metric",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "4",
+    "layer": "Ontology",
+    "concept": "Element",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "5",
+    "layer": "Ontology",
+    "concept": "Being",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "6",
+    "layer": "Ontology",
+    "concept": "Avatar",
+    "number": "20",
+    "examples": "Company, Customer, Product, Employees, Supplier, Person, Thing, Reference, Register, Activity, Transaction, Payment, Posting, Validator, Trigger, Account, Affiliate, Attribute, Cohort, List"
+  },
+  {
+    "id": "7",
+    "layer": "Ontology",
+    "concept": "Tier",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "8",
+    "layer": "Ontology",
+    "concept": "Variant",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "9",
+    "layer": "Ontology",
+    "concept": "Universal",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "10",
+    "layer": "Ontology",
+    "concept": "Part",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "11",
+    "layer": "Ontology",
+    "concept": "Section",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "12",
+    "layer": "Ontology",
+    "concept": "Group-Type",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "13",
+    "layer": "Ontology",
+    "concept": "List Set",
+    "number": "",
+    "examples": ""
+  },
+  {
+    "id": "14",
+    "layer": "Ontology",
+    "concept": "List Grouping",
+    "number": "",
+    "examples": ""
+  }
+]

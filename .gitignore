@@ -42,3 +42,8 @@ Thumbs.db
 
 # Vercel
 .vercel/
+
+# Environment-specific data files (production files should not be committed)
+# Dev files (metadata.development.json, heuristics.development.json) are committed
+# Prod files (metadata.production.json, heuristics.production.json) are NOT committed
+*.production.json

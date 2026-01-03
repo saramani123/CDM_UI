@@ -1,6 +1,7 @@
 """
 API routes for managing Metadata.
 Stores metadata data in a JSON file (not in Neo4j as this is not graph data).
+Uses environment-specific files to separate dev and prod data.
 """
 
 import json
@@ -27,12 +28,25 @@ class MetadataUpdateRequest(BaseModel):
     examples: Optional[str] = None
     detailData: Optional[str] = None  # JSON string storing modal data
 
+def get_environment():
+    """Get the current environment (development or production)"""
+    # Check if running on Render (production)
+    # RENDER env var is set by Render platform, so if it exists and is not empty, we're in production
+    render_env = os.getenv("RENDER")
+    if render_env and render_env.strip():
+        return "production"
+    # Otherwise check ENVIRONMENT variable
+    return os.getenv("ENVIRONMENT", "development")
+
 # Path to metadata JSON file - use absolute path based on current file location
+# Uses environment-specific filename to separate dev and prod data
 def get_metadata_file_path():
-    """Get the path to the metadata JSON file"""
+    """Get the path to the metadata JSON file for the current environment"""
     # Get the backend directory (parent of routes directory)
     backend_dir = Path(__file__).parent.parent
-    metadata_file = backend_dir / "metadata.json"
+    environment = get_environment()
+    # Use environment-specific filename: metadata.dev.json or metadata.prod.json
+    metadata_file = backend_dir / f"metadata.{environment}.json"
     # Ensure the directory exists
     backend_dir.mkdir(parents=True, exist_ok=True)
     return metadata_file

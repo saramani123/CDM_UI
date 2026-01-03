@@ -1,0 +1,222 @@
+[
+  {
+    "id": "1",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Metadata Analyzer",
+    "procedure": "Identify Source Format",
+    "rules": "11",
+    "best": ""
+  },
+  {
+    "id": "2",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Key Finder",
+    "procedure": "Identify Keys from Metadata or Documentation",
+    "rules": "7",
+    "best": ""
+  },
+  {
+    "id": "3",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Key Finder",
+    "procedure": "Identify Keys from Metadata Metrics",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "4",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Format Converter",
+    "procedure": "Translate Format-S into Format-V-I",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "5",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Format Converter",
+    "procedure": "Classify Format-V-I into Format-V-II using these rules",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "6",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Table Organizer",
+    "procedure": "Classify Source Tables into Tiers for Databases",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "7",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Table Organizer",
+    "procedure": "Identify and Classify Apparent tables within Files",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "8",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Estabish Logical Object Model (LOM) and map from Source Anchors",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "9",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Organize Auxiliaries into Subordinates and map them to their LOM Objects",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "10",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Map Orphans to best suitable Object",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "11",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Organize actual and phantom Accessories into Supplements",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "12",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Establish LOM Relationships",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "13",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Object Modeler",
+    "procedure": "Establish Roles in Relationships",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "14",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Variable Modeler",
+    "procedure": "Establish Logical Variable Model (LVM) for each Object from Source Columns",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "15",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Variable Modeler",
+    "procedure": "Identify Group Type for each Variable",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "16",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "Variable Modeler",
+    "procedure": "Assign Tight Group Keys",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "17",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Establish list names for Logical List Model (LIM)",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "18",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Establish LIM list values for Variables with  Format-V-II = Static",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "19",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Create temporary Lists for Variables with Format-V-II = Specific",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "20",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Establish LIM list values for Reference lists",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "21",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Establish LIM list values for Flag lists",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "22",
+    "sector": "All",
+    "domain": "All",
+    "country": "All",
+    "agent": "List Standardizer",
+    "procedure": "Map Source List values to LIM List values",
+    "rules": "",
+    "best": ""
+  }
+]
