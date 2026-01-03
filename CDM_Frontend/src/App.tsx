@@ -4797,7 +4797,7 @@ function App() {
                       highlightCurrentObject={false}
                       showActionsColumn={false}
                       selectionMode="row"
-                      gridType="objects"
+                      gridType="metadata"
                     />
                   </div>
                 </div>
