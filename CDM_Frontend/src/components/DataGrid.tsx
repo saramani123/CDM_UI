@@ -104,11 +104,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                        gridType === 'lists' ? 'cdm_lists_column_filters' : 
                        gridType === 'metadata' ? 'cdm_metadata_column_filters' :
                        gridType === 'heuristics' ? 'cdm_heuristics_column_filters' :
+                       gridType === 'sources' ? 'cdm_sources_column_filters' :
                        'cdm_objects_column_filters';
       const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
                      gridType === 'lists' ? 'cdm_lists_sort_config' : 
                      gridType === 'metadata' ? 'cdm_metadata_sort_config' :
                      gridType === 'heuristics' ? 'cdm_heuristics_sort_config' :
+                     gridType === 'sources' ? 'cdm_sources_sort_config' :
                      'cdm_objects_sort_config';
       const savedColumnFilters = localStorage.getItem(filterKey);
       const savedSortConfig = localStorage.getItem(sortKey);

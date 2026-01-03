@@ -16,6 +16,8 @@ import { AddMetadataModal } from './components/AddMetadataModal';
 import { MetadataDetailModal } from './components/MetadataDetailModal';
 import { AddHeuristicsModal } from './components/AddHeuristicsModal';
 import { HeuristicsDetailModal } from './components/HeuristicsDetailModal';
+import { AddSourcesModal } from './components/AddSourcesModal';
+import { SourcesDetailPanel } from './components/SourcesDetailPanel';
 import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseDriverString, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
@@ -26,6 +28,7 @@ import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
 import { useMetadata, type MetadataData } from './hooks/useMetadata';
 import { useHeuristics, type HeuristicsData } from './hooks/useHeuristics';
+import { useSources, type SourcesData } from './hooks/useSources';
 import { apiService } from './services/api';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
@@ -94,6 +97,9 @@ function App() {
   // Use API hook for heuristics data
   const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem } = useHeuristics();
   
+  // Use API hook for sources data
+  const { sources: apiSources, loading: sourcesLoading, error: sourcesError, fetchSources, createSourceItem } = useSources();
+  
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
@@ -121,6 +127,11 @@ function App() {
   const [selectedHeuristicsRow, setSelectedHeuristicsRow] = useState<HeuristicsData | null>(null);
   const [isAddHeuristicsOpen, setIsAddHeuristicsOpen] = useState(false);
   
+  // Sources tab state
+  const [selectedSourceRow, setSelectedSourceRow] = useState<SourcesData | null>(null);
+  const [isAddSourcesOpen, setIsAddSourcesOpen] = useState(false);
+  const [sourceTypes, setSourceTypes] = useState<string[]>([]);
+  
   // Metadata tab columns - larger widths for better visibility
   const metadataColumns = [
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
@@ -146,6 +157,26 @@ function App() {
     { key: 'procedure', title: 'Procedure', sortable: true, filterable: true, width: '300px' },
     { key: 'rules', title: 'Rules', sortable: true, filterable: true, width: '120px' },
     { key: 'best', title: 'Best', sortable: true, filterable: true, width: '120px' }
+  ];
+  
+  // Sources tab columns
+  const sourcesColumns = [
+    { 
+      key: 'sdc', 
+      title: 'S | D | C', 
+      sortable: true, 
+      filterable: true, 
+      width: '150px',
+      render: (row: SourcesData) => (
+        <span>{row.sector}, {row.domain}, {row.country}</span>
+      )
+    },
+    { key: 'system', title: 'System', sortable: true, filterable: true, width: '200px' },
+    { key: 'sub_system', title: 'Sub-System', sortable: true, filterable: true, width: '150px' },
+    { key: 'type', title: 'Type', sortable: true, filterable: true, width: '120px' },
+    { key: 'table', title: 'Table', sortable: true, filterable: true, width: '150px' },
+    { key: 'column', title: 'Column', sortable: true, filterable: true, width: '150px' },
+    { key: 'cdm_full_variable', title: 'CDM Full Variable', sortable: true, filterable: true, width: '200px' }
   ];
   
   // Custom Sort state
@@ -733,28 +764,412 @@ function App() {
   }, [activeTab]);
 
   // Handle metadata loading
-  React.useEffect(() => {
-    if (activeTab === 'metadata') {
-      if (metadataLoading) {
-        setIsLoading(true);
-        setLoadingType('metadata');
-      } else {
-        setIsLoading(false);
-      }
-    }
-  }, [activeTab, metadataLoading]);
+  // Note: Metadata tab has its own inline loading state, so we don't need to show the global LoadingModal
+  // React.useEffect(() => {
+  //   if (activeTab === 'metadata') {
+  //     if (metadataLoading) {
+  //       setIsLoading(true);
+  //       setLoadingType('metadata');
+  //     } else {
+  //       setIsLoading(false);
+  //     }
+  //   }
+  // }, [activeTab, metadataLoading]);
 
   // Handle heuristics loading
+  // Note: Heuristics tab has its own inline loading state, so we don't need to show the global LoadingModal
+  // React.useEffect(() => {
+  //   if (activeTab === 'heuristics') {
+  //     if (heuristicsLoading) {
+  //       setIsLoading(true);
+  //       setLoadingType('heuristics');
+  //     } else {
+  //       setIsLoading(false);
+  //     }
+  //   }
+  // }, [activeTab, heuristicsLoading]);
+
+  // Handle sources loading
+  // Note: Sources tab has its own inline loading state, so we don't need to show the global LoadingModal
+  // Explicitly clear loading state when switching to sources/metadata/heuristics tabs
   React.useEffect(() => {
-    if (activeTab === 'heuristics') {
-      if (heuristicsLoading) {
-        setIsLoading(true);
-        setLoadingType('heuristics');
-      } else {
+    if (['metadata', 'heuristics', 'sources'].includes(activeTab)) {
+      // Force loading to false immediately
+      setIsLoading(false);
+      setLoadingType('general');
+    }
+  }, [activeTab]);
+  
+  // Also ensure isLoading stays false for these tabs (double safeguard)
+  React.useEffect(() => {
+    if (['metadata', 'heuristics', 'sources'].includes(activeTab)) {
+      if (isLoading) {
+        console.log('DEBUG: Forcing isLoading to false for tab:', activeTab);
         setIsLoading(false);
       }
     }
-  }, [activeTab, heuristicsLoading]);
+  }, [activeTab, isLoading]);
+
+  // Set body data attribute for CSS targeting and inject global style
+  // Use useLayoutEffect to run synchronously before paint
+  React.useLayoutEffect(() => {
+    if (activeTab === 'sources') {
+      document.body.setAttribute('data-active-tab', 'sources');
+      
+      // Immediately hide all overlays before paint
+      // BUT be very careful - only hide true overlays, not Sources tab content
+      const hideAllOverlays = () => {
+        const allElements = document.querySelectorAll('*');
+        allElements.forEach((el) => {
+          const element = el as HTMLElement;
+          
+          // Don't hide anything inside the Sources tab container
+          if (element.closest('.sources-tab-container')) {
+            return;
+          }
+          
+          const style = getComputedStyle(element);
+          const isFixed = style.position === 'fixed';
+          const isFullScreen = (
+            (style.top === '0px' && style.left === '0px' && style.right === '0px' && style.bottom === '0px') ||
+            style.inset === '0px'
+          );
+          const hasDarkBg = (
+            style.backgroundColor.includes('rgba(0, 0, 0') || 
+            style.backgroundColor.includes('rgb(0, 0, 0') ||
+            element.classList.contains('bg-black') ||
+            element.classList.contains('bg-opacity')
+          );
+          
+          // Only hide fixed, full-screen elements with dark backgrounds
+          if (isFixed && isFullScreen && hasDarkBg) {
+            element.style.setProperty('display', 'none', 'important');
+            element.style.setProperty('pointer-events', 'none', 'important');
+            element.style.setProperty('visibility', 'hidden', 'important');
+            element.style.setProperty('opacity', '0', 'important');
+            element.style.setProperty('z-index', '-1', 'important');
+          }
+        });
+      };
+      
+      hideAllOverlays();
+      
+      // Inject a style tag directly into the document head to hide all overlays
+      let styleTag = document.getElementById('sources-overlay-hider');
+      if (!styleTag) {
+        styleTag = document.createElement('style');
+        styleTag.id = 'sources-overlay-hider';
+        document.head.appendChild(styleTag);
+      }
+      styleTag.textContent = `
+        /* Aggressively hide ALL fixed overlays when Sources tab is active */
+        /* BUT exclude modals (they have data-modal="true") */
+        body[data-active-tab="sources"] .fixed.inset-0:not([data-modal="true"]) {
+          display: none !important;
+          pointer-events: none !important;
+          visibility: hidden !important;
+          opacity: 0 !important;
+          z-index: -1 !important;
+          position: absolute !important;
+        }
+      `;
+    } else {
+      document.body.removeAttribute('data-active-tab');
+      // Remove the style tag when not on Sources tab
+      const styleTag = document.getElementById('sources-overlay-hider');
+      if (styleTag) {
+        styleTag.remove();
+      }
+    }
+  }, [activeTab]);
+
+  // Additional safeguard: Ensure no modals are blocking the Sources tab
+  React.useEffect(() => {
+    if (activeTab === 'sources') {
+      // Close any modals that might be blocking - force close all
+      setIsBulkDeleteOpen(false);
+      setIsBulkObjectUploadOpen(false);
+      setIsBulkVariableUploadOpen(false);
+      setIsBulkListUploadOpen(false);
+      setIsRelationshipModalOpen(false);
+      setIsAddObjectOpen(false);
+      setIsAddVariableOpen(false);
+      setIsAddListOpen(false);
+      setIsAddMetadataOpen(false);
+      setIsMetadataDetailModalOpen(false);
+      setIsAddHeuristicsOpen(false);
+      setIsHeuristicsDetailModalOpen(false);
+      setIsAddSourcesOpen(false);
+      setIsCustomSortOpen(false);
+      setIsVariablesCustomSortOpen(false);
+      setIsVariablesOrderOpen(false);
+      setIsListsCustomSortOpen(false);
+      setIsListsOrderOpen(false);
+      setIsObjectsOrderOpen(false);
+      setIsViewsOpen(false);
+      setIsVariablesViewsOpen(false);
+      setIsListsViewsOpen(false);
+      setIsDeleteModalOpen(false);
+      setIsBulkEditOpen(false);
+      setIsBulkEditVariablesOpen(false);
+      // Close Neo4j graph modals
+      setIsNeo4jGraphModalOpen(false);
+      setIsNeo4jVariablesGraphModalOpen(false);
+      setIsNeo4jListsGraphModalOpen(false);
+      // Force isLoading to false one more time
+      setIsLoading(false);
+      
+      // Aggressively hide any fixed overlay elements in the DOM
+      const hideOverlays = () => {
+        // Check ALL elements, not just those with specific selectors
+        const allElements = document.querySelectorAll('*');
+        allElements.forEach((element) => {
+          const el = element as HTMLElement;
+          const computedStyle = getComputedStyle(el);
+          const position = computedStyle.position;
+          const zIndex = parseInt(computedStyle.zIndex) || 0;
+          const bgColor = computedStyle.backgroundColor;
+          const top = computedStyle.top;
+          const left = computedStyle.left;
+          const right = computedStyle.right;
+          const bottom = computedStyle.bottom;
+          const inset = computedStyle.inset;
+          
+          // Check if it's a full-screen overlay
+          const isFullScreen = (
+            position === 'fixed' &&
+            (
+              (top === '0px' && left === '0px' && right === '0px' && bottom === '0px') ||
+              inset === '0px' ||
+              (top === '0px' && left === '0px' && (right === '0px' || bottom === '0px'))
+            )
+          );
+          
+          // Check if it's a backdrop (dark background)
+          const isBackdrop = (
+            bgColor.includes('rgba(0, 0, 0') ||
+            bgColor.includes('rgb(0, 0, 0') ||
+            el.classList.contains('bg-black') ||
+            el.classList.contains('bg-opacity')
+          );
+          
+          // Hide if it's a full-screen fixed element with dark background
+          // BUT be very careful - only hide true overlays, not content or modals
+          if (isFullScreen && isBackdrop && position === 'fixed') {
+            // Don't hide modals (they have high z-index >= 100)
+            // Don't hide the Sources tab container or anything inside it
+            if (zIndex < 100 && 
+                !el.classList.contains('sources-tab-container') && 
+                !el.closest('.sources-tab-container') &&
+                !el.closest('[data-active-tab="sources"] .sources-tab-container')) {
+              console.log('DEBUG: Hiding overlay element:', {
+                tag: el.tagName,
+                id: el.id,
+                classes: Array.from(el.classList),
+                bgColor,
+                zIndex,
+                position,
+                top,
+                left,
+                right,
+                bottom,
+                inset
+              });
+              el.style.setProperty('display', 'none', 'important');
+              el.style.setProperty('pointer-events', 'none', 'important');
+              el.style.setProperty('visibility', 'hidden', 'important');
+              el.style.setProperty('opacity', '0', 'important');
+              el.style.setProperty('z-index', '-1', 'important');
+            }
+          }
+        });
+      };
+      
+      // Run immediately and multiple times to catch any late-rendering overlays
+      hideOverlays();
+      const timeoutIds = [
+        setTimeout(hideOverlays, 50),
+        setTimeout(hideOverlays, 100),
+        setTimeout(hideOverlays, 200),
+        setTimeout(hideOverlays, 500)
+      ];
+      
+      // Set up MutationObserver to catch dynamically added overlays
+      const observer = new MutationObserver((mutations) => {
+        let shouldHide = false;
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as HTMLElement;
+              if (element.classList?.contains('fixed') && element.classList?.contains('inset-0')) {
+                shouldHide = true;
+              }
+              // Also check children
+              const fixedChildren = element.querySelectorAll?.('.fixed.inset-0');
+              if (fixedChildren && fixedChildren.length > 0) {
+                shouldHide = true;
+              }
+            }
+          });
+        });
+        if (shouldHide) {
+          hideOverlays();
+        }
+      });
+      
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+      
+      // Set up interval to continuously check and hide overlays
+      // BUT don't hide modals (z-index >= 100)
+      const intervalId = setInterval(() => {
+        const overlays = document.querySelectorAll('.fixed.inset-0');
+        // Check if any overlay needs hiding (excluding modals)
+        const needsHiding = Array.from(overlays).some((overlay) => {
+          const el = overlay as HTMLElement;
+          const zIndex = parseInt(getComputedStyle(el).zIndex) || 0;
+          return zIndex < 100; // Only hide if z-index is less than 100 (not a modal)
+        });
+        if (needsHiding) {
+          hideOverlays();
+        }
+      }, 250);
+      
+      // Debug: Log to console - check ALL fixed positioned elements
+      console.log('DEBUG: Sources tab activated - all modals should be closed');
+      const initialOverlays = document.querySelectorAll('.fixed.inset-0');
+      console.log('DEBUG: Found overlay elements (fixed.inset-0):', initialOverlays.length);
+      
+      // Check ALL fixed positioned elements, not just those with specific classes
+      const allFixedElements: HTMLElement[] = [];
+      const allElements = document.querySelectorAll('*');
+      allElements.forEach((el) => {
+        const element = el as HTMLElement;
+        const style = getComputedStyle(element);
+        if (style.position === 'fixed') {
+          allFixedElements.push(element);
+        }
+      });
+      
+      console.log('DEBUG: Found ALL fixed positioned elements:', allFixedElements.length);
+      if (allFixedElements.length > 0) {
+        console.log('DEBUG: All fixed elements:', allFixedElements.map(el => {
+          const style = getComputedStyle(el);
+          return {
+            tag: el.tagName,
+            id: el.id,
+            classes: Array.from(el.classList),
+            styles: el.getAttribute('style'),
+            computedStyles: {
+              position: style.position,
+              top: style.top,
+              left: style.left,
+              right: style.right,
+              bottom: style.bottom,
+              inset: style.inset,
+              zIndex: style.zIndex,
+              backgroundColor: style.backgroundColor,
+              opacity: style.opacity,
+              pointerEvents: style.pointerEvents,
+              display: style.display,
+              visibility: style.visibility
+            },
+            textContent: el.textContent?.substring(0, 50),
+            children: el.children.length
+          };
+        }));
+      }
+      
+      // Also check for elements with high z-index that might be overlays
+      const highZIndexElements: HTMLElement[] = [];
+      allElements.forEach((el) => {
+        const element = el as HTMLElement;
+        const style = getComputedStyle(element);
+        const zIndex = parseInt(style.zIndex) || 0;
+        if (zIndex >= 50) {
+          highZIndexElements.push(element);
+        }
+      });
+      
+      console.log('DEBUG: Found elements with z-index >= 50:', highZIndexElements.length);
+      if (highZIndexElements.length > 0) {
+        console.log('DEBUG: High z-index elements (full details):', highZIndexElements.map(el => {
+          const style = getComputedStyle(el);
+          return {
+            tag: el.tagName,
+            id: el.id,
+            classes: Array.from(el.classList),
+            zIndex: style.zIndex,
+            position: style.position,
+            backgroundColor: style.backgroundColor,
+            opacity: style.opacity,
+            display: style.display,
+            visibility: style.visibility,
+            pointerEvents: style.pointerEvents,
+            top: style.top,
+            left: style.left,
+            right: style.right,
+            bottom: style.bottom,
+            inset: style.inset,
+            width: style.width,
+            height: style.height,
+            innerHTML: el.innerHTML?.substring(0, 100),
+            parentElement: el.parentElement?.tagName + (el.parentElement?.id ? `#${el.parentElement.id}` : '') + (el.parentElement?.className ? `.${Array.from(el.parentElement.classList).join('.')}` : '')
+          };
+        }));
+        
+        // Also try to identify and hide potential overlay elements
+        // BUT be very careful - only hide elements that are clearly overlays
+        highZIndexElements.forEach(el => {
+          // Don't hide anything inside the Sources tab container
+          if (el.closest('.sources-tab-container')) {
+            return;
+          }
+          
+          // Don't hide the Sources tab container itself
+          if (el.classList.contains('sources-tab-container')) {
+            return;
+          }
+          
+          const style = getComputedStyle(el);
+          const isFullScreen = (
+            (style.top === '0px' && style.left === '0px' && style.right === '0px' && style.bottom === '0px') ||
+            style.inset === '0px'
+          );
+          const hasDarkBg = (
+            style.backgroundColor.includes('rgba(0, 0, 0') ||
+            style.backgroundColor.includes('rgb(0, 0, 0')
+          );
+          const isFixed = style.position === 'fixed';
+          
+          // Only hide if it's a fixed, full-screen element with dark background
+          // AND it's not part of the Sources tab
+          if (isFixed && isFullScreen && hasDarkBg) {
+            console.log('DEBUG: Found potential overlay, hiding:', {
+              tag: el.tagName,
+              id: el.id,
+              classes: Array.from(el.classList),
+              position: style.position,
+              bgColor: style.backgroundColor
+            });
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('pointer-events', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+            el.style.setProperty('z-index', '-1', 'important');
+          }
+        });
+      }
+      
+      return () => {
+        timeoutIds.forEach(id => clearTimeout(id));
+        clearInterval(intervalId);
+        observer.disconnect();
+      };
+    }
+  }, [activeTab]);
 
   // Sync selectedRowForMetadata with updated data
   React.useEffect(() => {
@@ -4086,6 +4501,82 @@ function App() {
     setIsHeuristicsDetailModalOpen(true);
   };
 
+  const handleAddSource = async (sourcesData: {
+    sector: string;
+    domain: string;
+    country: string;
+    system: string;
+    sub_system: string;
+    type: string;
+    table: string;
+    column: string;
+    cdm_full_variable: string;
+  }) => {
+    try {
+      // Check for uniqueness: All fields combination must be unique
+      const existing = apiSources.find(
+        s => s.sector.toLowerCase() === sourcesData.sector.toLowerCase() && 
+             s.domain.toLowerCase() === sourcesData.domain.toLowerCase() &&
+             s.country.toLowerCase() === sourcesData.country.toLowerCase() &&
+             s.system.toLowerCase() === sourcesData.system.toLowerCase() &&
+             s.sub_system.toLowerCase() === sourcesData.sub_system.toLowerCase() &&
+             s.type.toLowerCase() === sourcesData.type.toLowerCase() &&
+             s.table.toLowerCase() === sourcesData.table.toLowerCase() &&
+             s.column.toLowerCase() === sourcesData.column.toLowerCase() &&
+             s.cdm_full_variable.toLowerCase() === sourcesData.cdm_full_variable.toLowerCase()
+      );
+      
+      if (existing) {
+        throw new Error(`A source with this combination of all fields already exists. Each combination must be unique.`);
+      }
+      
+      // Generate a unique ID
+      const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Create source item via API
+      await createSourceItem({
+        id: newId,
+        sector: sourcesData.sector,
+        domain: sourcesData.domain,
+        country: sourcesData.country,
+        system: sourcesData.system,
+        sub_system: sourcesData.sub_system,
+        type: sourcesData.type,
+        table: sourcesData.table,
+        column: sourcesData.column,
+        cdm_full_variable: sourcesData.cdm_full_variable
+      });
+      
+      // Note: createSourceItem already updates the state optimistically
+      // No need to fetchSources() immediately as it might overwrite with stale data
+      // The optimistic update will show the item immediately
+    } catch (error) {
+      console.error('Failed to create source:', error);
+      throw error;
+    }
+  };
+
+  const handleSourceRowClick = (row: SourcesData) => {
+    setSelectedSourceRow(row);
+  };
+
+  const handleAddSourceType = (newType: string) => {
+    setSourceTypes(prev => {
+      if (!prev.includes(newType)) {
+        return [...prev, newType].sort();
+      }
+      return prev;
+    });
+  };
+
+  // Extract unique types from sources data
+  React.useEffect(() => {
+    if (apiSources && apiSources.length > 0) {
+      const types = [...new Set(apiSources.map(s => s.type).filter(Boolean))];
+      setSourceTypes(types);
+    }
+  }, [apiSources]);
+
   const handleAddList = async (newListData: ListData) => {
     try {
       // Convert to API format
@@ -4736,7 +5227,7 @@ function App() {
       {/* Main Content */}
       <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden flex flex-col" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
-        {['ledgers', 'sources'].includes(activeTab) ? (
+        {activeTab === 'ledgers' ? (
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="text-center">
               <div className="text-6xl mb-4">🚧</div>
@@ -4864,7 +5355,7 @@ function App() {
                       highlightCurrentObject={false}
                       showActionsColumn={false}
                       selectionMode="row"
-                      gridType="objects"
+                      gridType="heuristics"
                     />
                   </div>
                 </div>
@@ -4872,6 +5363,91 @@ function App() {
             ) : (
               <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-ag-dark-text-secondary">No heuristics available</div>
+              </div>
+            )}
+          </div>
+        ) : activeTab === 'sources' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative" style={{ height: '100%' }}>
+            {/* Data Grid */}
+            <div className={selectedSourceRow ? "lg:col-span-2 flex flex-col min-h-0 h-full" : "lg:col-span-3 flex flex-col min-h-0 h-full"}>
+              {/* Grid Header with Actions */}
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                {/* Left side: Add Button */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setIsAddSourcesOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
+                    title="Add Source"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add
+                  </button>
+                </div>
+                
+                {/* Right side: Empty for now */}
+                <div></div>
+              </div>
+              
+              {/* Grid Content Area */}
+              <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
+                {/* Data Grid */}
+                {sourcesLoading ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-ag-dark-text-secondary">Loading sources...</div>
+                  </div>
+                ) : sourcesError ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-center">
+                      <div className="text-ag-dark-error mb-2">Error: {sourcesError}</div>
+                      <div className="text-sm text-ag-dark-text-secondary">Please ensure the backend server is running and the sources endpoint is available.</div>
+                    </div>
+                  </div>
+                ) : apiSources && apiSources.length > 0 ? (
+                  <div className="flex-1 min-h-0">
+                    <DataGrid
+                      key="sources"
+                      columns={sourcesColumns}
+                      data={apiSources.map(item => ({
+                        ...item,
+                        sdc: `${item.sector}, ${item.domain}, ${item.country}`
+                      }))}
+                      onRowSelect={(rows) => {
+                        if (rows.length > 0) {
+                          handleSourceRowClick(rows[0] as SourcesData);
+                        }
+                      }}
+                      selectedRows={[]}
+                      affectedIds={new Set()}
+                      deletedDriverType={null}
+                      customSortRules={[]}
+                      isCustomSortActive={false}
+                      isColumnSortActive={false}
+                      highlightCurrentObject={false}
+                      showActionsColumn={false}
+                      selectionMode="row"
+                      gridType="sources"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-ag-dark-text-secondary">No sources available</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sources Detail Panel */}
+            {selectedSourceRow && (
+              <div className="lg:col-span-1">
+                <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
+                  <SourcesDetailPanel
+                    selectedSource={selectedSourceRow}
+                    onClose={() => setSelectedSourceRow(null)}
+                    onSave={async () => {
+                      await fetchSources();
+                    }}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -5517,7 +6093,7 @@ function App() {
       </div>
 
       {/* Bulk Delete Confirmation Modal */}
-      {isBulkDeleteOpen && (
+      {isBulkDeleteOpen && activeTab !== 'sources' && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-ag-dark-text mb-4">Delete {activeTab === 'lists' ? 'Lists' : activeTab === 'variables' ? 'Variables' : 'Objects'}</h3>
@@ -5531,22 +6107,26 @@ function App() {
       )}
 
       {/* Bulk Object Upload Modal */}
-      <BulkObjectUploadModal
-        isOpen={isBulkObjectUploadOpen}
-        onClose={() => setIsBulkObjectUploadOpen(false)}
-        onUpload={handleBulkObjectUpload}
-      />
+      {activeTab !== 'sources' && (
+        <BulkObjectUploadModal
+          isOpen={isBulkObjectUploadOpen}
+          onClose={() => setIsBulkObjectUploadOpen(false)}
+          onUpload={handleBulkObjectUpload}
+        />
+      )}
 
       {/* Bulk Variable Upload Modal */}
-      <BulkVariableUploadModal
-        isOpen={isBulkVariableUploadOpen}
-        onClose={() => !isBulkVariableUploading && setIsBulkVariableUploadOpen(false)}
-        onUpload={handleBulkVariableUpload}
-        isLoading={isBulkVariableUploading}
-      />
+      {activeTab !== 'sources' && (
+        <BulkVariableUploadModal
+          isOpen={isBulkVariableUploadOpen}
+          onClose={() => !isBulkVariableUploading && setIsBulkVariableUploadOpen(false)}
+          onUpload={handleBulkVariableUpload}
+          isLoading={isBulkVariableUploading}
+        />
+      )}
 
       {/* Loading Modal for Bulk Variable Upload */}
-      {isBulkVariableUploading && (
+      {isBulkVariableUploading && activeTab !== 'sources' && (
         <LoadingModal
           isOpen={true}
           loadingType="variables"
@@ -5663,11 +6243,25 @@ function App() {
         activeView={activeListsView}
       />
 
-      {/* Loading Modal */}
-      <LoadingModal
-        isOpen={isLoading}
-        loadingType={loadingType}
-      />
+      {/* Loading Modal - Only show for tabs that don't have inline loading states */}
+      {/* Completely skip rendering LoadingModal for metadata, heuristics, and sources tabs */}
+      {activeTab !== 'sources' && (() => {
+        // Force isLoading to false for sources tab to prevent any overlay
+        const isSourcesTab = activeTab === 'sources';
+        const effectiveIsLoading = isSourcesTab ? false : isLoading;
+        const shouldShow = !['metadata', 'heuristics', 'sources'].includes(activeTab) && effectiveIsLoading;
+        
+        if (isSourcesTab && isLoading) {
+          console.warn('DEBUG: LoadingModal should NOT show for sources tab, but isLoading is:', isLoading);
+        }
+        
+        return shouldShow ? (
+          <LoadingModal
+            isOpen={effectiveIsLoading}
+            loadingType={loadingType}
+          />
+        ) : null;
+      })()}
 
 
       {/* Relationship Modal */}
@@ -5737,6 +6331,15 @@ function App() {
         onSave={async () => {
           await fetchHeuristics();
         }}
+      />
+
+      {/* Add Sources Modal */}
+      <AddSourcesModal
+        isOpen={isAddSourcesOpen && activeTab === 'sources'}
+        onClose={() => setIsAddSourcesOpen(false)}
+        onAdd={handleAddSource}
+        existingTypes={sourceTypes}
+        onAddType={handleAddSourceType}
       />
 
     </div>

@@ -1046,6 +1046,57 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // Sources API
+  async getSources() {
+    return this.request('/sources', { method: 'GET' });
+  }
+
+  async getSourceItem(id: string) {
+    return this.request(`/sources/${id}`, { method: 'GET' });
+  }
+
+  async createSourceItem(item: {
+    id: string;
+    sector: string;
+    domain: string;
+    country: string;
+    system: string;
+    sub_system: string;
+    type: string;
+    table: string;
+    column: string;
+    cdm_full_variable: string;
+  }) {
+    return this.request('/sources', {
+      method: 'POST',
+      body: JSON.stringify(item),
+    });
+  }
+
+  async updateSourceItem(id: string, update: {
+    sector?: string;
+    domain?: string;
+    country?: string;
+    system?: string;
+    sub_system?: string;
+    type?: string;
+    table?: string;
+    column?: string;
+    cdm_full_variable?: string;
+    detailData?: string;
+  }) {
+    return this.request(`/sources/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    });
+  }
+
+  async deleteSourceItem(id: string) {
+    return this.request(`/sources/${id}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiService = new ApiService();

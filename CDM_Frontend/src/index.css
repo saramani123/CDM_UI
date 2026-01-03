@@ -13,3 +13,47 @@
     overflow: hidden;
   }
 }
+
+/* Ensure Sources tab is not blocked by overlays */
+.sources-tab-container {
+  isolation: isolate;
+  position: relative;
+  z-index: 100 !important;
+}
+
+/* Aggressively hide any fixed overlay elements when Sources tab is active */
+/* BUT exclude modals (they have z-index >= 100) */
+/* Using both :has() selector and data attribute for maximum compatibility */
+/* Note: We can't easily exclude by z-index in CSS, so we'll rely on JavaScript for that */
+body:has(.sources-tab-container) .fixed.inset-0:not([data-modal="true"]),
+body[data-active-tab="sources"] .fixed.inset-0:not([data-modal="true"]) {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  z-index: -1 !important;
+}
+
+/* Hide any backdrop-like elements BUT exclude modals */
+body:has(.sources-tab-container) .fixed.inset-0.bg-black:not([data-modal="true"]),
+body:has(.sources-tab-container) .fixed.inset-0[class*="bg-opacity"]:not([data-modal="true"]),
+body:has(.sources-tab-container) .fixed.inset-0[class*="bg-black"]:not([data-modal="true"]),
+body[data-active-tab="sources"] .fixed.inset-0.bg-black:not([data-modal="true"]),
+body[data-active-tab="sources"] .fixed.inset-0[class*="bg-opacity"]:not([data-modal="true"]),
+body[data-active-tab="sources"] .fixed.inset-0[class*="bg-black"]:not([data-modal="true"]) {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  z-index: -1 !important;
+}
+
+/* Ensure Sources tab content is always on top and interactive */
+body:has(.sources-tab-container) .sources-tab-container,
+body:has(.sources-tab-container) .sources-tab-container *,
+body[data-active-tab="sources"] .sources-tab-container,
+body[data-active-tab="sources"] .sources-tab-container * {
+  z-index: 9999 !important;
+  pointer-events: auto !important;
+  position: relative;
+}
