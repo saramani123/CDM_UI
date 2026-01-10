@@ -11,7 +11,6 @@ interface HeuristicsDetailModalProps {
 }
 
 interface ModalData {
-  levels: 1 | 2 | 3;
   columns: string[];
   rows: string[][];
 }
@@ -22,9 +21,8 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
   heuristicsItem,
   onSave
 }) => {
-  const [levels, setLevels] = useState<1 | 2 | 3>(1);
-  const [columnNames, setColumnNames] = useState<string[]>(['']);
-  const [rows, setRows] = useState<string[][]>(Array(20).fill(null).map(() => ['']));
+  const [columnNames, setColumnNames] = useState<string[]>(['', '']);
+  const [rows, setRows] = useState<string[][]>(Array(20).fill(null).map(() => ['', '']));
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,62 +55,36 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
       }
       
       if (detailData && typeof detailData === 'object') {
-        setLevels(detailData.levels || 1);
-        setColumnNames(detailData.columns || ['']);
+        // Ensure we have exactly 2 columns
+        const loadedColumns = detailData.columns || ['', ''];
+        setColumnNames([loadedColumns[0] || '', loadedColumns[1] || '']);
         // If rows exist, use them; otherwise create 20 empty rows
         const loadedRows = detailData.rows || [];
+        // Ensure rows have exactly 2 columns
+        const normalizedRows = loadedRows.map(row => [
+          row[0] || '',
+          row[1] || ''
+        ]);
         // Ensure at least 20 rows
-        if (loadedRows.length < 20) {
-          const emptyRows = Array(20 - loadedRows.length).fill(null).map(() => Array(detailData.levels || 1).fill(''));
-          setRows([...loadedRows, ...emptyRows]);
+        if (normalizedRows.length < 20) {
+          const emptyRows = Array(20 - normalizedRows.length).fill(null).map(() => ['', '']);
+          setRows([...normalizedRows, ...emptyRows]);
         } else {
-          setRows(loadedRows);
+          setRows(normalizedRows);
         }
       } else {
-        // Initialize with default values - create 20 empty rows by default
-        setLevels(1);
-        setColumnNames(['']);
-        setRows(Array(20).fill(null).map(() => ['']));
+        // Initialize with default values - create 20 empty rows with 2 columns
+        setColumnNames(['', '']);
+        setRows(Array(20).fill(null).map(() => ['', '']));
       }
     } catch (err) {
       console.error('Error loading heuristics detail:', err);
-      // Initialize with defaults on error - 20 empty rows
-      setLevels(1);
-      setColumnNames(['']);
-      setRows(Array(20).fill(null).map(() => ['']));
+      // Initialize with defaults on error - 20 empty rows with 2 columns
+      setColumnNames(['', '']);
+      setRows(Array(20).fill(null).map(() => ['', '']));
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Update columns when levels change
-  useEffect(() => {
-    if (levels !== columnNames.length) {
-      const newColumns = Array(levels).fill('').map((_, index) => 
-        columnNames[index] || ''
-      );
-      setColumnNames(newColumns);
-      
-      // Update rows to match new column count, ensure at least 20 rows
-      setRows(prevRows => {
-        const updatedRows = prevRows.map(row => {
-          const newRow = Array(levels).fill('').map((_, index) => row[index] || '');
-          return newRow;
-        });
-        
-        // Ensure at least 20 rows
-        if (updatedRows.length < 20) {
-          const emptyRows = Array(20 - updatedRows.length).fill(null).map(() => Array(levels).fill(''));
-          return [...updatedRows, ...emptyRows];
-        }
-        
-        return updatedRows;
-      });
-    }
-  }, [levels]);
-
-  const handleLevelChange = (newLevel: 1 | 2 | 3) => {
-    setLevels(newLevel);
   };
 
   const handleColumnNameChange = (index: number, value: string) => {
@@ -124,14 +96,14 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
   const handleCellChange = (rowIndex: number, colIndex: number, value: string) => {
     const newRows = [...rows];
     if (!newRows[rowIndex]) {
-      newRows[rowIndex] = Array(levels).fill('');
+      newRows[rowIndex] = ['', ''];
     }
     newRows[rowIndex][colIndex] = value;
     setRows(newRows);
   };
 
   const handleAddRow = () => {
-    setRows([...rows, Array(levels).fill('')]);
+    setRows([...rows, ['', '']]);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, startRowIndex: number, startColIndex: number) => {
@@ -156,13 +128,16 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
       
       // Ensure we have enough rows
       while (targetRowIndex >= newRows.length) {
-        newRows.push(Array(levels).fill(''));
+        newRows.push(['', '']);
       }
 
-      // Update cells in this row
+      // Update cells in this row (limit to 2 columns)
       pastedRow.forEach((cellValue, colOffset) => {
         const targetColIndex = startColIndex + colOffset;
-        if (targetColIndex < levels) {
+        if (targetColIndex < 2) {
+          if (!newRows[targetRowIndex]) {
+            newRows[targetRowIndex] = ['', ''];
+          }
           newRows[targetRowIndex][targetColIndex] = cellValue;
         }
       });
@@ -181,7 +156,6 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
       // Prepare detail data
       const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== '')); // Remove completely empty rows
       const detailData: ModalData = {
-        levels,
         columns: columnNames,
         rows: nonEmptyRows
       };
@@ -236,27 +210,14 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
             </div>
           ) : (
             <>
-              {/* Levels Radio Buttons */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-ag-dark-text mb-3">
-                  Levels <span className="text-ag-dark-error">*</span>
-                </label>
-                <div className="flex gap-6">
-                  {[1, 2, 3].map((level) => (
-                    <label key={level} className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="levels"
-                        value={level}
-                        checked={levels === level}
-                        onChange={() => handleLevelChange(level as 1 | 2 | 3)}
-                        disabled={isSaving}
-                        className="w-5 h-5 text-ag-dark-accent focus:ring-ag-dark-accent"
-                      />
-                      <span className="text-ag-dark-text">{level}</span>
-                    </label>
-                  ))}
-                </div>
+              {/* Instructional Text */}
+              <div className="mb-4 p-4 bg-ag-dark-bg border border-ag-dark-border rounded">
+                <p className="text-sm text-ag-dark-text-secondary">
+                  <span className="font-medium text-ag-dark-text">First column (Then):</span> Header is the exact variable name being set. Values are what that variable is set to.
+                </p>
+                <p className="text-sm text-ag-dark-text-secondary mt-2">
+                  <span className="font-medium text-ag-dark-text">Second column (If):</span> Contains the condition statements that trigger the rule.
+                </p>
               </div>
 
               {/* Column Headers */}
@@ -273,19 +234,33 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
                     + Add Row
                   </button>
                 </div>
-                <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${levels}, 1fr)` }}>
-                  {columnNames.map((name, index) => (
-                    <div key={index}>
-                      <input
-                        type="text"
-                        value={name}
-                        onChange={(e) => handleColumnNameChange(index, e.target.value)}
-                        placeholder={`Column ${index + 1}`}
-                        disabled={isSaving}
-                        className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                      />
-                    </div>
-                  ))}
+                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+                  <div>
+                    <label className="block text-xs text-ag-dark-text-secondary mb-1">
+                      Then (Variable to Set)
+                    </label>
+                    <input
+                      type="text"
+                      value={columnNames[0] || ''}
+                      onChange={(e) => handleColumnNameChange(0, e.target.value)}
+                      placeholder="Enter variable name (e.g., Key)"
+                      disabled={isSaving}
+                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-ag-dark-text-secondary mb-1">
+                      If (Condition)
+                    </label>
+                    <input
+                      type="text"
+                      value={columnNames[1] || ''}
+                      onChange={(e) => handleColumnNameChange(1, e.target.value)}
+                      placeholder="Enter condition label (e.g., If documentation says that)"
+                      disabled={isSaving}
+                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -295,14 +270,15 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
                   {/* Header Row */}
                   <div 
                     className="grid gap-2 p-2 bg-ag-dark-bg border-b border-ag-dark-border font-medium text-sm text-ag-dark-text"
-                    style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)` }}
+                    style={{ gridTemplateColumns: '40px repeat(2, 1fr)' }}
                   >
                     <div className="text-center">#</div>
-                    {columnNames.map((name, index) => (
-                      <div key={index} className="px-2">
-                        {name || `Column ${index + 1}`}
-                      </div>
-                    ))}
+                    <div className="px-2">
+                      {columnNames[0] || 'Column 1 (Then)'}
+                    </div>
+                    <div className="px-2">
+                      {columnNames[1] || 'Column 2 (If)'}
+                    </div>
                   </div>
 
                   {/* Data Rows */}
@@ -311,23 +287,29 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
                       <div
                         key={rowIndex}
                         className="grid gap-2 p-2 border-b border-ag-dark-border hover:bg-ag-dark-bg/50"
-                        style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)` }}
+                        style={{ gridTemplateColumns: '40px repeat(2, 1fr)' }}
                       >
                         <div className="flex items-center justify-center text-sm text-ag-dark-text-secondary">
                           {rowIndex + 1}
                         </div>
-                        {Array(levels).fill(0).map((_, colIndex) => (
-                          <input
-                            key={colIndex}
-                            type="text"
-                            value={row[colIndex] || ''}
-                            onChange={(e) => handleCellChange(rowIndex, colIndex, e.target.value)}
-                            onPaste={(e) => handlePaste(e, rowIndex, colIndex)}
-                            disabled={isSaving}
-                            className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                            placeholder={`Enter ${columnNames[colIndex] || `column ${colIndex + 1}`} value`}
-                          />
-                        ))}
+                        <input
+                          type="text"
+                          value={row[0] || ''}
+                          onChange={(e) => handleCellChange(rowIndex, 0, e.target.value)}
+                          onPaste={(e) => handlePaste(e, rowIndex, 0)}
+                          disabled={isSaving}
+                          className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                          placeholder={`Enter ${columnNames[0] || 'column 1'} value`}
+                        />
+                        <input
+                          type="text"
+                          value={row[1] || ''}
+                          onChange={(e) => handleCellChange(rowIndex, 1, e.target.value)}
+                          onPaste={(e) => handlePaste(e, rowIndex, 1)}
+                          disabled={isSaving}
+                          className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                          placeholder={`Enter ${columnNames[1] || 'column 2'} value`}
+                        />
                       </div>
                     ))}
                   </div>
