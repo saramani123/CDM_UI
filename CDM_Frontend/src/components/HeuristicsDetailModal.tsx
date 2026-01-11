@@ -243,7 +243,7 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
                       type="text"
                       value={columnNames[0] || ''}
                       onChange={(e) => handleColumnNameChange(0, e.target.value)}
-                      placeholder="Enter variable name (e.g., Key)"
+                      placeholder="Enter variable name"
                       disabled={isSaving}
                       className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                     />
@@ -256,7 +256,7 @@ export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
                       type="text"
                       value={columnNames[1] || ''}
                       onChange={(e) => handleColumnNameChange(1, e.target.value)}
-                      placeholder="Enter condition label (e.g., If documentation says that)"
+                      placeholder="Enter condition label"
                       disabled={isSaving}
                       className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
                     />

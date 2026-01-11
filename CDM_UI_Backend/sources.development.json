@@ -11,5 +11,18 @@
     "column": "account_id",
     "cdm_full_variable": "Account.AccountID",
     "detailData": "{\"drivers\": {\"sector\": \"Finance\", \"domain\": \"Banking\", \"country\": \"US\"}, \"map\": {\"object\": \"Account\", \"variable\": \"AccountID\", \"list\": \"\", \"transformation\": \"\"}, \"format\": {\"format_s_i\": \"String\", \"format_s_ii\": \"Identifier\", \"format_v_i\": \"Text\", \"format_v_ii\": \"Static\"}, \"ontology\": {\"being\": \"Entity\", \"avatar\": \"Account\", \"tier\": \"1\", \"part\": \"Identification\", \"section\": \"Primary\", \"group\": \"Keys\", \"group_type\": \"Primary Key\", \"group_key\": \"AccountID\"}, \"validation\": {\"source\": \"accounts.account_id\", \"vulqan\": \"\"}}"
+  },
+  {
+    "id": "1767457879229-9zuu7z8d8",
+    "sector": "All",
+    "domain": "All",
+    "country": "Canada",
+    "system": "f",
+    "sub_system": "f",
+    "type": "Database",
+    "table": "f",
+    "column": "f",
+    "cdm_full_variable": "fff",
+    "detailData": null
   }
 ]

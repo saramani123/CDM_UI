@@ -15,7 +15,7 @@ import { AddListPanel } from './components/AddListPanel';
 import { AddMetadataModal } from './components/AddMetadataModal';
 import { MetadataDetailModal } from './components/MetadataDetailModal';
 import { AddHeuristicsModal } from './components/AddHeuristicsModal';
-import { HeuristicsDetailModal } from './components/HeuristicsDetailModal';
+import { HeuristicsDetailPanel } from './components/HeuristicsDetailPanel';
 import { AddSourcesModal } from './components/AddSourcesModal';
 import { SourcesDetailPanel } from './components/SourcesDetailPanel';
 import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseDriverString, type ObjectData } from './data/mockData';
@@ -123,7 +123,6 @@ function App() {
   const [selectedMetadataRow, setSelectedMetadataRow] = useState<MetadataData | null>(null);
   
   // Heuristics tab state
-  const [isHeuristicsDetailModalOpen, setIsHeuristicsDetailModalOpen] = useState(false);
   const [selectedHeuristicsRow, setSelectedHeuristicsRow] = useState<HeuristicsData | null>(null);
   const [isAddHeuristicsOpen, setIsAddHeuristicsOpen] = useState(false);
   
@@ -134,6 +133,40 @@ function App() {
   
   // Metadata tab columns - larger widths for better visibility
   const metadataColumns = [
+    { 
+      key: 'sector', 
+      title: 'S', 
+      sortable: true, 
+      filterable: true, 
+      width: '100px',
+      render: (row: MetadataData) => {
+        // Metadata doesn't have sector/domain/country in backend yet, but we'll show empty for now
+        const sector = (row as any).sector || '';
+        return <span>{sector === 'All' || sector === 'all' ? 'ALL' : sector || '-'}</span>;
+      }
+    },
+    { 
+      key: 'domain', 
+      title: 'D', 
+      sortable: true, 
+      filterable: true, 
+      width: '100px',
+      render: (row: MetadataData) => {
+        const domain = (row as any).domain || '';
+        return <span>{domain === 'All' || domain === 'all' ? 'ALL' : domain || '-'}</span>;
+      }
+    },
+    { 
+      key: 'country', 
+      title: 'C', 
+      sortable: true, 
+      filterable: true, 
+      width: '100px',
+      render: (row: MetadataData) => {
+        const country = (row as any).country || '';
+        return <span>{country === 'All' || country === 'all' ? 'ALL' : country || '-'}</span>;
+      }
+    },
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
     { key: 'concept', title: 'Concept', sortable: true, filterable: true, width: '350px' },
     { key: 'number', title: 'Number', sortable: true, filterable: true, width: '200px' },
@@ -141,16 +174,53 @@ function App() {
   ];
   
   // Heuristics tab columns
-  // Note: For sdc column, we'll use a computed value for filtering/sorting
   const heuristicsColumns = [
     { 
-      key: 'sdc', 
-      title: 'S | D | C', 
+      key: 'sector', 
+      title: 'S', 
       sortable: true, 
       filterable: true, 
-      width: '200px',
+      width: '100px',
       render: (row: HeuristicsData) => (
-        <span>{row.sector}, {row.domain}, {row.country}</span>
+        <span style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'block',
+          maxWidth: '100%'
+        }}>{row.sector === 'All' || row.sector === 'all' ? 'ALL' : row.sector}</span>
+      )
+    },
+    { 
+      key: 'domain', 
+      title: 'D', 
+      sortable: true, 
+      filterable: true, 
+      width: '100px',
+      render: (row: HeuristicsData) => (
+        <span style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'block',
+          maxWidth: '100%'
+        }}>{row.domain === 'All' || row.domain === 'all' ? 'ALL' : row.domain}</span>
+      )
+    },
+    { 
+      key: 'country', 
+      title: 'C', 
+      sortable: true, 
+      filterable: true, 
+      width: '100px',
+      render: (row: HeuristicsData) => (
+        <span style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          display: 'block',
+          maxWidth: '100%'
+        }}>{row.country === 'All' || row.country === 'all' ? 'ALL' : row.country}</span>
       )
     },
     { key: 'agent', title: 'Agent', sortable: true, filterable: true, width: '200px' },
@@ -898,7 +968,7 @@ function App() {
       setIsAddMetadataOpen(false);
       setIsMetadataDetailModalOpen(false);
       setIsAddHeuristicsOpen(false);
-      setIsHeuristicsDetailModalOpen(false);
+      setSelectedHeuristicsRow(null);
       setIsAddSourcesOpen(false);
       setIsCustomSortOpen(false);
       setIsVariablesCustomSortOpen(false);
@@ -4498,7 +4568,6 @@ function App() {
 
   const handleHeuristicsRowClick = (row: HeuristicsData) => {
     setSelectedHeuristicsRow(row);
-    setIsHeuristicsDetailModalOpen(true);
   };
 
   const handleAddSource = async (sourcesData: {
@@ -5300,53 +5369,52 @@ function App() {
             )}
           </div>
         ) : activeTab === 'heuristics' ? (
-          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-            {/* Add Button */}
-            <div className="mb-4 flex items-center justify-start">
-              <button
-                onClick={() => setIsAddHeuristicsOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
-                title="Add Heuristic"
-              >
-                <Plus className="w-4 h-4" />
-                Add
-              </button>
-            </div>
-            
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 flex-1 min-h-0 relative" style={{ height: '100%' }}>
             {/* Data Grid */}
-            {heuristicsLoading ? (
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-ag-dark-text-secondary">Loading heuristics...</div>
-              </div>
-            ) : heuristicsError ? (
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-center">
-                  <div className="text-ag-dark-error mb-2">Error: {heuristicsError}</div>
-                  <div className="text-sm text-ag-dark-text-secondary">Please ensure the backend server is running and the heuristics endpoint is available.</div>
+            <div className={selectedHeuristicsRow ? "lg:col-span-3 flex flex-col min-h-0 h-full" : "lg:col-span-5 flex flex-col min-h-0 h-full"}>
+              {/* Grid Header with Actions */}
+              <div className="flex items-center justify-between mb-4 flex-shrink-0">
+                {/* Left side: Add Button */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setIsAddHeuristicsOpen(true)}
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
+                    title="Add Heuristic"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add
+                  </button>
                 </div>
               </div>
-            ) : apiHeuristics && apiHeuristics.length > 0 ? (
-              <div className="flex-1 min-h-0 overflow-auto" style={{ height: '100%' }}>
-                <div style={{ 
-                  transform: 'scale(1.3)', 
-                  transformOrigin: 'top left',
-                  width: '76.92%',
-                  minHeight: '76.92%'
-                }}>
-                  <div style={{ fontSize: '18px' }}>
+              
+              {/* Grid Content Area */}
+              <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
+                {/* Data Grid */}
+                {heuristicsLoading ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-ag-dark-text-secondary">Loading heuristics...</div>
+                  </div>
+                ) : heuristicsError ? (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-center">
+                      <div className="text-ag-dark-error mb-2">Error: {heuristicsError}</div>
+                      <div className="text-sm text-ag-dark-text-secondary">Please ensure the backend server is running and the heuristics endpoint is available.</div>
+                    </div>
+                  </div>
+                ) : apiHeuristics && apiHeuristics.length > 0 ? (
+                  <div className="flex-1 min-h-0">
                     <DataGrid
                       key="heuristics"
                       columns={heuristicsColumns}
-                      data={apiHeuristics.map(item => ({
-                        ...item,
-                        sdc: `${item.sector}, ${item.domain}, ${item.country}`
-                      }))}
+                      data={apiHeuristics}
                       onRowSelect={(rows) => {
                         if (rows.length > 0) {
                           handleHeuristicsRowClick(rows[0] as HeuristicsData);
+                        } else {
+                          setSelectedHeuristicsRow(null);
                         }
                       }}
-                      selectedRows={[]}
+                      selectedRows={selectedHeuristicsRow ? [selectedHeuristicsRow] : []}
                       affectedIds={new Set()}
                       deletedDriverType={null}
                       customSortRules={[]}
@@ -5358,11 +5426,26 @@ function App() {
                       gridType="heuristics"
                     />
                   </div>
-                </div>
+                ) : (
+                  <div className="flex items-center justify-center min-h-[400px]">
+                    <div className="text-ag-dark-text-secondary">No heuristics available</div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="flex items-center justify-center min-h-[400px]">
-                <div className="text-ag-dark-text-secondary">No heuristics available</div>
+            </div>
+
+            {/* Heuristics Detail Panel */}
+            {selectedHeuristicsRow && (
+              <div className="lg:col-span-2 h-full flex flex-col min-h-0">
+                <div className="h-full flex flex-col min-h-0">
+                  <HeuristicsDetailPanel
+                    heuristicsItem={selectedHeuristicsRow}
+                    onSave={async () => {
+                      await fetchHeuristics();
+                    }}
+                    onClose={() => setSelectedHeuristicsRow(null)}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -6320,18 +6403,6 @@ function App() {
         onAdd={handleAddHeuristic}
       />
 
-      {/* Heuristics Detail Modal */}
-      <HeuristicsDetailModal
-        isOpen={isHeuristicsDetailModalOpen}
-        onClose={() => {
-          setIsHeuristicsDetailModalOpen(false);
-          setSelectedHeuristicsRow(null);
-        }}
-        heuristicsItem={selectedHeuristicsRow}
-        onSave={async () => {
-          await fetchHeuristics();
-        }}
-      />
 
       {/* Add Sources Modal */}
       <AddSourcesModal

@@ -1293,7 +1293,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     } ${isFlexibleColumn && isLastColumn ? 'flex-1' : ''}`}
                     style={{ 
                       ...(cellWidth ? { width: cellWidth } : { flex: '1 1 auto', minWidth: 0 }), 
-                      boxSizing: 'border-box' 
+                      boxSizing: 'border-box',
+                      overflow: 'hidden',
+                      minWidth: 0
                     }}
                   >
                     {column.render ? (
@@ -1388,7 +1390,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                         whiteSpace: 'nowrap',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        minWidth: 0
+                        minWidth: 0,
+                        maxWidth: '100%'
                       }}>
                         {(column.key === 'sector' || column.key === 'domain' || column.key === 'country') && isColumnAffected(row, column.key) ? 
                           formatDriverWithDeletedSector(row[column.key], deletedDriverType, column.key) : 

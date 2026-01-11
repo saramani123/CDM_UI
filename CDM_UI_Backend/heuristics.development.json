@@ -56,8 +56,9 @@
     "country": "All",
     "agent": "Table Organizer",
     "procedure": "Classify Source Tables into Tiers for Databases",
-    "rules": "",
-    "best": ""
+    "rules": "24",
+    "best": "",
+    "detailData": "{\"columns\":[\"Tier\",\"If\"],\"rows\":[[\"Anchor\",\"File name matches Avatar Meme in CDM\"],[\"Anchor\",\"File name matches Avatar Variant in CDM\"],[\"Anchor\",\"File name matches synonym of Meme or Variant\"],[\"Anchor\",\"File name is a common business noun\"],[\"Anchor\",\"File header matches Avatar Meme in CDM\"],[\"Anchor\",\"File header matches Avatar Variant in CDM\"],[\"Anchor\",\"File header matches synonym of Meme or Variant\"],[\"Anchor\",\"File header is a common business noun\"],[\"Anchor\",\"Focus name matches Avatar Meme in CDM\"],[\"Anchor\",\"Focus name matches Avatar Variant in CDM\"],[\"Anchor\",\"Focus name matches synonym of Meme or Variant\"],[\"Anchor\",\"Focus name is a common business noun\"],[\"Anchor\",\"Column Format-V is ID\"],[\"Anchor\",\"Column name matches Avatar Meme in CDM\"],[\"Anchor\",\"Column name matches Avatar Variant in CDM\"],[\"Anchor\",\"Column name matches synonym of Meme or Variant\"],[\"Anchor\",\"Column name is a common business noun\"],[\"Auxiliary\",\"Column name includes name of Anchor\"],[\"Auxiliary\",\"Column name includes Meme of Subordinate in CDM\"],[\"Auxiliary\",\"Column name includes Variant of Subordinate in CDM\"],[\"Auxiliary\",\"Column name contains a component word (Address, Email)\"],[\"Auxiliary\",\"Column name cotains a detail word (Info, History)\"],[\"Auxiliary\",\"Column name has 2 nouns (CustomerContact)\"],[\"Auxiliary\",\"Column name contains a noun and qualifier (OrderLine)\"]],\"trainingData\":{\"rule_0\":{\"numberOfColumns\":4,\"columns\":[\"Tier\",\"Rule\",\"Depth\",\"Breadth\",\"Card\",\"Width\"],\"rows\":[[\"Anchor\",\"1\",\"1\",\"1\",\"10000\",\"10000\"],[\"Anchor\",\"1\",\"0.95\",\"0.02\",\"3\",\"10000\"],[\"Anchor\",\"1\",\"1\",\"1\",\"50000\",\"50000\"],[\"Anchor\",\"1\",\"1\",\"0.001\",\"2\",\"50000\"],[\"Anchor\",\"1\",\"1\",\"0.6\",\"3000\",\"5000\"],[\"Anchor\",\"1\",\"1\",\"0.05\",\"3\",\"5000\"],[\"Anchor\",\"1\",\"0.99\",\"0.98\",\"15000\",\"15000\"],[\"Anchor\",\"1\",\"1\",\"0.95\",\"1800\",\"2000\"],[\"Anchor\",\"1\",\"1\",\"1\",\"10000\",\"10000\"],[\"Anchor\",\"1\",\"0.99\",\"0.02\",\"10\",\"10000\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"]]}}}"
   },
   {
     "id": "7",
@@ -216,6 +217,16 @@
     "country": "All",
     "agent": "List Standardizer",
     "procedure": "Map Source List values to LIM List values",
+    "rules": "",
+    "best": ""
+  },
+  {
+    "id": "1768143014220-ugh562gcq",
+    "sector": "Construction",
+    "domain": "Business Intelligence",
+    "country": "Canada",
+    "agent": "Format S Converter",
+    "procedure": "Task",
     "rules": "",
     "best": ""
   }

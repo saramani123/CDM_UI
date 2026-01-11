@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import { useDrivers } from '../hooks/useDrivers';
+import { AddFieldValueModal } from './AddFieldValueModal';
 
 interface AddHeuristicsModalProps {
   isOpen: boolean;
@@ -14,7 +15,7 @@ interface AddHeuristicsModalProps {
   }) => Promise<void>;
 }
 
-const AGENT_OPTIONS = [
+const DEFAULT_AGENT_OPTIONS = [
   'Metadata Analyzer',
   'Key Finder',
   'Format Converter',
@@ -31,6 +32,8 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   onAdd
 }) => {
   const { drivers: driversData, loading: driversLoading } = useDrivers();
+  const [agentOptions, setAgentOptions] = useState<string[]>(DEFAULT_AGENT_OPTIONS);
+  const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     sector: '',
     domain: '',
@@ -46,10 +49,10 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   const domains = driversData?.domains || [];
   const countries = driversData?.countries || [];
 
-  // Include "All" as first option, then distinct values from drivers (excluding "ALL" if it exists)
-  const sectorOptions = ['All', ...sectors.filter(s => s !== 'ALL' && s !== 'All')];
-  const domainOptions = ['All', ...domains.filter(d => d !== 'ALL' && d !== 'All')];
-  const countryOptions = ['All', ...countries.filter(c => c !== 'ALL' && c !== 'All')];
+  // Include "ALL" as first option, then distinct values from drivers (excluding "ALL" if it exists)
+  const sectorOptions = ['ALL', ...sectors.filter(s => s !== 'ALL' && s !== 'All')];
+  const domainOptions = ['ALL', ...domains.filter(d => d !== 'ALL' && d !== 'All')];
+  const countryOptions = ['ALL', ...countries.filter(c => c !== 'ALL' && c !== 'All')];
 
   if (!isOpen) return null;
 
@@ -93,6 +96,15 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
       setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '' });
       setError(null);
       onClose();
+    }
+  };
+
+  const handleAddAgent = async (newAgent: string) => {
+    // Add the new agent to the list if it doesn't already exist
+    if (!agentOptions.includes(newAgent)) {
+      setAgentOptions([...agentOptions, newAgent].sort());
+      // Automatically select the newly added agent
+      setFormData(prev => ({ ...prev, agent: newAgent }));
     }
   };
 
@@ -178,9 +190,20 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
           {/* Agent Field */}
           <div className="mb-4">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Agent <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Agent <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddAgentModalOpen(true)}
+                disabled={isSubmitting}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Agent"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.agent}
               onChange={(e) => handleChange('agent', e.target.value)}
@@ -189,7 +212,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
               required
             >
               <option value="">Select Agent</option>
-              {AGENT_OPTIONS.map((agent) => (
+              {agentOptions.map((agent) => (
                 <option key={agent} value={agent}>
                   {agent}
                 </option>
@@ -240,6 +263,15 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* Add Agent Modal */}
+      <AddFieldValueModal
+        isOpen={isAddAgentModalOpen}
+        onClose={() => setIsAddAgentModalOpen(false)}
+        onSave={handleAddAgent}
+        fieldName="agent"
+        fieldLabel="Agent"
+      />
     </div>
   );
 };

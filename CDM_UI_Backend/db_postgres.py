@@ -45,23 +45,28 @@ class HeuristicModel(Base):
 # Database connection
 def get_postgres_url():
     """Get PostgreSQL connection URL from environment variables"""
-    # Check for Render PostgreSQL connection string
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        # Render provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
-        # SQLAlchemy needs postgresql:// (not postgres://)
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-        return database_url
+    # IMPORTANT: Only use PostgreSQL in production (Render)
+    # For local development, we use JSON files to keep dev/prod data separate
     
-    # Fallback to individual environment variables
-    host = os.getenv("POSTGRES_HOST", "localhost")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    user = os.getenv("POSTGRES_USER", "postgres")
-    password = os.getenv("POSTGRES_PASSWORD", "postgres")
-    dbname = os.getenv("POSTGRES_DB", "cdm_metadata")
+    # Check if we're in production (Render)
+    render_env = os.getenv("RENDER")
+    is_production = render_env and render_env.strip()
     
-    return f"postgresql://{user}:{password}@{host}:{port}/{dbname}"
+    # Only use PostgreSQL in production
+    if is_production:
+        # Check for Render PostgreSQL connection string
+        database_url = os.getenv("DATABASE_URL")
+        if database_url:
+            # Render provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
+            # SQLAlchemy needs postgresql:// (not postgres://)
+            if database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql://", 1)
+            return database_url
+    
+    # For local development, return None to force JSON fallback
+    # This ensures dev and prod data are completely separate
+    print("ℹ️  Local development detected - using JSON files instead of PostgreSQL")
+    return None
 
 # Create engine and session
 engine = None
@@ -73,6 +78,12 @@ def init_db():
     
     try:
         database_url = get_postgres_url()
+        
+        # If no database URL (local dev), skip PostgreSQL initialization
+        if database_url is None:
+            print("ℹ️  Skipping PostgreSQL initialization - using JSON files for local development")
+            return False
+        
         print(f"Connecting to PostgreSQL database...")
         engine = create_engine(database_url, pool_pre_ping=True)
         
