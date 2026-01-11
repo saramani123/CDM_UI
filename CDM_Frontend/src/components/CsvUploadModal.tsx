@@ -52,13 +52,9 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
     'variable-object-relationships': {
       title: 'Upload Variable-Object Relationships',
       columns: [
-        { number: 1, name: 'Sector' },
-        { number: 2, name: 'Domain' },
-        { number: 3, name: 'Country' },
-        { number: 4, name: 'Object Clarifier' },
-        { number: 5, name: 'Being' },
-        { number: 6, name: 'Avatar' },
-        { number: 7, name: 'Object' }
+        { number: 1, name: 'Being' },
+        { number: 2, name: 'Avatar' },
+        { number: 3, name: 'Object' }
       ]
     }
   };

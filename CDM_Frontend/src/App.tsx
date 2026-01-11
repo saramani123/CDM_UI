@@ -3050,15 +3050,49 @@ function App() {
     
     // Handle variables bulk edit via API
     if (activeTab === 'variables') {
+      // Prepare bulk update data
+      const bulkUpdateData = {
+        variable_ids: selectedIds,
+        ...updatedData
+      };
+      
+      // Show loading indicator for bulk edit
+      setIsLoading(true);
+      setLoadingType('variables');
+      
       try {
-        // Prepare bulk update data
-        const bulkUpdateData = {
-          variable_ids: selectedIds,
-          ...updatedData
-        };
+        console.log('🔄 Bulk edit - Calling bulkUpdateVariables with:', {
+          variable_ids: bulkUpdateData.variable_ids,
+          variable_count: bulkUpdateData.variable_ids?.length,
+          update_fields: Object.keys(bulkUpdateData).filter(k => k !== 'variable_ids'),
+          selectedRows: selectedRows.map(r => ({ id: r.id, variable: r.variable, part: r.part, group: r.group }))
+        });
+        
+        // Validate that all selected rows have valid IDs
+        const invalidIds = bulkUpdateData.variable_ids.filter(id => !id || typeof id !== 'string' || id.trim() === '');
+        if (invalidIds.length > 0) {
+          console.error('❌ Invalid variable IDs found:', invalidIds);
+          alert(`Invalid variable IDs detected. Please refresh and try again.`);
+          return;
+        }
         
         // Call the bulk update API (this already calls fetchVariables internally)
-        await bulkUpdateVariables(bulkUpdateData);
+        const result = await bulkUpdateVariables(bulkUpdateData);
+        
+        console.log('🔄 Bulk edit - Result:', result);
+        
+        // Check if there were any errors in the response
+        if (result && result.error_count > 0) {
+          const errorMessage = result.errors && result.errors.length > 0 
+            ? `Some variables failed to update:\n${result.errors.slice(0, 5).join('\n')}${result.errors.length > 5 ? `\n... and ${result.errors.length - 5} more` : ''}`
+            : 'Some variables failed to update. Please check the console for details.';
+          alert(errorMessage);
+        }
+        
+        // If no variables were updated and there were errors, show a warning
+        if (result && result.updated_count === 0 && result.error_count > 0) {
+          console.warn('⚠️ No variables were updated. All failed with errors.');
+        }
         
         // Wait a bit for the data to refresh
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -3068,10 +3102,13 @@ function App() {
         setSelectedRows([]);
         setSelectedRowForMetadata(null);
         return;
-      } catch (error) {
+      } catch (error: any) {
         console.error('Failed to bulk update variables:', error);
-        alert('Failed to update variables. Please try again.');
+        const errorMessage = error?.message || error?.detail || 'Failed to update variables. Please try again.';
+        alert(errorMessage);
         return;
+      } finally {
+        setIsLoading(false);
       }
     }
     
@@ -3119,25 +3156,35 @@ function App() {
           console.log('✅ No variant duplicates found, proceeding with bulk edit...');
         }
         
-        // Update each selected object via API
-        for (const objectId of selectedIds) {
-          // Prepare the update data for this object
-          const objectUpdateData = { ...updatedData };
-          
-          // Map objectName to object for backend compatibility
-          if (objectUpdateData.objectName) {
-            objectUpdateData.object = objectUpdateData.objectName;
-            delete objectUpdateData.objectName;
+        // Show loading modal for bulk edit
+        setIsLoading(true);
+        setLoadingType('objects');
+        
+        try {
+          // Update each selected object via API
+          let updatedCount = 0;
+          for (const objectId of selectedIds) {
+            // Prepare the update data for this object
+            const objectUpdateData = { ...updatedData };
+            
+            // Map objectName to object for backend compatibility
+            if (objectUpdateData.objectName) {
+              objectUpdateData.object = objectUpdateData.objectName;
+              delete objectUpdateData.objectName;
+            }
+            
+            console.log(`🔄 Bulk edit - updating object ${objectId} with data:`, objectUpdateData);
+            console.log(`🔄 Bulk edit - variantsList field:`, objectUpdateData.variantsList);
+            
+            // Call the updateObject API for each object
+            await updateObject(objectId, objectUpdateData);
+            updatedCount++;
           }
           
-          console.log(`🔄 Bulk edit - updating object ${objectId} with data:`, objectUpdateData);
-          console.log(`🔄 Bulk edit - variantsList field:`, objectUpdateData.variantsList);
-          
-          // Call the updateObject API for each object
-          await updateObject(objectId, objectUpdateData);
+          console.log(`✅ Bulk edit completed successfully - updated ${updatedCount} objects`);
+        } finally {
+          setIsLoading(false);
         }
-        
-        console.log('✅ Bulk edit completed successfully');
         
         // Force refresh the data to ensure UI shows updated values
         console.log('🔄 Forcing data refresh after bulk edit...');
@@ -3655,6 +3702,10 @@ function App() {
       
       if (activeTab === 'variables') {
         // Handle variables update via API
+        // Show loading indicator for single variable edit
+        setIsLoading(true);
+        setLoadingType('variables');
+        
         try {
           // Filter out objectRelationshipsList from the variable update data
           const { objectRelationshipsList, ...variableUpdateData } = updatedData;
@@ -3780,12 +3831,17 @@ function App() {
           
           // Return success to indicate the save was successful
           return result;
-        } catch (error) {
+        } catch (error: any) {
           console.error('Error updating variable:', error);
-          alert('Failed to update variable. Please try again.');
-          throw error; // Re-throw the error so the calling function knows it failed
+          const errorMessage = error?.message || error?.detail || 'Failed to update variable. Please try again.';
+          alert(errorMessage);
+          throw error;
+        } finally {
+          setIsLoading(false);
         }
-      } else if (activeTab === 'objects') {
+      }
+      
+      if (activeTab === 'objects') {
         // Create clean object with only basic fields for the API, including identifier
         const basicFields: any = {
           being: updatedData.being,
@@ -3803,8 +3859,16 @@ function App() {
         try {
           // Update the object via API
           console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: basicFields });
-          await updateObject(selectedRowForMetadata.id, basicFields);
-          console.log('Object updated successfully');
+          // Show loading indicator for single object edit
+          setIsLoading(true);
+          setLoadingType('objects');
+          
+          try {
+            await updateObject(selectedRowForMetadata.id, basicFields);
+            console.log('Object updated successfully');
+          } finally {
+            setIsLoading(false);
+          }
           
           // Update order if being/avatar/object changed
           // Use updateObjectsOrderOnEdit to rename in place, preserving order

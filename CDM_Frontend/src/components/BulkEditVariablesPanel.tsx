@@ -1080,31 +1080,53 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Group
-            </label>
-            <select
-              value={formData.group}
-              onChange={(e) => handleChange('group', e.target.value)}
-              disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section'}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section' ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Keep Current Group</option>
-              {getDistinctGroups().filter(g => g !== 'Keep Current Group').map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                Group
+              </label>
+              <select
+                value={formData.group}
+                onChange={(e) => handleChange('group', e.target.value)}
+                disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section'}
+                className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                  !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section' ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Keep Current Group</option>
+                {getDistinctGroups().filter(g => g !== 'Keep Current Group').map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-32 flex-shrink-0">
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                G-Type
+              </label>
+              <select
+                value={metadata.gType}
+                onChange={(e) => handleMetadataChange('gType', e.target.value)}
+                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Keep Current</option>
+                <option value="L">L</option>
+                <option value="T">T</option>
+              </select>
+            </div>
           </div>
 
         </div>
@@ -1190,42 +1212,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-ag-dark-text">
-                  G-Type
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedFieldForAdd({ name: 'gType', label: 'G-Type' });
-                    setIsAddFieldValueModalOpen(true);
-                  }}
-                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                  title="Add new G-Type value"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-              <select
-                value={metadata.gType}
-                onChange={(e) => handleMetadataChange('gType', e.target.value)}
-                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                  backgroundPosition: 'right 12px center',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundSize: '16px'
-                }}
-              >
-                <option value="">Keep Current G-Type</option>
-                {getDistinctGType().filter(g => g !== 'Keep Current G-Type').map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">

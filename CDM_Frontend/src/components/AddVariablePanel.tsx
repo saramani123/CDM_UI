@@ -953,52 +953,74 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Group <span className="text-ag-dark-error">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddGroupValueModalOpen(true);
+          <div className="flex gap-4 items-end">
+            <div className="flex-1">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Group <span className="text-ag-dark-error">*</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddGroupValueModalOpen(true);
+                  }}
+                  disabled={!formData.part}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Add new Group value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
+              <select
+                value={formData.group}
+                onChange={(e) => handleChange('group', e.target.value)}
+                disabled={!formData.part || !formData.section}
+                className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                  !formData.part || !formData.section ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
                 }}
-                disabled={!formData.part}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Group value"
               >
-                <Plus className="w-4 h-4" />
-              </button>
+                <option value="">Select Group</option>
+                {formData.part ? (
+                  getGroupsForPart(formData.part).map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))
+                ) : (
+                  dynamicFieldOptions.group.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
-            <select
-              value={formData.group}
-              onChange={(e) => handleChange('group', e.target.value)}
-              disabled={!formData.part || !formData.section}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !formData.part || !formData.section ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select Group</option>
-              {formData.part ? (
-                getGroupsForPart(formData.part).map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))
-              ) : (
-                dynamicFieldOptions.group.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))
-              )}
-            </select>
+            <div className="w-32 flex-shrink-0">
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                G-Type
+              </label>
+              <select
+                value={formData.gType}
+                onChange={(e) => handleChange('gType', e.target.value)}
+                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                  backgroundPosition: 'right 12px center',
+                  backgroundRepeat: 'no-repeat',
+                  backgroundSize: '16px'
+                }}
+              >
+                <option value="">Select</option>
+                <option value="L">L</option>
+                <option value="T">T</option>
+              </select>
+            </div>
           </div>
 
         </div>
@@ -1081,42 +1103,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
             </select>
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                G-Type
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'gType', label: 'G-Type' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new G-Type value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            <select
-              value={formData.gType}
-              onChange={(e) => handleChange('gType', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Select G-Type</option>
-              {dynamicFieldOptions.gType.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">

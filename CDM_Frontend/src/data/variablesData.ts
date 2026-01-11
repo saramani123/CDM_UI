@@ -50,6 +50,7 @@ export const variableColumns = [
   { key: 'sector', title: 'S', sortable: true, filterable: true, width: '140px' },
   { key: 'domain', title: 'D', sortable: true, filterable: true, width: '140px' },
   { key: 'country', title: 'C', sortable: true, filterable: true, width: '140px' },
+  { key: 'relevance', title: 'Relevance', sortable: true, filterable: false, width: '120px' },
   { key: 'part', title: 'Part', sortable: true, filterable: true, width: '120px' },
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },

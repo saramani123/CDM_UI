@@ -294,25 +294,17 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     }
 
     csvData.forEach((row, index) => {
-      // Match object by all columns: Sector, Domain, Country, Object Clarifier, Being, Avatar, Object
+      // Match object by Being, Avatar, Object only (removed S, D, C, Object Clarifier)
       const matchingObject = allObjects.find(obj => {
-        const sectorMatch = (row.Sector || row.sector || '') === (obj.sector || '');
-        const domainMatch = (row.Domain || row.domain || '') === (obj.domain || '');
-        const countryMatch = (row.Country || row.country || '') === (obj.country || '');
-        const clarifierMatch = (row['Object Clarifier'] || row['ObjectClarifier'] || row.objectClarifier || '') === (obj.classifier || '');
         const beingMatch = (row.Being || row.being || '') === obj.being;
         const avatarMatch = (row.Avatar || row.avatar || '') === obj.avatar;
         const objectMatch = (row.Object || row.object || '') === obj.object;
 
-        return sectorMatch && domainMatch && countryMatch && clarifierMatch && beingMatch && avatarMatch && objectMatch;
+        return beingMatch && avatarMatch && objectMatch;
       });
 
       if (!matchingObject) {
         const rowValues = [
-          row.Sector || row.sector || '',
-          row.Domain || row.domain || '',
-          row.Country || row.country || '',
-          row['Object Clarifier'] || row['ObjectClarifier'] || row.objectClarifier || '',
           row.Being || row.being || '',
           row.Avatar || row.avatar || '',
           row.Object || row.object || ''
@@ -744,13 +736,13 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     };
   });
 
-  // Apply custom sort if rules exist - only sort by Being, Avatar, Object
+  // Apply custom sort if rules exist - only sort by Being, Avatar, Object (removed S, D, C)
   if (customSortRules.length > 0) {
     gridData = [...gridData].sort((a, b) => {
       for (const rule of customSortRules) {
         if (!rule.column) continue;
         
-        // Only allow sorting by Being, Avatar, Object
+        // Only allow sorting by Being, Avatar, Object (removed S, D, C)
         if (!['being', 'avatar', 'object'].includes(rule.column)) continue;
         
         const aValue = String(a[rule.column] || '').toLowerCase();
@@ -774,16 +766,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   }
 
   // Custom columns for the variable-object relationship modal
+  // Only show Being, Avatar, and Object columns (removed S, D, C, Object Clarifier)
   const relationshipColumns = [
-    ...objectColumns.filter(col => ['sector', 'domain', 'country', 'being', 'avatar', 'object'].includes(col.key)),
-    // Add Object Clarifier column
-    {
-      key: 'classifier',
-      title: 'Object Clarifier',
-      sortable: true,
-      filterable: true,
-      width: '140px'
-    }
+    ...objectColumns.filter(col => ['being', 'avatar', 'object'].includes(col.key))
   ];
 
   return (
@@ -803,19 +788,28 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsCsvUploadOpen(true)}
-                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[140px]"
                 title="Upload Relationships CSV"
               >
                 <Upload className="w-4 h-4" />
-                Upload CSV
+                Upload
               </button>
               <button
                 onClick={() => setIsCustomSortOpen(true)}
-                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+                className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                  customSortRules.length > 0
+                    ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
+                    : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                }`}
                 title="Custom Sort"
               >
                 <ArrowUpAZ className="w-4 h-4" />
                 Custom Sort
+                {customSortRules.length > 0 && (
+                  <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                    Grid Sort Active
+                  </span>
+                )}
               </button>
               <button
                 onClick={handleSelectAll}

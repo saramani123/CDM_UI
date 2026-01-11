@@ -1455,6 +1455,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                             })() : 
                             (['relationships', 'variants', 'variables'].includes(column.key) 
                               ? (row && typeof row === 'object' && (row[column.key] === 0 || row[column.key] === null || row[column.key] === undefined) ? '-' : (row && typeof row === 'object' ? row[column.key] : '-'))
+                              : (column.key === 'relevance')
+                                ? (row && typeof row === 'object' ? (row['objectRelationships'] ?? 0) : 0)
                               : (column.key === 'list' && gridType === 'lists' && (row as any).hasIncomingTier && (row as any).tierNumber)
                                 ? `Tier ${(row as any).tierNumber}: ${(row && typeof row === 'object' ? (row[column.key] || '-') : '-')}`
                                 : (column.key === 'totalValuesCount')

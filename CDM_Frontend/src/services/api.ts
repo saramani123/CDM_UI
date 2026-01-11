@@ -867,7 +867,7 @@ class ApiService {
 
   async bulkUpdateVariables(bulkData: any) {
     return this.request('/variables/bulk-update', {
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify(bulkData),
     });
   }
