@@ -1,7 +1,7 @@
 // Utility functions for parsing and formatting validation strings
 
 export type ValType = 'List' | 'Range' | 'Relative' | 'Length' | 'Character';
-export type Operator = '=' | '>' | '<' | '>=' | '<=';
+export type Operator = '=' | '>' | '<' | '>=' | '<=' | 'is';
 
 export interface ValidationComponents {
   valType: ValType | '';
@@ -144,12 +144,8 @@ export function buildValidationString(components: ValidationComponents, variable
 
     case 'Character':
       if (!value) return '';
-      // Character can have an operator or not
-      if (operator) {
-        return `Character ${operator} ${value}`;
-      }
-      // Legacy format: just the value (backward compatibility)
-      return value;
+      // Character always uses 'is' operator
+      return `Character is ${value}`;
 
     default:
       return '';
@@ -185,7 +181,11 @@ export function getOperatorsForValType(valType: ValType): Operator[] {
   if (valType === 'List') {
     return [];
   }
-  // Range, Relative, Length, and Character all support operators
+  if (valType === 'Character') {
+    // Character only supports 'is' operator
+    return ['is'];
+  }
+  // Range, Relative, Length support standard operators
   return ['=', '>', '<', '>=', '<='];
 }
 

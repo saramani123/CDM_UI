@@ -4,7 +4,7 @@ Creates nodes and relationships for Objects, Variables, Lists, and Drivers
 """
 
 from db import get_driver
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 
 # ObjectRelationshipCreateRequest class definition
@@ -464,6 +464,8 @@ class VariableUpdateRequest(BaseModel):
     variationsList: Optional[List[dict]] = None  # List of variations to append to the variable
     isMeme: Optional[bool] = None
     isGroupKey: Optional[bool] = None
+    
+    model_config = ConfigDict(extra='allow')  # Allow extra fields like "Validation #2", "Validation #3", etc.
 
 class BulkVariableUpdateRequest(BaseModel):
     """Schema for bulk updating variables"""

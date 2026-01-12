@@ -237,7 +237,8 @@ async def get_variables():
                        v.status as status, COALESCE(v.is_meme, false) as is_meme,
                        COALESCE(v.is_group_key, false) as is_group_key,
                        p.name as part, g.name as group,
-                       objectRelationships, variations, sectors, domains, countries, variableClarifiers
+                       objectRelationships, variations, sectors, domains, countries, variableClarifiers,
+                       properties(v) as allProps
                 ORDER BY v.id
             """)
 
@@ -278,6 +279,21 @@ async def get_variables():
                 
                 driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
                 
+                # Collect all validation properties and combine into comma-separated string
+                all_props = record.get("allProps", {})
+                validation_list = []
+                if all_props.get("validation"):
+                    validation_list.append(str(all_props["validation"]))
+                # Get all Validation #N properties and sort them numerically
+                validation_keys = [k for k in all_props.keys() if k.startswith("Validation #")]
+                # Sort by the number after "#"
+                validation_keys.sort(key=lambda x: int(x.split("#")[1].strip()) if "#" in x and x.split("#")[1].strip().isdigit() else 999)
+                for key in validation_keys:
+                    if all_props.get(key):
+                        validation_list.append(str(all_props[key]))
+                # Combine into comma-separated string, or use original validation if no additional validations
+                combined_validation = ", ".join(validation_list) if validation_list else (str(record.get("validation", "")) if record.get("validation") else "")
+                
                 var = {
                     "id": str(record["id"]) if record["id"] else "",
                     "driver": driver_string,
@@ -291,7 +307,7 @@ async def get_variables():
                     "formatI": str(record["formatI"]) if record["formatI"] else "",
                     "formatII": str(record["formatII"]) if record["formatII"] else "",
                     "gType": str(record["gType"]) if record["gType"] else "",
-                    "validation": str(record["validation"]) if record["validation"] else "",
+                    "validation": combined_validation,
                     "default": str(record["default"]) if record["default"] else "",
                     "graph": str(record["graph"]) if record["graph"] else "Yes",
                     "status": str(record["status"]) if record["status"] else "Active",
@@ -842,12 +858,22 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
 
 
 @router.put("/variables/{variable_id}", response_model=VariableResponse)
-async def update_variable(variable_id: str, variable_data: VariableUpdateRequest):
+async def update_variable(variable_id: str, request: Request):
     """
     Update an existing variable in the CDM with proper taxonomy structure.
     Supports partial updates - only updates fields that are provided.
     Also handles variationsList for variations management.
     """
+    # Read raw body to get extra fields like "Validation #2", "Validation #3", etc.
+    body_bytes = await request.body()
+    raw_data = json.loads(body_bytes.decode('utf-8'))
+    print(f"🔍 DEBUG: Raw request body keys: {list(raw_data.keys())}", flush=True)
+    print(f"🔍 DEBUG: Raw request body: {raw_data}", flush=True)
+    
+    # Create Pydantic model from raw data to preserve extra fields
+    # Use model_construct to bypass validation and preserve extra fields
+    variable_data = VariableUpdateRequest.model_construct(**raw_data)
+    
     # Log the parsed Pydantic model
     print(f"🎭 update_variable called with variable_id={variable_id}, variable_data={variable_data}")
     print(f"🎭 variable_data.isMeme={variable_data.isMeme}, type={type(variable_data.isMeme)}")
@@ -927,9 +953,50 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             if variable_data.gType is not None:
                 set_clauses.append("v.gType = $gType")
                 params["gType"] = variable_data.gType
+            # Handle validation and additional validation properties (Validation #2, Validation #3, etc.)
             if variable_data.validation is not None:
                 set_clauses.append("v.validation = $validation")
                 params["validation"] = variable_data.validation
+            
+            # Get all fields from the raw request data to check for additional validation properties
+            # Use raw_data directly since it contains all fields including extra ones
+            print(f"🔍 DEBUG: Looking for Validation # properties in raw_data...", flush=True)
+            
+            # Collect Validation #N properties to add from raw_data
+            validation_props_to_add = {}
+            for key, value in raw_data.items():
+                if key.startswith("Validation #") and value is not None:
+                    print(f"🔍 DEBUG: Found validation property: {key} = {value}", flush=True)
+                    validation_props_to_add[key] = value
+            
+            print(f"🔍 DEBUG: validation_props_to_add: {validation_props_to_add}", flush=True)
+            
+            # If we have Validation #N properties, first remove all existing ones, then add new ones
+            if validation_props_to_add:
+                # Get current variable node to find all Validation #N properties to remove
+                current_props_result = session.run("""
+                    MATCH (v:Variable {id: $id})
+                    RETURN keys(v) as keys
+                """, {"id": variable_id})
+                current_props_record = current_props_result.single()
+                if current_props_record:
+                    current_keys = current_props_record.get("keys", [])
+                    # Build REMOVE clause for all Validation #N properties
+                    remove_keys = [k for k in current_keys if k.startswith("Validation #")]
+                    if remove_keys:
+                        # Remove old Validation #N properties
+                        remove_clause = ", ".join([f"v.`{k}`" for k in remove_keys])
+                        session.run(f"""
+                            MATCH (v:Variable {{id: $id}})
+                            REMOVE {remove_clause}
+                        """, {"id": variable_id})
+                
+                # Add new Validation #N properties
+                for key, value in validation_props_to_add.items():
+                    # Escape the property name for Neo4j (property names with spaces and # need backticks)
+                    param_key = key.replace(' ', '_').replace('#', 'num').replace('`', '')
+                    set_clauses.append(f"v.`{key}` = ${param_key}")
+                    params[param_key] = value
             if variable_data.default is not None:
                 set_clauses.append("v.default = $default")
                 params["default"] = variable_data.default
@@ -1285,6 +1352,30 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
             
             final_driver = variable_data.driver if variable_data.driver is not None else (record.get("driver") if record else "")
 
+            # Get all validation properties and combine them into comma-separated string
+            # Query the variable node again to get all properties including Validation #2, #3, etc.
+            final_validation_result = session.run("""
+                MATCH (v:Variable {id: $id})
+                RETURN properties(v) as allProps
+            """, {"id": variable_id})
+            final_validation_record = final_validation_result.single()
+            combined_validation = record.get("validation", "") or ""
+            if final_validation_record:
+                all_props = final_validation_record.get("allProps", {})
+                validation_list = []
+                if all_props.get("validation"):
+                    validation_list.append(str(all_props["validation"]))
+                # Get all Validation #N properties and sort them numerically
+                validation_keys = [k for k in all_props.keys() if k.startswith("Validation #")]
+                validation_keys.sort(key=lambda x: int(x.split("#")[1].strip()) if "#" in x and x.split("#")[1].strip().isdigit() else 999)
+                for key in validation_keys:
+                    if all_props.get(key):
+                        validation_list.append(str(all_props[key]))
+                # Combine into comma-separated string
+                if validation_list:
+                    combined_validation = ", ".join(validation_list)
+                print(f"🔍 DEBUG: Combined validation for response: {combined_validation}", flush=True)
+
             return VariableResponse(
                 id=record["id"],
                 driver=final_driver,
@@ -1295,7 +1386,7 @@ async def update_variable(variable_id: str, variable_data: VariableUpdateRequest
                 formatI=record["formatI"],
                 formatII=record["formatII"],
                 gType=record["gType"],
-                validation=record["validation"],
+                validation=combined_validation,
                 default=record["default"],
                 graph=record["graph"],
                 status=record["status"],

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, GripVertical, Maximize2, Minimize2 } from 'lucide-react';
+import { X, GripVertical, Maximize2, Minimize2, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import type { VariableData } from '../data/variablesData';
 
 interface OrderSortOrder {
@@ -591,7 +591,39 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
 
           {/* Variable Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
-            <h4 className="text-sm font-medium text-ag-dark-text mb-3">Variable</h4>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium text-ag-dark-text">Variable</h4>
+              {selectedPart && selectedSection && selectedGroup && (
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const key = `${selectedPart}|${selectedSection}|${selectedGroup}`;
+                      const currentVariables = workingVariableOrders[key] || savedVariableOrders[key] || variablesForPartSectionAndGroup;
+                      // Sort A-Z (ascending)
+                      const sortedAZ = [...currentVariables].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+                      setWorkingVariableOrders({ ...workingVariableOrders, [key]: sortedAZ });
+                    }}
+                    className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+                    title="Sort A-Z"
+                  >
+                    <ArrowUpAZ className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => {
+                      const key = `${selectedPart}|${selectedSection}|${selectedGroup}`;
+                      const currentVariables = workingVariableOrders[key] || savedVariableOrders[key] || variablesForPartSectionAndGroup;
+                      // Sort Z-A (descending)
+                      const sortedZA = [...currentVariables].sort((a, b) => b.localeCompare(a, undefined, { sensitivity: 'base' }));
+                      setWorkingVariableOrders({ ...workingVariableOrders, [key]: sortedZA });
+                    }}
+                    className="p-1 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+                    title="Sort Z-A"
+                  >
+                    <ArrowDownZA className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
             {selectedPart && selectedSection && selectedGroup ? (
               <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
                 {(workingVariableOrders[`${selectedPart}|${selectedSection}|${selectedGroup}`] || savedVariableOrders[`${selectedPart}|${selectedSection}|${selectedGroup}`] || variablesForPartSectionAndGroup).map((variable, index) => (

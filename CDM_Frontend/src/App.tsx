@@ -3715,6 +3715,10 @@ function App() {
           console.log('Part in update:', variableUpdateData.part);
           console.log('Group in update:', variableUpdateData.group);
           console.log('Validation field in update:', variableUpdateData.validation);
+          // Log all keys to see if Validation #2, etc. are included
+          console.log('variableUpdateData keys:', Object.keys(variableUpdateData));
+          console.log('Validation properties in variableUpdateData:', 
+            Object.keys(variableUpdateData).filter(k => k.startsWith('Validation')));
           
           const result = await updateVariable(selectedRowForMetadata.id, variableUpdateData);
           
