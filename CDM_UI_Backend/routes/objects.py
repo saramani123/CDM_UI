@@ -1068,46 +1068,53 @@ async def update_object(
                 
                 if variants_to_create:
                     print(f"DEBUG: Processing {len(variants_to_create)} variants")
+                    
+                    # Get existing variants for this object to avoid duplicates
+                    existing_variants_result = session.run("""
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        RETURN toLower(v.name) as lower_name, v.id as id, v.name as name
+                    """, object_id=object_id)
+                    
+                    existing_variant_names = {record["lower_name"]: record["id"] for record in existing_variants_result}
+                    
+                    # Get all existing global variants to reuse them
+                    all_variants_result = session.run("""
+                        MATCH (v:Variant)
+                        RETURN toLower(v.name) as lower_name, v.id as id, v.name as name
+                    """)
+                    
+                    global_variants = {record["lower_name"]: record["id"] for record in all_variants_result}
+                    
+                    # Process variants in bulk
+                    variants_to_connect = []
+                    variants_to_create_new = []
+                    
                     for var in variants_to_create:
                         variant_name = var.get("name", "").strip()
                         if not variant_name:
                             continue
-                            
-                        print(f"DEBUG: Processing variant: {variant_name}")
                         
-                        # Check if variant already exists for this object (case-insensitive)
-                        existing_variant_for_object = session.run("""
-                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
-                            WHERE toLower(v.name) = toLower($variant_name)
-                            RETURN v.id as id, v.name as name
-                        """, object_id=object_id, variant_name=variant_name).single()
+                        variant_name_lower = variant_name.lower()
                         
-                        if existing_variant_for_object:
+                        # Skip if already exists for this object
+                        if variant_name_lower in existing_variant_names:
                             print(f"DEBUG: Variant '{variant_name}' already exists for object {object_id}, skipping")
                             continue
                         
-                        # Check if variant exists globally (case-insensitive)
-                        existing_variant = session.run("""
-                            MATCH (v:Variant)
-                            WHERE toLower(v.name) = toLower($variant_name)
-                            RETURN v.id as id, v.name as name
-                        """, variant_name=variant_name).single()
-                        
-                        if existing_variant:
-                            # Variant exists globally, connect it to this object
-                            variant_id = existing_variant["id"]
-                            print(f"DEBUG: Connecting existing global variant '{variant_name}' to object {object_id}")
-                            
-                            session.run("""
-                                MATCH (o:Object {id: $object_id})
-                                MATCH (v:Variant {id: $variant_id})
-                                CREATE (o)-[:HAS_VARIANT]->(v)
-                            """, object_id=object_id, variant_id=variant_id)
+                        # Check if variant exists globally
+                        if variant_name_lower in global_variants:
+                            variants_to_connect.append({
+                                "variant_id": global_variants[variant_name_lower],
+                                "variant_name": variant_name
+                            })
                         else:
-                            # Create new variant
+                            variants_to_create_new.append(variant_name)
+                    
+                    # Create new variants in bulk
+                    if variants_to_create_new:
+                        print(f"DEBUG: Creating {len(variants_to_create_new)} new variants")
+                        for variant_name in variants_to_create_new:
                             variant_id = str(uuid.uuid4())
-                            print(f"DEBUG: Creating new variant '{variant_name}' for object {object_id}")
-                            
                             session.run("""
                                 CREATE (v:Variant {
                                     id: $variant_id,
@@ -1115,11 +1122,38 @@ async def update_object(
                                 })
                             """, variant_id=variant_id, variant_name=variant_name)
                             
+                            # Connect immediately after creating
                             session.run("""
                                 MATCH (o:Object {id: $object_id})
                                 MATCH (v:Variant {id: $variant_id})
                                 CREATE (o)-[:HAS_VARIANT]->(v)
                             """, object_id=object_id, variant_id=variant_id)
+                    
+                    # Connect existing global variants in bulk
+                    if variants_to_connect:
+                        print(f"DEBUG: Connecting {len(variants_to_connect)} existing variants")
+                        for variant_info in variants_to_connect:
+                            session.run("""
+                                MATCH (o:Object {id: $object_id})
+                                MATCH (v:Variant {id: $variant_id})
+                                WHERE NOT (o)-[:HAS_VARIANT]->(v)
+                                CREATE (o)-[:HAS_VARIANT]->(v)
+                            """, object_id=object_id, variant_id=variant_info["variant_id"])
+                    
+                    # Update variant count after all variants are processed
+                    if variants_to_create_new or variants_to_connect:
+                        count_result = session.run("""
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            RETURN count(v) as var_count
+                        """, object_id=object_id).single()
+                        
+                        var_count = count_result["var_count"] if count_result else 0
+                        
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            SET o.variants = $var_count
+                        """, object_id=object_id, var_count=var_count)
+                        print(f"DEBUG: Updated variant count to {var_count}")
                 
             # Handle identifier relationships (discrete and composite IDs)
             has_identifier = request_data and 'identifier' in request_data and request_data['identifier']

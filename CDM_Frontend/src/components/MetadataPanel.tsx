@@ -327,38 +327,87 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.relationshipsList]);
 
   // Load variants when selectedObject changes
-  React.useEffect(() => {
-    if (selectedObject?.id) {
-      console.log('MetadataPanel: Loading variants for object:', selectedObject.object, 'id:', selectedObject.id);
-      
-      // If this is a cloned unsaved object, use the variants from the cloned data
-      if (selectedObject._isCloned && !selectedObject._isSaved) {
-        console.log('MetadataPanel: Using variants from cloned object data:', selectedObject.variantsList);
-        const variantsTextContent = (selectedObject.variantsList || []).map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
-        setVariantsText(variantsTextContent);
-        return;
-      }
-      
-      const loadVariants = async () => {
-        try {
-          const variantData = await apiService.getObjectVariants(selectedObject.id);
-          console.log('MetadataPanel: API variant data:', variantData);
-          const variantsList = variantData?.variantsList || [];
-          console.log('MetadataPanel: loaded variants from API:', variantsList);
-          // Convert variants array to multiline text
-          const variantsTextContent = variantsList.map(v => v.name).join('\n');
-          setVariantsText(variantsTextContent);
-        } catch (error) {
-          console.error('MetadataPanel: failed to load variants:', error);
-          setVariantsText('');
-        }
-      };
-      
-      loadVariants();
-    } else {
+  const loadVariantsForObject = React.useCallback(async (objectId: string, object: any, skipClear: boolean = false) => {
+    // Only clear variants text if we're loading a different object (not just refreshing)
+    if (!skipClear) {
       setVariantsText('');
     }
-  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.variantsList]);
+    
+    console.log('MetadataPanel: Loading variants for object:', object?.object, 'id:', objectId, 'skipClear:', skipClear);
+    
+    // If this is a cloned unsaved object, use the variants from the cloned data
+    if (object?._isCloned && !object?._isSaved) {
+      console.log('MetadataPanel: Using variants from cloned object data:', object.variantsList);
+      const variantsTextContent = (object.variantsList || []).map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+      setVariantsText(variantsTextContent);
+      return;
+    }
+    
+    // If object already has variantsList, use it directly (e.g., after save)
+    if (object?.variantsList && Array.isArray(object.variantsList) && object.variantsList.length > 0) {
+      console.log('MetadataPanel: Using variants from object data:', object.variantsList);
+      const variantsTextContent = object.variantsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+      setVariantsText(variantsTextContent);
+      return;
+    }
+    
+    try {
+      const variantData = await apiService.getObjectVariants(objectId);
+      console.log('MetadataPanel: API variant data:', variantData);
+      const variantsList = variantData?.variantsList || [];
+      console.log('MetadataPanel: loaded variants from API:', variantsList);
+      // Convert variants array to multiline text
+      const variantsTextContent = variantsList.map(v => v.name).join('\n');
+      setVariantsText(variantsTextContent);
+    } catch (error) {
+      console.error('MetadataPanel: failed to load variants:', error);
+      if (!skipClear) {
+        setVariantsText('');
+      }
+    }
+  }, []);
+  
+  // Track the last object ID we loaded variants for to prevent unnecessary reloads
+  const lastLoadedObjectIdRef = React.useRef<string | null>(null);
+  
+  React.useEffect(() => {
+    if (selectedObject?.id) {
+      const isNewObject = lastLoadedObjectIdRef.current !== selectedObject.id;
+      
+      if (isNewObject) {
+        // Different object - clear and load fresh
+        lastLoadedObjectIdRef.current = selectedObject.id;
+        loadVariantsForObject(selectedObject.id, selectedObject, false);
+      } else {
+        // Same object, just update variants if they changed (e.g., after save)
+        // Don't clear first - just update directly to avoid flash
+        if (selectedObject?.variantsList && Array.isArray(selectedObject.variantsList)) {
+          const variantsTextContent = selectedObject.variantsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
+          setVariantsText(variantsTextContent);
+        } else {
+          // No variantsList in object, reload from API but don't clear first
+          loadVariantsForObject(selectedObject.id, selectedObject, true);
+        }
+      }
+    } else {
+      lastLoadedObjectIdRef.current = null;
+      setVariantsText('');
+    }
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.variantsList, selectedObject?.variants, loadVariantsForObject]);
+  
+  // Also reload variants when variants count changes (indicates variants were updated)
+  React.useEffect(() => {
+    if (selectedObject?.id && selectedObject?.variants !== undefined) {
+      // Reload variants when count changes to ensure we have the latest data
+      const reloadTimer = setTimeout(() => {
+        if (selectedObject?.id) {
+          loadVariantsForObject(selectedObject.id, selectedObject);
+        }
+      }, 500); // Small delay to ensure backend has processed
+      
+      return () => clearTimeout(reloadTimer);
+    }
+  }, [selectedObject?.variants, loadVariantsForObject]);
 
   // Load identifier relationships when selectedObject changes
   React.useEffect(() => {
@@ -1791,11 +1840,16 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             });
           }}
           onKeyDown={(e) => {
-            // Prevent Enter key from propagating to parent components
-            e.stopPropagation();
-            // Prevent default only for Escape, not Enter
-            if (e.key === 'Escape') {
+            // Prevent Enter key from propagating to parent components or causing form submission
+            if (e.key === 'Enter') {
+              e.stopPropagation();
+              // Don't prevent default - let Enter create a new line in textarea
+              // But stop it from bubbling up to prevent any parent handlers
+            } else if (e.key === 'Escape') {
+              e.stopPropagation();
               variantsTextareaRef.current?.blur();
+            } else {
+              e.stopPropagation();
             }
           }}
           onClick={(e) => {

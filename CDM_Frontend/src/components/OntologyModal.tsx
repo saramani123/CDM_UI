@@ -171,10 +171,20 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       return;
     }
     
-    console.log('loadGraph: Starting load', { isBulk, isVariableMode, objectName, objectNames: objectNames?.length, variableName, variableNames: variableNames?.length, viewType });
+    console.log('loadGraph: Starting load', { isBulk, isVariableMode, objectId, objectName, objectIds: objectIds?.length, objectNames: objectNames?.length, variableId, variableName, variableIds: variableIds?.length, variableNames: variableNames?.length, viewType });
     isLoadingRef.current = true;
     setIsLoading(true);
     setError(null);
+    
+    // Clear previous graph data immediately to prevent showing stale data
+    if (networkRef.current) {
+      try {
+        networkRef.current.destroy();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+      networkRef.current = null;
+    }
 
     try {
       // Clean up previous visualization if it exists
@@ -981,7 +991,17 @@ RETURN o, r, v`;
     if (isOpen && shouldLoad) {
       console.log('OntologyModal: Modal opened, preparing to load', { isBulkMode, isVariableMode, objectId, objectName, objectIds: objectIds?.length, objectNames: objectNames?.length, variableId, variableName, variableIds: variableIds?.length, variableNames: variableNames?.length, viewType });
       
-      // Reset state when modal opens
+      // IMMEDIATELY clear previous graph data to prevent showing stale data
+      if (networkRef.current) {
+        try {
+          networkRef.current.destroy();
+        } catch (e) {
+          // Ignore cleanup errors
+        }
+        networkRef.current = null;
+      }
+      
+      // Reset state when modal opens or object changes
       setError(null);
       setIsLoading(true);
       setSelectedNode(null);

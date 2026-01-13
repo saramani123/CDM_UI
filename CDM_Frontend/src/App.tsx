@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -493,6 +493,8 @@ function App() {
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
   const [loadingType, setLoadingType] = useState<'drivers' | 'objects' | 'variables' | 'lists' | 'general'>('general');
+  // Ref to track when we're manually managing loading state (e.g., during variant save)
+  const isManuallyManagingLoadingRef = useRef(false);
 
   // Apply view filtering to data for Objects tab
   const filteredData = useMemo(() => {
@@ -601,12 +603,14 @@ function App() {
     console.log('App - apiObjects first item:', apiObjects?.[0]);
     console.log('App - affectedObjectIds:', affectedObjectIds);
     
-    // Show loading when objects are loading
-    if (objectsLoading && activeTab === 'objects') {
-      setIsLoading(true);
-      setLoadingType('objects');
-    } else {
-      setIsLoading(false);
+    // Show loading when objects are loading, but only if we're not manually managing loading
+    if (!isManuallyManagingLoadingRef.current) {
+      if (objectsLoading && activeTab === 'objects') {
+        setIsLoading(true);
+        setLoadingType('objects');
+      } else if (!objectsLoading) {
+        setIsLoading(false);
+      }
     }
     
     if (!objectsLoading) {
@@ -3349,6 +3353,17 @@ function App() {
       return;
     }
     
+    // Check if we'll be saving variants/relationships - if so, set loading state NOW and keep it on
+    const willSaveVariantsOrRelationships = activeTab === 'objects' && 
+      (updatedData.relationshipsList || updatedData.variantsList);
+    
+    if (willSaveVariantsOrRelationships) {
+      // Set flag to prevent useEffect from syncing objectsLoading to isLoading
+      isManuallyManagingLoadingRef.current = true;
+      setIsLoading(true);
+      setLoadingType('objects');
+    }
+    
     if (selectedRowForMetadata) {
       let gridData = { ...updatedData };
       
@@ -3863,15 +3878,25 @@ function App() {
         try {
           // Update the object via API
           console.log('Updating object via API:', { id: selectedRowForMetadata.id, data: basicFields });
-          // Show loading indicator for single object edit
-          setIsLoading(true);
-          setLoadingType('objects');
+          
+          // Only set loading here if we're NOT saving variants/relationships (they already set it)
+          if (!willSaveVariantsOrRelationships) {
+            setIsLoading(true);
+            setLoadingType('objects');
+          }
           
           try {
             await updateObject(selectedRowForMetadata.id, basicFields);
             console.log('Object updated successfully');
-          } finally {
+            // Don't clear loading here if we're about to save variants/relationships
+            // The loading state will be cleared in the finally block after variants are saved
+            if (!willSaveVariantsOrRelationships) {
+              setIsLoading(false);
+            }
+          } catch (error) {
+            // If updateObject fails, clear loading
             setIsLoading(false);
+            throw error;
           }
           
           // Update order if being/avatar/object changed
@@ -3893,12 +3918,19 @@ function App() {
             );
           }
           
-          // Reload the object to refresh identifier data
-          const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
-          setSelectedRowForMetadata(refreshedObject);
+          // Reload the object to refresh identifier data (only if not saving variants)
+          // If saving variants, we'll reload it after variants are saved
+          if (!willSaveVariantsOrRelationships) {
+            const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
+            setSelectedRowForMetadata(refreshedObject);
+          }
         } catch (error) {
           console.error('Error updating object:', error);
           alert('Failed to update object. Please try again.');
+          // Clear loading if it was set
+          if (willSaveVariantsOrRelationships) {
+            setIsLoading(false);
+          }
           throw error;
         }
         
@@ -3910,6 +3942,11 @@ function App() {
               variantsList: updatedData.variantsList,
               objectId: selectedRowForMetadata.id 
             });
+            
+            // Loading state is already set at the beginning of handleMetadataSave
+            // Force it to stay on (React state updates are async, so we ensure it's on)
+            setIsLoading(true);
+            setLoadingType('objects');
             
             // Filter out empty relationships and variants
             const validRelationships = (updatedData.relationshipsList || []).filter((rel: any) => 
@@ -3924,15 +3961,52 @@ function App() {
             console.log('Valid variants:', validVariants);
             
             // Use bulk update endpoint that handles both additions and deletions
+            // Loading state is ON and will stay on until we're completely done
             await updateObjectWithRelationshipsAndVariants(
               selectedRowForMetadata.id, 
               validRelationships, 
               validVariants
             );
+            
+            // Reload the full object data including variants from API (loading still on)
+            const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
+            
+            // Parse driver string and add parsed fields for consistency
+            const parsed = parseDriverField(refreshedObject.driver || '');
+            const parsedRefreshedObject = {
+              ...refreshedObject,
+              sector: parsed.sector,
+              domain: parsed.domain,
+              country: parsed.country,
+              classifier: parsed.classifier,
+              isMeme: (refreshedObject as any).is_meme ?? false
+            };
+            
+            // Update selectedRowForMetadata with fresh data including variants FIRST
+            // This ensures the variants textarea gets updated immediately
+            setSelectedRowForMetadata(parsedRefreshedObject);
+            
+            // Wait a moment for state to sync before refreshing the grid (loading still on)
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            // Then refresh objects list to get updated variant counts (loading still on)
+            // Do this last to minimize re-renders during the loading state
+            await fetchObjects();
           } catch (error) {
             console.error('Error saving relationships/variants:', error);
-            // Still update local state even if API fails
+            alert('Failed to save variants. Please try again.');
+            throw error;
+          } finally {
+            // Only clear loading state after ALL operations complete
+            setIsLoading(false);
+            // Re-enable automatic loading state sync
+            isManuallyManagingLoadingRef.current = false;
           }
+        } else if (willSaveVariantsOrRelationships) {
+          // If we set loading but there were no variants/relationships to save, clear it
+          setIsLoading(false);
+          // Re-enable automatic loading state sync
+          isManuallyManagingLoadingRef.current = false;
         }
         
         // Note: No need to manually update local state here - the useObjects hook will handle it
