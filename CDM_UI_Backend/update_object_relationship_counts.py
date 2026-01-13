@@ -92,12 +92,21 @@ def update_relationship_counts(dry_run=True):
             total_objects = 0
             objects_needing_update = 0
             
+            # Debug: Show some examples of stored vs actual
+            print("\n🔍 Debug: Checking first 10 objects to see stored vs actual counts...")
+            debug_shown = 0
+            
             for record in result:
                 total_objects += 1
                 object_id = record["object_id"]
                 object_name = record["object_name"]
                 current_count = int(record["current_count"] or 0)
                 actual_count = int(record["actual_count"] or 0)
+                
+                # Show first 10 for debugging
+                if debug_shown < 10:
+                    print(f"   {object_name}: stored={current_count}, actual={actual_count}")
+                    debug_shown += 1
                 
                 # Compare stored count (from UI) vs actual count (from Neo4j query)
                 if current_count != actual_count:
@@ -118,12 +127,61 @@ def update_relationship_counts(dry_run=True):
                 return
             
             # Show what will be updated
-            print(f"\n📋 Objects that will be updated:")
-            print(f"   (Current = value in UI 'Relationships' column, Actual = count from Neo4j)")
-            for obj in objects_to_update[:50]:  # Show first 50
-                print(f"   {obj['name']}: {obj['current']} → {obj['actual']}")
-            if len(objects_to_update) > 50:
-                print(f"   ... and {len(objects_to_update) - 50} more")
+            if objects_to_update:
+                print(f"\n📋 Objects that will be updated:")
+                print(f"   (Current = stored 'o.relationships' property, Actual = count from Neo4j query)")
+                # Sort by difference to show biggest discrepancies first
+                objects_to_update.sort(key=lambda x: abs(x['current'] - x['actual']), reverse=True)
+                for obj in objects_to_update[:50]:  # Show first 50
+                    print(f"   {obj['name']}: {obj['current']} → {obj['actual']} (diff: {obj['current'] - obj['actual']})")
+                if len(objects_to_update) > 50:
+                    print(f"   ... and {len(objects_to_update) - 50} more")
+            
+            # Also check if there are objects with very high stored counts
+            print(f"\n🔍 Checking for objects with unusually high stored relationship counts...")
+            high_count_result = session.run("""
+                MATCH (o:Object)
+                WHERE o.relationships IS NOT NULL AND o.relationships > 200
+                RETURN o.object as object_name, o.relationships as stored_count
+                ORDER BY o.relationships DESC
+                LIMIT 20
+            """)
+            
+            high_count_objects = []
+            for record in high_count_result:
+                high_count_objects.append({
+                    "name": record["object_name"],
+                    "stored": record["stored_count"]
+                })
+            
+            if high_count_objects:
+                print(f"   Found {len(high_count_objects)} objects with stored count > 200:")
+                for obj in high_count_objects:
+                    # Get actual count for these objects
+                    actual_result = session.run("""
+                        MATCH (o:Object {object: $object_name})
+                        OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                        RETURN count(r) as actual_count
+                    """, object_name=obj["name"]).single()
+                    actual = actual_result["actual_count"] if actual_result else 0
+                    print(f"   {obj['name']}: stored={obj['stored']}, actual={actual}")
+            else:
+                print("   No objects found with stored count > 200")
+            
+            # Also check what the get_objects endpoint would return (calculated count)
+            print(f"\n🔍 Verifying: What does the get_objects endpoint calculate? (first 5 objects)")
+            calc_result = session.run("""
+                MATCH (o:Object)
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                WITH o, count(r) as relationships_count
+                RETURN o.object as object_name, 
+                       COALESCE(o.relationships, 0) as stored_property,
+                       relationships_count as calculated_count
+                ORDER BY o.object
+                LIMIT 5
+            """)
+            for record in calc_result:
+                print(f"   {record['object_name']}: stored={record['stored_property']}, calculated={record['calculated_count']}")
             
             # Show some examples of objects that are correct (for verification)
             if objects_needing_update < total_objects:
