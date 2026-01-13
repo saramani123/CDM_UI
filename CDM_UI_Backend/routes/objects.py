@@ -141,6 +141,7 @@ async def get_objects():
                        o.object as object, 
                        o.status as status,
                        COALESCE(o.is_meme, false) as is_meme,
+                       COALESCE(o.relationships, 0) as stored_relationships,
                        relationships,
                        variant_names,
                        variables_count,
@@ -179,10 +180,14 @@ async def get_objects():
                 # Get variables count from the query result
                 variables_count = record.get("variables_count", 0) or 0
                 
-                # Get relationships count - count total relationships (multiple role words = multiple relationships)
-                # By default, each object has 1 relationship to each other object (with default role word)
-                # Adding role words creates additional relationships, incrementing the count
-                relationships_count = record.get("relationships_count", 0) or 0
+                # Get relationships count - use stored property (kept in sync by update script)
+                # This ensures the UI shows exactly what's stored in Neo4j
+                stored_relationships = record.get("stored_relationships")
+                if stored_relationships is not None:
+                    relationships_count = int(stored_relationships)
+                else:
+                    # Fallback to calculated count if stored property doesn't exist
+                    relationships_count = record.get("relationships_count", 0) or 0
                 
                 obj = {
                     "id": record["id"],
@@ -190,7 +195,7 @@ async def get_objects():
                     "being": record["being"],
                     "avatar": record["avatar"],
                     "object": record["object"],
-                    "relationships": relationships_count,  # Use count of distinct target objects
+                    "relationships": relationships_count,  # Use stored property (matches Neo4j)
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",

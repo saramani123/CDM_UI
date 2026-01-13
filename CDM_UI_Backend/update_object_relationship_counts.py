@@ -124,7 +124,12 @@ def update_relationship_counts(dry_run=True):
             
             if objects_needing_update == 0:
                 print("\n✅ All relationship counts are already correct!")
+                print("   All objects have the correct stored relationship count.")
                 return
+            
+            # Ask if user wants to update ALL objects (to ensure consistency) or just mismatched ones
+            print(f"\n💡 Note: You can update all {total_objects} objects to ensure consistency,")
+            print(f"   or just update the {objects_needing_update} objects with mismatches.")
             
             # Show what will be updated
             if objects_to_update:
@@ -206,6 +211,7 @@ def update_relationship_counts(dry_run=True):
             
             # Confirm before proceeding
             print(f"\n⚠️  About to update {objects_needing_update} objects")
+            print(f"   This will set o.relationships property to match the actual count from Neo4j")
             response = input("   Continue? (yes/no): ")
             if response.lower() not in ['yes', 'y']:
                 print("   Cancelled.")
@@ -213,6 +219,7 @@ def update_relationship_counts(dry_run=True):
             
             # Update relationship counts
             print("\n🔄 Updating relationship counts...")
+            print(f"   Updating {len(objects_to_update)} objects...")
             updated_count = 0
             errors = []
             
