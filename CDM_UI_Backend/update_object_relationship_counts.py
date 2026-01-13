@@ -75,7 +75,9 @@ def update_relationship_counts(dry_run=True):
         with driver.session() as session:
             # Get all objects with their current relationship counts
             print("\n📊 Fetching all objects and their relationship counts...")
+            print("   Using the same Cypher query you run directly in Neo4j...")
             
+            # Use the EXACT same query the user provided - this counts relationships correctly
             result = session.run("""
                 MATCH (o:Object)
                 OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
@@ -94,9 +96,10 @@ def update_relationship_counts(dry_run=True):
                 total_objects += 1
                 object_id = record["object_id"]
                 object_name = record["object_name"]
-                current_count = record["current_count"] or 0
-                actual_count = record["actual_count"] or 0
+                current_count = int(record["current_count"] or 0)
+                actual_count = int(record["actual_count"] or 0)
                 
+                # Compare stored count (from UI) vs actual count (from Neo4j query)
                 if current_count != actual_count:
                     objects_needing_update += 1
                     objects_to_update.append({
@@ -116,10 +119,27 @@ def update_relationship_counts(dry_run=True):
             
             # Show what will be updated
             print(f"\n📋 Objects that will be updated:")
-            for obj in objects_to_update[:20]:  # Show first 20
+            print(f"   (Current = value in UI 'Relationships' column, Actual = count from Neo4j)")
+            for obj in objects_to_update[:50]:  # Show first 50
                 print(f"   {obj['name']}: {obj['current']} → {obj['actual']}")
-            if len(objects_to_update) > 20:
-                print(f"   ... and {len(objects_to_update) - 20} more")
+            if len(objects_to_update) > 50:
+                print(f"   ... and {len(objects_to_update) - 50} more")
+            
+            # Show some examples of objects that are correct (for verification)
+            if objects_needing_update < total_objects:
+                print(f"\n✅ Sample objects with correct counts (showing first 5):")
+                correct_count = 0
+                result2 = session.run("""
+                    MATCH (o:Object)
+                    OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                    WITH o, COALESCE(o.relationships, 0) as current_count, count(r) as actual_count
+                    WHERE current_count = actual_count
+                    RETURN o.object as object_name, current_count, actual_count
+                    ORDER BY o.object
+                    LIMIT 5
+                """)
+                for record in result2:
+                    print(f"   {record['object_name']}: {record['current_count']} (correct)")
             
             if dry_run:
                 print("\n🔍 DRY RUN MODE - No changes will be made")

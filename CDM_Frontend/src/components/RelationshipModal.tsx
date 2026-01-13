@@ -1166,7 +1166,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                       {relationshipRows.length === 0 ? (
                         <tr>
                           <td colSpan={10} className="px-3 py-8 text-center text-ag-dark-text-secondary">
-                            No additional relationships. Click "Add Row" to create one.
+                            Add relationships and roles in addition to default possible relationships. Click "Add Row" to create one.
                           </td>
                         </tr>
                       ) : (
