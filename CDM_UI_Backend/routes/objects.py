@@ -35,6 +35,75 @@ class BulkRelationshipCreateRequest(BaseModel):
 
 router = APIRouter()
 
+def create_default_relationships_for_object(session, source_object_id: str, source_object_name: str):
+    """
+    Create default relationships for a new object.
+    Creates relationships to ALL existing objects (including itself) with:
+    - Inter-Table for other objects, Intra-Table for self
+    - Frequency = Possible
+    - Role = source object name (default role word)
+    """
+    # Get all existing objects
+    result = session.run("""
+        MATCH (o:Object)
+        RETURN o.id as id, o.object as object, o.being as being, o.avatar as avatar
+    """)
+    
+    all_objects = [record for record in result]
+    
+    relationships_created = 0
+    
+    for target_obj in all_objects:
+        target_id = target_obj["id"]
+        target_being = target_obj.get("being", "ALL")
+        target_avatar = target_obj.get("avatar", "ALL")
+        target_object_name = target_obj.get("object", "ALL")
+        
+        # Determine relationship type
+        is_self = source_object_id == target_id
+        relationship_type = "Intra-Table" if is_self else "Inter-Table"
+        frequency = "Possible"
+        role = source_object_name  # Default role word is source object name
+        
+        # Check if relationship already exists (shouldn't for new objects, but be safe)
+        existing_check = session.run("""
+            MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object {id: $target_id})
+            WHERE r.role = $role
+            RETURN count(r) as count
+        """, source_id=source_object_id, target_id=target_id, role=role).single()
+        
+        if existing_check and existing_check["count"] > 0:
+            continue  # Skip if already exists
+        
+        # Create default relationship
+        relationship_id = str(uuid.uuid4())
+        session.run("""
+            MATCH (source:Object {id: $source_id})
+            MATCH (target:Object {id: $target_id})
+            CREATE (source)-[:RELATES_TO {
+                id: $relationship_id,
+                type: $relationship_type,
+                role: $role,
+                frequency: $frequency,
+                toBeing: $to_being,
+                toAvatar: $to_avatar,
+                toObject: $to_object
+            }]->(target)
+        """, 
+            source_id=source_object_id,
+            target_id=target_id,
+            relationship_id=relationship_id,
+            relationship_type=relationship_type,
+            role=role,
+            frequency=frequency,
+            to_being=target_being,
+            to_avatar=target_avatar,
+            to_object=target_object_name
+        )
+        relationships_created += 1
+    
+    return relationships_created
+
 @router.get("/objects", response_model=List[Dict[str, Any]])
 async def get_objects():
     """
@@ -160,10 +229,11 @@ async def get_object(object_id: str):
             if not record:
                 raise HTTPException(status_code=404, detail="Object not found")
 
-            # Get relationship count
+            # Get relationship count - count total relationships (not distinct targets)
+            # Multiple role words to same target = multiple relationships
             rel_count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
+                RETURN count(*) as rel_count
             """, object_id=object_id).single()
             
             # Get variant count
@@ -491,7 +561,17 @@ async def create_object(object_data: ObjectCreateRequest):
                             to_avatar=rel.get("toAvatar", "ALL"),
                             to_object=rel.get("toObject", "ALL"))
             
-            # Calculate actual relationship count
+            # Create default relationships to ALL existing objects (including itself)
+            # This ensures every object has default relationships with role = object name
+            print(f"Creating default relationships for new object: {object_data.object}")
+            default_rels_created = create_default_relationships_for_object(
+                session, 
+                new_id, 
+                object_data.object
+            )
+            print(f"Created {default_rels_created} default relationships")
+            
+            # Calculate actual relationship count (includes default + any user-provided relationships)
             rel_count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
                 RETURN count(other) as rel_count
@@ -1567,6 +1647,15 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             SET o.variants = $var_count
                         """, object_id=new_id, var_count=var_count)
                         print(f"DEBUG: Updated variant count to {var_count} for object {new_id}")
+
+                    # Create default relationships to ALL existing objects (including itself)
+                    print(f"Creating default relationships for new object from CSV: {csv_row.Object}")
+                    default_rels_created = create_default_relationships_for_object(
+                        session, 
+                        new_id, 
+                        csv_row.Object
+                    )
+                    print(f"Created {default_rels_created} default relationships")
 
                     print(f"DEBUG: Successfully created object {new_id}")
                     # Get relationships for the newly created object

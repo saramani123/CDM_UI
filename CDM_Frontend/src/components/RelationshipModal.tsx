@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload } from 'lucide-react';
+import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload, Plus } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns, parseDriverField } from '../data/mockData';
 import { apiService } from '../services/api';
@@ -8,6 +8,7 @@ import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 import { BulkEditRelationshipsModal } from './BulkEditRelationshipsModal';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
+import { useDrivers } from '../hooks/useDrivers';
 
 interface InitialRelationship {
   targetObject: ObjectData;
@@ -41,6 +42,20 @@ interface RelationshipData {
   defaultRoleWord: string; // The default role word (source object name) - not shown in UI
   frequency: 'Critical' | 'Likely' | 'Possible';
   hasMixedTypes?: boolean; // Flag to indicate mixed relationship types
+}
+
+// New interface for grid-based relationship rows
+interface RelationshipGridRow {
+  id: string; // Unique ID for this row
+  sector: string; // Selected sector (or "ALL")
+  domain: string; // Selected domain (or "ALL")
+  country: string; // Selected country (or "ALL")
+  being: string; // Selected being
+  avatar: string; // Selected avatar
+  object: string; // Selected object
+  relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
+  frequency: 'Critical' | 'Likely' | 'Possible';
+  roles: string; // Comma-separated role words
 }
 
 export const RelationshipModal: React.FC<RelationshipModalProps> = ({
@@ -77,6 +92,49 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   const [isRelationshipCsvUploadOpen, setIsRelationshipCsvUploadOpen] = useState(false);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set()); // Track selected rows for bulk editing
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false); // Bulk edit modal state
+
+  // NEW: Grid-based relationship rows (empty by default)
+  const [relationshipRows, setRelationshipRows] = useState<RelationshipGridRow[]>([]);
+  
+  // Get drivers data for dropdowns
+  const { drivers: driversData } = useDrivers();
+  
+  // Get distinct values for dropdowns from allObjects
+  const distinctSectors = Array.from(new Set(allObjects.map(obj => {
+    const parsed = parseDriverField(obj.driver || '');
+    return parsed.sector || 'ALL';
+  }))).sort();
+  const distinctDomains = Array.from(new Set(allObjects.map(obj => {
+    const parsed = parseDriverField(obj.driver || '');
+    return parsed.domain || 'ALL';
+  }))).sort();
+  const distinctCountries = Array.from(new Set(allObjects.map(obj => {
+    const parsed = parseDriverField(obj.driver || '');
+    return parsed.country || 'ALL';
+  }))).sort();
+  const distinctBeings = Array.from(new Set(allObjects.map(obj => obj.being).filter(Boolean))).sort();
+  
+  // Helper function to get avatars for a specific being
+  const getAvatarsForBeing = (being: string): string[] => {
+    if (!being) return [];
+    return Array.from(new Set(
+      allObjects
+        .filter(obj => obj.being === being)
+        .map(obj => obj.avatar)
+        .filter(Boolean)
+    )).sort();
+  };
+  
+  // Helper function to get objects for a specific being and avatar
+  const getObjectsForBeingAndAvatar = (being: string, avatar: string): string[] => {
+    if (!being || !avatar) return [];
+    return Array.from(new Set(
+      allObjects
+        .filter(obj => obj.being === being && obj.avatar === avatar)
+        .map(obj => obj.object)
+        .filter(Boolean)
+    )).sort();
+  };
 
   // Track if initialization is in progress to prevent duplicate calls
   const isInitializingRef = useRef(false);
@@ -124,6 +182,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       setInitialRelationshipData({}); // Reset initial state tracking
       setSelectedRowIds(new Set()); // Reset selected rows for bulk editing
       setIsBulkEditOpen(false); // Close bulk edit modal if open
+      setRelationshipRows([]); // Reset grid rows
       // Don't reset customSortRules - keep them for next time modal opens
       // Only reset if user explicitly clears custom sort
       isInitializingRef.current = false;
@@ -170,82 +229,107 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         }
       }
       
-      // Initialize relationship data for all objects
-      // NEW BEHAVIOR: All objects are selected by default with default role word = source object name
-      const initialData: Record<string, RelationshipData> = {};
+      // NEW BEHAVIOR: Load only ADDITIONAL relationships (non-default ones)
+      // Default relationships have: role = source object name, type = Inter-Table (others) or Intra-Table (self), frequency = Possible
       const sourceObjectName = sourceObjects[0]?.object || '';
+      const additionalRelationships: RelationshipGridRow[] = [];
       
-      for (const obj of allObjects) {
-        // Check if this object is one of the source objects (for Intra-Table logic)
-        const isSourceObject = sourceObjects.some(so => so.id === obj.id);
+      // Group relationships by target object (S, D, C, Being, Avatar, Object combination)
+      const relationshipGroups = new Map<string, {
+        sector: string;
+        domain: string;
+        country: string;
+        being: string;
+        avatar: string;
+        object: string;
+        types: Set<string>;
+        frequencies: Set<string>;
+        roles: Set<string>;
+      }>();
+      
+      for (const rel of allExistingRelationships) {
+        // Check if this is a default relationship
+        const isDefault = rel.role?.toLowerCase() === sourceObjectName.toLowerCase() &&
+                         rel.frequency === 'Possible' &&
+                         (rel.type === 'Inter-Table' || rel.type === 'Intra-Table');
         
-        // Filter existing relationships for this specific object (no API call in loop)
-        const existingRels = allExistingRelationships.filter((rel: any) => 
-          rel.toBeing === obj.being && 
-          rel.toAvatar === obj.avatar && 
-          rel.toObject === obj.object
-        );
-
-        // Default values: ALL objects are selected by default
-        let relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table' = isSourceObject ? 'Intra-Table' : 'Inter-Table';
-        let frequency: 'Critical' | 'Likely' | 'Possible' = 'Possible';
-        const defaultRoleWord = sourceObjectName; // Default role word is always the source object name
-        let userAddedRoles: string[] = []; // User-added roles (excluding default role word)
-        let hasMixedTypes = false;
-
-        if (existingRels.length > 0) {
-          // Load existing relationship data
-          const relationshipTypes = new Set<string>();
-          const frequencies = new Set<string>();
-          const allRoles = new Set<string>();
-          
-          for (const rel of existingRels) {
-            // Collect all roles
-            if (rel.role && rel.role.trim() !== '') {
-              allRoles.add(rel.role.trim());
-            }
-            relationshipTypes.add(rel.type);
-            frequencies.add(rel.frequency || 'Possible');
-          }
-          
-          // Determine relationship type
-          if (relationshipTypes.size === 1) {
-            relationshipType = relationshipTypes.values().next().value;
-          } else if (relationshipTypes.size > 1) {
-            hasMixedTypes = true;
-            relationshipType = isSourceObject ? 'Intra-Table' : 'Inter-Table'; // Default based on source
-          }
-          
-          // Determine frequency
-          if (frequencies.size === 1) {
-            const freqValue = frequencies.values().next().value;
-            if (relationshipType === 'Blood') {
-              frequency = 'Critical';
-            } else if (['Critical', 'Likely', 'Possible'].includes(freqValue)) {
-              frequency = freqValue === 'Critical' ? 'Possible' : (freqValue as 'Likely' | 'Possible');
-            }
-          } else if (relationshipType === 'Blood') {
-            frequency = 'Critical';
-          }
-          
-          // Separate default role word from user-added roles
-          // The default role word should be the source object name
-          // User-added roles are all other roles
-          const allRolesArray = Array.from(allRoles);
-          userAddedRoles = allRolesArray.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase());
+        // Skip default relationships - we only want additional ones
+        if (isDefault) {
+          continue;
         }
         
-        // All objects are deselected by default (UI only - relationships still exist)
-        initialData[obj.id] = {
-          objectId: obj.id,
-          isSelected: false, // Deselected by default - multiselect will be used for bulk editing
-          relationshipType: relationshipType,
-          roles: userAddedRoles.join(', '), // Only user-added roles shown in UI
-          defaultRoleWord: defaultRoleWord, // Default role word stored separately
-          frequency: frequency,
-          hasMixedTypes: hasMixedTypes
-        };
+        // This is an additional relationship - add it to the grid
+        const key = `${rel.toBeing || 'ALL'}|${rel.toAvatar || 'ALL'}|${rel.toObject || 'ALL'}`;
+        
+        if (!relationshipGroups.has(key)) {
+          // Find the target object to get S, D, C values
+          const targetObj = allObjects.find(obj => 
+            obj.being === rel.toBeing && 
+            obj.avatar === rel.toAvatar && 
+            obj.object === rel.toObject
+          );
+          
+          const parsed = targetObj ? parseDriverField(targetObj.driver || '') : { sector: 'ALL', domain: 'ALL', country: 'ALL' };
+          
+          relationshipGroups.set(key, {
+            sector: parsed.sector || 'ALL',
+            domain: parsed.domain || 'ALL',
+            country: parsed.country || 'ALL',
+            being: rel.toBeing || 'ALL',
+            avatar: rel.toAvatar || 'ALL',
+            object: rel.toObject || 'ALL',
+            types: new Set(),
+            frequencies: new Set(),
+            roles: new Set()
+          });
+        }
+        
+        const group = relationshipGroups.get(key)!;
+        if (rel.type) group.types.add(rel.type);
+        if (rel.frequency) group.frequencies.add(rel.frequency);
+        if (rel.role && rel.role.toLowerCase() !== sourceObjectName.toLowerCase()) {
+          group.roles.add(rel.role.trim());
+        }
       }
+      
+      // Convert grouped relationships to grid rows
+      for (const [key, group] of relationshipGroups.entries()) {
+        // Determine relationship type (use first type if multiple, or default)
+        const relationshipType = group.types.size > 0 
+          ? (Array.from(group.types)[0] as 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table')
+          : 'Inter-Table';
+        
+        // Determine frequency (use first frequency if multiple, or default)
+        const frequency = group.frequencies.size > 0
+          ? (Array.from(group.frequencies)[0] as 'Critical' | 'Likely' | 'Possible')
+          : 'Possible';
+        
+        // Combine all roles
+        const roles = Array.from(group.roles).join(', ');
+        
+        additionalRelationships.push({
+          id: `row-${Date.now()}-${Math.random()}`,
+          sector: group.sector,
+          domain: group.domain,
+          country: group.country,
+          being: group.being,
+          avatar: group.avatar,
+          object: group.object,
+          relationshipType: relationshipType,
+          frequency: frequency,
+          roles: roles
+        });
+      }
+      
+      // Set the grid rows (empty by default, populated with additional relationships)
+      setRelationshipRows(additionalRelationships);
+      
+      // Keep the old relationshipData structure for backward compatibility during transition
+      // But initialize it as empty since we're using the new grid
+      const initialData: Record<string, RelationshipData> = {};
+      
+      setRelationshipData(initialData);
+      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData)));
 
       // Apply initial relationships from CSV upload or stored relationships if any
       if (initialRelationships.length > 0) {
@@ -300,54 +384,155 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       }
 
       setRelationshipData(initialData);
-      // Store initial state to detect changes later
-      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData))); // Deep copy
+      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData)));
     } catch (error) {
       console.error('Failed to load existing relationships:', error);
-      // Initialize with default data: ALL objects selected
-      const initialData: Record<string, RelationshipData> = {};
-      const sourceObjectName = sourceObjects[0]?.object || '';
-      for (const obj of allObjects) {
-        const isSourceObject = sourceObjects.some(so => so.id === obj.id);
-        initialData[obj.id] = {
-          objectId: obj.id,
-          isSelected: false, // Deselected by default - multiselect will be used for bulk editing
-          relationshipType: isSourceObject ? 'Intra-Table' : 'Inter-Table',
-          roles: '', // User-added roles only (empty by default)
-          defaultRoleWord: sourceObjectName, // Default role word is source object name
-          frequency: 'Possible'
-        };
-      }
-      
-      // Apply initial relationships from CSV upload if any (fallback path)
-      if (initialRelationships.length > 0) {
-        const sourceObjectName = sourceObjects[0]?.object || '';
-        for (const initialRel of initialRelationships) {
-          const targetObjId = initialRel.targetObject.id;
-          if (initialData[targetObjId]) {
-            // Separate default role word from user-added roles
-            const userRoles = initialRel.role 
-              ? initialRel.role.split(', ').filter(r => r.trim() && r.trim().toLowerCase() !== sourceObjectName.toLowerCase()).join(', ')
-              : '';
-            
-            initialData[targetObjId] = {
-              ...initialData[targetObjId],
-              relationshipType: initialRel.relationshipType,
-              roles: userRoles, // Only user-added roles
-              frequency: initialRel.relationshipType === 'Blood' ? 'Critical' : 'Possible',
-              hasMixedTypes: false
-            };
-          }
-        }
-      }
-      
-      setRelationshipData(initialData);
-      // Store initial state to detect changes later
-      setInitialRelationshipData(JSON.parse(JSON.stringify(initialData))); // Deep copy
+      // On error, start with empty grid
+      setRelationshipRows([]);
+      setRelationshipData({});
+      setInitialRelationshipData({});
     } finally {
       setLoading(false);
       isInitializingRef.current = false;
     }
+  };
+  
+  // Helper function to find objects matching S, D, C, Being, Avatar, Object criteria
+  // This validates that the combination exists in the dataset
+  const findMatchingObjects = (sector: string, domain: string, country: string, being: string, avatar: string, object: string): ObjectData[] => {
+    if (!being || !avatar || !object) {
+      return []; // Must have being, avatar, and object selected
+    }
+    
+    return allObjects.filter(obj => {
+      const parsed = parseDriverField(obj.driver || '');
+      const objSector = parsed.sector || 'ALL';
+      const objDomain = parsed.domain || 'ALL';
+      const objCountry = parsed.country || 'ALL';
+      
+      return (sector === 'ALL' || objSector === sector || (sector === '' && objSector === 'ALL')) &&
+             (domain === 'ALL' || objDomain === domain || (domain === '' && objDomain === 'ALL')) &&
+             (country === 'ALL' || objCountry === country || (country === '' && objCountry === 'ALL')) &&
+             obj.being === being &&
+             obj.avatar === avatar &&
+             obj.object === object;
+    });
+  };
+  
+  // Helper function to check if a row combination already exists
+  const isRowDuplicate = (sector: string, domain: string, country: string, being: string, avatar: string, object: string, excludeRowId?: string): boolean => {
+    return relationshipRows.some(row => {
+      if (excludeRowId && row.id === excludeRowId) return false;
+      return row.sector === sector &&
+             row.domain === domain &&
+             row.country === country &&
+             row.being === being &&
+             row.avatar === avatar &&
+             row.object === object;
+    });
+  };
+  
+  // Add a new row to the grid
+  const handleAddRow = () => {
+    const newRow: RelationshipGridRow = {
+      id: `row-${Date.now()}-${Math.random()}`,
+      sector: 'ALL',
+      domain: 'ALL',
+      country: 'ALL',
+      being: '',
+      avatar: '',
+      object: '',
+      relationshipType: 'Inter-Table',
+      frequency: 'Possible',
+      roles: ''
+    };
+    setRelationshipRows(prev => [...prev, newRow]);
+  };
+  
+  // Remove a row from the grid
+  const handleRemoveRow = (rowId: string) => {
+    setRelationshipRows(prev => prev.filter(row => row.id !== rowId));
+  };
+  
+  // Update a row field
+  const handleRowFieldChange = (rowId: string, field: keyof RelationshipGridRow, value: any) => {
+    setRelationshipRows(prev => prev.map(row => {
+      if (row.id !== rowId) return row;
+      
+      const updatedRow = { ...row, [field]: value };
+      
+      // Cascading dropdowns: When being changes, clear avatar and object
+      if (field === 'being') {
+        updatedRow.avatar = '';
+        updatedRow.object = '';
+      }
+      
+      // Cascading dropdowns: When avatar changes, clear object
+      if (field === 'avatar') {
+        updatedRow.object = '';
+      }
+      
+      // Preset: If same object as source → Intra-Table (auto, not editable)
+      if (field === 'object' && value) {
+        const sourceObjectName = sourceObjects[0]?.object || '';
+        if (value === sourceObjectName) {
+          updatedRow.relationshipType = 'Intra-Table';
+        }
+      }
+      
+      // Preset: If relationship type = Blood → frequency = Critical (auto, not editable)
+      if (field === 'relationshipType' && value === 'Blood') {
+        updatedRow.frequency = 'Critical';
+      }
+      
+      // Validate for duplicates when key fields change (S, D, C, Being, Avatar, Object)
+      // Only check against OTHER rows in the grid (exclude current row)
+      const keyFields = ['sector', 'domain', 'country', 'being', 'avatar', 'object'];
+      if (keyFields.includes(field) && updatedRow.being && updatedRow.avatar && updatedRow.object) {
+        const isDuplicate = isRowDuplicate(
+          updatedRow.sector,
+          updatedRow.domain,
+          updatedRow.country,
+          updatedRow.being,
+          updatedRow.avatar,
+          updatedRow.object,
+          rowId // Exclude current row from duplicate check
+        );
+        
+        if (isDuplicate) {
+          // Show error and revert the change
+          setTimeout(() => {
+            alert('A row with this S, D, C, Being, Avatar, Object combination already exists in the grid. Please use a different combination or edit the existing row.');
+          }, 100);
+          return row; // Revert to original row
+        }
+      }
+      
+      return updatedRow;
+    }));
+  };
+  
+  // Validate row before adding/updating
+  // NOTE: This only checks for duplicates WITHIN the grid rows, NOT against Neo4j default relationships
+  // Default relationships (role = object name) are separate and always exist
+  const validateRow = (row: RelationshipGridRow, excludeRowId?: string): string | null => {
+    if (!row.being || !row.avatar || !row.object) {
+      return 'Please select Being, Avatar, and Object';
+    }
+    
+    // Check for duplicate combination WITHIN THE GRID ONLY (not against Neo4j)
+    // This ensures no two rows in the modal have the same S, D, C, Being, Avatar, Object combination
+    if (isRowDuplicate(row.sector, row.domain, row.country, row.being, row.avatar, row.object, excludeRowId)) {
+      return 'A row with this S, D, C, Being, Avatar, Object combination already exists in the grid. Please edit the existing row or use a different combination.';
+    }
+    
+    // Check if the combination matches any objects
+    const matchingObjects = findMatchingObjects(row.sector, row.domain, row.country, row.being, row.avatar, row.object);
+    if (matchingObjects.length === 0) {
+      return 'No objects match this combination';
+    }
+    
+    return null;
   };
 
   const handleRowClick = (objectId: string) => {
@@ -503,33 +688,37 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // If temporary or cloned object, store relationships locally instead of saving to API
     if ((isTemporaryObject || isClonedObject) && onRelationshipsChange) {
       const relationshipsToStore: any[] = [];
-      const sourceObjectName = sourceObjects[0]?.object || '';
       
-      // Process each object's relationship data
-      for (const [objectId, relData] of Object.entries(relationshipData)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
-
-        // All objects are selected by default
-        // Get user-added roles and combine with default role word
-        const userAddedRoles = validateRoles(relData.roles || '');
-        const defaultRoleWord = relData.defaultRoleWord || sourceObjectName;
-        const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
-
-        // Create relationship entries for each role (default + user-added)
-        for (const role of allRoles) {
-          if (!role || role.trim() === '') continue;
-          
-          relationshipsToStore.push({
-            id: Date.now().toString() + Math.random(),
-            type: relData.relationshipType,
-            role: role.trim(),
-            // Blood relationships MUST always be Critical
-            frequency: relData.relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible'),
-            toBeing: targetObject.being || 'ALL', // Note: backend expects "toBeing" (camelCase)
-            toAvatar: targetObject.avatar || 'ALL',
-            toObject: targetObject.object || 'ALL'
-          });
+      // Process each grid row
+      for (const row of relationshipRows) {
+        // Validate row
+        const validationError = validateRow(row);
+        if (validationError) {
+          alert(`Row validation error: ${validationError}`);
+          return;
+        }
+        
+        // Find matching target objects
+        const matchingObjects = findMatchingObjects(row.sector, row.domain, row.country, row.being, row.avatar, row.object);
+        
+        // Parse role words
+        const roleWords = validateRoles(row.roles || '');
+        
+        // For each matching target object and each role word, create a relationship
+        for (const targetObject of matchingObjects) {
+          for (const role of roleWords) {
+            if (!role || role.trim() === '') continue;
+            
+            relationshipsToStore.push({
+              id: Date.now().toString() + Math.random(),
+              type: row.relationshipType,
+              role: role.trim(),
+              frequency: row.relationshipType === 'Blood' ? 'Critical' : row.frequency,
+              toBeing: targetObject.being || 'ALL',
+              toAvatar: targetObject.avatar || 'ALL',
+              toObject: targetObject.object || 'ALL'
+            });
+          }
         }
       }
       
@@ -542,436 +731,116 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setSaving(true);
     try {
-      
-      // Validation 1: Check for improper role format (user-added roles only)
-      for (const [objectId, relData] of Object.entries(relationshipData)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
-
-        if (relData.roles && relData.roles.trim().length > 0) {
-          // Check for improper format - should contain commas for multiple roles
-          const roleText = relData.roles.trim();
-          const hasComma = roleText.includes(',');
-          const hasSemicolon = roleText.includes(';');
-          const hasSpace = roleText.includes(' ') && !hasComma;
-          
-          // If it has multiple words but no comma, it's probably wrong format
-          if (roleText.split(' ').length > 1 && !hasComma && !hasSemicolon) {
-            alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
-            setSaving(false);
-            return;
-          }
-          
-          // If it has semicolon instead of comma
-          if (hasSemicolon && !hasComma) {
-            alert(`Please enter roles in proper comma-separated format for "${targetObject.being} - ${targetObject.avatar} - ${targetObject.object}". Example: "Role1, Role2, Role3"`);
-            setSaving(false);
-            return;
-          }
-        }
-      }
-
-      // Note: All objects are selected by default, so no need to check for deselection
-      // Default role word is always the source object name and is stored separately
-
-      // Process relationships
-      if (isBulkMode) {
-        // BULK MODE: Create relationships from each source object to each target object
-        // All objects are selected by default with default role word = source object name
-        const relationshipsToCreate: Array<{
-          sourceObjectId: string;
-          targetObject: ObjectData;
-          relationshipType: string;
-          roles: string[];
-          frequency: 'Critical' | 'Likely' | 'Possible';
-        }> = [];
-
-        // Collect all relationships to create
-        for (const [objectId, relData] of Object.entries(relationshipData)) {
-          const targetObject = allObjects.find(obj => obj.id === objectId);
-          if (!targetObject) continue;
-
-          const isTargetAlsoSource = sourceObjects.some(so => so.id === objectId);
-
-          // All objects are selected by default
-          // Get user-added roles and combine with default role word for each source
-          const userAddedRoles = validateRoles(relData.roles || '');
-
-          // Determine relationship type based on Intra-Table logic
-          // If target is also a source, use Intra-Table for that source, Inter-Table for others
-          const relationshipType = isTargetAlsoSource ? 'Intra-Table' : (relData.relationshipType || 'Inter-Table');
-
-          // For each source object, create relationships to this target
-          for (const sourceObject of sourceObjects) {
-            const sourceIsTarget = sourceObject.id === objectId;
-            // For self-relationships, always use Intra-Table
-            const finalType = sourceIsTarget ? 'Intra-Table' : relationshipType;
-            
-            // Default role word is the source object name
-            const defaultRoleWord = sourceObject.object || '';
-            
-            // Combine default role word with user-added roles (excluding default if it appears in user roles)
-            const allRoles = [defaultRoleWord, ...userAddedRoles.filter(role => role.toLowerCase() !== defaultRoleWord.toLowerCase())];
-
-            relationshipsToCreate.push({
-              sourceObjectId: sourceObject.id,
-              targetObject,
-              relationshipType: finalType,
-              roles: allRoles,
-              // Blood relationships MUST always be Critical
-              frequency: finalType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible')
-            });
-          }
-        }
-
-        if (relationshipsToCreate.length === 0) {
-          alert('No relationships to create.');
+      // NEW GRID-BASED SAVE LOGIC
+      // Validate all rows (exclude each row when checking for duplicates)
+      for (const row of relationshipRows) {
+        const validationError = validateRow(row, row.id);
+        if (validationError) {
+          alert(`Row validation error: ${validationError}`);
           setSaving(false);
           return;
         }
-
-        // Use bulk API endpoint if available, otherwise create individually
-        try {
-          await apiService.bulkCreateRelationships(relationshipsToCreate);
-        } catch (error: any) {
-          console.error('Bulk relationship creation error:', error);
-          // If bulk endpoint doesn't exist or fails, fall back to individual creation
-          if (error.message?.includes('404') || error.message?.includes('not found')) {
-            // Fall back to individual creation
-            for (const rel of relationshipsToCreate) {
-              for (const role of rel.roles) {
-                if (!role || role.trim() === '') continue; // Skip empty roles
-                
-                try {
-                  await apiService.createRelationship(rel.sourceObjectId, {
-                    type: rel.relationshipType,
-                    role: role.trim(),
-                    frequency: rel.frequency || 'Possible',
-                    toBeing: rel.targetObject.being,
-                    toAvatar: rel.targetObject.avatar,
-                    toObject: rel.targetObject.object
-                  });
-                } catch (err: any) {
-                  // Check if it's a duplicate error - ignore duplicates
-                  if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
-                    console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
-                  } else {
-                    throw err;
-                  }
-                }
-              }
-            }
-          } else {
-            // Log the full error for debugging
-            console.error('Full error details:', error);
-            throw error;
-          }
-        }
-      } else {
-        // SINGLE MODE: All objects are selected by default
-        // Users cannot delete relationships - only update properties and add new role words
-        // 
-        // DEFAULT ROLE WORD BEHAVIOR:
-        // - Each object has a default role word relationship to all other objects (including itself)
-        // - Default role word = source object name (e.g., "Company" for Company object)
-        // - Default role word relationship is created behind the scenes, not shown in UI
-        // - Default role word relationship is NEVER deleted or recreated
-        // - When type/frequency is changed, ALL relationships to that target are updated (including default)
-        // - New role words are ADDITIONAL relationships on top of the default
-        const selectedObject = sourceObjects[0];
-        const defaultRoleWord = selectedObject.object || '';
+      }
+      
+      // Process relationships from grid rows
+      const relationshipsToCreate: Array<{
+        sourceObjectId: string;
+        targetObject: ObjectData;
+        relationshipType: string;
+        roles: string[];
+        frequency: 'Critical' | 'Likely' | 'Possible';
+      }> = [];
+      
+      // For each grid row, find matching target objects and create relationships
+      for (const row of relationshipRows) {
+        const matchingObjects = findMatchingObjects(row.sector, row.domain, row.country, row.being, row.avatar, row.object);
         
-        // Get all existing relationships to check which role words already exist
-        let existingRelationships: any[] = [];
-        try {
-          const relationshipsResponse = await apiService.getObjectRelationships(selectedObject.id) as any;
-          existingRelationships = relationshipsResponse.relationshipsList || [];
-        } catch (error) {
-          console.error('Failed to fetch existing relationships:', error);
+        if (matchingObjects.length === 0) {
+          console.warn(`No matching objects found for row: ${row.sector}, ${row.domain}, ${row.country}, ${row.being}, ${row.avatar}, ${row.object}`);
+          continue;
         }
         
-        // Check if initial state is available - if not, skip all updates (nothing has changed)
-        const hasInitialState = Object.keys(initialRelationshipData).length > 0;
-        const initialKeysCount = Object.keys(initialRelationshipData).length;
-        const currentKeysCount = Object.keys(relationshipData).length;
-        console.log(`🔍 Initial state check: hasInitialState=${hasInitialState}, initialKeys=${initialKeysCount}, currentKeys=${currentKeysCount}`);
+        // Parse role words from the row
+        const roleWords = validateRoles(row.roles || '');
         
-        // If no initial state, something went wrong - don't update anything
-        if (!hasInitialState || initialKeysCount === 0) {
-          console.warn('⚠️ No initial state found - skipping all updates to prevent unintended changes');
-          // Don't show alert - just skip updates and only create new relationships
-          console.log('⚠️ Proceeding with relationship creation only (no updates)');
+        if (roleWords.length === 0) {
+          console.warn(`No role words specified for row: ${row.sector}, ${row.domain}, ${row.country}, ${row.being}, ${row.avatar}, ${row.object}`);
+          continue;
         }
         
-        // Step 1: Only update relationships where type/frequency actually changed
-        const relationshipsToUpdate: Array<{
-          targetObject: ObjectData;
-          relationshipType: string;
-          frequency: 'Critical' | 'Likely' | 'Possible';
-        }> = [];
-        
-        for (const [objectId, relData] of Object.entries(relationshipData)) {
-          const targetObject = allObjects.find(obj => obj.id === objectId);
-          if (!targetObject) continue;
-
-          // Get initial state for this object
-          const initialRelData = initialRelationshipData[objectId];
+        // For each source object and each matching target object, create relationships for each role word
+        for (const sourceObject of sourceObjects) {
+          const sourceObjectName = sourceObject.object || '';
           
-          // If no initial state, skip updates (this shouldn't happen, but be safe)
-          if (!initialRelData) {
-            console.log(`⚠️ No initial state for ${targetObject.object}, skipping update`);
-            continue;
-          }
-
-          // All objects are selected by default - always process them
-          const isSelf = objectId === selectedObject.id;
+          // Determine relationship type
+          const isSelf = row.object === sourceObjectName;
+          const relationshipType = isSelf ? 'Intra-Table' : row.relationshipType;
           
-          // Determine relationship type - self-relationships must be Intra-Table
-          const relationshipType = isSelf ? 'Intra-Table' : relData.relationshipType;
+          // Determine frequency
+          const frequency = relationshipType === 'Blood' ? 'Critical' : row.frequency;
           
-          // Blood relationships MUST always be Critical
-          const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
-          
-          // Check if type or frequency changed
-          // Normalize initial values the same way we normalize current values
-          const initialType = isSelf ? 'Intra-Table' : (initialRelData.relationshipType || 'Inter-Table');
-          const initialTypeNormalized = initialType === 'Blood' ? 'Blood' : (isSelf ? 'Intra-Table' : initialType);
-          const initialFrequencyNormalized = initialTypeNormalized === 'Blood' ? 'Critical' : (initialRelData.frequency || 'Possible');
-          
-          // Normalize current values
-          const currentTypeNormalized = relationshipType;
-          const currentFrequencyNormalized = frequency;
-          
-          const typeChanged = currentTypeNormalized !== initialTypeNormalized;
-          const frequencyChanged = currentFrequencyNormalized !== initialFrequencyNormalized;
-          
-          // Only update if something actually changed
-          if (typeChanged || frequencyChanged) {
-            console.log(`📝 Change detected for ${targetObject.object}: type=${typeChanged ? `${initialTypeNormalized}→${currentTypeNormalized}` : 'unchanged'}, freq=${frequencyChanged ? `${initialFrequencyNormalized}→${currentFrequencyNormalized}` : 'unchanged'}`);
-            relationshipsToUpdate.push({
+          for (const targetObject of matchingObjects) {
+            relationshipsToCreate.push({
+              sourceObjectId: sourceObject.id,
               targetObject,
               relationshipType,
+              roles: roleWords, // Only additional role words (not default)
               frequency
             });
-          } else {
-            // Log that no change was detected (for debugging)
-            if (objectId === selectedObject.id || targetObject.object === 'Company') {
-              console.log(`✓ No change for ${targetObject.object}: type=${currentTypeNormalized}, freq=${currentFrequencyNormalized} (matches initial)`);
-            }
           }
         }
-        
-        console.log(`🔍 Total relationships to update: ${relationshipsToUpdate.length}`);
-        
-        // Update only changed relationships (skip if no initial state)
-        if (hasInitialState && initialKeysCount > 0) {
-          for (const update of relationshipsToUpdate) {
-            try {
-              await apiService.updateRelationshipsToTarget(
-                selectedObject.id,
-                update.targetObject.being || 'ALL',
-                update.targetObject.avatar || 'ALL',
-                update.targetObject.object || 'ALL',
-                update.relationshipType,
-                update.frequency
-              );
-              console.log(`✅ Updated relationships to ${update.targetObject.object} with type=${update.relationshipType}, frequency=${update.frequency}`);
-            } catch (error) {
-              console.error(`❌ Failed to update relationships to ${update.targetObject.object}:`, error);
-              // Continue to next target even if update fails
+      }
+      
+      if (relationshipsToCreate.length === 0) {
+        alert('No additional relationships to create. The grid is empty.');
+        setSaving(false);
+        return;
+      }
+      
+      // Create relationships using bulk API or individual API calls
+      try {
+        await apiService.bulkCreateRelationships(relationshipsToCreate);
+      } catch (error: any) {
+        console.error('Bulk relationship creation error:', error);
+        // Fall back to individual creation
+        if (error.message?.includes('404') || error.message?.includes('not found')) {
+          for (const rel of relationshipsToCreate) {
+            for (const role of rel.roles) {
+              if (!role || role.trim() === '') continue;
+              
+              try {
+                await apiService.createRelationship(rel.sourceObjectId, {
+                  type: rel.relationshipType,
+                  role: role.trim(),
+                  frequency: rel.frequency || 'Possible',
+                  toBeing: rel.targetObject.being,
+                  toAvatar: rel.targetObject.avatar,
+                  toObject: rel.targetObject.object
+                });
+              } catch (err: any) {
+                if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
+                  console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
+                } else {
+                  throw err;
+                }
+              }
             }
           }
         } else {
-          console.log(`⏭️ Skipping relationship updates (no initial state available)`);
-        }
-        
-        // Step 2: Collect only NEW role words that were actually added (compare with initial state)
-        const relationshipsToCreate: Array<{
-          sourceObjectId: string;
-          targetObject: ObjectData;
-          relationshipType: string;
-          roles: string[];
-          frequency: 'Critical' | 'Likely' | 'Possible';
-        }> = [];
-        
-        for (const [objectId, relData] of Object.entries(relationshipData)) {
-          const targetObject = allObjects.find(obj => obj.id === objectId);
-          if (!targetObject) continue;
-
-          // Get initial state for this object
-          const initialRelData = initialRelationshipData[objectId];
-          if (!initialRelData) continue; // Skip if no initial data
-
-          // All objects are selected by default - always process them
-          const isSelf = objectId === selectedObject.id;
-          
-          // Determine relationship type - self-relationships must be Intra-Table
-          const relationshipType = isSelf ? 'Intra-Table' : relData.relationshipType;
-          
-          // Blood relationships MUST always be Critical
-          const frequency = relationshipType === 'Blood' ? 'Critical' : (relData.frequency || 'Possible');
-          
-          // Get existing role words for relationships to this target (from database)
-          const existingRolesForTarget = existingRelationships
-            .filter((rel: any) => 
-              rel.toBeing === targetObject.being && 
-              rel.toAvatar === targetObject.avatar && 
-              rel.toObject === targetObject.object
-            )
-            .map((rel: any) => (rel.role || '').trim().toLowerCase())
-            .filter((role: string) => role.length > 0);
-          
-          // Get current user-added roles
-          const currentUserAddedRoles = validateRoles(relData.roles || '');
-          const currentUserAddedRolesLower = currentUserAddedRoles.map(r => r.toLowerCase());
-          
-          // Get initial user-added roles (from when modal opened)
-          const initialUserAddedRoles = validateRoles(initialRelData.roles || '');
-          const initialUserAddedRolesLower = initialUserAddedRoles.map(r => r.toLowerCase());
-          
-          // Find role words to DELETE (in initial state but not in current state)
-          // CRITICAL: Never delete the default role word - it should always exist
-          const rolesToDelete = initialUserAddedRoles.filter(role => {
-            const roleLower = role.toLowerCase();
-            const defaultRoleLower = defaultRoleWord.toLowerCase();
-            
-            // CRITICAL: Never delete default role word
-            if (roleLower === defaultRoleLower) {
-              return false;
-            }
-            
-            // Delete if it was in initial state but is not in current state
-            return !currentUserAddedRolesLower.includes(roleLower);
-          });
-          
-          // Find NEW role words that were added (not in initial state and not in database)
-          // CRITICAL: Never include the default role word - it already exists and should never be created/deleted
-          // The default role word relationship is managed separately and always exists for all objects
-          const newRoles = currentUserAddedRoles.filter(role => {
-            const roleLower = role.toLowerCase();
-            const defaultRoleLower = defaultRoleWord.toLowerCase();
-            
-            // CRITICAL: Skip if it's the default role word - this relationship already exists and should never be recreated
-            if (roleLower === defaultRoleLower) {
-              console.log(`⚠️ Skipping default role word "${role}" for ${targetObject.object} - it already exists and should not be recreated`);
-              return false;
-            }
-            
-            // Must be new (not in initial state) and not already in database
-            const isNew = !initialUserAddedRolesLower.includes(roleLower);
-            const notInDatabase = !existingRolesForTarget.includes(roleLower);
-            
-            if (isNew && notInDatabase) {
-              console.log(`➕ New role detected for ${targetObject.object}: "${role}" (not in initial: ${!initialUserAddedRolesLower.includes(roleLower)}, not in DB: ${!existingRolesForTarget.includes(roleLower)})`);
-            }
-            
-            return isNew && notInDatabase;
-          });
-          
-          // Delete old role words that were replaced
-          if (rolesToDelete.length > 0) {
-            console.log(`🗑️ Deleting ${rolesToDelete.length} old role(s) for ${targetObject.object}: ${rolesToDelete.join(', ')}`);
-            // Find relationships with these role words and delete them
-            const relationshipsToDelete = existingRelationships.filter((rel: any) => 
-              rel.toBeing === targetObject.being && 
-              rel.toAvatar === targetObject.avatar && 
-              rel.toObject === targetObject.object &&
-              rolesToDelete.some(role => (rel.role || '').trim().toLowerCase() === role.toLowerCase())
-            );
-            
-            for (const rel of relationshipsToDelete) {
-              try {
-                // CRITICAL: Never delete default role word relationship
-                const relRole = (rel.role || '').trim().toLowerCase();
-                if (relRole === defaultRoleWord.toLowerCase()) {
-                  console.log(`⚠️ Skipping deletion of default role word relationship for ${targetObject.object}`);
-                  continue;
-                }
-                
-                if (rel.id) {
-                  await apiService.deleteRelationship(selectedObject.id, rel.id);
-                  console.log(`✅ Deleted relationship with role "${rel.role}" for ${targetObject.object}`);
-                }
-              } catch (error) {
-                console.error(`❌ Failed to delete relationship with role "${rel.role}" for ${targetObject.object}:`, error);
-                // Continue even if deletion fails
-              }
-            }
-          }
-          
-          // If there are new roles to create, add them to the batch
-          if (newRoles.length > 0) {
-            console.log(`📝 Adding ${newRoles.length} new role(s) for ${targetObject.object}: ${newRoles.join(', ')}`);
-            relationshipsToCreate.push({
-              sourceObjectId: selectedObject.id,
-              targetObject,
-              relationshipType,
-              roles: newRoles,
-              frequency
-            });
-          }
-        }
-        
-        // Step 3: Bulk create all new relationships at once
-        console.log(`🔍 Total relationships to create: ${relationshipsToCreate.length}`);
-        if (relationshipsToCreate.length > 0) {
-          try {
-            await apiService.bulkCreateRelationships(relationshipsToCreate);
-            console.log(`✅ Successfully created new relationships via bulk operation for ${relationshipsToCreate.length} target(s)`);
-          } catch (error: any) {
-            console.error('❌ Bulk relationship creation error:', error);
-            // If bulk endpoint fails, fall back to individual creation
-            if (error.message?.includes('404') || error.message?.includes('not found')) {
-              // Fall back to individual creation for each new role
-              for (const rel of relationshipsToCreate) {
-                for (const role of rel.roles) {
-                  try {
-                    await apiService.createRelationship(rel.sourceObjectId, {
-                      type: rel.relationshipType,
-                      role: role.trim(),
-                      frequency: rel.frequency,
-                      toBeing: rel.targetObject.being,
-                      toAvatar: rel.targetObject.avatar,
-                      toObject: rel.targetObject.object
-                    });
-                  } catch (err: any) {
-                    if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
-                      console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
-                    } else {
-                      console.error(`Failed to create relationship: ${err}`);
-                    }
-                  }
-                }
-              }
-            } else {
-              throw error;
-            }
-          }
+          throw error;
         }
       }
-
-      // Call the callback to refresh main grid data FIRST (before closing)
-      // This ensures the main grid is updated with new relationship counts
+      
+      // Call the callback to refresh main data
       if (onSave) {
-        onSave();
+        await onSave();
       }
       
-      // Refresh the data after saving (for single mode, to show updated relationships)
-      // In bulk mode, we close immediately since we're not editing existing relationships
-      if (!isBulkMode) {
-        await initializeRelationshipData();
-      }
-      
-      alert(isBulkMode ? 'Bulk relationships created successfully!' : 'Relationships updated successfully!');
+      alert('Additional relationships created successfully!');
       onClose();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to save relationships:', error);
-      const errorMessage = error.message || 'Failed to save relationships. Please try again.';
-      if (errorMessage.includes('Duplicate')) {
-        alert(`Duplicate relationship detected: ${errorMessage}`);
-      } else {
-        alert(errorMessage);
-      }
+      alert('Failed to save relationships. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -1263,36 +1132,212 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             </div>
           ) : (
             <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
-              <DataGrid
-                columns={relationshipColumns}
-                data={gridData}
-                onRowSelect={(rows) => {
-                  // Update selected row IDs for bulk editing
-                  setSelectedRowIds(new Set(rows.map((r: any) => r.id)));
-                }}
-                selectedRows={gridData.filter(row => selectedRowIds.has(row.id))}
-                affectedIds={new Set()}
-                deletedDriverType={null}
-                customSortRules={customSortRules}
-                onClearCustomSort={() => {
-                  // Reset to default sort when user clears custom sort
-                  setCustomSortRules([
-                    { id: '1', column: 'being', sortOn: 'being', order: 'asc' },
-                    { id: '2', column: 'avatar', sortOn: 'avatar', order: 'asc' },
-                    { id: '3', column: 'object', sortOn: 'object', order: 'asc' }
-                  ]);
-                }}
-                onColumnSort={() => {}}
-                isCustomSortActive={customSortRules.length > 0}
-                isColumnSortActive={false}
-                highlightCurrentObject={true}
-                showActionsColumn={false}
-                relationshipData={relationshipData}
-                onRelationshipRowClick={handleRowClick}
-                selectionMode="checkbox"
-                isPredefinedSortEnabled={isRelationshipOrderEnabled}
-                predefinedSortOrder={objectsOrderSortOrder}
-              />
+              {/* NEW GRID-BASED UI */}
+              <div className="p-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-ag-dark-text">Additional Relationships</h3>
+                  <button
+                    onClick={handleAddRow}
+                    className="px-3 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Row
+                  </button>
+                </div>
+                
+                {/* Grid Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-ag-dark-border">
+                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>S</th>
+                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>D</th>
+                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>C</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Being</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Avatar</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Object</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface">Relationship Type</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface">Frequency</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ minWidth: '300px' }}>Roles</th>
+                        <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {relationshipRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} className="px-3 py-8 text-center text-ag-dark-text-secondary">
+                            No additional relationships. Click "Add Row" to create one.
+                          </td>
+                        </tr>
+                      ) : (
+                        relationshipRows.map((row) => {
+                          const sourceObjectName = sourceObjects[0]?.object || '';
+                          const isSelf = row.object === sourceObjectName;
+                          const isBlood = row.relationshipType === 'Blood';
+                          
+                          return (
+                            <tr key={row.id} className="border-b border-ag-dark-border hover:bg-ag-dark-surface">
+                              {/* Sector */}
+                              <td className="px-2 py-2">
+                                <select
+                                  value={row.sector}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'sector', e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
+                                  style={{ width: '60px' }}
+                                >
+                                  <option value="ALL">ALL</option>
+                                  {distinctSectors.map(s => (
+                                    <option key={s} value={s}>{s}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Domain */}
+                              <td className="px-2 py-2">
+                                <select
+                                  value={row.domain}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'domain', e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
+                                  style={{ width: '60px' }}
+                                >
+                                  <option value="ALL">ALL</option>
+                                  {distinctDomains.map(d => (
+                                    <option key={d} value={d}>{d}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Country */}
+                              <td className="px-2 py-2">
+                                <select
+                                  value={row.country}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'country', e.target.value)}
+                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
+                                  style={{ width: '60px' }}
+                                >
+                                  <option value="ALL">ALL</option>
+                                  {distinctCountries.map(c => (
+                                    <option key={c} value={c}>{c}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Being */}
+                              <td className="px-3 py-2" style={{ width: '150px' }}>
+                                <select
+                                  value={row.being}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'being', e.target.value)}
+                                  className="w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
+                                >
+                                  <option value="">Select Being</option>
+                                  {distinctBeings.map(b => (
+                                    <option key={b} value={b}>{b}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Avatar */}
+                              <td className="px-3 py-2" style={{ width: '150px' }}>
+                                <select
+                                  value={row.avatar}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'avatar', e.target.value)}
+                                  disabled={!row.being}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${
+                                    !row.being ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                >
+                                  <option value="">{row.being ? 'Select Avatar' : 'Select Being first'}</option>
+                                  {row.being && getAvatarsForBeing(row.being).map(a => (
+                                    <option key={a} value={a}>{a}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Object */}
+                              <td className="px-3 py-2" style={{ width: '150px' }}>
+                                <select
+                                  value={row.object}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'object', e.target.value)}
+                                  disabled={!row.being || !row.avatar}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${
+                                    !row.being || !row.avatar ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                >
+                                  <option value="">{row.being && row.avatar ? 'Select Object' : 'Select Avatar First'}</option>
+                                  {row.being && row.avatar && getObjectsForBeingAndAvatar(row.being, row.avatar).map(o => (
+                                    <option key={o} value={o}>{o}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              
+                              {/* Relationship Type */}
+                              <td className="px-3 py-2">
+                                <select
+                                  value={row.relationshipType}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'relationshipType', e.target.value)}
+                                  disabled={isSelf}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${
+                                    isSelf ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                >
+                                  {isSelf ? (
+                                    <option value="Intra-Table">Intra-Table</option>
+                                  ) : (
+                                    <>
+                                      <option value="Inter-Table">Inter-Table</option>
+                                      <option value="Blood">Blood</option>
+                                      <option value="Subtype">Subtype</option>
+                                    </>
+                                  )}
+                                </select>
+                              </td>
+                              
+                              {/* Frequency */}
+                              <td className="px-3 py-2">
+                                <select
+                                  value={row.frequency}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'frequency', e.target.value)}
+                                  disabled={isBlood}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${
+                                    isBlood ? 'opacity-50 cursor-not-allowed' : ''
+                                  }`}
+                                >
+                                  <option value="Critical">Critical</option>
+                                  <option value="Likely">Likely</option>
+                                  <option value="Possible">Possible</option>
+                                </select>
+                              </td>
+                              
+                              {/* Roles */}
+                              <td className="px-3 py-2">
+                                <input
+                                  type="text"
+                                  value={row.roles}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'roles', e.target.value)}
+                                  placeholder="Comma-separated role words"
+                                  className="w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent"
+                                  style={{ minWidth: '300px' }}
+                                />
+                              </td>
+                              
+                              {/* Actions */}
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleRemoveRow(row.id)}
+                                  className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                                  title="Remove row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -1348,65 +1393,26 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         selectedObjects={isBulkMode ? sourceObjects : []}
         allObjects={allObjects}
         isBulkMode={isBulkMode}
+        existingRows={relationshipRows}
         onProcessed={(processedRelationships: ProcessedRelationship[]) => {
           setIsRelationshipCsvUploadOpen(false);
-          // Apply the processed relationships to the modal
-          // Convert ProcessedRelationship[] to InitialRelationship[] format
-          const initialRels: InitialRelationship[] = processedRelationships.map(rel => ({
-            targetObject: rel.targetObject,
+          
+          // Convert ProcessedRelationship[] to RelationshipGridRow[] and merge with existing rows
+          const newRows: RelationshipGridRow[] = processedRelationships.map(rel => ({
+            id: `row-${Date.now()}-${Math.random()}`,
+            sector: rel.sector,
+            domain: rel.domain,
+            country: rel.country,
+            being: rel.being,
+            avatar: rel.avatar,
+            object: rel.object,
             relationshipType: rel.relationshipType,
-            role: rel.role
+            frequency: rel.frequency,
+            roles: rel.roles
           }));
           
-          // Update relationship data with CSV uploaded relationships
-          // Ensure all objects are initialized first
-          const updatedData: Record<string, RelationshipData> = { ...relationshipData };
-          
-          // Initialize any missing objects
-          for (const obj of allObjects) {
-            if (!updatedData[obj.id]) {
-              const isSelf = obj.id === selectedObject?.id;
-              updatedData[obj.id] = {
-                objectId: obj.id,
-                isSelected: false,
-                relationshipType: isSelf ? 'Intra-Table' : 'Inter-Table',
-                roles: '',
-                hasMixedTypes: false
-              };
-            }
-          }
-          
-          // Apply CSV uploaded relationships
-          for (const rel of processedRelationships) {
-            const targetObjId = rel.targetObject.id;
-            const existingData = updatedData[targetObjId];
-            
-            if (existingData) {
-              // If relationship already exists, append roles
-              const existingRoles = existingData.roles ? existingData.roles.split(', ').filter(Boolean) : [];
-              const newRoles = rel.role ? [rel.role] : [];
-              const combinedRoles = [...new Set([...existingRoles, ...newRoles])].join(', ');
-              
-              updatedData[targetObjId] = {
-                ...existingData,
-                isSelected: true,
-                relationshipType: rel.relationshipType,
-                roles: combinedRoles,
-                hasMixedTypes: false
-              };
-            } else {
-              // New relationship (shouldn't happen if we initialized above, but just in case)
-              updatedData[targetObjId] = {
-                objectId: targetObjId,
-                isSelected: true,
-                relationshipType: rel.relationshipType,
-                roles: rel.role || '',
-                hasMixedTypes: false
-              };
-            }
-          }
-          
-          setRelationshipData(updatedData);
+          // Add new rows to existing rows
+          setRelationshipRows(prev => [...prev, ...newRows]);
         }}
       />
     </div>

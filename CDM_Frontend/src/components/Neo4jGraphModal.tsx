@@ -609,9 +609,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
       top: '3rem', 
       left: 0, 
       right: 0, 
-      bottom: 0,
+      bottom: '1rem',
       width: '100%',
-      height: 'calc(100vh - 3rem)'
+      height: 'calc(100vh - 4rem)'
     }}>
       {/* Modal Header */}
       <div className="flex items-center justify-between p-4 border-b border-ag-dark-border flex-shrink-0">
@@ -759,9 +759,9 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
               </div>
             )}
 
-            {/* Zoom Controls - Positioned in bottom-right corner */}
+            {/* Zoom Controls - Positioned in bottom-right corner, above footer */}
             {!isLoading && !showFallback && (
-              <div className={`absolute bottom-4 flex flex-col gap-2 z-[100] pointer-events-auto transition-all ${
+              <div className={`absolute bottom-20 flex flex-col gap-2 z-[100] pointer-events-auto transition-all ${
                 showDetailsPanel ? 'right-[22rem]' : 'right-4'
               }`}>
                 <button

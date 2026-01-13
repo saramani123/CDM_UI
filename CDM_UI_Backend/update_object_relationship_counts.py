@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""
+Script to update relationship counts for all objects in Neo4j.
+This script counts all RELATES_TO relationships for each object and updates
+the 'relationships' property on the object node.
+
+IMPORTANT: This script is designed for PRODUCTION use.
+Make sure you have the correct environment variables set for production Neo4j.
+
+Usage:
+    python update_object_relationship_counts.py [--dry-run]
+    
+    --dry-run: Show what would be updated without making changes
+"""
+
+import os
+import sys
+from neo4j import GraphDatabase
+from dotenv import load_dotenv
+
+# Load environment variables
+if os.getenv("RENDER") is None:  # Not in Render (local development)
+    load_dotenv(".env.dev")
+else:  # In Render (production)
+    pass  # Environment variables are automatically injected by Render
+
+def get_driver():
+    """Get Neo4j driver instance"""
+    uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    username = os.getenv("NEO4J_USERNAME", "neo4j")
+    password = os.getenv("NEO4J_PASSWORD", "password")
+    environment = os.getenv("ENVIRONMENT", "development")
+    instance_name = os.getenv("NEO4J_INSTANCE_NAME", "unknown")
+    
+    print(f"Connecting to Neo4j...")
+    print(f"  Environment: {environment}")
+    print(f"  Instance: {instance_name}")
+    print(f"  URI: {uri}")
+    
+    # For Neo4j Aura, use neo4j+ssc scheme for self-signed certificates
+    working_uri = uri.replace("neo4j+s://", "neo4j+ssc://")
+    
+    driver = GraphDatabase.driver(
+        working_uri,
+        auth=(username, password),
+        max_connection_lifetime=15 * 60,
+        max_connection_pool_size=10,
+        connection_acquisition_timeout=30,
+        connection_timeout=15,
+        keep_alive=True
+    )
+    
+    # Test connection
+    with driver.session() as session:
+        result = session.run("RETURN 1 as test")
+        record = result.single()
+        if record:
+            print(f"✅ Successfully connected to Neo4j!")
+        else:
+            print("❌ Failed to connect to Neo4j")
+            sys.exit(1)
+    
+    return driver
+
+def update_relationship_counts(dry_run=True):
+    """
+    Count all RELATES_TO relationships for each object and update the 'relationships' property.
+    
+    Args:
+        dry_run: If True, only show what would be updated without making changes
+    """
+    driver = get_driver()
+    
+    try:
+        with driver.session() as session:
+            # Get all objects with their current relationship counts
+            print("\n📊 Fetching all objects and their relationship counts...")
+            
+            result = session.run("""
+                MATCH (o:Object)
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                RETURN o.id as object_id, 
+                       o.object as object_name,
+                       COALESCE(o.relationships, 0) as current_count,
+                       count(r) as actual_count
+                ORDER BY o.object
+            """)
+            
+            objects_to_update = []
+            total_objects = 0
+            objects_needing_update = 0
+            
+            for record in result:
+                total_objects += 1
+                object_id = record["object_id"]
+                object_name = record["object_name"]
+                current_count = record["current_count"] or 0
+                actual_count = record["actual_count"] or 0
+                
+                if current_count != actual_count:
+                    objects_needing_update += 1
+                    objects_to_update.append({
+                        "id": object_id,
+                        "name": object_name,
+                        "current": current_count,
+                        "actual": actual_count
+                    })
+            
+            print(f"\n📈 Summary:")
+            print(f"   Total objects: {total_objects}")
+            print(f"   Objects needing update: {objects_needing_update}")
+            
+            if objects_needing_update == 0:
+                print("\n✅ All relationship counts are already correct!")
+                return
+            
+            # Show what will be updated
+            print(f"\n📋 Objects that will be updated:")
+            for obj in objects_to_update[:20]:  # Show first 20
+                print(f"   {obj['name']}: {obj['current']} → {obj['actual']}")
+            if len(objects_to_update) > 20:
+                print(f"   ... and {len(objects_to_update) - 20} more")
+            
+            if dry_run:
+                print("\n🔍 DRY RUN MODE - No changes will be made")
+                print("   Run without --dry-run to apply changes")
+                return
+            
+            # Confirm before proceeding
+            print(f"\n⚠️  About to update {objects_needing_update} objects")
+            response = input("   Continue? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print("   Cancelled.")
+                return
+            
+            # Update relationship counts
+            print("\n🔄 Updating relationship counts...")
+            updated_count = 0
+            errors = []
+            
+            for obj in objects_to_update:
+                try:
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        SET o.relationships = $count
+                    """, object_id=obj["id"], count=obj["actual"])
+                    updated_count += 1
+                    if updated_count % 10 == 0:
+                        print(f"   Updated {updated_count}/{objects_needing_update} objects...")
+                except Exception as e:
+                    error_msg = f"Error updating {obj['name']} ({obj['id']}): {str(e)}"
+                    errors.append(error_msg)
+                    print(f"   ❌ {error_msg}")
+            
+            print(f"\n✅ Update complete!")
+            print(f"   Successfully updated: {updated_count} objects")
+            if errors:
+                print(f"   Errors: {len(errors)}")
+                for error in errors[:5]:
+                    print(f"      {error}")
+                if len(errors) > 5:
+                    print(f"      ... and {len(errors) - 5} more errors")
+            
+            # Verify the update
+            print("\n🔍 Verifying updates...")
+            verification_result = session.run("""
+                MATCH (o:Object)
+                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                WITH o, count(r) as actual_count
+                WHERE o.relationships <> actual_count
+                RETURN count(o) as mismatched_count
+            """).single()
+            
+            mismatched = verification_result["mismatched_count"] if verification_result else 0
+            if mismatched == 0:
+                print("   ✅ All relationship counts are now correct!")
+            else:
+                print(f"   ⚠️  Warning: {mismatched} objects still have mismatched counts")
+                
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+    finally:
+        driver.close()
+        print("\n🔌 Connection closed")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Update relationship counts for all objects")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be updated without making changes"
+    )
+    
+    args = parser.parse_args()
+    
+    print("=" * 60)
+    print("Object Relationship Count Update Script")
+    print("=" * 60)
+    
+    update_relationship_counts(dry_run=args.dry_run)
+    
+    print("\n" + "=" * 60)
+    print("Script completed")
+    print("=" * 60)
+

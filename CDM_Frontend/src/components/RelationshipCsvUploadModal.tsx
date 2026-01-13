@@ -10,18 +10,26 @@ interface RelationshipCsvUploadModalProps {
   allObjects: ObjectData[];
   onProcessed: (validRelationships: ProcessedRelationship[]) => void;
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
+  existingRows?: any[]; // Existing rows in the grid to check for duplicates
 }
 
 export interface ProcessedRelationship {
-  targetObject: ObjectData;
+  sector: string;
+  domain: string;
+  country: string;
+  being: string;
+  avatar: string;
+  object: string;
   relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
-  role: string;
+  frequency: 'Critical' | 'Likely' | 'Possible';
+  roles: string; // Comma-separated role words
 }
 
 interface UploadError {
-  type: 'missing_object' | 'existing_relationship';
+  type: 'missing_object' | 'existing_relationship' | 'validation_error';
   message: string;
   rowData: string[];
+  rowNumber: number;
 }
 
 interface ProcessingResult {
@@ -36,7 +44,8 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
   selectedObjects = [],
   allObjects,
   onProcessed,
-  isBulkMode = false
+  isBulkMode = false,
+  existingRows = []
 }) => {
   // Determine source objects: use selectedObjects if provided (bulk mode), otherwise use selectedObject (single mode)
   const sourceObjects = isBulkMode && selectedObjects.length > 0 
@@ -85,19 +94,20 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
     return false;
   };
 
-  const parseCsv = (csvContent: string): ProcessingResult => {
+  const parseCsv = (csvContent: string, existingRows: any[] = []): ProcessingResult => {
     if (sourceObjects.length === 0) {
-      return { valid: [], errors: [{ type: 'missing_object', message: 'No object(s) selected', rowData: [] }] };
+      return { valid: [], errors: [{ type: 'missing_object', message: 'No object(s) selected', rowData: [], rowNumber: 0 }] };
     }
 
     const lines = csvContent.split('\n').filter(line => line.trim());
     if (lines.length < 2) {
-      return { valid: [], errors: [{ type: 'missing_object', message: 'CSV must contain at least a header row and one data row', rowData: [] }] };
+      return { valid: [], errors: [{ type: 'missing_object', message: 'CSV must contain at least a header row and one data row', rowData: [], rowNumber: 0 }] };
     }
 
     const valid: ProcessedRelationship[] = [];
     const errors: UploadError[] = [];
-    const seenTargets = new Set<string>(); // Track targets we've already added to prevent duplicates
+    const seenTargets = new Map<string, { rowNumber: number; roles: Set<string> }>(); // Track targets and their roles to prevent duplicates
+    const sourceObjectName = sourceObjects[0]?.object || '';
 
     // Skip header row
     for (let i = 1; i < lines.length; i++) {
@@ -122,16 +132,18 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
       }
       values.push(currentValue.trim()); // Add last value
 
-      if (values.length < 8) {
+      if (values.length < 9) {
         errors.push({
           type: 'missing_object',
-          message: `Row ${i + 1}: Insufficient columns (expected 8, found ${values.length})`,
-          rowData: values
+          message: `Row ${i + 1}: Insufficient columns (expected 9, found ${values.length})`,
+          rowData: values,
+          rowNumber: i + 1
         });
         continue;
       }
 
-      const [sector, domain, country, being, avatar, object, relationshipType, role] = values.map(v => v.trim());
+      const [sector, domain, country, being, avatar, object, relationshipType, frequencyStr, role] = values.map(v => v.trim());
+      const rowNumber = i + 1;
 
       // Find matching object
       const targetObject = findMatchingObject(sector, domain, country, being, avatar, object);
@@ -139,85 +151,141 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
       if (!targetObject) {
         errors.push({
           type: 'missing_object',
-          message: `No matching object found for Sector=${sector}, Domain=${domain}, Country=${country}, Being=${being}, Avatar=${avatar}, Object=${object}`,
-          rowData: values
+          message: `Row ${rowNumber}: No matching object found for Sector=${sector}, Domain=${domain}, Country=${country}, Being=${being}, Avatar=${avatar}, Object=${object}`,
+          rowData: values,
+          rowNumber
         });
         continue;
       }
 
       // Check if this target is also one of the source objects (for Intra-Table logic)
-      const isTargetAlsoSource = sourceObjects.some(so => so.id === targetObject.id);
+      const isTargetAlsoSource = sourceObjects.some(so => so.object === object);
       
-      // Check if relationship already exists in this CSV upload
-      const relationshipKey = `${targetObject.id}-${relationshipType}-${role}`;
-      if (seenTargets.has(relationshipKey)) {
+      // ERROR CHECK 1: If object we're configuring relationships for is listed but relationship type is not Intra-Table
+      if (isTargetAlsoSource && relationshipType !== 'Intra-Table') {
         errors.push({
-          type: 'existing_relationship',
-          message: `Row ${i + 1}: Duplicate relationship to ${sector} - ${domain} - ${country} - ${being} - ${avatar} - ${object} already exists in this upload.`,
-          rowData: values
+          type: 'validation_error',
+          message: `Row ${rowNumber}: Object "${object}" is the object being configured, so Relationship Type must be "Intra-Table" (found "${relationshipType}")`,
+          rowData: values,
+          rowNumber
         });
         continue;
       }
 
-      seenTargets.add(relationshipKey);
+      // Parse frequency
+      let frequency: 'Critical' | 'Likely' | 'Possible' = 'Possible';
+      if (frequencyStr === 'Critical' || frequencyStr === 'Likely' || frequencyStr === 'Possible') {
+        frequency = frequencyStr;
+      } else if (frequencyStr) {
+        errors.push({
+          type: 'validation_error',
+          message: `Row ${rowNumber}: Invalid frequency "${frequencyStr}". Must be Critical, Likely, or Possible.`,
+          rowData: values,
+          rowNumber
+        });
+        continue;
+      }
+
+      // ERROR CHECK 2: If relationship type = Blood but frequency is not Critical
+      if (relationshipType === 'Blood' && frequency !== 'Critical') {
+        errors.push({
+          type: 'validation_error',
+          message: `Row ${rowNumber}: Relationship Type "Blood" requires Frequency to be "Critical" (found "${frequency}")`,
+          rowData: values,
+          rowNumber
+        });
+        continue;
+      }
 
       // Validate relationship type
       let finalRelationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
       if (isTargetAlsoSource) {
-        // If target is also a source, it will be Intra-Table (handled in save logic)
-        // But we still validate the CSV type for non-self relationships
-        if (relationshipType === 'Inter-Table' || relationshipType === 'Blood' || relationshipType === 'Subtype' || relationshipType === 'Intra-Table') {
-          // In bulk mode, Intra-Table is only for self-relationships
-          // For other source objects, use the specified type
-          finalRelationshipType = relationshipType === 'Intra-Table' ? 'Inter-Table' : relationshipType;
-        } else {
-          errors.push({
-            type: 'missing_object',
-            message: `Row ${i + 1}: Invalid relationship type "${relationshipType}". Must be Inter-Table, Blood, Subtype, or Intra-Table.`,
-            rowData: values
-          });
-          continue;
-        }
+        finalRelationshipType = 'Intra-Table';
       } else {
-        // Validate relationship type from CSV
         if (relationshipType === 'Inter-Table' || relationshipType === 'Blood' || relationshipType === 'Subtype') {
           finalRelationshipType = relationshipType;
-        } else if (relationshipType === 'Intra-Table') {
-          errors.push({
-            type: 'missing_object',
-            message: `Row ${i + 1}: Intra-Table relationship type is only valid for self-relationships (when target is also a source object).`,
-            rowData: values
-          });
-          continue;
         } else {
           errors.push({
-            type: 'missing_object',
-            message: `Row ${i + 1}: Invalid relationship type "${relationshipType}". Must be Inter-Table, Blood, or Subtype.`,
-            rowData: values
+            type: 'validation_error',
+            message: `Row ${rowNumber}: Invalid relationship type "${relationshipType}". Must be Inter-Table, Blood, or Subtype.`,
+            rowData: values,
+            rowNumber
           });
           continue;
         }
       }
 
-      // Process role - in bulk mode, no default role word (per spec requirement 1)
-      // In single mode, append CSV role to default role (object name)
-      let finalRole: string;
-      if (isBulkMode) {
-        // In bulk mode, use the role from CSV as-is (no default)
-        finalRole = role || '';
-      } else {
-        // In single mode, append CSV role to default role (object name)
-        const defaultRole = sourceObjects[0]?.object || '';
-        const csvRole = role || '';
-        finalRole = csvRole 
-          ? `${defaultRole}, ${csvRole}`.split(', ').filter(r => r.trim()).join(', ')
-          : defaultRole;
+      // Create a key for this object combination
+      const objectKey = `${sector}|${domain}|${country}|${being}|${avatar}|${object}`;
+      
+      // ERROR CHECK 3: If more than one row in CSV has the same object (same combo of s,d,c,being,avatar,object)
+      if (seenTargets.has(objectKey)) {
+        const existing = seenTargets.get(objectKey)!;
+        errors.push({
+          type: 'validation_error',
+          message: `Row ${rowNumber}: Duplicate object combination (S=${sector}, D=${domain}, C=${country}, Being=${being}, Avatar=${avatar}, Object=${object}) already exists at row ${existing.rowNumber}. Please combine role words in a single row.`,
+          rowData: values,
+          rowNumber
+        });
+        continue;
       }
 
+      // Parse role words (comma-separated)
+      const roleWords = role ? role.split(',').map(r => r.trim()).filter(r => r.length > 0) : [];
+      const roleWordsLower = new Set(roleWords.map(r => r.toLowerCase()));
+      
+      // ERROR CHECK 4: If there is more than one of the same role word for one object (not case sensitive)
+      if (roleWords.length !== roleWordsLower.size) {
+        const duplicates: string[] = [];
+        const seen = new Set<string>();
+        for (const r of roleWords) {
+          const lower = r.toLowerCase();
+          if (seen.has(lower)) {
+            duplicates.push(r);
+          }
+          seen.add(lower);
+        }
+        errors.push({
+          type: 'validation_error',
+          message: `Row ${rowNumber}: Duplicate role word(s) found (case-insensitive): ${duplicates.join(', ')}. Please remove duplicates.`,
+          rowData: values,
+          rowNumber
+        });
+        continue;
+      }
+
+      // ERROR CHECK 5: If a row in CSV is the same as a row already on the modal
+      const existingRow = existingRows.find(existing => 
+        existing.sector === sector &&
+        existing.domain === domain &&
+        existing.country === country &&
+        existing.being === being &&
+        existing.avatar === avatar &&
+        existing.object === object
+      );
+
+      if (existingRow) {
+        errors.push({
+          type: 'validation_error',
+          message: `Row ${rowNumber}: This object combination already exists in the grid. Please edit the existing row to add more role words or make changes.`,
+          rowData: values,
+          rowNumber
+        });
+        continue;
+      }
+
+      seenTargets.set(objectKey, { rowNumber, roles: roleWordsLower });
+
       valid.push({
-        targetObject,
+        sector,
+        domain,
+        country,
+        being,
+        avatar,
+        object,
         relationshipType: finalRelationshipType,
-        role: finalRole
+        frequency,
+        roles: roleWords.join(', ')
       });
     }
 
@@ -234,7 +302,7 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
         csv = csv.slice(1);
       }
 
-      const result = parseCsv(csv);
+      const result = parseCsv(csv, existingRows);
       setProcessingResult(result);
       setShowResult(true);
     };
@@ -315,7 +383,8 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
                     { number: 5, name: 'Avatar' },
                     { number: 6, name: 'Object' },
                     { number: 7, name: 'Relationship Type' },
-                    { number: 8, name: 'Role' }
+                    { number: 8, name: 'Frequency' },
+                    { number: 9, name: 'Role' }
                   ].map((column) => (
                     <div
                       key={column.number}
@@ -375,12 +444,11 @@ export const RelationshipCsvUploadModal: React.FC<RelationshipCsvUploadModalProp
                 <p>• First row should contain column headers</p>
                 <p>• Each subsequent row represents one relationship</p>
                 <p>• Columns must be in the exact order shown above</p>
-                <p>• Allowed Relationship Types: Inter-Table, Blood, Subtype{isBulkMode ? ', Intra-Table (for self-relationships)' : ''}</p>
-                {isBulkMode ? (
-                  <p>• Relationship Type for self-relationships (when target is also a source) is automatically set to Intra-Table</p>
-                ) : (
-                  <p>• Relationship Type for self-relationships is automatically set to Intra-Table</p>
-                )}
+                <p>• Allowed Relationship Types: Inter-Table, Blood, Subtype</p>
+                <p>• Relationship Type for self-relationships (same object) must be Intra-Table</p>
+                <p>• Relationship Type "Blood" requires Frequency to be "Critical"</p>
+                <p>• Each object combination (S, D, C, Being, Avatar, Object) can only appear once per CSV</p>
+                <p>• Role words are comma-separated (e.g., "Role1, Role2, Role3")</p>
                 <p className="pt-2 text-ag-dark-text">
                   {isBulkMode 
                     ? `Each row creates relationships from all ${sourceObjects.length} selected source object(s) to the specified target. Ensure all fields match existing objects.`
