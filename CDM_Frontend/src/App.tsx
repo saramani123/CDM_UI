@@ -2707,6 +2707,18 @@ function App() {
           sector: parsedDriver.sector.length > 0 ? parsedDriver.sector[0] : (fullObjectData.sector || ''),
           domain: parsedDriver.domain.length > 0 ? parsedDriver.domain[0] : (fullObjectData.domain || ''),
           country: parsedDriver.country.length > 0 ? parsedDriver.country[0] : (fullObjectData.country || ''),
+          // Ensure is_meme is preserved (map from backend field name)
+          isMeme: (fullObjectData.is_meme ?? fullObjectData.isMeme ?? false),
+          // Preserve relationships and variants lists
+          relationshipsList: fullObjectData.relationshipsList || fullObjectData.relationships || [],
+          variantsList: fullObjectData.variantsList || (fullObjectData.variants || []).map((v: any) => typeof v === 'string' ? { name: v } : v),
+          // Preserve identifier data (structure it properly if needed)
+          identifier: fullObjectData.identifier || (fullObjectData.discreteIds || fullObjectData.compositeIds ? {
+            discreteId: fullObjectData.discreteIds || {},
+            compositeIds: fullObjectData.compositeIds || {}
+          } : undefined),
+          // Store source object ID for cloning variable relationships
+          _sourceObjectId: row.id,
           _isCloned: true,
           _isSaved: false,
           _sourceId: row.id // Keep reference to source for tracking
@@ -2723,24 +2735,24 @@ function App() {
         });
         
         // Insert cloned row immediately below source row
-        const currentData = [...data];
-        const sourceIndex = currentData.findIndex(item => item.id === row.id);
-        if (sourceIndex !== -1) {
-          currentData.splice(sourceIndex + 1, 0, clonedObject);
-          setData(currentData);
-          
-          // Auto-select the cloned row (single selection to prevent bulk edit mode)
-          setSelectedRowForMetadata(clonedObject);
-          setSelectedRows([clonedObject]);
-          
-          console.log('🧬 Inserted cloned object at index:', sourceIndex + 1, 'new length:', currentData.length);
-        } else {
-          console.error('🧬 Source object not found in data, cannot insert clone');
-          // Fallback: just add to the end
-          setData(prev => [...prev, clonedObject]);
-          setSelectedRowForMetadata(clonedObject);
-          setSelectedRows([clonedObject]);
-        }
+        // Use functional update to ensure we're working with latest state
+        setData(prevData => {
+          const currentData = [...prevData];
+          const sourceIndex = currentData.findIndex(item => item.id === row.id);
+          if (sourceIndex !== -1) {
+            currentData.splice(sourceIndex + 1, 0, clonedObject);
+            console.log('🧬 Inserted cloned object at index:', sourceIndex + 1, 'new length:', currentData.length);
+            return currentData;
+          } else {
+            console.error('🧬 Source object not found in data, cannot insert clone');
+            // Fallback: just add to the end
+            return [...prevData, clonedObject];
+          }
+        });
+        
+        // Auto-select the cloned row (single selection to prevent bulk edit mode)
+        setSelectedRowForMetadata(clonedObject);
+        setSelectedRows([clonedObject]);
       } else if (activeTab === 'variables') {
         // Get relationships for the variable (backend doesn't have GET /variables/{id})
         let objectRelationshipsList: any[] = [];
@@ -2759,7 +2771,19 @@ function App() {
           id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
           variable: '', // Clear variable name - user must provide new name
           name: '', // Also clear name field if it exists
+          // Ensure all fields are preserved
+          isMeme: row.isMeme ?? row.is_meme ?? false,
+          isGroupKey: row.isGroupKey ?? row.is_group_key ?? false,
+          relevance: row.relevance || '',
+          validation: row.validation || '',
+          formatI: row.formatI || '',
+          formatII: row.formatII || '',
+          gType: row.gType || '',
+          default: row.default || '',
+          graph: row.graph || 'Y',
+          status: row.status || 'Active',
           objectRelationshipsList: objectRelationshipsList, // Include relationships
+          variationsList: row.variationsList || [],
           _isCloned: true,
           _isSaved: false,
           _sourceId: row.id // Keep reference to source for tracking
@@ -2774,25 +2798,26 @@ function App() {
         });
         
         // Insert cloned row immediately below source row
-        const currentData = [...variableData];
-        const sourceIndex = currentData.findIndex(item => item.id === row.id);
-        console.log('🧬 Cloning variable - sourceIndex:', sourceIndex, 'currentData length:', currentData.length);
-        if (sourceIndex !== -1) {
-          currentData.splice(sourceIndex + 1, 0, clonedVariable);
-          console.log('🧬 Inserted cloned variable at index:', sourceIndex + 1, 'new length:', currentData.length);
-          console.log('🧬 Cloned variable:', clonedVariable);
-          setVariableData(currentData);
-          
-          // Auto-select the cloned row (single selection to prevent bulk edit mode)
-          setSelectedRowForMetadata(clonedVariable);
-          setSelectedRows([clonedVariable]);
-        } else {
-          console.error('🧬 Source variable not found in variableData, cannot insert clone');
-          // Fallback: just add to the end
-          setVariableData(prev => [...prev, clonedVariable]);
-          setSelectedRowForMetadata(clonedVariable);
-          setSelectedRows([clonedVariable]);
-        }
+        // Use functional update to ensure we're working with latest state
+        setVariableData(prevData => {
+          const currentData = [...prevData];
+          const sourceIndex = currentData.findIndex(item => item.id === row.id);
+          console.log('🧬 Cloning variable - sourceIndex:', sourceIndex, 'currentData length:', currentData.length);
+          if (sourceIndex !== -1) {
+            currentData.splice(sourceIndex + 1, 0, clonedVariable);
+            console.log('🧬 Inserted cloned variable at index:', sourceIndex + 1, 'new length:', currentData.length);
+            console.log('🧬 Cloned variable:', clonedVariable);
+            return currentData;
+          } else {
+            console.error('🧬 Source variable not found in variableData, cannot insert clone');
+            // Fallback: just add to the end
+            return [...prevData, clonedVariable];
+          }
+        });
+        
+        // Auto-select the cloned row (single selection to prevent bulk edit mode)
+        setSelectedRowForMetadata(clonedVariable);
+        setSelectedRows([clonedVariable]);
       }
     } catch (error) {
       console.error('🧬 Failed to clone:', error);
@@ -3456,12 +3481,50 @@ function App() {
               apiObjectData.identifier = selectedRowForMetadata.identifier;
             }
             
-            // Create new object via API (this will clone relationships and variants)
+            // Include is_meme if present
+            if (selectedRowForMetadata.isMeme !== undefined) {
+              apiObjectData.is_meme = selectedRowForMetadata.isMeme;
+            }
+            
+            // Get variable IDs from source object to clone HAS_SPECIFIC_VARIABLE relationships
+            const sourceObjectId = selectedRowForMetadata._sourceObjectId || selectedRowForMetadata._sourceId;
+            let variableIds: string[] = [];
+            if (sourceObjectId) {
+              try {
+                // Get source object data which now includes variableIds
+                const sourceObjectData = await apiService.getObject(sourceObjectId);
+                variableIds = sourceObjectData.variableIds || [];
+                console.log('🧬 Source object variableIds:', variableIds);
+                console.log('🧬 Cloning variable relationships:', variableIds.length, 'variables');
+                
+                // Also check if variables count is available
+                if (sourceObjectData.variables && sourceObjectData.variables > 0 && variableIds.length === 0) {
+                  console.warn('⚠️ Source object has', sourceObjectData.variables, 'variables but variableIds is empty');
+                }
+              } catch (varError) {
+                console.error('Failed to get variable IDs from source object:', varError);
+                // Continue without variable relationships
+              }
+            }
+            
+            // Include variable IDs in the create request
+            if (variableIds.length > 0) {
+              apiObjectData.variableIds = variableIds;
+              console.log('🧬 Including variableIds in create request:', variableIds);
+            } else {
+              console.warn('⚠️ No variableIds to clone');
+            }
+            
+            // Create new object via API (this will clone relationships, variants, and variable relationships)
             const createdObject = await createObject(apiObjectData);
             const newObjectId = createdObject.id;
             
             // Remove the cloned row from local state immediately
             setData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
+            
+            // Clear loading state before refresh
+            setIsLoading(false);
+            isManuallyManagingLoadingRef.current = false;
             
             // Refresh objects to get updated data (this will add the new object)
             await fetchObjects();
@@ -3519,6 +3582,9 @@ function App() {
             }
           } catch (error: any) {
             console.error('Error saving cloned object:', error);
+            // Clear loading state on error
+            setIsLoading(false);
+            isManuallyManagingLoadingRef.current = false;
             const errorMessage = error?.message || 'Failed to save clone. Please try again.';
             if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
               alert(`Duplicate detected: ${errorMessage}`);
@@ -3589,7 +3655,10 @@ function App() {
               validation: updatedData.validation || selectedRowForMetadata.validation || '',
               default: updatedData.default || selectedRowForMetadata.default || '',
               graph: updatedData.graph || selectedRowForMetadata.graph || 'Y',
-              status: updatedData.status || selectedRowForMetadata.status || 'Active'
+              status: updatedData.status || selectedRowForMetadata.status || 'Active',
+              // Include is_meme and is_group_key if present
+              is_meme: updatedData.isMeme ?? selectedRowForMetadata.isMeme ?? false,
+              is_group_key: updatedData.isGroupKey ?? selectedRowForMetadata.isGroupKey ?? false
             };
             
             console.log('🧬 Variable data to create:', variableToCreate);
@@ -3623,6 +3692,10 @@ function App() {
             
             // Remove the cloned row from local state BEFORE refreshing (to prevent duplicates)
             setVariableData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
+            
+            // Clear loading state before refresh
+            setIsLoading(false);
+            isManuallyManagingLoadingRef.current = false;
             
             console.log('🧬 Refreshing variables...');
             // Refresh variables to get updated data (this will include the newly created variable)
@@ -3703,6 +3776,9 @@ function App() {
             }
           } catch (error: any) {
             console.error('🧬 Error saving cloned variable:', error);
+            // Clear loading state on error
+            setIsLoading(false);
+            isManuallyManagingLoadingRef.current = false;
             const errorMessage = error?.message || 'Failed to save clone. Please try again.';
             if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
               alert(`Duplicate detected: ${errorMessage}`);

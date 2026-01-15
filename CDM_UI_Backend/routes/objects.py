@@ -339,6 +339,15 @@ async def get_object(object_id: str):
                     })
             obj["compositeIds"] = composite_ids
 
+            # Get variable IDs for HAS_SPECIFIC_VARIABLE relationships
+            variables_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(v:Variable)
+                RETURN v.id as variableId
+            """, object_id=object_id)
+            
+            variable_ids = [record["variableId"] for record in variables_result]
+            obj["variableIds"] = variable_ids
+
             return obj
 
     except HTTPException:
@@ -352,12 +361,23 @@ async def create_object(object_data: ObjectCreateRequest):
     """
     Create a new object with proper Neo4j relationships.
     """
+    # Debug: Log received data
+    print(f"🔵 CREATE OBJECT - Received data:")
+    print(f"  - object: {object_data.object}")
+    print(f"  - being: {object_data.being}")
+    print(f"  - avatar: {object_data.avatar}")
+    variable_ids_attr = getattr(object_data, 'variableIds', None)
+    print(f"  - variableIds (from getattr): {variable_ids_attr}")
+    if hasattr(object_data, '__dict__'):
+        print(f"  - object_data.__dict__ keys: {object_data.__dict__.keys()}")
+    
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
     
     try:
-        with driver.session() as session:
+        # Use write transaction to ensure all changes are committed
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
             # Validate required fields
             required_fields = ["sector", "domain", "country", "being", "avatar", "object"]
             for field in required_fields:
@@ -579,7 +599,7 @@ async def create_object(object_data: ObjectCreateRequest):
             # Calculate actual relationship count (includes default + any user-provided relationships)
             rel_count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
+                RETURN count(*) as rel_count
             """, object_id=new_id).single()
             
             rel_count = rel_count_result["rel_count"] if rel_count_result else 0
@@ -589,6 +609,69 @@ async def create_object(object_data: ObjectCreateRequest):
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
             """, object_id=new_id, rel_count=rel_count)
+            
+            # Clone HAS_SPECIFIC_VARIABLE relationships if variableIds are provided
+            # Try multiple ways to access variableIds
+            variable_ids = None
+            if hasattr(object_data, 'variableIds'):
+                variable_ids = object_data.variableIds
+            elif hasattr(object_data, 'variable_ids'):
+                variable_ids = object_data.variable_ids
+            else:
+                variable_ids = getattr(object_data, 'variableIds', None) or getattr(object_data, 'variable_ids', None)
+            
+            print(f"🔵 Variable IDs check:")
+            print(f"  - hasattr variableIds: {hasattr(object_data, 'variableIds')}")
+            print(f"  - hasattr variable_ids: {hasattr(object_data, 'variable_ids')}")
+            print(f"  - variable_ids value: {variable_ids}")
+            print(f"  - type: {type(variable_ids)}")
+            if hasattr(object_data, 'model_dump'):
+                dumped = object_data.model_dump()
+                print(f"  - model_dump keys: {list(dumped.keys())}")
+                print(f"  - model_dump variableIds: {dumped.get('variableIds')}")
+            
+            if variable_ids and isinstance(variable_ids, list) and len(variable_ids) > 0:
+                print(f"🔵 Cloning {len(variable_ids)} variable relationships for new object {new_id}")
+                variables_created = 0
+                for variable_id in variable_ids:
+                    if variable_id:
+                        try:
+                            # Use MERGE without properties in pattern, then SET property if created
+                            result = session.run("""
+                                MATCH (o:Object {id: $object_id})
+                                MATCH (v:Variable {id: $variable_id})
+                                MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                                ON CREATE SET r.createdBy = "clone"
+                                RETURN r, CASE WHEN r.createdBy = "clone" THEN true ELSE false END as was_created
+                            """, object_id=new_id, variable_id=variable_id)
+                            record = result.single()
+                            if record:
+                                variables_created += 1
+                                print(f"✅ Created HAS_SPECIFIC_VARIABLE relationship: Object {new_id} -> Variable {variable_id}")
+                            else:
+                                print(f"⚠️ Failed to create relationship: Object {new_id} -> Variable {variable_id}")
+                        except Exception as e:
+                            print(f"❌ Error creating variable relationship for {variable_id}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                print(f"✅ Successfully created {variables_created} out of {len(variable_ids)} variable relationships")
+            else:
+                print(f"⚠️ No variableIds provided or empty list. variable_ids={variable_ids}")
+            
+            # Update variables count after cloning - verify relationships were created
+            variables_count_result = session.run("""
+                MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
+                RETURN count(DISTINCT var) as variables_count
+            """, object_id=new_id).single()
+            
+            variables_count = variables_count_result["variables_count"] if variables_count_result else 0
+            
+            # Log verification
+            if variable_ids and len(variable_ids) > 0:
+                if variables_count != len(variable_ids):
+                    print(f"⚠️ WARNING: Expected {len(variable_ids)} variable relationships, but found {variables_count}")
+                else:
+                    print(f"✅ Verified: {variables_count} variable relationships created successfully")
             
             # Handle identifier relationships (discrete and composite IDs)
             # Note: object_data is a Pydantic model, so we access attributes directly
@@ -652,6 +735,9 @@ async def create_object(object_data: ObjectCreateRequest):
                                             MERGE (o)-[:HAS_COMPOSITE_ID_{composite_index}]->(v)
                                         """, object_id=new_id, var_id=var_id)
             
+            # Log the final counts for debugging
+            print(f"Created object {new_id} ({object_data.object}): {rel_count} relationships, {len(variants)} variants, {variables_count} variables")
+            
             return {
                 "id": new_id,
                 "driver": driver_string,
@@ -662,7 +748,7 @@ async def create_object(object_data: ObjectCreateRequest):
                 "is_meme": is_meme,
                 "relationships": rel_count,
                 "variants": len(variants),
-                "variables": 0,
+                "variables": variables_count,
                 "relationshipsList": relationships,
                 "variantsList": [{"id": str(uuid.uuid4()), "name": v} for v in variants]
             }

@@ -399,6 +399,7 @@ class ObjectCreateRequest(BaseModel):
     relationships: Optional[List[dict]] = Field(default=[], description="List of relationships")
     status: Optional[str] = Field(default="Active", description="Object status")
     isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
+    variableIds: Optional[List[str]] = Field(default=[], description="List of variable IDs to clone HAS_SPECIFIC_VARIABLE relationships")
 
 class ObjectResponse(BaseModel):
     id: str
