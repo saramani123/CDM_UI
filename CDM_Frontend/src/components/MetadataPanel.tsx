@@ -263,20 +263,36 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Initialize identifiers state - changed from array of IDs to array of objects with unique IDs
   interface UniqueIdEntry {
     id: string; // Unique identifier for this entry
-    variableId: string; // The selected variable ID
+    part: string; // Selected part
+    group: string; // Selected group
+    variableId: string; // The selected variable ID or "ANY"
   }
   const [uniqueIdEntries, setUniqueIdEntries] = useState<UniqueIdEntry[]>([]);
-  const [compositeKeys, setCompositeKeys] = useState<{
-    id: string;
+  
+  // Composite ID Blocks: Each block represents one composite ID with 5 component rows
+  interface CompositeIdRow {
+    id: string; // Unique ID for this row
     part: string;
     group: string;
-    variables: string[];
-  }[]>([
-    { id: '1', part: '', group: '', variables: [] },
-    { id: '2', part: '', group: '', variables: [] },
-    { id: '3', part: '', group: '', variables: [] },
-    { id: '4', part: '', group: '', variables: [] },
-    { id: '5', part: '', group: '', variables: [] }
+    variableId: string; // Single variable selection (not array)
+  }
+  
+  interface CompositeIdBlock {
+    blockNumber: number; // 1, 2, 3, etc. (for relationship naming)
+    rows: CompositeIdRow[]; // Always 5 rows
+  }
+  
+  const [compositeIdBlocks, setCompositeIdBlocks] = useState<CompositeIdBlock[]>([
+    {
+      blockNumber: 1,
+      rows: [
+        { id: 'block1-row1', part: '', group: '', variableId: '' },
+        { id: 'block1-row2', part: '', group: '', variableId: '' },
+        { id: 'block1-row3', part: '', group: '', variableId: '' },
+        { id: 'block1-row4', part: '', group: '', variableId: '' },
+        { id: 'block1-row5', part: '', group: '', variableId: '' }
+      ]
+    }
   ]);
 
   // Initialize relationships state
@@ -422,40 +438,79 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           const discreteIds = identifierData?.discreteIds || [];
           const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
             id: `unique-${index + 1}`,
+            part: di.part || '',
+            group: di.group || '',
             variableId: di.variableId || ''
           }));
           if (uniqueIdEntriesList.length === 0) {
-            setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+            setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
           } else {
             setUniqueIdEntries(uniqueIdEntriesList);
           }
           
-          // Load composite IDs
+          // Load composite IDs - convert to block structure
           const compositeIds = identifierData?.compositeIds || {};
-          const newCompositeKeys = compositeKeys.map(key => {
-            const compositeIdData = compositeIds[key.id];
+          const blocks: CompositeIdBlock[] = [];
+          
+          // Sort keys numerically to maintain order
+          const sortedKeys = Object.keys(compositeIds).sort((a, b) => parseInt(a) - parseInt(b));
+          
+          sortedKeys.forEach((key, index) => {
+            const compositeIdData = compositeIds[key];
             if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
-              const variableIds = compositeIdData.map((ci: any) => ci.variableId).filter(Boolean);
-              return {
-                id: key.id,
-                part: compositeIdData[0].part || '',
-                group: compositeIdData[0].group || '',
-                variables: variableIds
-              };
+              const blockNumber = index + 1;
+              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
+                id: `block${blockNumber}-row${rowIndex + 1}`,
+                part: ci.part || '',
+                group: ci.group || '',
+                variableId: ci.variableId || ''
+              }));
+              
+              // Ensure we have exactly 5 rows
+              while (rows.length < 5) {
+                rows.push({
+                  id: `block${blockNumber}-row${rows.length + 1}`,
+                  part: '',
+                  group: '',
+                  variableId: ''
+                });
+              }
+              
+              blocks.push({
+                blockNumber,
+                rows: rows.slice(0, 5)
+              });
             }
-            return { id: key.id, part: '', group: '', variables: [] };
           });
-          setCompositeKeys(newCompositeKeys);
+          
+          // If no blocks loaded, create one default block
+          if (blocks.length === 0) {
+            blocks.push({
+              blockNumber: 1,
+              rows: [
+                { id: 'block1-row1', part: '', group: '', variableId: '' },
+                { id: 'block1-row2', part: '', group: '', variableId: '' },
+                { id: 'block1-row3', part: '', group: '', variableId: '' },
+                { id: 'block1-row4', part: '', group: '', variableId: '' },
+                { id: 'block1-row5', part: '', group: '', variableId: '' }
+              ]
+            });
+          }
+          
+          setCompositeIdBlocks(blocks);
         } catch (error) {
           console.error('MetadataPanel: failed to load identifiers from cloned data:', error);
-          setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
-          setCompositeKeys([
-            { id: '1', part: '', group: '', variables: [] },
-            { id: '2', part: '', group: '', variables: [] },
-            { id: '3', part: '', group: '', variables: [] },
-            { id: '4', part: '', group: '', variables: [] },
-            { id: '5', part: '', group: '', variables: [] }
-          ]);
+          setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
+          setCompositeIdBlocks([{
+            blockNumber: 1,
+            rows: [
+              { id: 'block1-row1', part: '', group: '', variableId: '' },
+              { id: 'block1-row2', part: '', group: '', variableId: '' },
+              { id: 'block1-row3', part: '', group: '', variableId: '' },
+              { id: 'block1-row4', part: '', group: '', variableId: '' },
+              { id: 'block1-row5', part: '', group: '', variableId: '' }
+            ]
+          }]);
         }
         return;
       }
@@ -472,56 +527,98 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           const discreteIds = objectData?.discreteIds || [];
           const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
             id: `unique-${index + 1}`,
+            part: di.part || '',
+            group: di.group || '',
             variableId: di.variableId || ''
           }));
           // If no entries exist, add one empty entry
           if (uniqueIdEntriesList.length === 0) {
-            setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+            setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
           } else {
             setUniqueIdEntries(uniqueIdEntriesList);
           }
           console.log('MetadataPanel: Set uniqueIdEntries:', uniqueIdEntriesList);
           
-          // Load composite IDs
+          // Load composite IDs - convert to block structure
           const compositeIds = objectData?.compositeIds || {};
-          const newCompositeKeys = compositeKeys.map(key => {
-            const compositeIdData = compositeIds[key.id];
+          const blocks: CompositeIdBlock[] = [];
+          
+          // Sort keys numerically to maintain order
+          const sortedKeys = Object.keys(compositeIds).sort((a, b) => parseInt(a) - parseInt(b));
+          
+          sortedKeys.forEach((key, index) => {
+            const compositeIdData = compositeIds[key];
             if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
-              const variableIds = compositeIdData.map((ci: any) => ci.variableId).filter(Boolean);
-              return {
-                id: key.id,
-                part: compositeIdData[0].part || '',
-                group: compositeIdData[0].group || '',
-                variables: variableIds
-              };
+              const blockNumber = index + 1;
+              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
+                id: `block${blockNumber}-row${rowIndex + 1}`,
+                part: ci.part || '',
+                group: ci.group || '',
+                variableId: ci.variableId || ''
+              }));
+              
+              // Ensure we have exactly 5 rows
+              while (rows.length < 5) {
+                rows.push({
+                  id: `block${blockNumber}-row${rows.length + 1}`,
+                  part: '',
+                  group: '',
+                  variableId: ''
+                });
+              }
+              
+              blocks.push({
+                blockNumber,
+                rows: rows.slice(0, 5)
+              });
             }
-            return { id: key.id, part: '', group: '', variables: [] };
           });
-          setCompositeKeys(newCompositeKeys);
-          console.log('MetadataPanel: Set compositeKeys:', newCompositeKeys);
+          
+          // If no blocks loaded, create one default block
+          if (blocks.length === 0) {
+            blocks.push({
+              blockNumber: 1,
+              rows: [
+                { id: 'block1-row1', part: '', group: '', variableId: '' },
+                { id: 'block1-row2', part: '', group: '', variableId: '' },
+                { id: 'block1-row3', part: '', group: '', variableId: '' },
+                { id: 'block1-row4', part: '', group: '', variableId: '' },
+                { id: 'block1-row5', part: '', group: '', variableId: '' }
+              ]
+            });
+          }
+          
+          setCompositeIdBlocks(blocks);
+          console.log('MetadataPanel: Set compositeIdBlocks:', blocks);
         } catch (error) {
           console.error('MetadataPanel: failed to load identifiers:', error);
-          setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
-          setCompositeKeys([
-            { id: '1', part: '', group: '', variables: [] },
-            { id: '2', part: '', group: '', variables: [] },
-            { id: '3', part: '', group: '', variables: [] },
-            { id: '4', part: '', group: '', variables: [] },
-            { id: '5', part: '', group: '', variables: [] }
-          ]);
+          setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
+          setCompositeIdBlocks([{
+            blockNumber: 1,
+            rows: [
+              { id: 'block1-row1', part: '', group: '', variableId: '' },
+              { id: 'block1-row2', part: '', group: '', variableId: '' },
+              { id: 'block1-row3', part: '', group: '', variableId: '' },
+              { id: 'block1-row4', part: '', group: '', variableId: '' },
+              { id: 'block1-row5', part: '', group: '', variableId: '' }
+            ]
+          }]);
         }
       };
       
       loadIdentifiers();
     } else {
-      setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
-      setCompositeKeys([
-        { id: '1', part: '', group: '', variables: [] },
-        { id: '2', part: '', group: '', variables: [] },
-        { id: '3', part: '', group: '', variables: [] },
-        { id: '4', part: '', group: '', variables: [] },
-        { id: '5', part: '', group: '', variables: [] }
-      ]);
+      setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
+      setCompositeIdBlocks([{
+        blockNumber: 1,
+        rows: [
+          { id: 'block1-row1', part: '', group: '', variableId: '' },
+          { id: 'block1-row2', part: '', group: '', variableId: '' },
+          { id: 'block1-row3', part: '', group: '', variableId: '' },
+          { id: 'block1-row4', part: '', group: '', variableId: '' },
+          { id: 'block1-row5', part: '', group: '', variableId: '' }
+        ]
+      }]);
     }
   }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.identifier]);
 
@@ -535,12 +632,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // Helper functions to get filtered data from variables
   const getAllParts = () => {
+    if (!variablesData || !Array.isArray(variablesData)) return [];
     const parts = [...new Set(variablesData.map(v => v.part))].filter(Boolean).sort();
     return parts;
   };
 
   const getGroupsForPart = (part: string) => {
-    if (!part) return [];
+    if (!part || !variablesData || !Array.isArray(variablesData)) return [];
     const groups = [...new Set(
       variablesData.filter(v => v.part === part).map(v => v.group)
     )].filter(Boolean).sort();
@@ -548,30 +646,33 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   const getVariablesForPartAndGroup = (part: string, group: string) => {
-    if (!part || !group) return [];
+    if (!part || !group || !variablesData || !Array.isArray(variablesData)) return [];
     return variablesData
       .filter(v => v.part === part && v.group === group)
       .map(v => ({ id: v.id, name: v.variable }));
   };
 
-  // Get variables for unique ID (Part = "Identifier", Group = "Public ID")
-  const getUniqueIdVariables = () => {
-    return variablesData
-      .filter(v => v.part === 'Identifier' && v.group === 'Public ID')
-      .map(v => ({ id: v.id, name: v.variable }));
+  // Get variables for unique ID based on selected part and group
+  const getUniqueIdVariables = (part: string, group: string) => {
+    if (!part || !group) return [];
+    return getVariablesForPartAndGroup(part, group);
   };
   
   // Add a new unique ID entry
   // Check if object has any identifiers defined
   const hasIdentifiers = () => {
     // Check unique IDs
-    const hasUniqueIds = uniqueIdEntries.some(entry => entry.variableId && entry.variableId.trim() !== '');
+    const hasUniqueIds = uniqueIdEntries.some(entry => 
+      entry.part && entry.group && entry.variableId && entry.variableId.trim() !== ''
+    );
     
     // Check composite IDs
-    const hasCompositeIds = compositeKeys.some(key => 
-      (key.part && key.part.trim() !== '') || 
-      (key.group && key.group.trim() !== '') || 
-      (key.variables && key.variables.length > 0)
+    const hasCompositeIds = compositeIdBlocks.some(block => 
+      block.rows.some(row => 
+        (row.part && row.part.trim() !== '') || 
+        (row.group && row.group.trim() !== '') || 
+        (row.variableId && row.variableId.trim() !== '')
+      )
     );
     
     return hasUniqueIds || hasCompositeIds;
@@ -579,7 +680,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   const handleAddUniqueIdEntry = () => {
     const newId = `unique-${Date.now()}`;
-    setUniqueIdEntries(prev => [...prev, { id: newId, variableId: '' }]);
+    setUniqueIdEntries(prev => [...prev, { id: newId, part: '', group: '', variableId: '' }]);
   };
   
   // Remove a unique ID entry
@@ -587,11 +688,81 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setUniqueIdEntries(prev => prev.filter(entry => entry.id !== entryId));
   };
   
+  // Update part selection for a specific unique ID entry
+  const handleUniqueIdPartChange = (entryId: string, part: string) => {
+    setUniqueIdEntries(prev => prev.map(entry => 
+      entry.id === entryId ? { ...entry, part, group: '', variableId: '' } : entry
+    ));
+  };
+  
+  // Update group selection for a specific unique ID entry
+  const handleUniqueIdGroupChange = (entryId: string, group: string) => {
+    setUniqueIdEntries(prev => prev.map(entry => 
+      entry.id === entryId ? { ...entry, group, variableId: '' } : entry
+    ));
+  };
+  
   // Update variable selection for a specific unique ID entry
   const handleUniqueIdVariableChange = (entryId: string, variableId: string) => {
     setUniqueIdEntries(prev => prev.map(entry => 
       entry.id === entryId ? { ...entry, variableId } : entry
     ));
+  };
+
+  // Add a new composite ID block
+  const handleAddCompositeIdBlock = () => {
+    const newBlockNumber = compositeIdBlocks.length + 1;
+    const newBlock: CompositeIdBlock = {
+      blockNumber: newBlockNumber,
+      rows: [
+        { id: `block${newBlockNumber}-row1`, part: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row2`, part: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row3`, part: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row4`, part: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row5`, part: '', group: '', variableId: '' }
+      ]
+    };
+    setCompositeIdBlocks(prev => [...prev, newBlock]);
+  };
+
+  // Remove a composite ID block
+  const handleRemoveCompositeIdBlock = (blockNumber: number) => {
+    setCompositeIdBlocks(prev => {
+      const filtered = prev.filter(block => block.blockNumber !== blockNumber);
+      // Renumber remaining blocks
+      return filtered.map((block, index) => ({
+        ...block,
+        blockNumber: index + 1,
+        rows: block.rows.map((row, rowIndex) => ({
+          ...row,
+          id: `block${index + 1}-row${rowIndex + 1}`
+        }))
+      }));
+    });
+  };
+
+  // Update a row in a composite ID block
+  const handleCompositeIdRowChange = (blockNumber: number, rowId: string, field: 'part' | 'group' | 'variableId', value: string) => {
+    setCompositeIdBlocks(prev => prev.map(block => {
+      if (block.blockNumber === blockNumber) {
+        return {
+          ...block,
+          rows: block.rows.map(row => {
+            if (row.id === rowId) {
+              if (field === 'part') {
+                return { ...row, part: value, group: '', variableId: '' };
+              } else if (field === 'group') {
+                return { ...row, group: value, variableId: '' };
+              } else {
+                return { ...row, variableId: value };
+              }
+            }
+            return row;
+          })
+        };
+      }
+      return block;
+    }));
   };
 
   // Helper to convert variable IDs to names for display
@@ -942,43 +1113,55 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return;
     }
     
-    // Validate unique IDs - check for duplicates
-    const uniqueIdVariableIds = uniqueIdEntries
-      .map(entry => entry.variableId)
-      .filter(Boolean);
-    const duplicateVariableIds = uniqueIdVariableIds.filter((id, index) => 
-      uniqueIdVariableIds.indexOf(id) !== index
-    );
-    
-    if (duplicateVariableIds.length > 0) {
-      const duplicateNames = duplicateVariableIds.map(id => {
-        const varData = getUniqueIdVariables().find(v => v.id === id);
-        return varData?.name || id;
-      });
-      alert(`Cannot save: You have added duplicate unique IDs. Duplicate variables: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+    // Validate unique IDs - check for duplicates (same part, group, variableId combination)
+    const uniqueIdEntriesList = uniqueIdEntries
+      .filter(entry => entry.part && entry.group && entry.variableId);
+    const seen = new Set<string>();
+    const duplicates: string[] = [];
+    for (const entry of uniqueIdEntriesList) {
+      const key = `${entry.part}|${entry.group}|${entry.variableId}`;
+      if (seen.has(key)) {
+        const varName = entry.variableId === 'ANY' ? 'ANY' : getVariableNameFromId(entry.variableId);
+        duplicates.push(`${entry.part} / ${entry.group} / ${varName}`);
+      } else {
+        seen.add(key);
+      }
+    }
+    if (duplicates.length > 0) {
+      alert(`Cannot save: You have added duplicate unique IDs. Duplicate entries: ${duplicates.join(', ')}. Please remove duplicates before saving.`);
       return;
     }
     
     // Prepare identifier data - use unique IDs instead of discrete IDs
-    const uniqueIdVariableIdsList = uniqueIdEntries
-      .map(entry => entry.variableId)
-      .filter(Boolean);
+    // Include part, group, and variableId for each entry
+    const discreteIdEntries = uniqueIdEntries
+      .filter(entry => entry.part && entry.group && entry.variableId)
+      .map(entry => ({
+        part: entry.part,
+        group: entry.group,
+        variableId: entry.variableId
+      }));
     
     const identifierData = {
       discreteId: {
-        variables: uniqueIdVariableIdsList
+        entries: discreteIdEntries
       },
-      compositeIds: {} as Record<string, { part: string; group: string; variables: string[] }>
+      compositeIds: {} as Record<string, Array<{ part: string; group: string; variableId: string }>>
     };
 
-    // Add composite IDs (only those with part and group)
-    compositeKeys.forEach(key => {
-      if (key.part && key.group) {
-        identifierData.compositeIds[key.id] = {
-          part: key.part,
-          group: key.group,
-          variables: key.variables
-        };
+    // Add composite IDs - each block represents one composite ID
+    compositeIdBlocks.forEach(block => {
+      const blockKey = String(block.blockNumber);
+      const entries = block.rows
+        .filter(row => row.part && row.group && row.variableId)
+        .map(row => ({
+          part: row.part,
+          group: row.group,
+          variableId: row.variableId
+        }));
+      
+      if (entries.length > 0) {
+        identifierData.compositeIds[blockKey] = entries;
       }
     });
 
@@ -1512,169 +1695,215 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               <div className="divide-y divide-ag-dark-border">
                 {uniqueIdEntries.length === 0 ? (
                   <div className="grid grid-cols-[0.7fr_0.7fr_1.6fr] gap-2 items-center p-2">
-                    <input
-                      type="text"
-                      value="Identifier"
-                      disabled
-                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                    />
-                    <input
-                      type="text"
-                      value="Public ID"
-                      disabled
-                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                    />
                     <div className="text-xs text-ag-dark-text-secondary px-2 py-1.5">
                       Click + to add a Unique ID
                     </div>
                   </div>
                 ) : (
-                  uniqueIdEntries.map((entry, index) => (
-                    <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[0.7fr_0.7fr_1.6fr_auto]' : 'grid-cols-[0.7fr_0.7fr_1.6fr]'}`}>
-                      <input
-                        type="text"
-                        value="Identifier"
-                        disabled
-                        className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                      />
-                      <input
-                        type="text"
-                        value="Public ID"
-                        disabled
-                        className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                      />
-                      <select
-                        value={entry.variableId}
-                        onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
-                        disabled={!isPanelEnabled}
-                        className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '16px'
-                        }}
-                      >
-                        <option value="">Select Variable</option>
-                        {getUniqueIdVariables().map(v => (
-                          <option key={v.id} value={v.id}>{v.name}</option>
-                        ))}
-                      </select>
-                      {index > 0 && (
-                        <button
-                          onClick={() => handleRemoveUniqueIdEntry(entry.id)}
+                  uniqueIdEntries.map((entry, index) => {
+                    const variableOptions = getUniqueIdVariables(entry.part, entry.group);
+                    return (
+                      <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[0.7fr_0.7fr_1.6fr_auto]' : 'grid-cols-[0.7fr_0.7fr_1.6fr]'}`}>
+                        {/* Part Dropdown */}
+                        <select
+                          value={entry.part}
+                          onChange={(e) => handleUniqueIdPartChange(entry.id, e.target.value)}
                           disabled={!isPanelEnabled}
-                          className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                          title="Remove Unique ID"
+                          className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '16px'
+                          }}
                         >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))
+                          <option value="">Select Part</option>
+                          {getAllParts().map(part => (
+                            <option key={part} value={part}>{part}</option>
+                          ))}
+                        </select>
+                        
+                        {/* Group Dropdown */}
+                        <select
+                          value={entry.group}
+                          onChange={(e) => handleUniqueIdGroupChange(entry.id, e.target.value)}
+                          disabled={!isPanelEnabled || !entry.part}
+                          className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '16px'
+                          }}
+                        >
+                          <option value="">Select Group</option>
+                          {getGroupsForPart(entry.part).map(group => (
+                            <option key={group} value={group}>{group}</option>
+                          ))}
+                        </select>
+                        
+                        {/* Variable Dropdown */}
+                        <select
+                          value={entry.variableId}
+                          onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
+                          disabled={!isPanelEnabled || !entry.part || !entry.group}
+                          className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '16px'
+                          }}
+                        >
+                          <option value="">Select Variable</option>
+                          <option value="ANY">ANY</option>
+                          {variableOptions.map(v => (
+                            <option key={v.id} value={v.id}>{v.name}</option>
+                          ))}
+                        </select>
+                        {index > 0 && (
+                          <button
+                            onClick={() => handleRemoveUniqueIdEntry(entry.id)}
+                            disabled={!isPanelEnabled}
+                            className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Remove Unique ID"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
           </div>
 
-          {/* Composite IDs - Matrix Layout */}
-          <div>
+          {/* Composite IDs - Multiple Blocks */}
+          <div className="space-y-4">
             <div className="flex items-center justify-between mb-3">
               <h5 className="text-sm font-medium text-ag-dark-text">Composite IDs</h5>
+              <button
+                onClick={handleAddCompositeIdBlock}
+                disabled={!isPanelEnabled}
+                className="flex items-center justify-center text-ag-dark-accent hover:text-ag-dark-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title="Add Composite ID Block"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
             </div>
-            <div className="border border-ag-dark-border rounded">
-              {/* Table Header */}
-              <div className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
-                <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
-              </div>
-              {/* Table Rows */}
-              <div className="divide-y divide-ag-dark-border">
-                {compositeKeys.map((compositeKey) => {
-                  const variableOptions = compositeKey.part && compositeKey.group
-                    ? getVariablesForPartAndGroup(compositeKey.part, compositeKey.group)
-                    : [];
-                  
-                  return (
-                    <div key={compositeKey.id} className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
-                      {/* Row Label */}
-                      <div className="flex items-center">
-                        <span className="text-[10px] font-medium text-ag-dark-text">{compositeKey.id}</span>
+            
+            {compositeIdBlocks.map((block, blockIndex) => (
+              <div key={block.blockNumber} className="border border-ag-dark-border rounded">
+                {/* Block Header */}
+                <div className="flex items-center justify-between bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                  <h6 className="text-sm font-medium text-ag-dark-text">Composite ID #{block.blockNumber}</h6>
+                  {blockIndex > 0 && (
+                    <button
+                      onClick={() => handleRemoveCompositeIdBlock(block.blockNumber)}
+                      disabled={!isPanelEnabled}
+                      className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      title="Remove Composite ID Block"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                
+                {/* Table Header */}
+                <div className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                  <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
+                  <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
+                  <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
+                  <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
+                </div>
+                
+                {/* Table Rows - 5 rows per block */}
+                <div className="divide-y divide-ag-dark-border">
+                  {block.rows.map((row, rowIndex) => {
+                    const variableOptions = row.part && row.group
+                      ? getVariablesForPartAndGroup(row.part, row.group)
+                      : [];
+                    
+                    return (
+                      <div key={row.id} className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
+                        {/* Row Label */}
+                        <div className="flex items-center">
+                          <span className="text-[10px] font-medium text-ag-dark-text">{rowIndex + 1}</span>
+                        </div>
+                        
+                        {/* Part Dropdown */}
+                        <select
+                          value={row.part}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'part', e.target.value)}
+                          disabled={!isPanelEnabled}
+                          className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '12px'
+                          }}
+                        >
+                          <option value="">Select Part</option>
+                          {getAllParts().map((part) => (
+                            <option key={part} value={part}>
+                              {part}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Group Dropdown */}
+                        <select
+                          value={row.group}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'group', e.target.value)}
+                          disabled={!isPanelEnabled || !row.part}
+                          className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                            !isPanelEnabled || !row.part ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '12px'
+                          }}
+                        >
+                          <option value="">Select Group</option>
+                          {getGroupsForPart(row.part).map((group) => (
+                            <option key={group} value={group}>
+                              {group}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Variable Dropdown */}
+                        <select
+                          value={row.variableId}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'variableId', e.target.value)}
+                          disabled={!isPanelEnabled || !row.part || !row.group}
+                          className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                            !isPanelEnabled || !row.part || !row.group ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '12px'
+                          }}
+                        >
+                          <option value="">Select Variable</option>
+                          {variableOptions.map(v => (
+                            <option key={v.id} value={v.id}>{v.name}</option>
+                          ))}
+                        </select>
                       </div>
-                      
-                      {/* Part Dropdown */}
-                      <select
-                        value={compositeKey.part}
-                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'part', e.target.value)}
-                        disabled={!isPanelEnabled}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select Part</option>
-                        {getAllParts().map((part) => (
-                          <option key={part} value={part}>
-                            {part}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Group Dropdown */}
-                      <select
-                        value={compositeKey.group}
-                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'group', e.target.value)}
-                        disabled={!isPanelEnabled || !compositeKey.part}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !isPanelEnabled || !compositeKey.part ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select Group</option>
-                        {getGroupsForPart(compositeKey.part).map((group) => (
-                          <option key={group} value={group}>
-                            {group}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Variable Multi-select */}
-                      <MultiSelect
-                        label="Variable"
-                        options={['ALL', ...variableOptions.map(v => v.name)]}
-                        values={compositeKey.variables.map(id => {
-                          const varData = variableOptions.find(v => v.id === id);
-                          return varData?.name || id;
-                        })}
-                        onChange={(values) => {
-                          // Convert names back to IDs
-                          const ids = values.map(val => {
-                            if (val === 'ALL') return 'ALL';
-                            const varData = variableOptions.find(v => v.name === val);
-                            return varData?.id || val;
-                          });
-                          handleCompositeKeyVariablesChange(compositeKey.id, ids);
-                        }}
-                        disabled={!isPanelEnabled || !compositeKey.part || !compositeKey.group}
-                        compact={true}
-                      />
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ))}
           </div>
         </div>
       </CollapsibleSection>
@@ -1726,7 +1955,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         }
       >
         {/* Relationship Summary - Only show for single object selection */}
-        {console.log('MetadataPanel: rendering relationships summary, relationships.length:', relationships.length, 'relationships:', relationships)}
         {!isPanelEnabled && selectedCount > 1 && (
           <div className="mb-6">
             <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
@@ -1737,46 +1965,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             </div>
           </div>
         )}
-        {isPanelEnabled && relationships.length > 0 && (
-          <div className="mb-6">
-            <h5 className="text-sm font-medium text-ag-dark-text mb-3">Current Relationships</h5>
-            <div className="space-y-2">
-              {(() => {
-                // Group relationships by object (toBeing, toAvatar, toObject) and combine roles
-                const groupedRelationships = relationships.reduce((acc, relationship) => {
-                  const key = `${relationship.toBeing}-${relationship.toAvatar}-${relationship.toObject}`;
-                  if (!acc[key]) {
-                    acc[key] = {
-                      toBeing: relationship.toBeing,
-                      toAvatar: relationship.toAvatar,
-                      toObject: relationship.toObject,
-                      type: relationship.type,
-                      roles: []
-                    };
-                  }
-                  acc[key].roles.push(relationship.role);
-                  return acc;
-                }, {} as Record<string, any>);
-
-                // Convert to array and sort roles
-                return Object.values(groupedRelationships).map((groupedRel: any, index) => (
-                  <div key={`${groupedRel.toBeing}-${groupedRel.toAvatar}-${groupedRel.toObject}`} className="bg-ag-dark-bg rounded-lg p-3 border border-ag-dark-border">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="text-sm text-ag-dark-text">
-                          <span className="font-medium">{groupedRel.toBeing} - {groupedRel.toAvatar} - {groupedRel.toObject}</span>
-                        </div>
-                        <div className="text-xs text-ag-dark-text-secondary mt-1">
-                          <span className="font-medium">Type:</span> {groupedRel.type} | <span className="font-medium">Roles:</span> {groupedRel.roles.join(', ')}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ));
-              })()}
-            </div>
-          </div>
-        )}
+        {/* Relationships display removed - use the grid icon button to view relationships in the modal */}
       </CollapsibleSection>
 
       {/* Variants Section */}
@@ -2032,22 +2221,56 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                   setUniqueIdEntries(uniqueIdEntriesList);
                 }
                 
-                // Load composite IDs
+                // Load composite IDs - convert to block structure
                 const compositeIds = objectData?.compositeIds || {};
-                const newCompositeKeys = compositeKeys.map(key => {
-                  const compositeIdData = compositeIds[key.id];
+                const blocks: CompositeIdBlock[] = [];
+                
+                // Sort keys numerically to maintain order
+                const sortedKeys = Object.keys(compositeIds).sort((a, b) => parseInt(a) - parseInt(b));
+                
+                sortedKeys.forEach((key, index) => {
+                  const compositeIdData = compositeIds[key];
                   if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
-                    const variableIds = compositeIdData.map((ci: any) => ci.variableId).filter(Boolean);
-                    return {
-                      id: key.id,
-                      part: compositeIdData[0].part || '',
-                      group: compositeIdData[0].group || '',
-                      variables: variableIds
-                    };
+                    const blockNumber = index + 1;
+                    const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
+                      id: `block${blockNumber}-row${rowIndex + 1}`,
+                      part: ci.part || '',
+                      group: ci.group || '',
+                      variableId: ci.variableId || ''
+                    }));
+                    
+                    // Ensure we have exactly 5 rows
+                    while (rows.length < 5) {
+                      rows.push({
+                        id: `block${blockNumber}-row${rows.length + 1}`,
+                        part: '',
+                        group: '',
+                        variableId: ''
+                      });
+                    }
+                    
+                    blocks.push({
+                      blockNumber,
+                      rows: rows.slice(0, 5)
+                    });
                   }
-                  return { id: key.id, part: '', group: '', variables: [] };
                 });
-                setCompositeKeys(newCompositeKeys);
+                
+                // If no blocks loaded, create one default block
+                if (blocks.length === 0) {
+                  blocks.push({
+                    blockNumber: 1,
+                    rows: [
+                      { id: 'block1-row1', part: '', group: '', variableId: '' },
+                      { id: 'block1-row2', part: '', group: '', variableId: '' },
+                      { id: 'block1-row3', part: '', group: '', variableId: '' },
+                      { id: 'block1-row4', part: '', group: '', variableId: '' },
+                      { id: 'block1-row5', part: '', group: '', variableId: '' }
+                    ]
+                  });
+                }
+                
+                setCompositeIdBlocks(blocks);
                 
                 // Refresh objects data
                 if (onObjectsRefresh) {
