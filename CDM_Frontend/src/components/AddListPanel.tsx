@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA, Layers } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA, Layers, Grid } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -8,6 +8,7 @@ import { useVariables } from '../hooks/useVariables';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
+import { TieredListValuesModal } from './TieredListValuesModal';
 import { apiService } from '../services/api';
 
 interface VariableAttached {
@@ -170,6 +171,24 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isVariationsTextareaFocusedRef = useRef(false);
   const lastVariationsChangeTimeRef = useRef(0);
+
+  // List Type state - Single or Multi-Level
+  const [listType, setListType] = useState<'Single' | 'Multi-Level'>('Single');
+  
+  // Number of tiers for Multi-Level lists (2-10)
+  const [numberOfLevels, setNumberOfLevels] = useState<number>(2);
+  
+  // Tier names for Multi-Level lists (Tier 1, Tier 2, etc.)
+  const [tierNames, setTierNames] = useState<string[]>(['', '']);
+  
+  // Tiered list values state
+  const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
+  const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
+  
+  // Refs for tier name input focus management
+  const tierNameInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const tierNameInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
+  const tierNameLastChangeTimeRefs = useRef<Map<number, number>>(new Map());
 
   // Metadata input fields focus management
   const formatInputRef = useRef<HTMLInputElement>(null);
@@ -453,25 +472,37 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       return;
     }
 
-    // Convert textarea text to list values array
-    const listValuesArray = listValuesText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map((value, index) => ({
-        id: (Date.now() + index).toString(),
-        value
-      }));
-    
-    // Check for duplicate values (case-insensitive) within the same list
-    const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
-    if (listValuesArray.length !== uniqueValues.size) {
-      const duplicateValues = listValuesArray.filter((lv, index) => 
-        listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
-      ).map(lv => lv.value);
+    // Validate Multi-Level list configuration
+    if (listType === 'Multi-Level') {
+      const validTierNames = tierNames.filter(name => name.trim() !== '');
+      if (validTierNames.length !== numberOfLevels) {
+        alert(`Please provide names for all ${numberOfLevels} tier(s).`);
+        return;
+      }
+    }
+
+    // Convert textarea text to list values array (only for Single lists)
+    let listValuesArray: Array<{ id: string; value: string }> = [];
+    if (listType === 'Single') {
+      listValuesArray = listValuesText
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map((value, index) => ({
+          id: (Date.now() + index).toString(),
+          value
+        }));
       
-      alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
-      return;
+      // Check for duplicate values (case-insensitive) within the same list
+      const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
+      if (listValuesArray.length !== uniqueValues.size) {
+        const duplicateValues = listValuesArray.filter((lv, index) => 
+          listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
+        ).map(lv => lv.value);
+        
+        alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
+        return;
+      }
     }
 
     // Convert variations text to variationsList array
@@ -497,7 +528,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       variationsList = variationsArray;
     }
 
-    const newList = {
+    const newList: any = {
       id: `list-${Date.now()}`,
       ...formData,
       sector: driverSelections.sector.length === 1 && driverSelections.sector[0] === 'ALL' ? 'ALL' : driverSelections.sector.join(','),
@@ -505,9 +536,54 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       country: driverSelections.country.length === 1 && driverSelections.country[0] === 'ALL' ? 'ALL' : driverSelections.country.join(','),
       status: 'Active',
       variablesAttachedList: selectedVariables.length > 0 ? selectedVariables : variablesAttached,
-      listValuesList: listValuesArray,
-      variationsList: variationsList
+      variationsList: variationsList,
+      listType: listType
     };
+
+    // Include list values only for Single lists
+    if (listType === 'Single') {
+      newList.listValuesList = listValuesArray;
+    }
+
+    // Include tiered list configuration for Multi-Level lists
+    if (listType === 'Multi-Level') {
+      newList.numberOfLevels = numberOfLevels;
+      newList.tierNames = tierNames.filter(name => name.trim() !== '');
+      // Include tiered list values if user has entered them
+      // Check if tieredListValues has actual data (not just empty dict or only _variations)
+      const tieredValuesKeys = Object.keys(tieredListValues);
+      const hasActualValues = tieredValuesKeys.some(key => {
+        if (key === '_variations') return false;
+        const value = tieredListValues[key];
+        return Array.isArray(value) && value.length > 0;
+      });
+      
+      console.log('AddListPanel handleAddList: Checking tieredListValues:', {
+        listType,
+        tieredValuesKeys,
+        hasActualValues,
+        tieredListValuesLength: tieredValuesKeys.length,
+        hasVariations: !!(tieredListValues as any)._variations,
+        sampleKeys: tieredValuesKeys.slice(0, 3)
+      });
+      
+      // Always include tieredListValues if it exists (even if empty, to clear existing values)
+      // The backend will check if it's empty and skip processing
+      if (tieredValuesKeys.length > 0 || hasActualValues) {
+        console.log('AddListPanel: Including tieredListValues in newList');
+        newList.tieredListValues = tieredListValues;
+      } else {
+        console.log('AddListPanel: tieredListValues is empty, not including in newList');
+      }
+    }
+
+    console.log('AddListPanel: Final newList being passed to onAdd:', {
+      listType: newList.listType,
+      numberOfLevels: newList.numberOfLevels,
+      tierNames: newList.tierNames,
+      hasTieredListValues: 'tieredListValues' in newList,
+      tieredListValuesKeys: newList.tieredListValues ? Object.keys(newList.tieredListValues) : 'N/A'
+    });
 
     onAdd(newList);
     
@@ -531,6 +607,10 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setListValuesText('');
     setVariationsText('');
     setSelectedVariables([]);
+    setListType('Single');
+    setNumberOfLevels(2);
+    setTierNames(['', '']);
+    setTieredListValues({});
     
     onClose();
   };
@@ -677,9 +757,9 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   };
 
   return (
-    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border flex flex-col h-full max-h-[calc(100vh-8rem)] overflow-hidden">
+      {/* Header - Fixed */}
+      <div className="flex items-center justify-between p-6 pb-4 border-b border-ag-dark-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <Settings className="w-5 h-5 text-ag-dark-text-secondary" />
           <h3 className="text-lg font-semibold text-ag-dark-text">Add New List</h3>
@@ -691,6 +771,9 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           <X className="w-5 h-5" />
         </button>
       </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto px-6 py-6" style={{ minHeight: 0 }}>
 
       {/* List Name Field - Moved to header section */}
       <div className="mb-6">
@@ -1092,6 +1175,161 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
             />
           </div>
+
+          {/* List Type Dropdown */}
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              List Type
+            </label>
+            <select
+              value={listType}
+              onChange={(e) => {
+                const newType = e.target.value as 'Single' | 'Multi-Level';
+                setListType(newType);
+                if (newType === 'Single') {
+                  setNumberOfLevels(2);
+                  setTierNames(['', '']);
+                  setTieredListValues({});
+                } else {
+                  // Initialize with 2 tiers (Tier 1 and Tier 2)
+                  setNumberOfLevels(2);
+                  setTierNames(['', '']);
+                  // Clear list values when switching to Multi-Level
+                  // (they will be managed via grid modal instead)
+                  setListValuesText('');
+                }
+              }}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="Single">Single</option>
+              <option value="Multi-Level">Multi-Level</option>
+            </select>
+          </div>
+
+          {/* Multi-Level Options */}
+          {listType === 'Multi-Level' && (
+            <>
+              {/* Number of Levels Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  No. Levels
+                </label>
+                <select
+                  value={numberOfLevels}
+                  onChange={(e) => {
+                    const newLevels = parseInt(e.target.value);
+                    setNumberOfLevels(newLevels);
+                    // Adjust tier names array to match new number of tiers
+                    const newTierNames = [...tierNames];
+                    const tiersNeeded = newLevels;
+                    while (newTierNames.length < tiersNeeded) {
+                      newTierNames.push('');
+                    }
+                    while (newTierNames.length > tiersNeeded) {
+                      newTierNames.pop();
+                    }
+                    setTierNames(newTierNames);
+                  }}
+                  className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                    <option key={num} value={num}>
+                      {num}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Tier Name Input Fields */}
+              {numberOfLevels > 0 && (
+                <div className="space-y-3">
+                  {Array.from({ length: numberOfLevels }, (_, index) => (
+                    <div key={`tier-input-${index}`}>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                        Tier {index + 1} Name
+                      </label>
+                      <input
+                        ref={(el) => {
+                          if (el) {
+                            tierNameInputRefs.current.set(index, el);
+                          } else {
+                            tierNameInputRefs.current.delete(index);
+                          }
+                        }}
+                        type="text"
+                        value={tierNames[index] || ''}
+                        onInput={(e) => {
+                          e.stopPropagation();
+                          const input = e.target as HTMLInputElement;
+                          const cursorPosition = input.selectionStart;
+                          const newValue = input.value;
+                          tierNameLastChangeTimeRefs.current.set(index, Date.now());
+                          const newTierNames = [...tierNames];
+                          newTierNames[index] = newValue;
+                          setTierNames(newTierNames);
+                          const restoreFocus = () => {
+                            const inputRef = tierNameInputRefs.current.get(index);
+                            if (inputRef) {
+                              inputRef.focus();
+                              const maxPos = inputRef.value.length;
+                              const safePos = Math.min(cursorPosition, maxPos);
+                              inputRef.setSelectionRange(safePos, safePos);
+                            }
+                          };
+                          restoreFocus();
+                          Promise.resolve().then(restoreFocus);
+                          requestAnimationFrame(restoreFocus);
+                        }}
+                        onChange={(e) => { e.stopPropagation(); }}
+                        onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                        onFocus={(e) => {
+                          e.stopPropagation();
+                          e.nativeEvent.stopImmediatePropagation();
+                          tierNameInputFocusedRefs.current.set(index, true);
+                        }}
+                        onBlur={(e) => {
+                          const lastChangeTime = tierNameLastChangeTimeRefs.current.get(index) || 0;
+                          const timeSinceLastChange = Date.now() - lastChangeTime;
+                          const wasRecentTyping = timeSinceLastChange < 300;
+                          const relatedTarget = e.relatedTarget as HTMLElement;
+                          const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                          const inputRef = tierNameInputRefs.current.get(index);
+                          const isFocused = tierNameInputFocusedRefs.current.get(index) || false;
+                          if (wasRecentTyping && !clickedOnInput && inputRef && isFocused) {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setTimeout(() => {
+                              const ref = tierNameInputRefs.current.get(index);
+                              if (ref) ref.focus();
+                            }, 0);
+                          } else if (!wasRecentTyping) {
+                            tierNameInputFocusedRefs.current.set(index, false);
+                          }
+                        }}
+                        placeholder={`Enter Tier ${index + 1} name...`}
+                        className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </CollapsibleSection>
 
@@ -1147,85 +1385,109 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">List Values</h4>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleSortListValues('asc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort A-Z"
-            >
-              <ArrowUpAZ className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => handleSortListValues('desc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort Z-A"
-            >
-              <ArrowDownZA className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setIsListValuesUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload List Values CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
+            {/* For Multi-Level lists, show only grid icon */}
+            {listType === 'Multi-Level' && (
+              <button
+                onClick={() => setIsTieredListValuesModalOpen(true)}
+                className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                title="Edit Tiered List Values"
+              >
+                <Grid className="w-5 h-5" />
+              </button>
+            )}
+            {/* For Single lists, show sort and upload buttons */}
+            {listType === 'Single' && (
+              <>
+                <button
+                  onClick={() => handleSortListValues('asc')}
+                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                  title="Sort A-Z"
+                >
+                  <ArrowUpAZ className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => handleSortListValues('desc')}
+                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                  title="Sort Z-A"
+                >
+                  <ArrowDownZA className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setIsListValuesUploadOpen(true)}
+                  className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+                  title="Upload List Values CSV"
+                >
+                  <Upload className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
         
-        <textarea
-          ref={listValuesTextareaRef}
-          value={listValuesText}
-          onChange={(e) => {
-            handleListValuesTextChange(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            // Prevent Enter key from propagating to parent components
-            e.stopPropagation();
-            // Prevent default only for Escape, not Enter
-            if (e.key === 'Escape') {
-              listValuesTextareaRef.current?.blur();
-            }
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onFocus={(e) => {
-            e.stopPropagation();
-            isListValuesTextareaFocusedRef.current = true;
-          }}
-          onBlur={(e) => {
-            // Only restore focus if blur happened very recently after typing (likely accidental)
-            const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
-            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-            
-            // Check if blur was intentional (user clicked on another focusable element)
-            const relatedTarget = e.relatedTarget as HTMLElement;
-            const clickedOutside = !relatedTarget || 
-              (relatedTarget.tagName !== 'TEXTAREA' && 
-               relatedTarget.tagName !== 'INPUT' && 
-               !relatedTarget.isContentEditable);
-            
-            // Only restore focus if it was recent typing and user didn't click on another input
-            if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-              // Restore focus after a brief delay to let React finish its render cycle
-              setTimeout(() => {
-                if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
-                  listValuesTextareaRef.current.focus();
-                }
-              }, 10);
-            } else if (!wasRecentTyping) {
-              // User intentionally blurred, don't restore
-              isListValuesTextareaFocusedRef.current = false;
-            }
-          }}
-          placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
-          rows={8}
-          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-        />
+        {/* For Multi-Level lists, show message instead of textarea */}
+        {listType === 'Multi-Level' ? (
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This is a multi-level list. Use the grid icon above to edit tiered list values.
+            </div>
+          </div>
+        ) : (
+          <textarea
+            ref={listValuesTextareaRef}
+            value={listValuesText}
+            onChange={(e) => {
+              handleListValuesTextChange(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              // Prevent Enter key from propagating to parent components
+              e.stopPropagation();
+              // Prevent default only for Escape, not Enter
+              if (e.key === 'Escape') {
+                listValuesTextareaRef.current?.blur();
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              e.nativeEvent.stopImmediatePropagation();
+            }}
+            onFocus={(e) => {
+              e.stopPropagation();
+              isListValuesTextareaFocusedRef.current = true;
+            }}
+            onBlur={(e) => {
+              // Only restore focus if blur happened very recently after typing (likely accidental)
+              const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
+              const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
+              
+              // Check if blur was intentional (user clicked on another focusable element)
+              const relatedTarget = e.relatedTarget as HTMLElement;
+              const clickedOutside = !relatedTarget || 
+                (relatedTarget.tagName !== 'TEXTAREA' && 
+                 relatedTarget.tagName !== 'INPUT' && 
+                 !relatedTarget.isContentEditable);
+              
+              // Only restore focus if it was recent typing and user didn't click on another input
+              if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
+                // Restore focus after a brief delay to let React finish its render cycle
+                setTimeout(() => {
+                  if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
+                    listValuesTextareaRef.current.focus();
+                  }
+                }, 10);
+              } else if (!wasRecentTyping) {
+                // User intentionally blurred, don't restore
+                isListValuesTextareaFocusedRef.current = false;
+              }
+            }}
+            placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
+            rows={8}
+            className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+          />
+        )}
       </div>
 
       {/* Variations Section */}
@@ -1323,6 +1585,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           Add List
         </button>
       </div>
+      </div>
 
       {/* CSV Upload Modals */}
       <ListCsvUploadModal
@@ -1378,6 +1641,38 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         onRelationshipsChange={(relationships) => {
           // Update selected variables when relationships change
           setSelectedVariables(relationships);
+        }}
+      />
+
+      {/* Tiered List Values Modal */}
+      <TieredListValuesModal
+        isOpen={isTieredListValuesModalOpen}
+        onClose={() => setIsTieredListValuesModalOpen(false)}
+        selectedList={formData.list ? {
+          id: '',
+          list: formData.list,
+          set: formData.set,
+          grouping: formData.grouping,
+          sector: driverSelections.sector,
+          domain: driverSelections.domain,
+          country: driverSelections.country
+        } as any : null}
+        allLists={allData}
+        tierNames={tierNames}
+        initialValues={tieredListValues}
+        onSave={(tieredValues) => {
+          console.log('AddListPanel: Received tiered values from modal:', {
+            type: typeof tieredValues,
+            keys: Object.keys(tieredValues),
+            hasVariations: !!(tieredValues as any)._variations,
+            sampleData: Object.keys(tieredValues).slice(0, 2).reduce((acc, key) => {
+              if (key !== '_variations') {
+                acc[key] = Array.isArray(tieredValues[key]) ? `${tieredValues[key].length} arrays` : typeof tieredValues[key];
+              }
+              return acc;
+            }, {} as any)
+          });
+          setTieredListValues(tieredValues);
         }}
       />
     </div>

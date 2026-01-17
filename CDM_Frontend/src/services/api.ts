@@ -271,12 +271,30 @@ class ApiService {
     const timeoutId = setTimeout(() => controller.abort(), 90000); // 90 second timeout for regular API calls
     
     try {
+      // Log POST requests to /lists endpoint
+      if (endpoint === '/lists' && mergedOptions.method === 'POST') {
+        console.log('🔵 API request: POST /lists', {
+          url,
+          hasBody: !!mergedOptions.body,
+          bodyPreview: mergedOptions.body ? (typeof mergedOptions.body === 'string' ? mergedOptions.body.substring(0, 200) : 'not a string') : 'no body'
+        });
+      }
+      
       const response = await fetch(url, {
         ...mergedOptions,
         signal: controller.signal
       });
       
       clearTimeout(timeoutId);
+      
+      // Log response for POST /lists
+      if (endpoint === '/lists' && mergedOptions.method === 'POST') {
+        console.log('🔵 API response: POST /lists', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok
+        });
+      }
       
       if (!response.ok) {
         // Try to get error details from response
@@ -619,10 +637,20 @@ class ApiService {
   }
 
   async createList(listData: any) {
-    return this.request('/lists', {
+    console.log('🔵 API createList called with data:', {
+      list: listData.list,
+      listType: listData.listType,
+      numberOfLevels: listData.numberOfLevels,
+      tierNames: listData.tierNames,
+      hasTieredListValues: 'tieredListValues' in listData,
+      tieredListValuesKeys: listData.tieredListValues ? Object.keys(listData.tieredListValues) : 'N/A'
+    });
+    const result = await this.request('/lists', {
       method: 'POST',
       body: JSON.stringify(listData),
     });
+    console.log('🔵 API createList result received');
+    return result;
   }
 
   async updateList(id: string, listData: any) {

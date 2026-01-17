@@ -1466,8 +1466,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
                                         if (!row || typeof row !== 'object') return '-';
                                         const sampleVals = row[column.key];
                                         if (!Array.isArray(sampleVals) || sampleVals.length === 0) return '-';
-                                        const filtered = sampleVals.filter(v => v && String(v).trim()).slice(0, 3);
-                                        return filtered.length > 0 ? filtered.join(', ') : '-';
+                                        // Filter out empty values and show all distinct values (ordered by tier)
+                                        // For multi-level lists, values are already ordered by tier (Tier 1, Tier 2, etc.)
+                                        const filtered = sampleVals.filter(v => v && String(v).trim());
+                                        // Show up to 50 values to avoid extremely long strings, add "..." if more
+                                        const displayValues = filtered.slice(0, 50);
+                                        const displayText = displayValues.join(', ');
+                                        return displayText.length > 0 
+                                          ? (filtered.length > 50 ? displayText + '...' : displayText)
+                                          : '-';
                                       })()
                                     : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
                         }

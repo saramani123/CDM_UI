@@ -4903,6 +4903,41 @@ function App() {
       if (newListData.tieredListsList !== undefined) {
         apiListData.tieredListsList = newListData.tieredListsList;
       }
+
+      // Include listType, numberOfLevels, tierNames, and tieredListValues for Multi-Level lists
+      if ((newListData as any).listType !== undefined) {
+        apiListData.listType = (newListData as any).listType;
+        console.log('App.tsx: Including listType:', (newListData as any).listType);
+      }
+      if ((newListData as any).numberOfLevels !== undefined) {
+        apiListData.numberOfLevels = (newListData as any).numberOfLevels;
+        console.log('App.tsx: Including numberOfLevels:', (newListData as any).numberOfLevels);
+      }
+      if ((newListData as any).tierNames !== undefined) {
+        apiListData.tierNames = (newListData as any).tierNames;
+        console.log('App.tsx: Including tierNames:', (newListData as any).tierNames);
+      }
+      if ((newListData as any).tieredListValues !== undefined) {
+        const tieredValues = (newListData as any).tieredListValues;
+        console.log('App.tsx: Including tieredListValues:', {
+          type: typeof tieredValues,
+          isObject: typeof tieredValues === 'object',
+          keys: tieredValues ? Object.keys(tieredValues) : 'null/undefined',
+          hasVariations: !!(tieredValues && (tieredValues as any)._variations),
+          sampleKeys: tieredValues ? Object.keys(tieredValues).slice(0, 3) : []
+        });
+        apiListData.tieredListValues = tieredValues;
+      } else {
+        console.log('App.tsx: tieredListValues is undefined, not including');
+      }
+      
+      console.log('App.tsx: Final apiListData being sent:', {
+        listType: apiListData.listType,
+        numberOfLevels: apiListData.numberOfLevels,
+        tierNames: apiListData.tierNames,
+        hasTieredListValues: 'tieredListValues' in apiListData,
+        tieredListValuesKeys: apiListData.tieredListValues ? Object.keys(apiListData.tieredListValues) : 'N/A'
+      });
       
         const createdList = await apiService.createList(apiListData) as any;
         
@@ -4930,7 +4965,10 @@ function App() {
           listValuesList: createdList.listValuesList || [],
           tieredListsList: createdList.tieredListsList || [],
           tiers: (createdList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
-          hasIncomingTier: createdList.hasIncomingTier || false
+          hasIncomingTier: createdList.hasIncomingTier || false,
+          listType: createdList.listType || ((createdList.tieredListsList && createdList.tieredListsList.length > 0) ? 'Multi-Level' : 'Single'),
+          numberOfLevels: createdList.numberOfLevels,
+          tierNames: createdList.tierNames || []
         };
         
         // Show success message if list values were included

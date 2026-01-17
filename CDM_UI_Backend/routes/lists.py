@@ -42,6 +42,9 @@ class ListCreateRequest(BaseModel):
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
     variationsList: Optional[List[dict]] = None  # List of variations to create for the list
+    listType: Optional[str] = None  # 'Single' or 'Multi-Level'
+    numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
+    tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
     
     @model_validator(mode='before')
     @classmethod
@@ -652,7 +655,11 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
         
         created_count = 0
         
-        for tiered_list in tiered_lists:
+        print(f"🔵 CREATE_TIERED_RELATIONSHIPS: Processing {len(tiered_lists)} tiered lists")
+        
+        for idx, tiered_list in enumerate(tiered_lists):
+            print(f"   Processing tiered list {idx + 1}: {tiered_list}")
+            
             # Get tier number from tiered_list dict if available, otherwise use index
             tier_number = None
             if isinstance(tiered_list, dict):
@@ -662,32 +669,38 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
             
             # If tier number not in dict, try to get from database
             tiered_list_id = tiered_list.get("listId") if isinstance(tiered_list, dict) else getattr(tiered_list, "listId", None)
+            print(f"   Tiered list ID: {tiered_list_id}, tier from dict: {tier_number}")
+            
             if not tier_number and tiered_list_id:
                 tier_result = session.run("MATCH (l:List {id: $tier_id}) RETURN l.tier as tier", tier_id=tiered_list_id)
                 tier_record = tier_result.single()
                 if tier_record:
                     tier_number = tier_record.get("tier")
+                    print(f"   Tier from database: {tier_number}")
             
             # Fallback to index if tier number still not found (shouldn't happen if data is correct)
             if not tier_number:
                 # Find index in sorted list
-                for idx, tl in enumerate(tiered_lists, start=1):
+                for idx2, tl in enumerate(tiered_lists, start=1):
                     tl_id = tl.get("listId") if isinstance(tl, dict) else getattr(tl, "listId", None)
                     if tl_id == tiered_list_id:
-                        tier_number = min(idx, 10)
+                        tier_number = min(idx2, 10)
+                        print(f"   Tier from index: {tier_number}")
                         break
                 if not tier_number:
-                    print(f"⚠️ WARNING: Could not determine tier number for tiered list {tiered_list_id}, skipping")
+                    print(f"   ⚠️ WARNING: Could not determine tier number for tiered list {tiered_list_id}, skipping")
                     continue
             
             tier_number = min(int(tier_number), 10)  # Cap at tier 10 and ensure it's an integer
             
             if not tiered_list_id:
-                print(f"⚠️ Skipping tiered list entry - missing listId")
+                print(f"   ⚠️ Skipping tiered list entry - missing listId")
                 continue
             
             # Create relationship with appropriate tier number
             relationship_type = f"HAS_TIER_{tier_number}"
+            print(f"   Creating {relationship_type} relationship from parent list {list_id} to tiered list {tiered_list_id}")
+            
             # Build query with relationship type
             query = f"""
                 MATCH (l:List {{id: $list_id}})
@@ -697,11 +710,25 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
             """
             result = session.run(query, list_id=list_id, tiered_list_id=tiered_list_id)
             
-            if result.single():
+            record = result.single()
+            if record:
                 created_count += 1
-                print(f"✅ Created {relationship_type} relationship from list {list_id} to tiered list {tiered_list_id}")
+                print(f"   ✅ Created {relationship_type} relationship from list {list_id} to tiered list {tiered_list_id}")
+            else:
+                print(f"   ❌ Failed to create {relationship_type} relationship - MERGE returned no result")
+                # Debug: Check if both nodes exist
+                check_result = session.run("""
+                    MATCH (l:List {id: $list_id})
+                    MATCH (tiered:List {id: $tiered_list_id})
+                    RETURN l.id as parent_id, tiered.id as tiered_id
+                """, list_id=list_id, tiered_list_id=tiered_list_id)
+                check_record = check_result.single()
+                if check_record:
+                    print(f"   DEBUG: Both nodes exist - parent: {check_record['parent_id']}, tiered: {check_record['tiered_id']}")
+                else:
+                    print(f"   DEBUG: One or both nodes missing!")
         
-        print(f"Created {created_count} tiered list relationships")
+        print(f"🔵 CREATE_TIERED_RELATIONSHIPS: Created {created_count} tiered list relationships")
         return created_count
         
     except Exception as e:
@@ -710,7 +737,24 @@ async def create_tiered_list_relationships(session, list_id: str, tiered_lists: 
 
 async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Dict[str, Any]], tiered_values: Dict[str, Any]):
     """
-    Create tiered list values with relationships.
+    Create tiered list values with relationships following this exact flow:
+    
+    1. Tier list NODES should already exist (created by create_tier_list_nodes)
+    2. Relationships from parent list -> tier lists should already exist (HAS_TIER_1, HAS_TIER_2, etc.)
+    3. For each Tier 1 value in tiered_values:
+       a. Create Tier 1 ListValue node
+       b. Create HAS_LIST_VALUE relationship from Tier 1 list node -> Tier 1 ListValue node
+    4. For each array of tier values (representing one row in the modal):
+       a. For Tier 2 value in the array:
+          - Create Tier 2 ListValue node
+          - Create HAS_LIST_VALUE relationship from Tier 2 list node -> Tier 2 ListValue node
+          - Create HAS_TIER_2_VALUE relationship from Tier 1 ListValue -> Tier 2 ListValue
+       b. For Tier 3 value in the array:
+          - Create Tier 3 ListValue node
+          - Create HAS_LIST_VALUE relationship from Tier 3 list node -> Tier 3 ListValue node
+          - Create HAS_TIER_3_VALUE relationship from Tier 2 ListValue -> Tier 3 ListValue
+       c. Continue for Tier 4, Tier 5, etc.
+    
     Parent list has NO values. Only tier lists have values.
     tiered_values: Dict mapping Tier 1 value to list of arrays, where each array contains values for Tier 2, Tier 3, etc.
     Also supports variations: tiered_values can have a "_variations" key with format:
@@ -727,7 +771,9 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
     Where "USA" is a Tier 1 value, "California"/"Texas" are Tier 2 values, "Los Angeles"/"Houston" are Tier 3 values.
     """
     try:
-        print(f"Creating tiered list values for list {list_id}")
+        print(f"🔵 CREATE_TIERED_LIST_VALUES: Starting for list {list_id}")
+        print(f"   Tiered lists count: {len(tiered_lists)}")
+        print(f"   Tier 1 values count: {len([k for k in tiered_values.keys() if k != '_variations'])}")
         
         # Extract variations if present
         variations = {}
@@ -805,7 +851,8 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
             tier1_list_id = tier_list_ids[0]  # First tier list (Tier 1)
             tier1_list_name = tier_list_names[0]
             
-            # Create or get the Tier 1 list value node (connected to Tier 1 list, NOT parent list)
+            # STEP 3a: Create or get the Tier 1 list value node (connected to Tier 1 list, NOT parent list)
+            print(f"   📝 Processing Tier 1 value: '{tier1_value}'")
             tier1_lv_result = session.run("""
                 MATCH (tier1_list:List {id: $tier1_list_id})
                 MERGE (lv1:ListValue {value: $value, tier: 1, listName: $tier1_list_name})
@@ -815,9 +862,12 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                 RETURN lv1
             """, tier1_list_id=tier1_list_id, value=tier1_value, tier1_list_name=tier1_list_name)
             
-            if not tier1_lv_result.single():
-                print(f"Failed to create/get Tier 1 list value: {tier1_value}")
+            tier1_lv_record = tier1_lv_result.single()
+            if not tier1_lv_record:
+                print(f"   ❌ Failed to create/get Tier 1 list value: {tier1_value}")
                 continue
+            
+            print(f"   ✅ Created/verified Tier 1 ListValue '{tier1_value}' connected to Tier 1 list '{tier1_list_name}'")
             
             # Create variations for Tier 1 value if present (can have multiple variations)
             tier1_variations = variations.get(tier1_value, {})
@@ -831,12 +881,17 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                     # Single variation as string
                     await create_value_variation(session, tier1_value, variation_values.strip(), tier1_list_name, 1)
             
-            # Process each array of tiered values (Tier 2, Tier 3, etc.)
-            for tiered_value_array in tiered_value_arrays:
+            # STEP 4: Process each array of tiered values (Tier 2, Tier 3, etc.)
+            # Each array represents one row in the modal
+            for array_index, tiered_value_array in enumerate(tiered_value_arrays):
                 if not tiered_value_array or len(tiered_value_array) == 0:
+                    print(f"   ⚠️ Skipping empty array at index {array_index}")
                     continue
                 
+                print(f"   📋 Processing row {array_index + 1}: {tiered_value_array}")
+                
                 # Create chain of relationships: Tier1 -> Tier2 -> Tier3 -> ...
+                # Start with the Tier 1 value we just created
                 previous_lv_value = tier1_value
                 previous_tier_number = 1
                 
@@ -859,9 +914,12 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                     # Relationship type: HAS_TIER_2_VALUE, HAS_TIER_3_VALUE, etc.
                     relationship_type = f"HAS_TIER_{current_tier_number}_VALUE"
                     
-                    # Create or get the current tier list value node
                     # Get previous tier list name for matching
                     prev_tier_list_name = tier_list_names[tier_index] if tier_index > 0 else tier1_list_name
+                    
+                    print(f"      🔗 Creating Tier {current_tier_number} value '{tier_value}'")
+                    print(f"         Previous: Tier {previous_tier_number} value '{previous_lv_value}' from '{prev_tier_list_name}'")
+                    print(f"         Current: Tier {current_tier_number} value '{tier_value}' for list '{current_tier_list_name}'")
                     
                     # First, verify the previous value exists
                     prev_check = session.run("""
@@ -872,10 +930,11 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                     """, prev_value=previous_lv_value, prev_tier_number=previous_tier_number, prev_tier_list_name=prev_tier_list_name)
                     
                     if not prev_check.single():
-                        print(f"❌ Previous ListValue not found: value={previous_lv_value}, tier={previous_tier_number}, listName={prev_tier_list_name}")
-                        print(f"   Skipping tier value: {tier_value} (Tier {current_tier_number})")
+                        print(f"      ❌ Previous ListValue not found: value={previous_lv_value}, tier={previous_tier_number}, listName={prev_tier_list_name}")
+                        print(f"         Skipping tier value: {tier_value} (Tier {current_tier_number})")
                         break
                     
+                    # STEP 4a/b/c: Create Tier N ListValue, connect to Tier N list, and create HAS_TIER_N_VALUE relationship
                     query = f"""
                         MATCH (prev:ListValue {{value: $prev_value, tier: $prev_tier_number}})
                         WHERE prev.listName = $prev_tier_list_name OR prev.listName IS NULL
@@ -902,6 +961,10 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                     if record:
                         created_count += 1
                         
+                        print(f"      ✅ Created Tier {current_tier_number} ListValue '{tier_value}'")
+                        print(f"         - Connected to Tier {current_tier_number} list '{current_tier_list_name}' (HAS_LIST_VALUE)")
+                        print(f"         - Connected from Tier {previous_tier_number} value '{previous_lv_value}' ({relationship_type})")
+                        
                         # Create variations for this tier value if present (can have multiple variations)
                         if tier1_value in variations:
                             tier_variations = variations[tier1_value]
@@ -916,15 +979,15 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                                     # Single variation as string
                                     await create_value_variation(session, tier_value, variation_values.strip(), current_tier_list_name, current_tier_number)
                         
+                        # Update for next iteration in the chain
                         previous_lv_value = tier_value
                         previous_tier_number = current_tier_number
-                        print(f"✅ Created relationship: {previous_lv_value} -> {tier_value} (Tier {current_tier_number})")
                     else:
-                        print(f"❌ Failed to create relationship for {tier_value} (Tier {current_tier_number})")
-                        print(f"   Previous value: {previous_lv_value}, Tier list: {current_tier_list_name}")
+                        print(f"      ❌ Failed to create relationship for {tier_value} (Tier {current_tier_number})")
+                        print(f"         Previous value: {previous_lv_value}, Tier list: {current_tier_list_name}")
                         break
         
-        print(f"Created {created_count} tiered list value relationships")
+        print(f"🔵 CREATE_TIERED_LIST_VALUES: Completed. Created {created_count} tiered list value relationships")
         return created_count
         
     except Exception as e:
@@ -1089,38 +1152,59 @@ async def get_lists():
                         
                         print(f"DEBUG: Multi-level list {record['list']} (id: {record['id']}) - tier1_list_id: {tier1_list_id}, tier1_vals count: {len(tier1_vals)}, tier1_vals: {tier1_vals[:5]}")
                         
-                        # Count all distinct values across all tier lists
-                        # This includes:
-                        # 1. All ListValue nodes directly connected to any tier list via HAS_LIST_VALUE
-                        # 2. All ListValue nodes reachable via tier value relationships
-                        # Use a simple approach: count all values from tier lists directly
-                        # For nested values, we'll count them separately and combine
-                        direct_count_query = session.run("""
+                        # Count ALL distinct values across all tier lists
+                        # This includes values from Tier 1, Tier 2, Tier 3, etc.
+                        # Count all distinct ListValue nodes connected to any tier list
+                        all_values_count_query = session.run("""
                             MATCH (parent:List {id: $list_id})-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier_list:List)
                             MATCH (tier_list)-[:HAS_LIST_VALUE]->(lv:ListValue)
-                            RETURN count(DISTINCT lv) as direct_count
+                            RETURN count(DISTINCT lv) as total_count
                         """, {"list_id": record["id"]})
                         
-                        nested_count_query = session.run("""
+                        all_values_result = all_values_count_query.single()
+                        total_values_count = all_values_result.get("total_count") or 0 if all_values_result else 0
+                        
+                        # Collect distinct values from each tier in order (Tier 1, Tier 2, etc.)
+                        # Get all tier lists ordered by tier number
+                        tier_values_query = session.run("""
                             MATCH (parent:List {id: $list_id})-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier_list:List)
                             MATCH (tier_list)-[:HAS_LIST_VALUE]->(lv:ListValue)
-                            MATCH (lv)-[tier_val_rel]->(lv2:ListValue)
-                            WHERE type(tier_val_rel) STARTS WITH 'HAS_' AND type(tier_val_rel) ENDS WITH '_VALUE'
-                            RETURN count(DISTINCT lv2) as nested_count
+                            WITH tier_list, lv, type(tier_rel) as rel_type
+                            ORDER BY 
+                                CASE rel_type
+                                    WHEN 'HAS_TIER_1' THEN 1
+                                    WHEN 'HAS_TIER_2' THEN 2
+                                    WHEN 'HAS_TIER_3' THEN 3
+                                    WHEN 'HAS_TIER_4' THEN 4
+                                    WHEN 'HAS_TIER_5' THEN 5
+                                    WHEN 'HAS_TIER_6' THEN 6
+                                    WHEN 'HAS_TIER_7' THEN 7
+                                    WHEN 'HAS_TIER_8' THEN 8
+                                    WHEN 'HAS_TIER_9' THEN 9
+                                    WHEN 'HAS_TIER_10' THEN 10
+                                    ELSE 99
+                                END,
+                                lv.value
+                            RETURN rel_type, collect(DISTINCT lv.value) as tier_values
                         """, {"list_id": record["id"]})
                         
-                        direct_result = direct_count_query.single()
-                        nested_result = nested_count_query.single()
+                        # Build sample values: distinct values from Tier 1, then Tier 2, etc.
+                        all_sample_values = []
+                        seen_values = set()  # Track values we've already added to avoid duplicates
                         
-                        direct_count = direct_result.get("direct_count") or 0 if direct_result else 0
-                        nested_count = nested_result.get("nested_count") or 0 if nested_result else 0
+                        for tier_record in tier_values_query:
+                            tier_vals = tier_record.get("tier_values") or []
+                            # Filter out None/empty values and add to sample (avoiding duplicates)
+                            for val in tier_vals:
+                                if val and str(val).strip() and val not in seen_values:
+                                    all_sample_values.append(str(val).strip())
+                                    seen_values.add(val)
                         
-                        # For now, just use direct count (nested values are typically already counted in direct)
-                        # In the future, we could subtract overlaps, but for now this is safer
-                        total_values_count = direct_count
-                        print(f"DEBUG: Multi-level list {record['list']} - direct_count: {direct_count}, nested_count: {nested_count}, total_values_count: {total_values_count}")
+                        # Return all distinct values (up to 100 to avoid extremely long arrays)
+                        # Frontend will display them comma-separated
+                        sample_values = all_sample_values[:100] if len(all_sample_values) > 100 else all_sample_values
                         
-                        sample_values = tier1_vals[:3] if tier1_vals else []
+                        print(f"DEBUG: Multi-level list {record['list']} - total_values_count: {total_values_count}, sample_values count: {len(sample_values)} (of {len(all_sample_values)} total distinct values)")
                     else:
                         # No tier 1 list found, set to 0
                         total_values_count = 0
@@ -1172,6 +1256,19 @@ async def create_list(list_data: ListCreateRequest):
     """
     Create a new list in the CDM with proper taxonomy structure.
     """
+    print(f"🔵 CREATE_LIST: Received request to create list: {list_data.list}")
+    print(f"🔵 CREATE_LIST: listType={list_data.listType}, numberOfLevels={list_data.numberOfLevels}, tierNames={list_data.tierNames}")
+    print(f"🔵 CREATE_LIST: tieredListValues is {'provided' if list_data.tieredListValues is not None else 'None'}")
+    if list_data.tieredListValues is not None:
+        if isinstance(list_data.tieredListValues, dict):
+            keys = list(list_data.tieredListValues.keys())
+            print(f"🔵 CREATE_LIST: tieredListValues keys: {keys}")
+            if len(keys) > 0:
+                for key in keys[:3]:  # Show first 3 keys
+                    if key != '_variations':
+                        value = list_data.tieredListValues[key]
+                        print(f"🔵 CREATE_LIST:   {key}: {len(value) if isinstance(value, list) else type(value)}")
+    
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -1242,17 +1339,173 @@ async def create_list(list_data: ListCreateRequest):
                 list_data.country
             )
 
+            # ====================================================================
+            # MULTI-LEVEL LIST SETUP - EXACT FLOW:
+            # ====================================================================
+            # STEP 1: Create tier list NODES (Tier 1, Tier 2, etc.)
+            # STEP 2: Create relationships from parent list -> tier lists (HAS_TIER_1, HAS_TIER_2, etc.)
+            # STEP 3: If tieredListValues provided:
+            #   - Create Tier 1 ListValue nodes and connect to Tier 1 list (HAS_LIST_VALUE)
+            #   - Create Tier 2+ ListValue nodes and connect to their tier lists (HAS_LIST_VALUE)
+            #   - Create HAS_TIER_2_VALUE relationships from Tier 1 values -> Tier 2 values (same row)
+            #   - Create HAS_TIER_3_VALUE relationships from Tier 2 values -> Tier 3 values (same row)
+            #   - Continue for Tier 4, Tier 5, etc.
+            # ====================================================================
+            
+            # Handle Multi-Level list setup: create tier list nodes and relationships
+            created_tiered_lists = None  # Store the tiered lists we create
+            relationships_already_created = False  # Track if we've already created relationships
+            if list_data.listType == 'Multi-Level' and list_data.tierNames is not None and len(list_data.tierNames) > 0:
+                print(f"🔵 STEP 1: Setting up Multi-Level list {list_id} with tier names: {list_data.tierNames}")
+                
+                # STEP 1: Create tier list nodes
+                tier_list_ids = await create_tier_list_nodes(session, list_id, list_data.tierNames, list_data.set, list_data.grouping)
+                print(f"✅ STEP 1 COMPLETE: Created {len(tier_list_ids)} tier list nodes with IDs: {tier_list_ids}")
+                
+                # Build tieredListsList from tier list IDs - preserve order and include tier number
+                created_tiered_lists = []
+                for index, tier_list_id in enumerate(tier_list_ids, start=1):
+                    # Get tier list info including tier property
+                    tier_result = session.run("""
+                        MATCH (l:List {id: $tier_id})
+                        RETURN l.name as name, l.set as set, l.grouping as grouping, l.tier as tier
+                    """, tier_id=tier_list_id)
+                    tier_record = tier_result.single()
+                    if tier_record:
+                        tier_number = tier_record.get("tier") or index  # Use tier property if available, otherwise use index
+                        created_tiered_lists.append({
+                            "listId": tier_list_id,
+                            "set": tier_record["set"],
+                            "grouping": tier_record["grouping"],
+                            "list": tier_record["name"],
+                            "tier": tier_number  # Include tier number for sorting
+                        })
+                
+                # Sort tiered_lists by tier number to ensure correct order
+                created_tiered_lists.sort(key=lambda x: x.get("tier", 999))
+                
+                print(f"DEBUG: Built tiered_lists (ordered by tier): {created_tiered_lists}")
+                
+                # STEP 2: Create tiered list relationships (parent list -> tier lists)
+                if created_tiered_lists:
+                    print(f"🔵 STEP 2: Creating relationships from parent list to tier lists")
+                    await create_tiered_list_relationships(session, list_id, created_tiered_lists)
+                    relationships_already_created = True
+                    print(f"✅ STEP 2 COMPLETE: Created {len(created_tiered_lists)} tier list relationships (HAS_TIER_1, HAS_TIER_2, etc.)")
+            
             # Create list values as nodes with HAS_LIST_VALUE relationships (replace all)
-            if list_data.listValuesList is not None:
+            # Only for Single lists - Multi-Level lists don't have direct values
+            if list_data.listType != 'Multi-Level' and list_data.listValuesList is not None:
                 await create_list_values(session, list_id, list_data.listValuesList, replace=True)
             
-            # Create tiered list relationships
-            if list_data.tieredListsList is not None:
-                await create_tiered_list_relationships(session, list_id, list_data.tieredListsList)
+            # Create tiered list relationships (for backward compatibility with old API)
+            # Only do this if we haven't already created them above (for Multi-Level lists)
+            # If we already created tiered lists above, skip this to avoid deleting and recreating
+            if not relationships_already_created:
+                if list_data.tieredListsList is not None and len(list_data.tieredListsList) > 0:
+                    print(f"DEBUG: Creating tiered list relationships from tieredListsList (backward compatibility)")
+                    await create_tiered_list_relationships(session, list_id, list_data.tieredListsList)
+                else:
+                    print(f"DEBUG: tieredListsList is None or empty, skipping backward compatibility path")
+            else:
+                print(f"DEBUG: Skipping tieredListsList backward compatibility - already created via Multi-Level setup (relationships_already_created=True)")
             
             # Create tiered list values
-            if list_data.tieredListValues is not None and list_data.tieredListsList:
-                await create_tiered_list_values(session, list_id, list_data.tieredListsList, list_data.tieredListValues)
+            # Use the tiered lists we just created, or fall back to querying from database, or use provided tieredListsList
+            tiered_lists_for_values = None
+            
+            if created_tiered_lists:
+                # Use the tiered lists we just created
+                tiered_lists_for_values = created_tiered_lists
+                print(f"DEBUG: Using created tiered lists for values: {len(tiered_lists_for_values)} lists")
+            elif list_data.tieredListsList:
+                # Use provided tieredListsList
+                tiered_lists_for_values = list_data.tieredListsList
+                print(f"DEBUG: Using provided tieredListsList for values: {len(tiered_lists_for_values)} lists")
+            elif list_data.listType == 'Multi-Level':
+                # Query from database as fallback
+                tier_result = session.run("""
+                    MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                    RETURN tiered.id as id, tiered.set as set, tiered.grouping as grouping, tiered.name as list, type(r) as rel_type
+                    ORDER BY 
+                        CASE type(r)
+                            WHEN 'HAS_TIER_1' THEN 1
+                            WHEN 'HAS_TIER_2' THEN 2
+                            WHEN 'HAS_TIER_3' THEN 3
+                            WHEN 'HAS_TIER_4' THEN 4
+                            WHEN 'HAS_TIER_5' THEN 5
+                            WHEN 'HAS_TIER_6' THEN 6
+                            WHEN 'HAS_TIER_7' THEN 7
+                            WHEN 'HAS_TIER_8' THEN 8
+                            WHEN 'HAS_TIER_9' THEN 9
+                            WHEN 'HAS_TIER_10' THEN 10
+                            ELSE 99
+                        END
+                """, list_id=list_id)
+                
+                tiered_lists_for_values = []
+                for record in tier_result:
+                    if record["id"]:
+                        rel_type = record.get("rel_type", "")
+                        tier_number = 999
+                        if rel_type and rel_type.startswith("HAS_TIER_"):
+                            try:
+                                tier_number = int(rel_type.replace("HAS_TIER_", ""))
+                            except:
+                                pass
+                        
+                        tier_info = {
+                            "listId": record["id"],
+                            "set": record["set"],
+                            "grouping": record["grouping"],
+                            "list": record["list"],
+                            "tier": tier_number
+                        }
+                        tiered_lists_for_values.append(tier_info)
+                
+                tiered_lists_for_values.sort(key=lambda x: x.get("tier", 999))
+                print(f"DEBUG: Queried tiered lists from database: {len(tiered_lists_for_values)} lists")
+            
+            # STEP 3: Create tiered list values if provided
+            if list_data.tieredListValues is not None:
+                print(f"🔵 STEP 3: Creating tiered list values and relationships")
+                # Check if tieredListValues is not empty (could be {} or have _variations only)
+                is_empty = False
+                if isinstance(list_data.tieredListValues, dict):
+                    # Check if it only has _variations or is completely empty
+                    keys = list(list_data.tieredListValues.keys())
+                    if len(keys) == 0:
+                        is_empty = True
+                    elif len(keys) == 1 and '_variations' in keys:
+                        is_empty = True
+                    else:
+                        # Check if any non-_variations key has actual values
+                        has_values = any(
+                            key != '_variations' and 
+                            isinstance(list_data.tieredListValues[key], list) and 
+                            len(list_data.tieredListValues[key]) > 0
+                            for key in keys
+                        )
+                        if not has_values:
+                            is_empty = True
+                
+                if not is_empty:
+                    if tiered_lists_for_values and len(tiered_lists_for_values) > 0:
+                        print(f"DEBUG: Creating tiered list values with {len(tiered_lists_for_values)} tier lists")
+                        print(f"DEBUG: tieredListValues type: {type(list_data.tieredListValues)}")
+                        print(f"DEBUG: tieredListValues keys: {list(list_data.tieredListValues.keys()) if isinstance(list_data.tieredListValues, dict) else 'not a dict'}")
+                        if isinstance(list_data.tieredListValues, dict):
+                            for key, value in list_data.tieredListValues.items():
+                                if key != '_variations':
+                                    print(f"DEBUG:   {key}: {len(value) if isinstance(value, list) else 'not a list'} arrays")
+                        created_count = await create_tiered_list_values(session, list_id, tiered_lists_for_values, list_data.tieredListValues)
+                        print(f"✅ Created {created_count} tiered list value relationships")
+                    else:
+                        print(f"⚠️ WARNING: tieredListValues provided but no tiered lists found. Cannot save tiered values.")
+                        print(f"   Make sure listType is 'Multi-Level' and tierNames are provided.")
+                        print(f"   listType: {list_data.listType}, tierNames: {list_data.tierNames}")
+                else:
+                    print(f"DEBUG: tieredListValues is empty or only contains _variations, skipping value creation")
 
             # Handle variationsList if provided
             has_variations_list = list_data.variationsList is not None and len(list_data.variationsList) > 0
@@ -1323,6 +1576,42 @@ async def create_list(list_data: ListCreateRequest):
             variations_count = variations_record["count"] if variations_record else 0
             variations_list = variations_record["variations"] if variations_record and variations_record["variations"] else []
 
+            # Get tiered lists information for the response
+            tiered_result = session.run("""
+                MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                RETURN tiered.id as id, tiered.set as set, tiered.grouping as grouping, tiered.name as list, type(r) as rel_type
+                ORDER BY 
+                    CASE type(r)
+                        WHEN 'HAS_TIER_1' THEN 1
+                        WHEN 'HAS_TIER_2' THEN 2
+                        WHEN 'HAS_TIER_3' THEN 3
+                        WHEN 'HAS_TIER_4' THEN 4
+                        WHEN 'HAS_TIER_5' THEN 5
+                        WHEN 'HAS_TIER_6' THEN 6
+                        WHEN 'HAS_TIER_7' THEN 7
+                        WHEN 'HAS_TIER_8' THEN 8
+                        WHEN 'HAS_TIER_9' THEN 9
+                        WHEN 'HAS_TIER_10' THEN 10
+                        ELSE 99
+                    END
+            """, list_id=list_id)
+            
+            tiered_lists = []
+            for tier_record in tiered_result:
+                if tier_record["id"]:
+                    tiered_lists.append({
+                        "listId": tier_record["id"],
+                        "set": tier_record["set"],
+                        "grouping": tier_record["grouping"],
+                        "list": tier_record["list"]
+                    })
+            
+            # Determine listType, numberOfLevels, and tierNames
+            tiered_count = len(tiered_lists)
+            list_type = list_data.listType if list_data.listType else ('Multi-Level' if tiered_count > 0 else 'Single')
+            number_of_levels = list_data.numberOfLevels if list_data.numberOfLevels else (tiered_count if tiered_count > 0 else 2)
+            tier_names = list_data.tierNames if list_data.tierNames else [tier["list"] for tier in tiered_lists]
+
             return {
                 "id": record["id"],
                 "sector": list_data.sector,
@@ -1340,8 +1629,12 @@ async def create_list(list_data: ListCreateRequest):
                 "is_meme": record.get("is_meme", False),  # Added for the "Memez" feature
                 "variablesAttachedList": [],
                 "listValuesList": list_data.listValuesList if list_data.listValuesList else [],
+                "tieredListsList": tiered_lists,
                 "variations": variations_count,
-                "variationsList": variations_list
+                "variationsList": variations_list,
+                "listType": list_type,
+                "numberOfLevels": number_of_levels,
+                "tierNames": tier_names
             }
 
     except Exception as e:
@@ -1697,58 +1990,91 @@ async def update_list(list_id: str, request: Request):
                     print(f"   Make sure you have saved the List Type configuration (Multi-Level with tier names) first.")
                     # Don't raise an error, just log a warning - the API call will succeed but no values will be saved
                 else:
-                    # Delete existing tiered value relationships
-                    # For tiered lists, values are on tier lists, not parent list
-                    # Delete all tiered value relationships (HAS_TIER_X_VALUE) from tier list values
-                    tier1_list_id = current_tiered_lists[0].get("listId") if current_tiered_lists else None
-                    if tier1_list_id:
-                        delete_result = session.run("""
-                            MATCH (tier1_list:List {id: $tier1_list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
-                            MATCH (lv1)-[r2]->(lv2:ListValue)
-                            WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
-                              AND type(r2) <> 'HAS_LIST_VALUE'
-                            DELETE r2
-                            RETURN count(r2) as deleted_count
-                        """, tier1_list_id=tier1_list_id)
+                    # Check if tieredListValues is not empty (could be {} or have _variations only)
+                    is_empty = False
+                    if isinstance(list_data.tieredListValues, dict):
+                        # Check if it only has _variations or is completely empty
+                        keys = list(list_data.tieredListValues.keys())
+                        if len(keys) == 0:
+                            is_empty = True
+                            print(f"DEBUG: tieredListValues is empty dict, skipping value creation")
+                        elif len(keys) == 1 and '_variations' in keys:
+                            is_empty = True
+                            print(f"DEBUG: tieredListValues only contains _variations, skipping value creation")
+                        else:
+                            # Check if any non-_variations key has actual values
+                            has_values = any(
+                                key != '_variations' and 
+                                isinstance(list_data.tieredListValues[key], list) and 
+                                len(list_data.tieredListValues[key]) > 0
+                                for key in keys
+                            )
+                            if not has_values:
+                                is_empty = True
+                                print(f"DEBUG: tieredListValues has no actual values (only empty arrays), skipping value creation")
+                    
+                    if not is_empty:
+                        # Delete existing tiered value relationships
+                        # For tiered lists, values are on tier lists, not parent list
+                        # Delete all tiered value relationships (HAS_TIER_X_VALUE) from tier list values
+                        tier1_list_id = current_tiered_lists[0].get("listId") if current_tiered_lists else None
+                        if tier1_list_id:
+                            delete_result = session.run("""
+                                MATCH (tier1_list:List {id: $tier1_list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                                MATCH (lv1)-[r2]->(lv2:ListValue)
+                                WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
+                                  AND type(r2) <> 'HAS_LIST_VALUE'
+                                DELETE r2
+                                RETURN count(r2) as deleted_count
+                            """, tier1_list_id=tier1_list_id)
+                        else:
+                            # Fallback: delete from parent list (shouldn't happen for tiered lists)
+                            delete_result = session.run("""
+                                MATCH (l:List {id: $list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                                MATCH (lv1)-[r2]->(lv2:ListValue)
+                                WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
+                                  AND type(r2) <> 'HAS_LIST_VALUE'
+                                DELETE r2
+                                RETURN count(r2) as deleted_count
+                            """, list_id=list_id)
+                        delete_record = delete_result.single()
+                        deleted_count = delete_record["deleted_count"] if delete_record else 0
+                        print(f"Deleted {deleted_count} existing tiered value relationships")
+                        
+                        # Also delete orphaned tiered list value nodes (those that are no longer connected to tier 1 values)
+                        # These are nodes with tier property that have no incoming relationships from other ListValues
+                        delete_orphans_result = session.run("""
+                            MATCH (lv:ListValue)
+                            WHERE lv.tier IS NOT NULL
+                              AND NOT EXISTS {
+                                MATCH (lv2:ListValue)-[r]->(lv)
+                                WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
+                              }
+                            DETACH DELETE lv
+                            RETURN count(lv) as deleted_count
+                        """)
+                        delete_orphans_record = delete_orphans_result.single()
+                        deleted_orphans = delete_orphans_record["deleted_count"] if delete_orphans_record else 0
+                        print(f"Deleted {deleted_orphans} orphaned tiered list value nodes")
+                        
+                        # Create new tiered value relationships
+                        try:
+                            print(f"DEBUG: Creating tiered list values with {len(current_tiered_lists)} tier lists")
+                            print(f"DEBUG: tieredListValues type: {type(list_data.tieredListValues)}")
+                            print(f"DEBUG: tieredListValues keys: {list(list_data.tieredListValues.keys()) if isinstance(list_data.tieredListValues, dict) else 'not a dict'}")
+                            if isinstance(list_data.tieredListValues, dict):
+                                for key, value in list_data.tieredListValues.items():
+                                    if key != '_variations':
+                                        print(f"DEBUG:   {key}: {len(value) if isinstance(value, list) else 'not a list'} arrays")
+                            created_count = await create_tiered_list_values(session, list_id, current_tiered_lists, list_data.tieredListValues)
+                            print(f"✅ Created {created_count} tiered list value relationships")
+                        except Exception as e:
+                            print(f"❌ Error creating tiered list values: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            raise
                     else:
-                        # Fallback: delete from parent list (shouldn't happen for tiered lists)
-                        delete_result = session.run("""
-                            MATCH (l:List {id: $list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
-                            MATCH (lv1)-[r2]->(lv2:ListValue)
-                            WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
-                              AND type(r2) <> 'HAS_LIST_VALUE'
-                            DELETE r2
-                            RETURN count(r2) as deleted_count
-                        """, list_id=list_id)
-                    delete_record = delete_result.single()
-                    deleted_count = delete_record["deleted_count"] if delete_record else 0
-                    print(f"Deleted {deleted_count} existing tiered value relationships")
-                    
-                    # Also delete orphaned tiered list value nodes (those that are no longer connected to tier 1 values)
-                    # These are nodes with tier property that have no incoming relationships from other ListValues
-                    delete_orphans_result = session.run("""
-                        MATCH (lv:ListValue)
-                        WHERE lv.tier IS NOT NULL
-                          AND NOT EXISTS {
-                            MATCH (lv2:ListValue)-[r]->(lv)
-                            WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
-                          }
-                        DETACH DELETE lv
-                        RETURN count(lv) as deleted_count
-                    """)
-                    delete_orphans_record = delete_orphans_result.single()
-                    deleted_orphans = delete_orphans_record["deleted_count"] if delete_orphans_record else 0
-                    print(f"Deleted {deleted_orphans} orphaned tiered list value nodes")
-                    
-                    # Create new tiered value relationships
-                    try:
-                        created_count = await create_tiered_list_values(session, list_id, current_tiered_lists, list_data.tieredListValues)
-                        print(f"✅ Created {created_count} tiered list value relationships")
-                    except Exception as e:
-                        print(f"❌ Error creating tiered list values: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        raise
+                        print(f"DEBUG: tieredListValues is empty or only contains _variations, skipping value creation but not deleting existing values")
             
             # Handle variationsList if provided (append variations to the list)
             has_variations_list = list_data.variationsList is not None and len(list_data.variationsList) > 0
@@ -2180,17 +2506,19 @@ async def get_tiered_list_values(list_id: str):
             # For each tier 1 value, traverse the tiered relationships
             result_data: Dict[str, List[List[str]]] = {}
             
+            print(f"🔵 GET_TIERED_VALUES: Found {len(tier1_values)} Tier 1 values: {tier1_values}")
+            
             for tier1_value in tier1_values:
+                print(f"🔵 GET_TIERED_VALUES: Processing Tier 1 value '{tier1_value}'")
+                
                 # Find all complete paths from tier1_value through tiered relationships
                 # The tier1_value is connected to the tier 1 list, and we need to find paths from it
+                # We'll traverse using HAS_TIER_2_VALUE, HAS_TIER_3_VALUE, etc. relationships
                 query = """
                     MATCH (tier1_list:List {id: $tier1_list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue {value: $tier1_value})
-                    MATCH path = (lv1)-[*1..10]->(lv:ListValue)
-                    WHERE ALL(rel in relationships(path) WHERE type(rel) STARTS WITH 'HAS_' AND type(rel) ENDS WITH '_VALUE')
-                      AND type(relationships(path)[0]) <> 'HAS_LIST_VALUE'
-                      AND size(relationships(path)) <= 10
+                    OPTIONAL MATCH path = (lv1)-[r2:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE*1..10]->(lv:ListValue)
                     WITH lv1, path, relationships(path) as rels, nodes(path) as path_nodes
-                    WHERE size(rels) > 0
+                    WHERE path IS NOT NULL AND size(rels) > 0
                     WITH lv1, path_nodes, rels,
                          [node in path_nodes WHERE node <> lv1 | node.value] as tiered_values
                     RETURN DISTINCT tiered_values
@@ -2205,8 +2533,11 @@ async def get_tiered_list_values(list_id: str):
                 tiered_arrays: List[List[str]] = []
                 seen_paths = set()
                 
+                path_count = 0
                 for path_record in paths_result:
+                    path_count += 1
                     tiered_values = path_record.get("tiered_values", [])
+                    print(f"   Found path {path_count}: {tiered_values}")
                     if tiered_values and len(tiered_values) > 0:
                         # Filter out empty values and create a unique key
                         filtered_values = [v for v in tiered_values if v]
@@ -2215,9 +2546,35 @@ async def get_tiered_list_values(list_id: str):
                             if path_key not in seen_paths:
                                 seen_paths.add(path_key)
                                 tiered_arrays.append(filtered_values)
+                                print(f"   ✅ Added path: {filtered_values}")
+                
+                if path_count == 0:
+                    print(f"   ⚠️ No paths found for Tier 1 value '{tier1_value}'")
+                    # Try a simpler query to see what relationships exist
+                    debug_query = """
+                        MATCH (tier1_list:List {id: $tier1_list_id})-[r1:HAS_LIST_VALUE]->(lv1:ListValue {value: $tier1_value})
+                        OPTIONAL MATCH (lv1)-[r2]->(lv2:ListValue)
+                        WHERE type(r2) STARTS WITH 'HAS_TIER_' AND type(r2) ENDS WITH '_VALUE'
+                        RETURN type(r2) as rel_type, lv2.value as tier2_value
+                        LIMIT 10
+                    """
+                    debug_result = session.run(debug_query, {
+                        "tier1_list_id": tier1_list_id,
+                        "tier1_value": tier1_value
+                    })
+                    debug_records = list(debug_result)
+                    print(f"   DEBUG: Found {len(debug_records)} direct relationships from '{tier1_value}':")
+                    for dr in debug_records:
+                        print(f"      - {dr.get('rel_type')} -> '{dr.get('tier2_value')}'")
                 
                 if tiered_arrays:
                     result_data[tier1_value] = tiered_arrays
+                    print(f"   ✅ Added {len(tiered_arrays)} paths for '{tier1_value}'")
+                else:
+                    print(f"   ⚠️ No tiered arrays found for '{tier1_value}'")
+            
+            print(f"🔵 GET_TIERED_VALUES: Returning {len(result_data)} tier 1 values with paths")
+            return result_data
             
             return result_data
 
