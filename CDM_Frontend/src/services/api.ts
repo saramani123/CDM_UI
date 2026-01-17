@@ -180,7 +180,7 @@ export const getListOntologyView = async (
   listId: string | null,
   listName: string | null,
   view: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations'
-): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number, cypherQuery?: string }> => {
   // Build query params - prefer list_id if available, otherwise fall back to list_name
   const params = new URLSearchParams();
   if (listId) {
@@ -212,7 +212,7 @@ export const getBulkListOntologyView = async (
   listIds: string[] | null,
   listNames: string[] | null,
   viewType: 'drivers' | 'ontology' | 'metadata' | 'listValues' | 'variations'
-): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number }> => {
+): Promise<{ nodes: any[], edges: any[], nodeCount: number, edgeCount: number, cypherQuery?: string }> => {
   // Build request body - prefer list_ids if available, otherwise fall back to list_names
   const body: any = { view: viewType };
   if (listIds && listIds.length > 0) {

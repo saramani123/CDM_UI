@@ -42,6 +42,7 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
   const [showDetailsPanel, setShowDetailsPanel] = useState(viewType === 'metadata');
   const [showCypherQuery, setShowCypherQuery] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [actualCypherQuery, setActualCypherQuery] = useState<string | null>(null);
   const networkRef = useRef<VisNetwork | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isLoadingRef = useRef(false);
@@ -85,7 +86,8 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
       case 'listValues':
         return {
           List: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
-          ListValue: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } } // Purple for list values
+          ListValue: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } }, // Purple for list values
+          Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
         };
       case 'variations':
         return {
@@ -142,6 +144,13 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
         graphData = await getBulkListOntologyView(listIds || null, listNames || null, viewType);
       } else {
         graphData = await getListOntologyView(listId || null, listName || null, viewType);
+      }
+
+      // Store the actual Cypher query from backend if available
+      if (graphData.cypherQuery) {
+        setActualCypherQuery(graphData.cypherQuery);
+      } else {
+        setActualCypherQuery(null);
       }
 
       if (graphData.nodeCount === 0) {
@@ -338,11 +347,18 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
       setShowDetailsPanel(viewType === 'metadata');
       setShowCypherQuery(false);
       setError(null);
+      setActualCypherQuery(null);
     };
   }, [isOpen, listId, listName, listIds, listNames, viewType]);
 
   // Get Cypher query for current view
   const getCypherQuery = () => {
+    // Use the actual query from backend if available (for listValues view)
+    if (actualCypherQuery) {
+      return actualCypherQuery;
+    }
+    
+    // Fallback to generating query for other views or if backend query not available
     if (isBulk) {
       if (listIds && listIds.length > 0) {
         const idsList = listIds.map(id => `'${id}'`).join(', ');

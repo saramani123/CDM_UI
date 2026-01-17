@@ -868,7 +868,8 @@ async def get_list_ontology_view(
                 MATCH (l:List {id: $list_id})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
-                RETURN l, r, lv, var, var_rel
+                OPTIONAL MATCH (lv)-[sib_rel:HAS_SIBLING_VALUE]->(sib:ListValue)
+                RETURN l, r, lv, var, var_rel, sib, sib_rel
             """,
             'variations': """
                 MATCH (l:List {id: $list_id})
@@ -901,7 +902,8 @@ async def get_list_ontology_view(
                 MATCH (l:List {name: $list_name})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
-                RETURN l, r, lv, var, var_rel
+                OPTIONAL MATCH (lv)-[sib_rel:HAS_SIBLING_VALUE]->(sib:ListValue)
+                RETURN l, r, lv, var, var_rel, sib, sib_rel
             """,
             'variations': """
                 MATCH (l:List {name: $list_name})
@@ -950,24 +952,50 @@ async def get_list_ontology_view(
                     # Show: parent -> tier lists, tier lists -> tier values, tier values -> tier values
                     # Use UNION to ensure we get all relationships even if some are missing
                     query = """
+                        // Main query: Get list structure, tier relationships, and values
                         MATCH (l:List {id: $list_id})
-                        // Get parent list node
                         WITH l
-                        // Get tier list relationships
                         OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
                         WITH l, tiered, tier_rel
-                        // Get tier list values (Tier 1 values)
                         OPTIONAL MATCH (tiered)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
                         WITH l, tiered, tier_rel, lv1, r1
-                        // Get tier value relationships (Tier 1 -> Tier 2, Tier 2 -> Tier 3, etc.)
                         OPTIONAL MATCH (lv1)-[r2:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
-                        // Also get any further tier relationships (Tier 2 -> Tier 3, etc.)
                         OPTIONAL MATCH (lv2)-[r3:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv3:ListValue)
-                        // Get value variations for all list values
                         OPTIONAL MATCH (lv1)-[var_rel1:HAS_VALUE_VARIATION]->(var1:Variation)
                         OPTIONAL MATCH (lv2)-[var_rel2:HAS_VALUE_VARIATION]->(var2:Variation)
                         OPTIONAL MATCH (lv3)-[var_rel3:HAS_VALUE_VARIATION]->(var3:Variation)
-                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, lv3, r3, var1, var_rel1, var2, var_rel2, var3, var_rel3
+                        OPTIONAL MATCH (lv1)-[sib_rel1:HAS_SIBLING_VALUE]->(sib1:ListValue)
+                        OPTIONAL MATCH (lv2)-[sib_rel2:HAS_SIBLING_VALUE]->(sib2:ListValue)
+                        OPTIONAL MATCH (lv3)-[sib_rel3:HAS_SIBLING_VALUE]->(sib3:ListValue)
+                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, lv3, r3, var1, var_rel1, var2, var_rel2, var3, var_rel3, sib1, sib_rel1, sib2, sib_rel2, sib3, sib_rel3
+                        UNION
+                        // Additional query: Get sibling relationships independently to ensure they're captured
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        OPTIONAL MATCH (tiered)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        WHERE lv1 IS NOT NULL
+                        MATCH (lv1)-[sib_rel1:HAS_SIBLING_VALUE]->(sib1:ListValue)
+                        RETURN l, tiered, tier_rel, lv1, r1, null as lv2, null as r2, null as lv3, null as r3, null as var1, null as var_rel1, null as var2, null as var_rel2, null as var3, null as var_rel3, sib1, sib_rel1, null as sib2, null as sib_rel2, null as sib3, null as sib_rel3
+                        UNION
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        OPTIONAL MATCH (tiered)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        WHERE lv1 IS NOT NULL
+                        OPTIONAL MATCH (lv1)-[r2:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
+                        WHERE lv2 IS NOT NULL
+                        MATCH (lv2)-[sib_rel2:HAS_SIBLING_VALUE]->(sib2:ListValue)
+                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, null as lv3, null as r3, null as var1, null as var_rel1, null as var2, null as var_rel2, null as var3, null as var_rel3, null as sib1, null as sib_rel1, sib2, sib_rel2, null as sib3, null as sib_rel3
+                        UNION
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
+                        OPTIONAL MATCH (tiered)-[r1:HAS_LIST_VALUE]->(lv1:ListValue)
+                        WHERE lv1 IS NOT NULL
+                        OPTIONAL MATCH (lv1)-[r2:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
+                        WHERE lv2 IS NOT NULL
+                        OPTIONAL MATCH (lv2)-[r3:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv3:ListValue)
+                        WHERE lv3 IS NOT NULL
+                        MATCH (lv3)-[sib_rel3:HAS_SIBLING_VALUE]->(sib3:ListValue)
+                        RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, lv3, r3, null as var1, null as var_rel1, null as var2, null as var_rel2, null as var3, null as var_rel3, null as sib1, null as sib_rel1, null as sib2, null as sib_rel2, sib3, sib_rel3
                     """
                 elif is_child:
                     # Child list: Show parent, tier hierarchy, and tiered values up to this tier
@@ -981,14 +1009,20 @@ async def get_list_ontology_view(
                         OPTIONAL MATCH (lv1)-[r2:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
                         OPTIONAL MATCH (parent)-[r3:HAS_LIST_VALUE]->(lv_parent:ListValue)
                         OPTIONAL MATCH (lv_parent)-[r4:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv1)
-                        RETURN l, parent, parent_tier_rel, lv1, r1, lv2, r2, lv_parent, r3, r4
+                        // Get sibling relationships for all list values
+                        OPTIONAL MATCH (lv1)-[sib_rel1:HAS_SIBLING_VALUE]->(sib1:ListValue)
+                        OPTIONAL MATCH (lv2)-[sib_rel2:HAS_SIBLING_VALUE]->(sib2:ListValue)
+                        OPTIONAL MATCH (lv_parent)-[sib_rel_parent:HAS_SIBLING_VALUE]->(sib_parent:ListValue)
+                        RETURN l, parent, parent_tier_rel, lv1, r1, lv2, r2, lv_parent, r3, r4, sib1, sib_rel1, sib2, sib_rel2, sib_parent, sib_rel_parent
                     """
                 else:
                     # Normal list: Just show direct list values
                     query = queries['listValues']
                 
                 result = session.run(query, {param_name: param_value})
+                actual_query = query
             else:
+                actual_query = queries[view]
                 result = session.run(queries[view], {param_name: param_value})
             
             nodes = {}
@@ -1030,6 +1064,10 @@ async def get_list_ontology_view(
                                 'group': label,
                                 'properties': props
                             }
+                            
+                            # Debug: Log sibling nodes
+                            if 'sib' in key.lower():
+                                print(f"🔵 Found sibling node: {key} = {name} (id: {node_id}, label: {label})")
                     
                     # Handle relationships
                     elif isinstance(value, Relationship):
@@ -1047,6 +1085,10 @@ async def get_list_ontology_view(
                                 'label': value.type,
                                 'properties': props
                             })
+                            
+                            # Debug: Log sibling relationships
+                            if 'sib' in key.lower() or value.type == 'HAS_SIBLING_VALUE':
+                                print(f"🔵 Found sibling relationship: {key} = {value.type} from {start_id} to {end_id}")
                 
                 # Ensure list node is always included even if no relationships
                 if list_node and str(list_node.id) not in node_ids:
@@ -1061,12 +1103,29 @@ async def get_list_ontology_view(
                         'properties': props
                     }
             
-            return {
+            # Debug: Count sibling relationships
+            sibling_edges = [e for e in edges if e.get('label') == 'HAS_SIBLING_VALUE']
+            sibling_nodes = [n for n in nodes.values() if any('sib' in str(k).lower() for k in [n.get('id')])]
+            print(f"🔵 Graph query result: {len(nodes)} nodes, {len(edges)} edges")
+            print(f"🔵 Sibling relationships found: {len(sibling_edges)}")
+            for se in sibling_edges:
+                print(f"   - {se.get('from')} -> {se.get('to')} ({se.get('label')})")
+            
+            response = {
                 'nodes': list(nodes.values()),
                 'edges': edges,
                 'nodeCount': len(nodes),
                 'edgeCount': len(edges)
             }
+            
+            # Include the actual Cypher query used
+            if view == 'listValues' and 'actual_query' in locals():
+                response['cypherQuery'] = actual_query.replace(f'${param_name}', f"'{param_value}'")
+            elif view in queries:
+                # For static queries, format with the parameter value
+                response['cypherQuery'] = queries[view].replace(f'${param_name}', f"'{param_value}'")
+            
+            return response
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
@@ -1135,7 +1194,9 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                RETURN l, r, lv
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[sib_rel:HAS_SIBLING_VALUE]->(sib:ListValue)
+                RETURN l, r, lv, var, var_rel, sib, sib_rel
             """,
             'variations': """
                 MATCH (l:List)
@@ -1171,7 +1232,9 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.name IN $list_names
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                RETURN l, r, lv
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[sib_rel:HAS_SIBLING_VALUE]->(sib:ListValue)
+                RETURN l, r, lv, var, var_rel, sib, sib_rel
             """,
             'variations': """
                 MATCH (l:List)
@@ -1256,12 +1319,28 @@ async def get_bulk_list_ontology_view(
                             'properties': props
                         }
             
-            return {
+            response = {
                 'nodes': list(nodes.values()),
                 'edges': edges,
                 'nodeCount': len(nodes),
                 'edgeCount': len(edges)
             }
+            
+            # Include the actual Cypher query used
+            if view in queries:
+                # Format the query with the parameter values for display
+                query_str = queries[view]
+                if use_ids:
+                    # Format list_ids parameter
+                    ids_str = ', '.join([f"'{id}'" for id in identifiers])
+                    query_str = query_str.replace('$list_ids', f'[{ids_str}]')
+                else:
+                    # Format list_names parameter
+                    names_str = ', '.join([f"'{name}'" for name in identifiers])
+                    query_str = query_str.replace('$list_names', f'[{names_str}]')
+                response['cypherQuery'] = query_str
+            
+            return response
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {str(e)}")
