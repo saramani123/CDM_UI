@@ -264,6 +264,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   interface UniqueIdEntry {
     id: string; // Unique identifier for this entry
     part: string; // Selected part
+    section: string; // Selected section
     group: string; // Selected group
     variableId: string; // The selected variable ID or "ANY"
   }
@@ -273,6 +274,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   interface CompositeIdRow {
     id: string; // Unique ID for this row
     part: string;
+    section: string; // Selected section
     group: string;
     variableId: string; // Single variable selection (not array)
   }
@@ -436,14 +438,23 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           
           // Load unique IDs (previously discrete IDs)
           const discreteIds = identifierData?.discreteIds || [];
-          const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
-            id: `unique-${index + 1}`,
-            part: di.part || '',
-            group: di.group || '',
-            variableId: di.variableId || ''
-          }));
+          const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => {
+            // Infer section from variable if available
+            let section = di.section || '';
+            if (!section && di.variableId && variablesData) {
+              const variable = variablesData.find(v => v.id === di.variableId);
+              section = variable?.section || '';
+            }
+            return {
+              id: `unique-${index + 1}`,
+              part: di.part || '',
+              section: section,
+              group: di.group || '',
+              variableId: di.variableId || ''
+            };
+          });
           if (uniqueIdEntriesList.length === 0) {
-            setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
+            setUniqueIdEntries([{ id: 'unique-1', part: '', section: '', group: '', variableId: '' }]);
           } else {
             setUniqueIdEntries(uniqueIdEntriesList);
           }
@@ -525,15 +536,24 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           // Load unique IDs (previously discrete IDs)
           // Keep all entries visible, even if empty (user can clear selection to remove)
           const discreteIds = objectData?.discreteIds || [];
-          const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
-            id: `unique-${index + 1}`,
-            part: di.part || '',
-            group: di.group || '',
-            variableId: di.variableId || ''
-          }));
+          const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => {
+            // Infer section from variable if available
+            let section = di.section || '';
+            if (!section && di.variableId && variablesData) {
+              const variable = variablesData.find(v => v.id === di.variableId);
+              section = variable?.section || '';
+            }
+            return {
+              id: `unique-${index + 1}`,
+              part: di.part || '',
+              section: section,
+              group: di.group || '',
+              variableId: di.variableId || ''
+            };
+          });
           // If no entries exist, add one empty entry
           if (uniqueIdEntriesList.length === 0) {
-            setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
+            setUniqueIdEntries([{ id: 'unique-1', part: '', section: '', group: '', variableId: '' }]);
           } else {
             setUniqueIdEntries(uniqueIdEntriesList);
           }
@@ -550,18 +570,28 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             const compositeIdData = compositeIds[key];
             if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
               const blockNumber = index + 1;
-              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
-                id: `block${blockNumber}-row${rowIndex + 1}`,
-                part: ci.part || '',
-                group: ci.group || '',
-                variableId: ci.variableId || ''
-              }));
+              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => {
+                // Infer section from variable if available
+                let section = ci.section || '';
+                if (!section && ci.variableId && variablesData) {
+                  const variable = variablesData.find(v => v.id === ci.variableId);
+                  section = variable?.section || '';
+                }
+                return {
+                  id: `block${blockNumber}-row${rowIndex + 1}`,
+                  part: ci.part || '',
+                  section: section,
+                  group: ci.group || '',
+                  variableId: ci.variableId || ''
+                };
+              });
               
               // Ensure we have exactly 5 rows
               while (rows.length < 5) {
                 rows.push({
                   id: `block${blockNumber}-row${rows.length + 1}`,
                   part: '',
+                  section: '',
                   group: '',
                   variableId: ''
                 });
@@ -637,6 +667,30 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     return parts;
   };
 
+  const getSectionsForPart = (part: string) => {
+    if (!part || !variablesData || !Array.isArray(variablesData)) return [];
+    const sections = [...new Set(
+      variablesData.filter(v => v.part === part).map(v => v.section)
+    )].filter(Boolean).sort();
+    return sections;
+  };
+
+  const getGroupsForPartAndSection = (part: string, section: string) => {
+    if (!part || !section || !variablesData || !Array.isArray(variablesData)) return [];
+    const groups = [...new Set(
+      variablesData.filter(v => v.part === part && v.section === section).map(v => v.group)
+    )].filter(Boolean).sort();
+    return groups;
+  };
+
+  const getVariablesForPartSectionAndGroup = (part: string, section: string, group: string) => {
+    if (!part || !section || !group || !variablesData || !Array.isArray(variablesData)) return [];
+    return variablesData
+      .filter(v => v.part === part && v.section === section && v.group === group)
+      .map(v => ({ id: v.id, name: v.variable }));
+  };
+
+  // Legacy function for backward compatibility (used in some places)
   const getGroupsForPart = (part: string) => {
     if (!part || !variablesData || !Array.isArray(variablesData)) return [];
     const groups = [...new Set(
@@ -652,10 +706,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       .map(v => ({ id: v.id, name: v.variable }));
   };
 
-  // Get variables for unique ID based on selected part and group
-  const getUniqueIdVariables = (part: string, group: string) => {
-    if (!part || !group) return [];
-    return getVariablesForPartAndGroup(part, group);
+  // Get variables for unique ID based on selected part, section, and group
+  const getUniqueIdVariables = (part: string, section: string, group: string) => {
+    if (!part || !section || !group) return [];
+    return getVariablesForPartSectionAndGroup(part, section, group);
   };
   
   // Add a new unique ID entry
@@ -663,13 +717,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const hasIdentifiers = () => {
     // Check unique IDs
     const hasUniqueIds = uniqueIdEntries.some(entry => 
-      entry.part && entry.group && entry.variableId && entry.variableId.trim() !== ''
+      entry.part && entry.section && entry.group && entry.variableId && entry.variableId.trim() !== ''
     );
     
     // Check composite IDs
     const hasCompositeIds = compositeIdBlocks.some(block => 
       block.rows.some(row => 
         (row.part && row.part.trim() !== '') || 
+        (row.section && row.section.trim() !== '') ||
         (row.group && row.group.trim() !== '') || 
         (row.variableId && row.variableId.trim() !== '')
       )
@@ -680,7 +735,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   const handleAddUniqueIdEntry = () => {
     const newId = `unique-${Date.now()}`;
-    setUniqueIdEntries(prev => [...prev, { id: newId, part: '', group: '', variableId: '' }]);
+    setUniqueIdEntries(prev => [...prev, { id: newId, part: '', section: '', group: '', variableId: '' }]);
   };
   
   // Remove a unique ID entry
@@ -691,7 +746,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Update part selection for a specific unique ID entry
   const handleUniqueIdPartChange = (entryId: string, part: string) => {
     setUniqueIdEntries(prev => prev.map(entry => 
-      entry.id === entryId ? { ...entry, part, group: '', variableId: '' } : entry
+      entry.id === entryId ? { ...entry, part, section: '', group: '', variableId: '' } : entry
+    ));
+  };
+  
+  // Update section selection for a specific unique ID entry
+  const handleUniqueIdSectionChange = (entryId: string, section: string) => {
+    setUniqueIdEntries(prev => prev.map(entry => 
+      entry.id === entryId ? { ...entry, section, group: '', variableId: '' } : entry
     ));
   };
   
@@ -715,11 +777,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     const newBlock: CompositeIdBlock = {
       blockNumber: newBlockNumber,
       rows: [
-        { id: `block${newBlockNumber}-row1`, part: '', group: '', variableId: '' },
-        { id: `block${newBlockNumber}-row2`, part: '', group: '', variableId: '' },
-        { id: `block${newBlockNumber}-row3`, part: '', group: '', variableId: '' },
-        { id: `block${newBlockNumber}-row4`, part: '', group: '', variableId: '' },
-        { id: `block${newBlockNumber}-row5`, part: '', group: '', variableId: '' }
+        { id: `block${newBlockNumber}-row1`, part: '', section: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row2`, part: '', section: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row3`, part: '', section: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row4`, part: '', section: '', group: '', variableId: '' },
+        { id: `block${newBlockNumber}-row5`, part: '', section: '', group: '', variableId: '' }
       ]
     };
     setCompositeIdBlocks(prev => [...prev, newBlock]);
@@ -742,18 +804,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   // Update a row in a composite ID block
-  const handleCompositeIdRowChange = (blockNumber: number, rowId: string, field: 'part' | 'group' | 'variableId', value: string) => {
+  const handleCompositeIdRowChange = (blockNumber: number, rowId: string, field: 'part' | 'section' | 'group' | 'variableId', value: string) => {
     setCompositeIdBlocks(prev => prev.map(block => {
       if (block.blockNumber === blockNumber) {
         return {
           ...block,
           rows: block.rows.map(row => {
             if (row.id === rowId) {
+              // When part changes, clear section, group, and variableId
               if (field === 'part') {
-                return { ...row, part: value, group: '', variableId: '' };
-              } else if (field === 'group') {
+                return { ...row, part: value, section: '', group: '', variableId: '' };
+              }
+              // When section changes, clear group and variableId
+              else if (field === 'section') {
+                return { ...row, section: value, group: '', variableId: '' };
+              }
+              // When group changes, clear variableId
+              else if (field === 'group') {
                 return { ...row, group: value, variableId: '' };
-              } else {
+              }
+              // When variableId changes, just update it
+              else {
                 return { ...row, variableId: value };
               }
             }
@@ -1113,16 +1184,16 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return;
     }
     
-    // Validate unique IDs - check for duplicates (same part, group, variableId combination)
+    // Validate unique IDs - check for duplicates (same part, section, group, variableId combination)
     const uniqueIdEntriesList = uniqueIdEntries
-      .filter(entry => entry.part && entry.group && entry.variableId);
+      .filter(entry => entry.part && entry.section && entry.group && entry.variableId);
     const seen = new Set<string>();
     const duplicates: string[] = [];
     for (const entry of uniqueIdEntriesList) {
-      const key = `${entry.part}|${entry.group}|${entry.variableId}`;
+      const key = `${entry.part}|${entry.section}|${entry.group}|${entry.variableId}`;
       if (seen.has(key)) {
         const varName = entry.variableId === 'ANY' ? 'ANY' : getVariableNameFromId(entry.variableId);
-        duplicates.push(`${entry.part} / ${entry.group} / ${varName}`);
+        duplicates.push(`${entry.part} / ${entry.section} / ${entry.group} / ${varName}`);
       } else {
         seen.add(key);
       }
@@ -1133,9 +1204,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }
     
     // Prepare identifier data - use unique IDs instead of discrete IDs
-    // Include part, group, and variableId for each entry
+    // Section is only for UI filtering - backend still only needs part, group, and variableId
     const discreteIdEntries = uniqueIdEntries
-      .filter(entry => entry.part && entry.group && entry.variableId)
+      .filter(entry => entry.part && entry.section && entry.group && entry.variableId)
       .map(entry => ({
         part: entry.part,
         group: entry.group,
@@ -1150,10 +1221,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     };
 
     // Add composite IDs - each block represents one composite ID
+    // Section is only for UI filtering - backend still only needs part, group, and variableId
     compositeIdBlocks.forEach(block => {
       const blockKey = String(block.blockNumber);
       const entries = block.rows
-        .filter(row => row.part && row.group && row.variableId)
+        .filter(row => row.part && row.section && row.group && row.variableId)
         .map(row => ({
           part: row.part,
           group: row.group,
@@ -1184,7 +1256,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     // Keep at least one empty entry if all were cleared
     setUniqueIdEntries(prev => {
       const filtered = prev.filter(entry => entry.variableId.trim() !== '');
-      return filtered.length > 0 ? filtered : [{ id: 'unique-1', variableId: '' }];
+      return filtered.length > 0 ? filtered : [{ id: 'unique-1', part: '', section: '', group: '', variableId: '' }];
     });
   };
 
@@ -1686,24 +1758,25 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             </div>
             <div className="border border-ag-dark-border rounded">
               {/* Table Header */}
-              <div className="grid grid-cols-[0.7fr_0.7fr_1.6fr] gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="grid grid-cols-4 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
               </div>
               {/* Table Rows - Multiple entries */}
               <div className="divide-y divide-ag-dark-border">
                 {uniqueIdEntries.length === 0 ? (
-                  <div className="grid grid-cols-[0.7fr_0.7fr_1.6fr] gap-2 items-center p-2">
-                    <div className="text-xs text-ag-dark-text-secondary px-2 py-1.5">
+                  <div className="grid grid-cols-4 gap-2 items-center p-2">
+                    <div className="text-xs text-ag-dark-text-secondary px-2 py-1.5 col-span-4">
                       Click + to add a Unique ID
                     </div>
                   </div>
                 ) : (
                   uniqueIdEntries.map((entry, index) => {
-                    const variableOptions = getUniqueIdVariables(entry.part, entry.group);
+                    const variableOptions = getUniqueIdVariables(entry.part, entry.section, entry.group);
                     return (
-                      <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[0.7fr_0.7fr_1.6fr_auto]' : 'grid-cols-[0.7fr_0.7fr_1.6fr]'}`}>
+                      <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[1fr_1fr_1fr_1fr_auto]' : 'grid-cols-4'}`}>
                         {/* Part Dropdown */}
                         <select
                           value={entry.part}
@@ -1723,10 +1796,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           ))}
                         </select>
                         
-                        {/* Group Dropdown */}
+                        {/* Section Dropdown */}
                         <select
-                          value={entry.group}
-                          onChange={(e) => handleUniqueIdGroupChange(entry.id, e.target.value)}
+                          value={entry.section}
+                          onChange={(e) => handleUniqueIdSectionChange(entry.id, e.target.value)}
                           disabled={!isPanelEnabled || !entry.part}
                           className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
@@ -1736,8 +1809,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                             backgroundSize: '16px'
                           }}
                         >
+                          <option value="">Select Section</option>
+                          {getSectionsForPart(entry.part).map(section => (
+                            <option key={section} value={section}>{section}</option>
+                          ))}
+                        </select>
+                        
+                        {/* Group Dropdown */}
+                        <select
+                          value={entry.group}
+                          onChange={(e) => handleUniqueIdGroupChange(entry.id, e.target.value)}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section}
+                          className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '16px'
+                          }}
+                        >
                           <option value="">Select Group</option>
-                          {getGroupsForPart(entry.part).map(group => (
+                          {getGroupsForPartAndSection(entry.part, entry.section).map(group => (
                             <option key={group} value={group}>{group}</option>
                           ))}
                         </select>
@@ -1746,7 +1838,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={entry.variableId}
                           onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part || !entry.group}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section || !entry.group}
                           className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1811,9 +1903,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 </div>
                 
                 {/* Table Header */}
-                <div className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                <div className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                   <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
+                  <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
                 </div>
@@ -1821,12 +1914,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 {/* Table Rows - 5 rows per block */}
                 <div className="divide-y divide-ag-dark-border">
                   {block.rows.map((row, rowIndex) => {
-                    const variableOptions = row.part && row.group
-                      ? getVariablesForPartAndGroup(row.part, row.group)
+                    const variableOptions = row.part && row.section && row.group
+                      ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group)
                       : [];
                     
                     return (
-                      <div key={row.id} className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
+                      <div key={row.id} className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
                         {/* Row Label */}
                         <div className="flex items-center">
                           <span className="text-[10px] font-medium text-ag-dark-text">{rowIndex + 1}</span>
@@ -1855,10 +1948,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           ))}
                         </select>
 
-                        {/* Group Dropdown */}
+                        {/* Section Dropdown */}
                         <select
-                          value={row.group}
-                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'group', e.target.value)}
+                          value={row.section}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'section', e.target.value)}
                           disabled={!isPanelEnabled || !row.part}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                             !isPanelEnabled || !row.part ? 'opacity-50 cursor-not-allowed' : ''
@@ -1870,8 +1963,31 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                             backgroundSize: '12px'
                           }}
                         >
+                          <option value="">Select Section</option>
+                          {getSectionsForPart(row.part).map((section) => (
+                            <option key={section} value={section}>
+                              {section}
+                            </option>
+                          ))}
+                        </select>
+
+                        {/* Group Dropdown */}
+                        <select
+                          value={row.group}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'group', e.target.value)}
+                          disabled={!isPanelEnabled || !row.part || !row.section}
+                          className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                            !isPanelEnabled || !row.part || !row.section ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '12px'
+                          }}
+                        >
                           <option value="">Select Group</option>
-                          {getGroupsForPart(row.part).map((group) => (
+                          {getGroupsForPartAndSection(row.part, row.section).map((group) => (
                             <option key={group} value={group}>
                               {group}
                             </option>
@@ -1882,9 +1998,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={row.variableId}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'variableId', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part || !row.group}
+                          disabled={!isPanelEnabled || !row.part || !row.section || !row.group}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                            !isPanelEnabled || !row.part || !row.group ? 'opacity-50 cursor-not-allowed' : ''
+                            !isPanelEnabled || !row.part || !row.section || !row.group ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
