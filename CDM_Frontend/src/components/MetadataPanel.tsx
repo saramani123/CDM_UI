@@ -11,6 +11,7 @@ import { AddBeingValueModal } from './AddBeingValueModal';
 import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface MetadataField {
   key: string;
@@ -129,6 +130,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const isUserTyping = useRef(false);
   const typingTimeout = useRef<NodeJS.Timeout | null>(null);
   
+  // Loading state for metadata panel
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+  
   // Update form data when a new object is selected (not on every field change)
   React.useEffect(() => {
     const currentObjectId = selectedObject?.id;
@@ -136,42 +140,84 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     // Only reset form data when the selected object actually changes AND we have a valid object AND user is not typing
     if (currentObjectId && currentObjectId !== prevSelectedObjectId.current && !isUserTyping.current) {
       console.log('MetadataPanel: selected object changed from', prevSelectedObjectId.current, 'to', currentObjectId);
-      prevSelectedObjectId.current = currentObjectId;
       
-      // Initialize form data from the selected object, not from fields
-      const newFormData: Record<string, any> = {
-        being: selectedObject?.being || '',
-        avatar: selectedObject?.avatar || '',
-        object: selectedObject?.object || ''
-      };
-      console.log('MetadataPanel: newFormData for new object', newFormData);
-      setFormData(newFormData);
-    }
-    
-    // Update driver selections when selected object changes
-    if (selectedObject?.driver) {
-      const parsed = parseDriverString(selectedObject.driver);
-      // Expand "ALL" to include all individual values for proper multiselect display
-      const expanded: typeof parsed = {
-        sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
-          ? ['ALL', ...driversData.sectors] 
-          : parsed.sector,
-        domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
-          ? ['ALL', ...driversData.domains] 
-          : parsed.domain,
-        country: parsed.country.includes('ALL') && driversData.countries.length > 0 
-          ? ['ALL', ...driversData.countries] 
-          : parsed.country,
-        objectClarifier: parsed.objectClarifier
-      };
-      setDriverSelections(expanded);
-    } else {
+      // Set loading state immediately and clear form data
+      setIsLoadingMetadata(true);
+      setFormData({
+        being: '',
+        avatar: '',
+        object: ''
+      });
       setDriverSelections({
         sector: [],
         domain: [],
         country: [],
         objectClarifier: ''
       });
+      
+      prevSelectedObjectId.current = currentObjectId;
+      
+      // Use setTimeout to allow React to render the loading state first, then populate data
+      setTimeout(() => {
+        // Initialize form data from the selected object, not from fields
+        const newFormData: Record<string, any> = {
+          being: selectedObject?.being || '',
+          avatar: selectedObject?.avatar || '',
+          object: selectedObject?.object || ''
+        };
+        console.log('MetadataPanel: newFormData for new object', newFormData);
+        setFormData(newFormData);
+        
+        // Update driver selections when selected object changes
+        if (selectedObject?.driver) {
+          const parsed = parseDriverString(selectedObject.driver);
+          // Expand "ALL" to include all individual values for proper multiselect display
+          const expanded: typeof parsed = {
+            sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+              ? ['ALL', ...driversData.sectors] 
+              : parsed.sector,
+            domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+              ? ['ALL', ...driversData.domains] 
+              : parsed.domain,
+            country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+              ? ['ALL', ...driversData.countries] 
+              : parsed.country,
+            objectClarifier: parsed.objectClarifier
+          };
+          setDriverSelections(expanded);
+        } else {
+          setDriverSelections({
+            sector: [],
+            domain: [],
+            country: [],
+            objectClarifier: ''
+          });
+        }
+        
+        // Clear loading state after data is populated
+        setIsLoadingMetadata(false);
+      }, 0);
+    } else if (!currentObjectId) {
+      // No object selected - clear loading state
+      setIsLoadingMetadata(false);
+    } else if (currentObjectId === prevSelectedObjectId.current) {
+      // Same object, just update driver selections if drivers data changed
+      if (selectedObject?.driver) {
+        const parsed = parseDriverString(selectedObject.driver);
+        const expanded: typeof parsed = {
+          sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+            ? ['ALL', ...driversData.sectors] 
+            : parsed.sector,
+          domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+            ? ['ALL', ...driversData.domains] 
+            : parsed.domain,
+          country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+            ? ['ALL', ...driversData.countries] 
+            : parsed.country,
+          objectClarifier: parsed.objectClarifier
+        };
+        setDriverSelections(expanded);
+      }
     }
   }, [selectedObject?.id, driversData]); // Reset when object changes or drivers data loads
 
@@ -759,9 +805,17 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   
   // Update group selection for a specific unique ID entry
   const handleUniqueIdGroupChange = (entryId: string, group: string) => {
-    setUniqueIdEntries(prev => prev.map(entry => 
-      entry.id === entryId ? { ...entry, group, variableId: '' } : entry
-    ));
+    setUniqueIdEntries(prev => prev.map(entry => {
+      if (entry.id === entryId) {
+        // If "ANY" is selected for group, auto-set variableId to "ANY"
+        if (group === 'ANY') {
+          return { ...entry, group, variableId: 'ANY' };
+        } else {
+          return { ...entry, group, variableId: '' };
+        }
+      }
+      return entry;
+    }));
   };
   
   // Update variable selection for a specific unique ID entry
@@ -819,9 +873,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               else if (field === 'section') {
                 return { ...row, section: value, group: '', variableId: '' };
               }
-              // When group changes, clear variableId
+              // When group changes, clear variableId (or set to ANY if group is ANY)
               else if (field === 'group') {
-                return { ...row, group: value, variableId: '' };
+                if (value === 'ANY') {
+                  return { ...row, group: value, variableId: 'ANY' };
+                } else {
+                  return { ...row, group: value, variableId: '' };
+                }
               }
               // When variableId changes, just update it
               else {
@@ -1204,11 +1262,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }
     
     // Prepare identifier data - use unique IDs instead of discrete IDs
-    // Section is only for UI filtering - backend still only needs part, group, and variableId
+    // Section is needed for backend when group is "ANY" to find all groups matching part and section
     const discreteIdEntries = uniqueIdEntries
       .filter(entry => entry.part && entry.section && entry.group && entry.variableId)
       .map(entry => ({
         part: entry.part,
+        section: entry.section, // Include section for backend to handle "ANY" group
         group: entry.group,
         variableId: entry.variableId
       }));
@@ -1221,13 +1280,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     };
 
     // Add composite IDs - each block represents one composite ID
-    // Section is only for UI filtering - backend still only needs part, group, and variableId
+    // Section is needed for backend when group is "ANY" to find all groups matching part and section
     compositeIdBlocks.forEach(block => {
       const blockKey = String(block.blockNumber);
       const entries = block.rows
         .filter(row => row.part && row.section && row.group && row.variableId)
         .map(row => ({
           part: row.part,
+          section: row.section, // Include section for backend to handle "ANY" group
           group: row.group,
           variableId: row.variableId
         }));
@@ -1472,6 +1532,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto px-6">
+      {/* Loading Indicator */}
+      {isLoadingMetadata ? (
+        <LoadingSpinner message="Loading object metadata..." />
+      ) : (
+        <>
       {/* Object Name Field - Moved out of collapsible section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1829,6 +1894,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Group</option>
+                          <option value="ANY">ANY</option>
                           {getGroupsForPartAndSection(entry.part, entry.section).map(group => (
                             <option key={group} value={group}>{group}</option>
                           ))}
@@ -1987,6 +2053,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Group</option>
+                          <option value="ANY">ANY</option>
                           {getGroupsForPartAndSection(row.part, row.section).map((group) => (
                             <option key={group} value={group}>
                               {group}
@@ -2202,6 +2269,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           }`}
         />
       </CollapsibleSection>
+        </>
+      )}
 
       </div>
 

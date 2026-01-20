@@ -714,12 +714,38 @@ async def create_object(object_data: ObjectCreateRequest):
                         for entry in entries:
                             if isinstance(entry, dict):
                                 part = entry.get('part')
+                                section = entry.get('section')  # Get section for "ANY" group handling
                                 group = entry.get('group')
                                 variable_id = entry.get('variableId')
                                 
                                 if part and group and variable_id:
-                                    if variable_id == 'ANY':
-                                        # If "ANY" is selected, create relationships to all variables in that Part/Group
+                                    if group == 'ANY':
+                                        # If "ANY" is selected for group, create relationships to all variables from all groups matching part and section
+                                        if section:
+                                            # Get all groups matching part and section, then all variables from those groups
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE v.section = $section
+                                                RETURN DISTINCT v.id as variableId
+                                            """, part=part, section=section)
+                                        else:
+                                            # If no section, get all variables from all groups in the part
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN DISTINCT v.id as variableId
+                                            """, part=part)
+                                        variable_ids = [record['variableId'] for record in all_vars_result]
+                                        
+                                        # Create relationships to all variables
+                                        for var_id in variable_ids:
+                                            if var_id:
+                                                session.run("""
+                                                    MATCH (o:Object {id: $object_id})
+                                                    MATCH (v:Variable {id: $var_id})
+                                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                                """, object_id=new_id, var_id=var_id)
+                                    elif variable_id == 'ANY':
+                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
                                         all_vars_result = session.run("""
                                             MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
                                             RETURN v.id as variableId
@@ -758,16 +784,59 @@ async def create_object(object_data: ObjectCreateRequest):
                             for entry in entries:
                                 if isinstance(entry, dict):
                                     part = entry.get('part')
+                                    section = entry.get('section')  # Get section for "ANY" group handling
                                     group = entry.get('group')
                                     variable_id = entry.get('variableId')
                                     
                                     if part and group and variable_id:
-                                        # Create relationship with the block number
-                                        session.run(f"""
-                                            MATCH (o:Object {{id: $object_id}})
-                                            MATCH (v:Variable {{id: $var_id}})
-                                            MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
-                                        """, object_id=new_id, var_id=variable_id)
+                                        if group == 'ANY':
+                                            # If "ANY" is selected for group, create relationships to all variables from all groups matching part and section
+                                            if section:
+                                                # Get all groups matching part and section, then all variables from those groups
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    WHERE v.section = $section
+                                                    RETURN DISTINCT v.id as variableId
+                                                """, part=part, section=section)
+                                            else:
+                                                # If no section, get all variables from all groups in the part
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    RETURN DISTINCT v.id as variableId
+                                                """, part=part)
+                                            variable_ids = [record['variableId'] for record in all_vars_result]
+                                            
+                                            # Create relationships to all variables
+                                            for var_id in variable_ids:
+                                                if var_id:
+                                                    session.run(f"""
+                                                        MATCH (o:Object {{id: $object_id}})
+                                                        MATCH (v:Variable {{id: $var_id}})
+                                                        MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                                    """, object_id=new_id, var_id=var_id)
+                                        elif variable_id == 'ANY':
+                                            # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group)
+                                            variable_ids = [record['variableId'] for record in all_vars_result]
+                                            
+                                            # Create relationships to all variables
+                                            for var_id in variable_ids:
+                                                if var_id:
+                                                    session.run(f"""
+                                                        MATCH (o:Object {{id: $object_id}})
+                                                        MATCH (v:Variable {{id: $var_id}})
+                                                        MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                                    """, object_id=new_id, var_id=var_id)
+                                        else:
+                                            # Create relationship with the block number to specific variable
+                                            session.run(f"""
+                                                MATCH (o:Object {{id: $object_id}})
+                                                MATCH (v:Variable {{id: $var_id}})
+                                                MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                            """, object_id=new_id, var_id=variable_id)
             
             # Log the final counts for debugging
             print(f"Created object {new_id} ({object_data.object}): {rel_count} relationships, {len(variants)} variants, {variables_count} variables")
@@ -1318,12 +1387,38 @@ async def update_object(
                         for entry in entries:
                             if isinstance(entry, dict):
                                 part = entry.get('part')
+                                section = entry.get('section')  # Get section for "ANY" group handling
                                 group = entry.get('group')
                                 variable_id = entry.get('variableId')
                                 
                                 if part and group and variable_id:
-                                    if variable_id == 'ANY':
-                                        # If "ANY" is selected, create relationships to all variables in that Part/Group
+                                    if group == 'ANY':
+                                        # If "ANY" is selected for group, create relationships to all variables from all groups matching part and section
+                                        if section:
+                                            # Get all groups matching part and section, then all variables from those groups
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE v.section = $section
+                                                RETURN DISTINCT v.id as variableId
+                                            """, part=part, section=section)
+                                        else:
+                                            # If no section, get all variables from all groups in the part
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN DISTINCT v.id as variableId
+                                            """, part=part)
+                                        variable_ids = [record['variableId'] for record in all_vars_result]
+                                        
+                                        # Create relationships to all variables
+                                        for var_id in variable_ids:
+                                            if var_id:
+                                                session.run("""
+                                                    MATCH (o:Object {id: $object_id})
+                                                    MATCH (v:Variable {id: $var_id})
+                                                    MERGE (o)-[:HAS_DISCRETE_ID]->(v)
+                                                """, object_id=object_id, var_id=var_id)
+                                    elif variable_id == 'ANY':
+                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
                                         all_vars_result = session.run("""
                                             MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
                                             RETURN v.id as variableId
@@ -1370,16 +1465,59 @@ async def update_object(
                             for entry in entries:
                                 if isinstance(entry, dict):
                                     part = entry.get('part')
+                                    section = entry.get('section')  # Get section for "ANY" group handling
                                     group = entry.get('group')
                                     variable_id = entry.get('variableId')
                                     
                                     if part and group and variable_id:
-                                        # Create relationship with the block number
-                                        session.run(f"""
-                                            MATCH (o:Object {{id: $object_id}})
-                                            MATCH (v:Variable {{id: $var_id}})
-                                            MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
-                                        """, object_id=object_id, var_id=variable_id)
+                                        if group == 'ANY':
+                                            # If "ANY" is selected for group, create relationships to all variables from all groups matching part and section
+                                            if section:
+                                                # Get all groups matching part and section, then all variables from those groups
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    WHERE v.section = $section
+                                                    RETURN DISTINCT v.id as variableId
+                                                """, part=part, section=section)
+                                            else:
+                                                # If no section, get all variables from all groups in the part
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    RETURN DISTINCT v.id as variableId
+                                                """, part=part)
+                                            variable_ids = [record['variableId'] for record in all_vars_result]
+                                            
+                                            # Create relationships to all variables
+                                            for var_id in variable_ids:
+                                                if var_id:
+                                                    session.run(f"""
+                                                        MATCH (o:Object {{id: $object_id}})
+                                                        MATCH (v:Variable {{id: $var_id}})
+                                                        MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                                    """, object_id=object_id, var_id=var_id)
+                                        elif variable_id == 'ANY':
+                                            # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group)
+                                            variable_ids = [record['variableId'] for record in all_vars_result]
+                                            
+                                            # Create relationships to all variables
+                                            for var_id in variable_ids:
+                                                if var_id:
+                                                    session.run(f"""
+                                                        MATCH (o:Object {{id: $object_id}})
+                                                        MATCH (v:Variable {{id: $var_id}})
+                                                        MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                                    """, object_id=object_id, var_id=var_id)
+                                        else:
+                                            # Create relationship with the block number to specific variable
+                                            session.run(f"""
+                                                MATCH (o:Object {{id: $object_id}})
+                                                MATCH (v:Variable {{id: $var_id}})
+                                                MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
+                                            """, object_id=object_id, var_id=variable_id)
 
                 # Update counts
                 session.run("""

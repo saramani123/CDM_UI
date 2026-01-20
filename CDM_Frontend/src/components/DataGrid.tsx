@@ -29,6 +29,10 @@ interface PredefinedSortOrder {
   setOrder?: string[];
   groupingOrders?: Record<string, string[]>; // key: set, value: array of groupings
   listOrders?: Record<string, string[]>; // key: "set|grouping", value: array of lists
+  // S, D, C (independent across all grids)
+  sectorOrder?: string[]; // Independent S column order
+  domainOrder?: string[]; // Independent D column order
+  countryOrder?: string[]; // Independent C column order
 }
 
 interface DataGridProps {
@@ -551,6 +555,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
     if (isPredefinedSortEnabled && predefinedSortOrder) {
       if (gridType === 'variables' && predefinedSortOrder.partOrder) {
         console.log('🎯 APPLYING DEFAULT ORDER FOR VARIABLES:', predefinedSortOrder);
+        console.log('📋 SECTOR ORDER:', predefinedSortOrder.sectorOrder);
+        console.log('📋 DOMAIN ORDER:', predefinedSortOrder.domainOrder);
+        console.log('📋 COUNTRY ORDER:', predefinedSortOrder.countryOrder);
         
         processedData.sort((a, b) => {
           // First sort by Part
@@ -616,12 +623,129 @@ export const DataGrid: React.FC<DataGridProps> = ({
             return aVariableIndex - bVariableIndex;
           }
           
+          // After Variable, sort by Sector, Domain, Country
+          // Helper to check if value is ALL, multiple, or single
+          const getValueType = (value: string): 'ALL' | 'multiple' | 'single' => {
+            const strValue = String(value || '').trim();
+            if (!strValue) return 'single';
+            if (strValue === 'ALL') return 'ALL';
+            const values = strValue.split(',').map(v => v.trim()).filter(Boolean);
+            return values.length > 1 ? 'multiple' : 'single';
+          };
+          
+          // Helper to get sort index respecting the order: ALL at top, then multiple, then individual in order
+          // The order array defines the exact order in the modal - we need to respect it while prioritizing ALL
+          const getSortIndex = (value: string, valueType: 'ALL' | 'multiple' | 'single', order: string[]): number => {
+            const allIndex = order.indexOf('ALL');
+            
+            if (valueType === 'ALL') {
+              // ALL should respect its position in the order array
+              // If ALL is at position 4, values at positions 1-3 should come first
+              const allIndex = order.indexOf('ALL');
+              if (allIndex === -1) {
+                // ALL not in order - put it first
+                return -1000000;
+              }
+              // ALL is in the order - use its position, but ensure it comes before values after it
+              // Values before ALL (index < allIndex) will have negative offsets, so they come first
+              // ALL gets its index, values after ALL get positive offsets
+              return allIndex;
+            } else if (valueType === 'multiple') {
+              // Multiple values come after ALL, sorted by first value's position in order
+              const values = value.split(',').map(v => v.trim()).filter(Boolean);
+              const firstIndex = order.indexOf(values[0] || '');
+              
+              // Use offset to ensure multiples come after ALL but before singles
+              return firstIndex === -1 ? 1000000 : 100000 + firstIndex;
+            } else {
+              // Single values - respect the order array exactly
+              // Values before ALL in the order come first, then ALL, then values after ALL
+              const index = order.indexOf(value);
+              
+              if (index === -1) return 2000000;
+              
+              // If ALL exists in order and this value comes before ALL, it should come first
+              // Otherwise, ALL comes first, then this value
+              if (allIndex !== -1 && index < allIndex) {
+                // This value comes before ALL in the order - it should appear first
+                // Use negative offset to ensure it comes before ALL (-1000000)
+                return index - 10000;
+              } else if (allIndex !== -1 && index > allIndex) {
+                // This value comes after ALL in the order - ALL comes first, then this
+                // Use positive offset to ensure it comes after ALL
+                return index + 10000;
+              }
+              
+              // No ALL in order, or index === allIndex (shouldn't happen for single)
+              return index;
+            }
+          };
+          
+          // Sort by Sector
+          const aSector = String(a.sector || '');
+          const bSector = String(b.sector || '');
+          const sectorOrder = predefinedSortOrder.sectorOrder || [];
+          const aSectorType = getValueType(aSector);
+          const bSectorType = getValueType(bSector);
+          
+          const aSectorIndex = getSortIndex(aSector, aSectorType, sectorOrder);
+          const bSectorIndex = getSortIndex(bSector, bSectorType, sectorOrder);
+          
+          // Debug logging for ALL and Technology
+          if ((aSector === 'ALL' || bSector === 'ALL') && (aSector === 'Technology' || bSector === 'Technology')) {
+            console.log('🔍 SECTOR SORT DEBUG:', {
+              aSector,
+              bSector,
+              aSectorType,
+              bSectorType,
+              aSectorIndex,
+              bSectorIndex,
+              sectorOrder,
+              result: aSectorIndex - bSectorIndex
+            });
+          }
+          
+          if (aSectorIndex !== bSectorIndex) {
+            return aSectorIndex - bSectorIndex;
+          }
+          
+          // Sort by Domain
+          const aDomain = String(a.domain || '');
+          const bDomain = String(b.domain || '');
+          const domainOrder = predefinedSortOrder.domainOrder || [];
+          const aDomainType = getValueType(aDomain);
+          const bDomainType = getValueType(bDomain);
+          
+          const aDomainIndex = getSortIndex(aDomain, aDomainType, domainOrder);
+          const bDomainIndex = getSortIndex(bDomain, bDomainType, domainOrder);
+          
+          if (aDomainIndex !== bDomainIndex) {
+            return aDomainIndex - bDomainIndex;
+          }
+          
+          // Sort by Country
+          const aCountry = String(a.country || '');
+          const bCountry = String(b.country || '');
+          const countryOrder = predefinedSortOrder.countryOrder || [];
+          const aCountryType = getValueType(aCountry);
+          const bCountryType = getValueType(bCountry);
+          
+          const aCountryIndex = getSortIndex(aCountry, aCountryType, countryOrder);
+          const bCountryIndex = getSortIndex(bCountry, bCountryType, countryOrder);
+          
+          if (aCountryIndex !== bCountryIndex) {
+            return aCountryIndex - bCountryIndex;
+          }
+          
           return 0;
         });
         
         console.log('✅ DEFAULT ORDER FOR VARIABLES APPLIED');
       } else if (gridType === 'objects' && predefinedSortOrder.beingOrder) {
         console.log('🎯 APPLYING DEFAULT ORDER FOR OBJECTS:', predefinedSortOrder);
+        console.log('📋 SECTOR ORDER:', predefinedSortOrder.sectorOrder);
+        console.log('📋 DOMAIN ORDER:', predefinedSortOrder.domainOrder);
+        console.log('📋 COUNTRY ORDER:', predefinedSortOrder.countryOrder);
         
         processedData.sort((a, b) => {
           // First sort by Being
@@ -663,12 +787,129 @@ export const DataGrid: React.FC<DataGridProps> = ({
             return aObjectIndex - bObjectIndex;
           }
           
+          // After Object, sort by Sector, Domain, Country
+          // Helper to check if value is ALL, multiple, or single
+          const getValueType = (value: string): 'ALL' | 'multiple' | 'single' => {
+            const strValue = String(value || '').trim();
+            if (!strValue) return 'single';
+            if (strValue === 'ALL') return 'ALL';
+            const values = strValue.split(',').map(v => v.trim()).filter(Boolean);
+            return values.length > 1 ? 'multiple' : 'single';
+          };
+          
+          // Helper to get sort index respecting the order: ALL at top, then multiple, then individual in order
+          // The order array defines the exact order in the modal - we need to respect it while prioritizing ALL
+          const getSortIndex = (value: string, valueType: 'ALL' | 'multiple' | 'single', order: string[]): number => {
+            const allIndex = order.indexOf('ALL');
+            
+            if (valueType === 'ALL') {
+              // ALL should respect its position in the order array
+              // If ALL is at position 4, values at positions 1-3 should come first
+              const allIndex = order.indexOf('ALL');
+              if (allIndex === -1) {
+                // ALL not in order - put it first
+                return -1000000;
+              }
+              // ALL is in the order - use its position, but ensure it comes before values after it
+              // Values before ALL (index < allIndex) will have negative offsets, so they come first
+              // ALL gets its index, values after ALL get positive offsets
+              return allIndex;
+            } else if (valueType === 'multiple') {
+              // Multiple values come after ALL, sorted by first value's position in order
+              const values = value.split(',').map(v => v.trim()).filter(Boolean);
+              const firstIndex = order.indexOf(values[0] || '');
+              
+              // Use offset to ensure multiples come after ALL but before singles
+              return firstIndex === -1 ? 1000000 : 100000 + firstIndex;
+            } else {
+              // Single values - respect the order array exactly
+              // Values before ALL in the order come first, then ALL, then values after ALL
+              const index = order.indexOf(value);
+              
+              if (index === -1) return 2000000;
+              
+              // If ALL exists in order and this value comes before ALL, it should come first
+              // Otherwise, ALL comes first, then this value
+              if (allIndex !== -1 && index < allIndex) {
+                // This value comes before ALL in the order - it should appear first
+                // Use negative offset to ensure it comes before ALL (-1000000)
+                return index - 10000;
+              } else if (allIndex !== -1 && index > allIndex) {
+                // This value comes after ALL in the order - ALL comes first, then this
+                // Use positive offset to ensure it comes after ALL
+                return index + 10000;
+              }
+              
+              // No ALL in order, or index === allIndex (shouldn't happen for single)
+              return index;
+            }
+          };
+          
+          // Sort by Sector
+          const aSector = String(a.sector || '');
+          const bSector = String(b.sector || '');
+          const sectorOrder = predefinedSortOrder.sectorOrder || [];
+          const aSectorType = getValueType(aSector);
+          const bSectorType = getValueType(bSector);
+          
+          const aSectorIndex = getSortIndex(aSector, aSectorType, sectorOrder);
+          const bSectorIndex = getSortIndex(bSector, bSectorType, sectorOrder);
+          
+          // Debug logging for ALL and Technology
+          if ((aSector === 'ALL' || bSector === 'ALL') && (aSector === 'Technology' || bSector === 'Technology')) {
+            console.log('🔍 SECTOR SORT DEBUG:', {
+              aSector,
+              bSector,
+              aSectorType,
+              bSectorType,
+              aSectorIndex,
+              bSectorIndex,
+              sectorOrder,
+              result: aSectorIndex - bSectorIndex
+            });
+          }
+          
+          if (aSectorIndex !== bSectorIndex) {
+            return aSectorIndex - bSectorIndex;
+          }
+          
+          // Sort by Domain
+          const aDomain = String(a.domain || '');
+          const bDomain = String(b.domain || '');
+          const domainOrder = predefinedSortOrder.domainOrder || [];
+          const aDomainType = getValueType(aDomain);
+          const bDomainType = getValueType(bDomain);
+          
+          const aDomainIndex = getSortIndex(aDomain, aDomainType, domainOrder);
+          const bDomainIndex = getSortIndex(bDomain, bDomainType, domainOrder);
+          
+          if (aDomainIndex !== bDomainIndex) {
+            return aDomainIndex - bDomainIndex;
+          }
+          
+          // Sort by Country
+          const aCountry = String(a.country || '');
+          const bCountry = String(b.country || '');
+          const countryOrder = predefinedSortOrder.countryOrder || [];
+          const aCountryType = getValueType(aCountry);
+          const bCountryType = getValueType(bCountry);
+          
+          const aCountryIndex = getSortIndex(aCountry, aCountryType, countryOrder);
+          const bCountryIndex = getSortIndex(bCountry, bCountryType, countryOrder);
+          
+          if (aCountryIndex !== bCountryIndex) {
+            return aCountryIndex - bCountryIndex;
+          }
+          
           return 0;
         });
         
         console.log('✅ DEFAULT ORDER FOR OBJECTS APPLIED');
       } else if (gridType === 'lists' && predefinedSortOrder.setOrder) {
         console.log('🎯 APPLYING DEFAULT ORDER FOR LISTS:', predefinedSortOrder);
+        console.log('📋 SECTOR ORDER:', predefinedSortOrder.sectorOrder);
+        console.log('📋 DOMAIN ORDER:', predefinedSortOrder.domainOrder);
+        console.log('📋 COUNTRY ORDER:', predefinedSortOrder.countryOrder);
         
         processedData.sort((a, b) => {
           // First sort by Set
@@ -708,6 +949,120 @@ export const DataGrid: React.FC<DataGridProps> = ({
             if (aListIndex === -1) return 1;
             if (bListIndex === -1) return -1;
             return aListIndex - bListIndex;
+          }
+          
+          // After List, sort by Sector, Domain, Country
+          // Helper to check if value is ALL, multiple, or single
+          const getValueType = (value: string): 'ALL' | 'multiple' | 'single' => {
+            const strValue = String(value || '').trim();
+            if (!strValue) return 'single';
+            if (strValue === 'ALL') return 'ALL';
+            const values = strValue.split(',').map(v => v.trim()).filter(Boolean);
+            return values.length > 1 ? 'multiple' : 'single';
+          };
+          
+          // Helper to get sort index respecting the order: ALL at top, then multiple, then individual in order
+          // The order array defines the exact order in the modal - we need to respect it while prioritizing ALL
+          const getSortIndex = (value: string, valueType: 'ALL' | 'multiple' | 'single', order: string[]): number => {
+            const allIndex = order.indexOf('ALL');
+            
+            if (valueType === 'ALL') {
+              // ALL should respect its position in the order array
+              // If ALL is at position 4, values at positions 1-3 should come first
+              const allIndex = order.indexOf('ALL');
+              if (allIndex === -1) {
+                // ALL not in order - put it first
+                return -1000000;
+              }
+              // ALL is in the order - use its position, but ensure it comes before values after it
+              // Values before ALL (index < allIndex) will have negative offsets, so they come first
+              // ALL gets its index, values after ALL get positive offsets
+              return allIndex;
+            } else if (valueType === 'multiple') {
+              // Multiple values come after ALL, sorted by first value's position in order
+              const values = value.split(',').map(v => v.trim()).filter(Boolean);
+              const firstIndex = order.indexOf(values[0] || '');
+              
+              // Use offset to ensure multiples come after ALL but before singles
+              return firstIndex === -1 ? 1000000 : 100000 + firstIndex;
+            } else {
+              // Single values - respect the order array exactly
+              // Values before ALL in the order come first, then ALL, then values after ALL
+              const index = order.indexOf(value);
+              
+              if (index === -1) return 2000000;
+              
+              // If ALL exists in order and this value comes before ALL, it should come first
+              // Otherwise, ALL comes first, then this value
+              if (allIndex !== -1 && index < allIndex) {
+                // This value comes before ALL in the order - it should appear first
+                // Use negative offset to ensure it comes before ALL (-1000000)
+                return index - 10000;
+              } else if (allIndex !== -1 && index > allIndex) {
+                // This value comes after ALL in the order - ALL comes first, then this
+                // Use positive offset to ensure it comes after ALL
+                return index + 10000;
+              }
+              
+              // No ALL in order, or index === allIndex (shouldn't happen for single)
+              return index;
+            }
+          };
+          
+          // Sort by Sector
+          const aSector = String(a.sector || '');
+          const bSector = String(b.sector || '');
+          const sectorOrder = predefinedSortOrder.sectorOrder || [];
+          const aSectorType = getValueType(aSector);
+          const bSectorType = getValueType(bSector);
+          
+          const aSectorIndex = getSortIndex(aSector, aSectorType, sectorOrder);
+          const bSectorIndex = getSortIndex(bSector, bSectorType, sectorOrder);
+          
+          // Debug logging for ALL and Technology
+          if ((aSector === 'ALL' || bSector === 'ALL') && (aSector === 'Technology' || bSector === 'Technology')) {
+            console.log('🔍 SECTOR SORT DEBUG:', {
+              aSector,
+              bSector,
+              aSectorType,
+              bSectorType,
+              aSectorIndex,
+              bSectorIndex,
+              sectorOrder,
+              result: aSectorIndex - bSectorIndex
+            });
+          }
+          
+          if (aSectorIndex !== bSectorIndex) {
+            return aSectorIndex - bSectorIndex;
+          }
+          
+          // Sort by Domain
+          const aDomain = String(a.domain || '');
+          const bDomain = String(b.domain || '');
+          const domainOrder = predefinedSortOrder.domainOrder || [];
+          const aDomainType = getValueType(aDomain);
+          const bDomainType = getValueType(bDomain);
+          
+          const aDomainIndex = getSortIndex(aDomain, aDomainType, domainOrder);
+          const bDomainIndex = getSortIndex(bDomain, bDomainType, domainOrder);
+          
+          if (aDomainIndex !== bDomainIndex) {
+            return aDomainIndex - bDomainIndex;
+          }
+          
+          // Sort by Country
+          const aCountry = String(a.country || '');
+          const bCountry = String(b.country || '');
+          const countryOrder = predefinedSortOrder.countryOrder || [];
+          const aCountryType = getValueType(aCountry);
+          const bCountryType = getValueType(bCountry);
+          
+          const aCountryIndex = getSortIndex(aCountry, aCountryType, countryOrder);
+          const bCountryIndex = getSortIndex(bCountry, bCountryType, countryOrder);
+          
+          if (aCountryIndex !== bCountryIndex) {
+            return aCountryIndex - bCountryIndex;
           }
           
           return 0;

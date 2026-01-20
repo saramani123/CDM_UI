@@ -11,6 +11,7 @@ import { AddSectionValueModal } from './AddSectionValueModal';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface VariableMetadataField {
   key: string;
@@ -266,6 +267,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
   // Track previous selected variable ID to detect actual variable changes
   const prevSelectedVariableId = useRef<string | null>(null);
+  
+  // Loading state for metadata panel
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
 
   // Update form data when a new variable is selected (not on every field change)
   React.useEffect(() => {
@@ -274,64 +278,116 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     // Only reset form data when the selected variable actually changes
     if (currentVariableId && currentVariableId !== prevSelectedVariableId.current) {
       console.log('VariableMetadataPanel: selected variable changed from', prevSelectedVariableId.current, 'to', currentVariableId);
-      prevSelectedVariableId.current = currentVariableId;
       
-      // Initialize form data from the selected variable, not from fields
-      const newFormData: Record<string, any> = {
-        part: selectedVariable?.part || '',
-        section: selectedVariable?.section || '',
-        group: selectedVariable?.group || '',
-        variable: selectedVariable?.variable || '',
-        formatI: selectedVariable?.formatI || '',
-        formatII: selectedVariable?.formatII || '',
-        gType: selectedVariable?.gType || '',
-        validation: selectedVariable?.validation || '',
-        default: selectedVariable?.default || '',
-        graph: selectedVariable?.graph || 'Yes',
-        status: selectedVariable?.status || 'Active'
-      };
-      console.log('VariableMetadataPanel: newFormData for new variable', newFormData);
-      setFormData(newFormData);
-      
-      // Parse validation string into components
-      // Validation string is comma-separated, so split and parse each one
-      const validationString = selectedVariable?.validation || '';
-      if (validationString) {
-        const validationStrings = validationString.split(',').map(s => s.trim()).filter(s => s);
-        const parsedValidations = validationStrings.map(vs => parseValidation(vs));
-        setValidationComponentsList(parsedValidations.length > 0 ? parsedValidations : [{ valType: '', operator: '', value: '' }]);
-      } else {
-        setValidationComponentsList([{ valType: '', operator: '', value: '' }]);
-      }
-      setValidationError('');
-    }
-    
-    // Update driver selections when selected variable changes
-    if (selectedVariable?.driver) {
-      const parsed = parseVariableDriverString(selectedVariable.driver);
-      // Expand "ALL" to include all individual values for proper multiselect display
-      const expanded: typeof parsed = {
-        sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
-          ? ['ALL', ...driversData.sectors] 
-          : parsed.sector,
-        domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
-          ? ['ALL', ...driversData.domains] 
-          : parsed.domain,
-        country: parsed.country.includes('ALL') && driversData.countries.length > 0 
-          ? ['ALL', ...driversData.countries] 
-          : parsed.country,
-        variableClarifier: parsed.variableClarifier
-      };
-      setDriverSelections(expanded);
-    } else {
+      // Set loading state immediately and clear form data
+      setIsLoadingMetadata(true);
+      setFormData({
+        part: '',
+        section: '',
+        group: '',
+        variable: '',
+        formatI: '',
+        formatII: '',
+        gType: '',
+        validation: '',
+        default: '',
+        graph: 'Yes',
+        status: 'Active'
+      });
       setDriverSelections({
         sector: [],
         domain: [],
         country: [],
         variableClarifier: ''
       });
+      setValidationComponentsList([{ valType: '', operator: '', value: '' }]);
+      setValidationError('');
+      
+      prevSelectedVariableId.current = currentVariableId;
+      
+      // Use setTimeout to allow React to render the loading state first, then populate data
+      setTimeout(() => {
+        // Initialize form data from the selected variable, not from fields
+        const newFormData: Record<string, any> = {
+          part: selectedVariable?.part || '',
+          section: selectedVariable?.section || '',
+          group: selectedVariable?.group || '',
+          variable: selectedVariable?.variable || '',
+          formatI: selectedVariable?.formatI || '',
+          formatII: selectedVariable?.formatII || '',
+          gType: selectedVariable?.gType || '',
+          validation: selectedVariable?.validation || '',
+          default: selectedVariable?.default || '',
+          graph: selectedVariable?.graph || 'Yes',
+          status: selectedVariable?.status || 'Active'
+        };
+        console.log('VariableMetadataPanel: newFormData for new variable', newFormData);
+        setFormData(newFormData);
+        
+        // Parse validation string into components
+        // Validation string is comma-separated, so split and parse each one
+        const validationString = selectedVariable?.validation || '';
+        if (validationString) {
+          const validationStrings = validationString.split(',').map(s => s.trim()).filter(s => s);
+          const parsedValidations = validationStrings.map(vs => parseValidation(vs));
+          setValidationComponentsList(parsedValidations.length > 0 ? parsedValidations : [{ valType: '', operator: '', value: '' }]);
+        } else {
+          setValidationComponentsList([{ valType: '', operator: '', value: '' }]);
+        }
+        setValidationError('');
+        
+        // Update driver selections when selected variable changes
+        if (selectedVariable?.driver) {
+          const parsed = parseVariableDriverString(selectedVariable.driver);
+          // Expand "ALL" to include all individual values for proper multiselect display
+          const expanded: typeof parsed = {
+            sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+              ? ['ALL', ...driversData.sectors] 
+              : parsed.sector,
+            domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+              ? ['ALL', ...driversData.domains] 
+              : parsed.domain,
+            country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+              ? ['ALL', ...driversData.countries] 
+              : parsed.country,
+            variableClarifier: parsed.variableClarifier
+          };
+          setDriverSelections(expanded);
+        } else {
+          setDriverSelections({
+            sector: [],
+            domain: [],
+            country: [],
+            variableClarifier: ''
+          });
+        }
+        
+        // Clear loading state after data is populated
+        setIsLoadingMetadata(false);
+      }, 0);
+    } else if (!currentVariableId) {
+      // No variable selected - clear loading state
+      setIsLoadingMetadata(false);
+    } else if (currentVariableId === prevSelectedVariableId.current) {
+      // Same variable, just update driver selections if drivers data changed
+      if (selectedVariable?.driver) {
+        const parsed = parseVariableDriverString(selectedVariable.driver);
+        const expanded: typeof parsed = {
+          sector: parsed.sector.includes('ALL') && driversData.sectors.length > 0 
+            ? ['ALL', ...driversData.sectors] 
+            : parsed.sector,
+          domain: parsed.domain.includes('ALL') && driversData.domains.length > 0 
+            ? ['ALL', ...driversData.domains] 
+            : parsed.domain,
+          country: parsed.country.includes('ALL') && driversData.countries.length > 0 
+            ? ['ALL', ...driversData.countries] 
+            : parsed.country,
+          variableClarifier: parsed.variableClarifier
+        };
+        setDriverSelections(expanded);
+      }
     }
-  }, [selectedVariable?.id]); // Reset when variable changes only - don't reset when drivers data loads
+  }, [selectedVariable?.id, driversData]); // Reset when variable changes or drivers data loads
 
   // Update driver selections separately when drivers data is available
   React.useEffect(() => {
@@ -883,6 +939,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
       {/* Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto px-6">
+      {/* Loading Indicator */}
+      {isLoadingMetadata ? (
+        <LoadingSpinner message="Loading variable metadata..." />
+      ) : (
+        <>
       {/* Variable Name Field - Moved out of collapsible section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1670,6 +1731,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           }`}
         />
       </CollapsibleSection>
+        </>
+      )}
 
       </div>
 

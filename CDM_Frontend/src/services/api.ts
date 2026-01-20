@@ -949,6 +949,9 @@ class ApiService {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
     objectOrders: Record<string, string[]>;
+    sectorOrder?: string[];
+    domainOrder?: string[];
+    countryOrder?: string[];
   }) {
     return this.request('/order/objects', {
       method: 'POST',
@@ -965,6 +968,9 @@ class ApiService {
     sectionOrders: Record<string, string[]>;
     groupOrders: Record<string, string[]>;
     variableOrders: Record<string, string[]>;
+    sectorOrder?: string[];
+    domainOrder?: string[];
+    countryOrder?: string[];
   }) {
     return this.request('/order/variables', {
       method: 'POST',
@@ -980,6 +986,9 @@ class ApiService {
     setOrder: string[];
     groupingOrders: Record<string, string[]>;
     listOrders: Record<string, string[]>;
+    sectorOrder?: string[];
+    domainOrder?: string[];
+    countryOrder?: string[];
   }) {
     return this.request('/order/lists', {
       method: 'POST',

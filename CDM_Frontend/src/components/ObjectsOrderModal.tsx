@@ -6,6 +6,9 @@ interface OrderSortOrder {
   beingOrder: string[];
   avatarOrders: Record<string, string[]>; // key: being, value: array of avatars
   objectOrders: Record<string, string[]>; // key: "being|avatar", value: array of objects
+  sectorOrder?: string[]; // Independent S column order
+  domainOrder?: string[]; // Independent D column order
+  countryOrder?: string[]; // Independent C column order
 }
 
 interface ObjectsOrderModalProps {
@@ -26,18 +29,25 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
   const [workingBeingOrder, setWorkingBeingOrder] = useState<string[]>([]);
   const [workingAvatarOrders, setWorkingAvatarOrders] = useState<Record<string, string[]>>({});
   const [workingObjectOrders, setWorkingObjectOrders] = useState<Record<string, string[]>>({});
+  const [workingSectorOrder, setWorkingSectorOrder] = useState<string[]>([]);
+  const [workingDomainOrder, setWorkingDomainOrder] = useState<string[]>([]);
+  const [workingCountryOrder, setWorkingCountryOrder] = useState<string[]>([]);
   // Click-based selections (cascading filters)
   const [selectedBeing, setSelectedBeing] = useState<string>('');
   const [selectedAvatar, setSelectedAvatar] = useState<string>('');
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
-  const [dragType, setDragType] = useState<'being' | 'avatar' | 'object' | null>(null);
+  const [dragType, setDragType] = useState<'being' | 'avatar' | 'object' | 'sector' | 'domain' | 'country' | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
   const [savedBeingOrder, setSavedBeingOrder] = useState<string[]>([]);
   const [savedAvatarOrders, setSavedAvatarOrders] = useState<Record<string, string[]>>({});
   const [savedObjectOrders, setSavedObjectOrders] = useState<Record<string, string[]>>({});
+  const [savedSectorOrder, setSavedSectorOrder] = useState<string[]>([]);
+  const [savedDomainOrder, setSavedDomainOrder] = useState<string[]>([]);
+  const [savedCountryOrder, setSavedCountryOrder] = useState<string[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
+  
 
   // Get distinct values
   const distinctBeings = Array.from(new Set(objectData.map(o => o.being).filter(Boolean))).sort();
@@ -47,6 +57,12 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
   const objectsForBeingAndAvatar = selectedBeing && selectedAvatar
     ? Array.from(new Set(objectData.filter(o => o.being === selectedBeing && o.avatar === selectedAvatar).map(o => o.object).filter(Boolean))).sort()
     : [];
+  
+  // Get S, D, C values from grid data (including "ALL" and multiple values like "Finance, Healthcare")
+  // Extract unique values exactly as they appear in the grid
+  const distinctSectors = Array.from(new Set(objectData.map(o => String(o.sector || '').trim()).filter(Boolean))).sort();
+  const distinctDomains = Array.from(new Set(objectData.map(o => String(o.domain || '').trim()).filter(Boolean))).sort();
+  const distinctCountries = Array.from(new Set(objectData.map(o => String(o.country || '').trim()).filter(Boolean))).sort();
 
   // Initialize working orders from props or create defaults - only once when modal opens
   // CRITICAL: Order should NEVER change unless user explicitly modifies it via drag-and-drop
@@ -99,6 +115,43 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
         setSavedAvatarOrders(avatarOrders);
         setWorkingObjectOrders(objectOrders);
         setSavedObjectOrders(objectOrders);
+        
+        // Handle S, D, C orders - preserve existing order, append new values from grid data
+        // Use values exactly as they appear in the grid (including "ALL" and multiple values)
+        const currentDistinctSectors = Array.from(new Set(objectData.map(o => String(o.sector || '').trim()).filter(Boolean))).sort();
+        const currentDistinctDomains = Array.from(new Set(objectData.map(o => String(o.domain || '').trim()).filter(Boolean))).sort();
+        const currentDistinctCountries = Array.from(new Set(objectData.map(o => String(o.country || '').trim()).filter(Boolean))).sort();
+        
+        // Sector order
+        const savedSectorOrder = orderSortOrder.sectorOrder && orderSortOrder.sectorOrder.length > 0 
+          ? [...orderSortOrder.sectorOrder] 
+          : [];
+        const validSavedSectors = savedSectorOrder.filter(sector => currentDistinctSectors.includes(sector));
+        const newSectors = currentDistinctSectors.filter(sector => !savedSectorOrder.includes(sector));
+        const sectorOrder = [...validSavedSectors, ...newSectors];
+        
+        // Domain order
+        const savedDomainOrder = orderSortOrder.domainOrder && orderSortOrder.domainOrder.length > 0 
+          ? [...orderSortOrder.domainOrder] 
+          : [];
+        const validSavedDomains = savedDomainOrder.filter(domain => currentDistinctDomains.includes(domain));
+        const newDomains = currentDistinctDomains.filter(domain => !savedDomainOrder.includes(domain));
+        const domainOrder = [...validSavedDomains, ...newDomains];
+        
+        // Country order
+        const savedCountryOrder = orderSortOrder.countryOrder && orderSortOrder.countryOrder.length > 0 
+          ? [...orderSortOrder.countryOrder] 
+          : [];
+        const validSavedCountries = savedCountryOrder.filter(country => currentDistinctCountries.includes(country));
+        const newCountries = currentDistinctCountries.filter(country => !savedCountryOrder.includes(country));
+        const countryOrder = [...validSavedCountries, ...newCountries];
+        
+        setWorkingSectorOrder(sectorOrder);
+        setSavedSectorOrder(sectorOrder);
+        setWorkingDomainOrder(domainOrder);
+        setSavedDomainOrder(domainOrder);
+        setWorkingCountryOrder(countryOrder);
+        setSavedCountryOrder(countryOrder);
       } else {
         // Create default alphabetical orders (only if no saved order exists)
         setWorkingBeingOrder(distinctBeings);
@@ -107,10 +160,18 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
         setSavedAvatarOrders({});
         setWorkingObjectOrders({});
         setSavedObjectOrders({});
+        
+        // Initialize S, D, C with values from grid data (including "ALL" and multiple values)
+        setWorkingSectorOrder(distinctSectors);
+        setSavedSectorOrder(distinctSectors);
+        setWorkingDomainOrder(distinctDomains);
+        setSavedDomainOrder(distinctDomains);
+        setWorkingCountryOrder(distinctCountries);
+        setSavedCountryOrder(distinctCountries);
       }
       setIsInitialized(true);
     }
-  }, [isOpen, orderSortOrder, isInitialized]); // Removed distinctBeings and objectData from deps - only initialize once when modal opens
+  }, [isOpen, orderSortOrder, isInitialized, objectData, distinctSectors, distinctDomains, distinctCountries]);
 
   // Initialize working order for a being when it's selected (if not already in working orders)
   useEffect(() => {
@@ -141,7 +202,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     }
   }, [selectedBeing, selectedAvatar, objectData, savedObjectOrders, workingObjectOrders]);
 
-  const handleDragStart = (item: string, type: 'being' | 'avatar' | 'object') => {
+  const handleDragStart = (item: string, type: 'being' | 'avatar' | 'object' | 'sector' | 'domain' | 'country') => {
     setDraggedItem(item);
     setDragType(type);
   };
@@ -151,7 +212,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     setDragOverIndex(index);
   };
 
-  const handleDrop = (e: React.DragEvent, index: number, type: 'being' | 'avatar' | 'object') => {
+  const handleDrop = (e: React.DragEvent, index: number, type: 'being' | 'avatar' | 'object' | 'sector' | 'domain' | 'country') => {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedItem || dragType !== type) {
@@ -161,7 +222,46 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
       return;
     }
 
-    if (type === 'being') {
+    if (type === 'sector') {
+      const newOrder = [...workingSectorOrder];
+      const draggedIndex = newOrder.indexOf(draggedItem);
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
+      }
+      newOrder.splice(draggedIndex, 1);
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
+      setWorkingSectorOrder(newOrder);
+    } else if (type === 'domain') {
+      const newOrder = [...workingDomainOrder];
+      const draggedIndex = newOrder.indexOf(draggedItem);
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
+      }
+      newOrder.splice(draggedIndex, 1);
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
+      setWorkingDomainOrder(newOrder);
+    } else if (type === 'country') {
+      const newOrder = [...workingCountryOrder];
+      const draggedIndex = newOrder.indexOf(draggedItem);
+      if (draggedIndex === -1) {
+        setDraggedItem(null);
+        setDragType(null);
+        setDragOverIndex(-1);
+        return;
+      }
+      newOrder.splice(draggedIndex, 1);
+      const insertIndex = draggedIndex < index ? index - 1 : index;
+      newOrder.splice(insertIndex, 0, draggedItem);
+      setWorkingCountryOrder(newOrder);
+    } else if (type === 'being') {
       const newOrder = [...workingBeingOrder];
       const draggedIndex = newOrder.indexOf(draggedItem);
       if (draggedIndex === -1) {
@@ -221,13 +321,19 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
     const order: OrderSortOrder = {
       beingOrder: workingBeingOrder,
       avatarOrders: workingAvatarOrders,
-      objectOrders: workingObjectOrders
+      objectOrders: workingObjectOrders,
+      sectorOrder: workingSectorOrder,
+      domainOrder: workingDomainOrder,
+      countryOrder: workingCountryOrder
     };
     
     // Update saved orders to match working orders
     setSavedBeingOrder([...workingBeingOrder]);
     setSavedAvatarOrders({ ...workingAvatarOrders });
     setSavedObjectOrders({ ...workingObjectOrders });
+    setSavedSectorOrder([...workingSectorOrder]);
+    setSavedDomainOrder([...workingDomainOrder]);
+    setSavedCountryOrder([...workingCountryOrder]);
     
     // Save to parent (which will persist to localStorage)
     onSaveOrder(order);
@@ -244,7 +350,7 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
         className={`bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 transition-all duration-300 flex flex-col ${
           isExpanded 
             ? 'w-[95vw] h-[95vh]' 
-            : 'max-w-[90rem] w-full mx-4 max-h-[90vh]'
+            : 'max-w-[120rem] w-full mx-4 max-h-[90vh]'
         }`}
       >
         {/* Header */}
@@ -267,15 +373,93 @@ export const ObjectsOrderModal: React.FC<ObjectsOrderModalProps> = ({
           </div>
         </div>
 
-        {/* Instructions */}
-        <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex-shrink-0">
-          <p className="text-sm text-ag-dark-text-secondary">
-            Define the sort order for Being, Avatar, and Object columns. Click on values to filter columns to the right. Drag items to reorder them. The order will be applied when enabled.
-          </p>
-        </div>
 
-        {/* Three Column Layout */}
-        <div className={`grid grid-cols-3 gap-4 mb-6 ${isExpanded ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+        {/* Six Column Layout (S, D, C, Being, Avatar, Object) */}
+        <div className={`grid grid-cols-6 gap-4 mb-6 ${isExpanded ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
+          {/* Sector Column */}
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
+            <h4 className="text-sm font-medium text-ag-dark-text mb-3">S</h4>
+            <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+              {workingSectorOrder.map((sector, index) => (
+                <div
+                  key={sector}
+                  draggable
+                  onDragStart={() => handleDragStart(sector, 'sector')}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={(e) => handleDrop(e, index, 'sector')}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                    draggedItem === sector && dragType === 'sector'
+                      ? 'bg-ag-dark-accent bg-opacity-20'
+                      : dragOverIndex === index && dragType === 'sector'
+                      ? 'bg-ag-dark-accent bg-opacity-10'
+                      : 'hover:bg-ag-dark-surface'
+                  }`}
+                >
+                  <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                  <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                  <span className="text-ag-dark-text flex-1 truncate">{sector}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Domain Column */}
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
+            <h4 className="text-sm font-medium text-ag-dark-text mb-3">D</h4>
+            <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+              {workingDomainOrder.map((domain, index) => (
+                <div
+                  key={domain}
+                  draggable
+                  onDragStart={() => handleDragStart(domain, 'domain')}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={(e) => handleDrop(e, index, 'domain')}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                    draggedItem === domain && dragType === 'domain'
+                      ? 'bg-ag-dark-accent bg-opacity-20'
+                      : dragOverIndex === index && dragType === 'domain'
+                      ? 'bg-ag-dark-accent bg-opacity-10'
+                      : 'hover:bg-ag-dark-surface'
+                  }`}
+                >
+                  <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                  <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                  <span className="text-ag-dark-text flex-1 truncate">{domain}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Country Column */}
+          <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
+            <h4 className="text-sm font-medium text-ag-dark-text mb-3">C</h4>
+            <div className={`space-y-2 overflow-y-auto mb-3 flex-1 border-0 outline-none ${isExpanded ? 'min-h-0' : 'max-h-96'}`}>
+              {workingCountryOrder.map((country, index) => (
+                <div
+                  key={country}
+                  draggable
+                  onDragStart={() => handleDragStart(country, 'country')}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={(e) => handleDrop(e, index, 'country')}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-2 p-2 rounded text-sm cursor-move transition-colors ${
+                    draggedItem === country && dragType === 'country'
+                      ? 'bg-ag-dark-accent bg-opacity-20'
+                      : dragOverIndex === index && dragType === 'country'
+                      ? 'bg-ag-dark-accent bg-opacity-10'
+                      : 'hover:bg-ag-dark-surface'
+                  }`}
+                >
+                  <GripVertical className="w-4 h-4 text-ag-dark-text-secondary flex-shrink-0" />
+                  <span className="text-xs text-ag-dark-text-secondary w-6 flex-shrink-0">{index + 1}.</span>
+                  <span className="text-ag-dark-text flex-1 truncate">{country}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Being Column */}
           <div className="p-4 bg-ag-dark-bg flex flex-col border-0 outline-none h-full">
             <h4 className="text-sm font-medium text-ag-dark-text mb-3">Being</h4>

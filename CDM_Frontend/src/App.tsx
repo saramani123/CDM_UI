@@ -284,7 +284,10 @@ function App() {
               partOrder: parsed.partOrder || [],
               sectionOrders: parsed.sectionOrders || {},
               groupOrders: parsed.groupOrders || {},
-              variableOrders: parsed.variableOrders || {}
+              variableOrders: parsed.variableOrders || {},
+              sectorOrder: parsed.sectorOrder || [],
+              domainOrder: parsed.domainOrder || [],
+              countryOrder: parsed.countryOrder || []
             };
           } else {
             console.warn('Invalid variables order structure in localStorage, clearing it');
@@ -334,6 +337,9 @@ function App() {
     sectionOrders: Record<string, string[]>; // key: part, value: array of sections
     groupOrders: Record<string, string[]>; // key: "part|section", value: array of groups
     variableOrders: Record<string, string[]>; // key: "part|section|group", value: array of variables
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   } | undefined>(variablesPersistedState.orderSortOrder);
 
   // Lists Custom Sort state - load from localStorage
@@ -388,7 +394,10 @@ function App() {
             orderSortOrder = {
               beingOrder: parsed.beingOrder || [],
               avatarOrders: parsed.avatarOrders || {},
-              objectOrders: parsed.objectOrders || {}
+              objectOrders: parsed.objectOrders || {},
+              sectorOrder: parsed.sectorOrder || [],
+              domainOrder: parsed.domainOrder || [],
+              countryOrder: parsed.countryOrder || []
             };
           } else {
             console.warn('Invalid objects order structure in localStorage, clearing it');
@@ -422,6 +431,9 @@ function App() {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
     objectOrders: Record<string, string[]>;
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   } | undefined>(objectsPersistedState.orderSortOrder);
 
   // Lists Default Order state - load from localStorage
@@ -442,7 +454,10 @@ function App() {
             orderSortOrder = {
               setOrder: parsed.setOrder || [],
               groupingOrders: parsed.groupingOrders || {},
-              listOrders: parsed.listOrders || {}
+              listOrders: parsed.listOrders || {},
+              sectorOrder: parsed.sectorOrder || [],
+              domainOrder: parsed.domainOrder || [],
+              countryOrder: parsed.countryOrder || []
             };
           } else {
             console.warn('Invalid lists order structure in localStorage, clearing it');
@@ -475,6 +490,9 @@ function App() {
     setOrder: string[];
     groupingOrders: Record<string, string[]>;
     listOrders: Record<string, string[]>;
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   } | undefined>(listsOrderPersistedState.orderSortOrder);
 
   // Views state
@@ -1265,12 +1283,18 @@ function App() {
           beingOrder?: string[];
           avatarOrders?: Record<string, string[]>;
           objectOrders?: Record<string, string[]>;
+          sectorOrder?: string[];
+          domainOrder?: string[];
+          countryOrder?: string[];
         } | null;
-        if (objectsOrder && ((objectsOrder.beingOrder && objectsOrder.beingOrder.length > 0) || Object.keys(objectsOrder.avatarOrders || {}).length > 0 || Object.keys(objectsOrder.objectOrders || {}).length > 0)) {
+        if (objectsOrder && ((objectsOrder.beingOrder && objectsOrder.beingOrder.length > 0) || Object.keys(objectsOrder.avatarOrders || {}).length > 0 || Object.keys(objectsOrder.objectOrders || {}).length > 0 || (objectsOrder.sectorOrder && objectsOrder.sectorOrder.length > 0) || (objectsOrder.domainOrder && objectsOrder.domainOrder.length > 0) || (objectsOrder.countryOrder && objectsOrder.countryOrder.length > 0))) {
           setObjectsOrderSortOrder({
             beingOrder: objectsOrder.beingOrder || [],
             avatarOrders: objectsOrder.avatarOrders || {},
-            objectOrders: objectsOrder.objectOrders || {}
+            objectOrders: objectsOrder.objectOrders || {},
+            sectorOrder: objectsOrder.sectorOrder || [],
+            domainOrder: objectsOrder.domainOrder || [],
+            countryOrder: objectsOrder.countryOrder || []
           });
           localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(objectsOrder));
           console.log('✅ Loaded objects order from backend');
@@ -1282,13 +1306,19 @@ function App() {
           sectionOrders?: Record<string, string[]>;
           groupOrders?: Record<string, string[]>;
           variableOrders?: Record<string, string[]>;
+          sectorOrder?: string[];
+          domainOrder?: string[];
+          countryOrder?: string[];
         } | null;
-        if (variablesOrder && ((variablesOrder.partOrder && variablesOrder.partOrder.length > 0) || Object.keys(variablesOrder.sectionOrders || {}).length > 0 || Object.keys(variablesOrder.groupOrders || {}).length > 0 || Object.keys(variablesOrder.variableOrders || {}).length > 0)) {
+        if (variablesOrder && ((variablesOrder.partOrder && variablesOrder.partOrder.length > 0) || Object.keys(variablesOrder.sectionOrders || {}).length > 0 || Object.keys(variablesOrder.groupOrders || {}).length > 0 || Object.keys(variablesOrder.variableOrders || {}).length > 0 || (variablesOrder.sectorOrder && variablesOrder.sectorOrder.length > 0) || (variablesOrder.domainOrder && variablesOrder.domainOrder.length > 0) || (variablesOrder.countryOrder && variablesOrder.countryOrder.length > 0))) {
           setVariablesOrderSortOrder({
             partOrder: variablesOrder.partOrder || [],
             sectionOrders: variablesOrder.sectionOrders || {},
             groupOrders: variablesOrder.groupOrders || {},
-            variableOrders: variablesOrder.variableOrders || {}
+            variableOrders: variablesOrder.variableOrders || {},
+            sectorOrder: variablesOrder.sectorOrder || [],
+            domainOrder: variablesOrder.domainOrder || [],
+            countryOrder: variablesOrder.countryOrder || []
           });
           localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(variablesOrder));
           console.log('✅ Loaded variables order from backend');
@@ -1299,12 +1329,18 @@ function App() {
           setOrder?: string[];
           groupingOrders?: Record<string, string[]>;
           listOrders?: Record<string, string[]>;
+          sectorOrder?: string[];
+          domainOrder?: string[];
+          countryOrder?: string[];
         } | null;
-        if (listsOrder && ((listsOrder.setOrder && listsOrder.setOrder.length > 0) || Object.keys(listsOrder.groupingOrders || {}).length > 0 || Object.keys(listsOrder.listOrders || {}).length > 0)) {
+        if (listsOrder && ((listsOrder.setOrder && listsOrder.setOrder.length > 0) || Object.keys(listsOrder.groupingOrders || {}).length > 0 || Object.keys(listsOrder.listOrders || {}).length > 0 || (listsOrder.sectorOrder && listsOrder.sectorOrder.length > 0) || (listsOrder.domainOrder && listsOrder.domainOrder.length > 0) || (listsOrder.countryOrder && listsOrder.countryOrder.length > 0))) {
           setListsOrderSortOrder({
             setOrder: listsOrder.setOrder || [],
             groupingOrders: listsOrder.groupingOrders || {},
-            listOrders: listsOrder.listOrders || {}
+            listOrders: listsOrder.listOrders || {},
+            sectorOrder: listsOrder.sectorOrder || [],
+            domainOrder: listsOrder.domainOrder || [],
+            countryOrder: listsOrder.countryOrder || []
           });
           localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(listsOrder));
           console.log('✅ Loaded lists order from backend');
@@ -5206,7 +5242,9 @@ function App() {
     localStorage.setItem('cdm_objects_order_enabled', isDefaultOrderEnabled.toString());
     
     setCustomSortRules(sortRules);
-    setIsCustomSortActive(sortRules.length > 0);
+    // If default order is enabled, custom sort should NOT be active (even if there are S, D, C sort rules)
+    // Custom sort is only active when default order is disabled AND there are sort rules
+    setIsCustomSortActive(!isDefaultOrderEnabled && sortRules.length > 0);
     setIsColumnSortActive(false); // Clear column sort when grid sort is applied
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_objects_column_sort_active');
@@ -5278,7 +5316,9 @@ function App() {
     localStorage.setItem('cdm_variables_predefined_sort_enabled', isDefaultOrderEnabled.toString()); // Backward compatibility
     
     setVariablesCustomSortRules(sortRules);
-    setIsVariablesCustomSortActive(sortRules.length > 0);
+    // If default order is enabled, custom sort should NOT be active (even if there are S, D, C sort rules)
+    // Custom sort is only active when default order is disabled AND there are sort rules
+    setIsVariablesCustomSortActive(!isDefaultOrderEnabled && sortRules.length > 0);
     setIsVariablesColumnSortActive(false); // Clear column sort when grid sort is applied
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_variables_column_sort_active');
@@ -5312,6 +5352,9 @@ function App() {
     sectionOrders: Record<string, string[]>; // key: part, value: array of sections
     groupOrders: Record<string, string[]>; // key: "part|section", value: array of groups
     variableOrders: Record<string, string[]>; // key: "part|section|group", value: array of variables
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   }) => {
     // Save the order to localStorage - this is persistent and doesn't change unless user modifies it
     setVariablesOrderSortOrder(order);
@@ -5340,8 +5383,12 @@ function App() {
     // Also save to old key for backward compatibility
     localStorage.setItem('cdm_variables_predefined_sort_enabled', enabled.toString());
     
-    // If enabling default order, clear column sort for Part, Section, Group, Variable
+    // If enabling default order, deactivate custom sort
     if (enabled) {
+      setIsVariablesCustomSortActive(false);
+      localStorage.setItem('cdm_variables_custom_sort_active', 'false');
+      
+      // Clear column sort for Part, Section, Group, Variable
       try {
         const savedSortConfig = localStorage.getItem('cdm_variables_sort_config');
         if (savedSortConfig) {
@@ -5364,6 +5411,9 @@ function App() {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
     objectOrders: Record<string, string[]>;
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   }) => {
     setObjectsOrderSortOrder(order);
     localStorage.setItem('cdm_objects_order_sort_order', JSON.stringify(order));
@@ -5382,8 +5432,12 @@ function App() {
     setIsObjectsOrderEnabled(enabled);
     localStorage.setItem('cdm_objects_order_enabled', enabled.toString());
     
-    // If enabling default order, clear column sort for Being, Avatar, Object
+    // If enabling default order, deactivate custom sort
     if (enabled) {
+      setIsCustomSortActive(false);
+      localStorage.setItem('cdm_objects_custom_sort_active', 'false');
+      
+      // Clear column sort for Being, Avatar, Object
       try {
         const savedSortConfig = localStorage.getItem('cdm_objects_sort_config');
         if (savedSortConfig) {
@@ -5405,6 +5459,9 @@ function App() {
     setOrder: string[];
     groupingOrders: Record<string, string[]>;
     listOrders: Record<string, string[]>;
+    sectorOrder?: string[]; // Independent S column order
+    domainOrder?: string[]; // Independent D column order
+    countryOrder?: string[]; // Independent C column order
   }) => {
     setListsOrderSortOrder(order);
     localStorage.setItem('cdm_lists_order_sort_order', JSON.stringify(order));
@@ -5423,8 +5480,12 @@ function App() {
     setIsListsOrderEnabled(enabled);
     localStorage.setItem('cdm_lists_order_enabled', enabled.toString());
     
-    // If enabling default order, clear column sort for Set, Grouping, List
+    // If enabling default order, deactivate custom sort
     if (enabled) {
+      setIsListsCustomSortActive(false);
+      localStorage.setItem('cdm_lists_custom_sort_active', 'false');
+      
+      // Clear column sort for Set, Grouping, List
       try {
         const savedSortConfig = localStorage.getItem('cdm_lists_sort_config');
         if (savedSortConfig) {
@@ -5470,7 +5531,9 @@ function App() {
     localStorage.setItem('cdm_lists_order_enabled', isDefaultOrderEnabled.toString());
     
     setListsCustomSortRules(sortRules);
-    setIsListsCustomSortActive(sortRules.length > 0);
+    // If default order is enabled, custom sort should NOT be active (even if there are S, D, C sort rules)
+    // Custom sort is only active when default order is disabled AND there are sort rules
+    setIsListsCustomSortActive(!isDefaultOrderEnabled && sortRules.length > 0);
     setIsListsColumnSortActive(false); // Clear column sort when grid sort is applied
     // Clear localStorage for column sort
     localStorage.removeItem('cdm_lists_column_sort_active');
@@ -5906,7 +5969,8 @@ function App() {
                         }
                       }}
                       className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                        (activeTab === 'objects' && isCustomSortActive) || (activeTab === 'variables' && isVariablesCustomSortActive)
+                        ((activeTab === 'objects' && isCustomSortActive && !isObjectsOrderEnabled) || 
+                         (activeTab === 'variables' && isVariablesCustomSortActive && !isVariablesOrderEnabled))
                           ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                           : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                       }`}
@@ -5914,12 +5978,12 @@ function App() {
                     >
                       <ArrowUpDown className="w-4 h-4" />
                       Custom Sort
-                      {activeTab === 'objects' && isCustomSortActive && (
+                      {activeTab === 'objects' && isCustomSortActive && !isObjectsOrderEnabled && (
                         <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                           Grid Sort Active
                         </span>
                       )}
-                      {activeTab === 'variables' && isVariablesCustomSortActive && (
+                      {activeTab === 'variables' && isVariablesCustomSortActive && !isVariablesOrderEnabled && (
                         <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                           Grid Sort Active
                         </span>
@@ -5939,17 +6003,27 @@ function App() {
                     {/* Order Button (Variables only) */}
                     {activeTab === 'variables' && (
                       <button
-                        onClick={() => setIsVariablesOrderOpen(true)}
+                        onClick={() => {
+                          // Clear custom sort when opening default order modal
+                          setVariablesCustomSortRules([]);
+                          setIsVariablesCustomSortActive(false);
+                          localStorage.removeItem('cdm_variables_custom_sort_rules');
+                          localStorage.setItem('cdm_variables_custom_sort_active', 'false');
+                          setIsVariablesOrderOpen(true);
+                        }}
+                        disabled={isVariablesCustomSortActive}
                         className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                          isVariablesOrderEnabled
+                          isVariablesCustomSortActive
+                            ? 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                            : isVariablesOrderEnabled
                             ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                             : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                         }`}
-                        title="Define custom sort order for Part, Section, Group, and Variable columns"
+                        title={isVariablesCustomSortActive ? "Disable custom sort to use default order" : "Define custom sort order for Part, Section, Group, and Variable columns"}
                       >
                         <ArrowUpDown className="w-4 h-4" />
                         Default Order
-                        {isVariablesOrderEnabled && (
+                        {isVariablesOrderEnabled && !isVariablesCustomSortActive && (
                           <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                             Active
                           </span>
@@ -5960,17 +6034,27 @@ function App() {
                     {/* Order Button (Objects only) */}
                     {activeTab === 'objects' && (
                       <button
-                        onClick={() => setIsObjectsOrderOpen(true)}
+                        onClick={() => {
+                          // Clear custom sort when opening default order modal
+                          setCustomSortRules([]);
+                          setIsCustomSortActive(false);
+                          localStorage.removeItem('cdm_objects_custom_sort_rules');
+                          localStorage.setItem('cdm_objects_custom_sort_active', 'false');
+                          setIsObjectsOrderOpen(true);
+                        }}
+                        disabled={isCustomSortActive}
                         className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                          isObjectsOrderEnabled
+                          isCustomSortActive
+                            ? 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                            : isObjectsOrderEnabled
                             ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                             : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                         }`}
-                        title="Define custom sort order for Being, Avatar, and Object columns"
+                        title={isCustomSortActive ? "Disable custom sort to use default order" : "Define custom sort order for Being, Avatar, and Object columns"}
                       >
                         <ArrowUpDown className="w-4 h-4" />
                         Default Order
-                        {isObjectsOrderEnabled && (
+                        {isObjectsOrderEnabled && !isCustomSortActive && (
                           <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                             Active
                           </span>
@@ -5981,17 +6065,27 @@ function App() {
                     {/* Order Button (Lists only) */}
                     {activeTab === 'lists' && (
                       <button
-                        onClick={() => setIsListsOrderOpen(true)}
+                        onClick={() => {
+                          // Clear custom sort when opening default order modal
+                          setListsCustomSortRules([]);
+                          setIsListsCustomSortActive(false);
+                          localStorage.removeItem('cdm_lists_custom_sort_rules');
+                          localStorage.setItem('cdm_lists_custom_sort_active', 'false');
+                          setIsListsOrderOpen(true);
+                        }}
+                        disabled={isListsCustomSortActive}
                         className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                          isListsOrderEnabled
+                          isListsCustomSortActive
+                            ? 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                            : isListsOrderEnabled
                             ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                             : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                         }`}
-                        title="Define custom sort order for Set, Grouping, and List columns"
+                        title={isListsCustomSortActive ? "Disable custom sort to use default order" : "Define custom sort order for Set, Grouping, and List columns"}
                       >
                         <ArrowUpDown className="w-4 h-4" />
                         Default Order
-                        {isListsOrderEnabled && (
+                        {isListsOrderEnabled && !isListsCustomSortActive && (
                           <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                             Active
                           </span>
@@ -6101,7 +6195,7 @@ function App() {
                     <button
                       onClick={() => setIsListsCustomSortOpen(true)}
                       className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                        isListsCustomSortActive
+                        isListsCustomSortActive && !isListsOrderEnabled
                           ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
                           : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
                       }`}
@@ -6109,7 +6203,7 @@ function App() {
                     >
                       <ArrowUpDown className="w-4 h-4" />
                       Custom Sort
-                      {isListsCustomSortActive && (
+                      {isListsCustomSortActive && !isListsOrderEnabled && (
                         <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
                           Grid Sort Active
                         </span>
@@ -6123,7 +6217,14 @@ function App() {
                     
                     {/* Order Button (Lists only) */}
                     <button
-                      onClick={() => setIsListsOrderOpen(true)}
+                      onClick={() => {
+                        // Clear custom sort when opening default order modal
+                        setListsCustomSortRules([]);
+                        setIsListsCustomSortActive(false);
+                        localStorage.removeItem('cdm_lists_custom_sort_rules');
+                        localStorage.setItem('cdm_lists_custom_sort_active', 'false');
+                        setIsListsOrderOpen(true);
+                      }}
                       className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
                         isListsOrderEnabled
                           ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 

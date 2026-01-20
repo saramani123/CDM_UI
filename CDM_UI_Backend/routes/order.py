@@ -15,17 +15,26 @@ class ObjectsOrderRequest(BaseModel):
     beingOrder: List[str]
     avatarOrders: Dict[str, List[str]]  # key: being, value: array of avatars
     objectOrders: Dict[str, List[str]]  # key: "being|avatar", value: array of objects
+    sectorOrder: Optional[List[str]] = []  # Independent S column order
+    domainOrder: Optional[List[str]] = []  # Independent D column order
+    countryOrder: Optional[List[str]] = []  # Independent C column order
 
 class VariablesOrderRequest(BaseModel):
     partOrder: List[str]
     sectionOrders: Dict[str, List[str]]  # key: part, value: array of sections
     groupOrders: Dict[str, List[str]]  # key: "part|section", value: array of groups
     variableOrders: Dict[str, List[str]]  # key: "part|section|group", value: array of variables
+    sectorOrder: Optional[List[str]] = []  # Independent S column order
+    domainOrder: Optional[List[str]] = []  # Independent D column order
+    countryOrder: Optional[List[str]] = []  # Independent C column order
 
 class ListsOrderRequest(BaseModel):
     setOrder: List[str]
     groupingOrders: Dict[str, List[str]]  # key: set, value: array of groupings
     listOrders: Dict[str, List[str]]  # key: "set|grouping", value: array of lists
+    sectorOrder: Optional[List[str]] = []  # Independent S column order
+    domainOrder: Optional[List[str]] = []  # Independent D column order
+    countryOrder: Optional[List[str]] = []  # Independent C column order
 
 def get_or_create_order_node(session, grid_type: str):
     """Get or create the Order node for a specific grid type"""
@@ -57,33 +66,46 @@ async def get_objects_order():
                 MATCH (o:Order {gridType: 'objects'})
                 RETURN o.beingOrder as beingOrder,
                        o.avatarOrders as avatarOrders,
-                       o.objectOrders as objectOrders
+                       o.objectOrders as objectOrders,
+                       o.sectorOrder as sectorOrder,
+                       o.domainOrder as domainOrder,
+                       o.countryOrder as countryOrder
                 LIMIT 1
                 """
             )
             record = result.single()
             
-            if record and (record.get("beingOrder") or record.get("avatarOrders") or record.get("objectOrders")):
+            if record and (record.get("beingOrder") or record.get("avatarOrders") or record.get("objectOrders") or record.get("sectorOrder") or record.get("domainOrder") or record.get("countryOrder")):
                 # Parse JSON strings if they're stored as strings
+                import json
                 being_order = record.get("beingOrder")
                 avatar_orders = record.get("avatarOrders")
                 object_orders = record.get("objectOrders")
+                sector_order = record.get("sectorOrder")
+                domain_order = record.get("domainOrder")
+                country_order = record.get("countryOrder")
                 
                 # If stored as strings, parse them
                 if isinstance(being_order, str):
-                    import json
                     being_order = json.loads(being_order) if being_order else []
                 if isinstance(avatar_orders, str):
-                    import json
                     avatar_orders = json.loads(avatar_orders) if avatar_orders else {}
                 if isinstance(object_orders, str):
-                    import json
                     object_orders = json.loads(object_orders) if object_orders else {}
+                if isinstance(sector_order, str):
+                    sector_order = json.loads(sector_order) if sector_order else []
+                if isinstance(domain_order, str):
+                    domain_order = json.loads(domain_order) if domain_order else []
+                if isinstance(country_order, str):
+                    country_order = json.loads(country_order) if country_order else []
                 
                 return {
                     "beingOrder": being_order or [],
                     "avatarOrders": avatar_orders or {},
-                    "objectOrders": object_orders or {}
+                    "objectOrders": object_orders or {},
+                    "sectorOrder": sector_order or [],
+                    "domainOrder": domain_order or [],
+                    "countryOrder": country_order or []
                 }
             else:
                 return None
@@ -109,6 +131,9 @@ async def save_objects_order(order: ObjectsOrderRequest):
             being_order_json = json.dumps(order.beingOrder)
             avatar_orders_json = json.dumps(order.avatarOrders)
             object_orders_json = json.dumps(order.objectOrders)
+            sector_order_json = json.dumps(order.sectorOrder or [])
+            domain_order_json = json.dumps(order.domainOrder or [])
+            country_order_json = json.dumps(order.countryOrder or [])
             
             session.run(
                 """
@@ -116,12 +141,18 @@ async def save_objects_order(order: ObjectsOrderRequest):
                 SET o.beingOrder = $beingOrder,
                     o.avatarOrders = $avatarOrders,
                     o.objectOrders = $objectOrders,
+                    o.sectorOrder = $sectorOrder,
+                    o.domainOrder = $domainOrder,
+                    o.countryOrder = $countryOrder,
                     o.updatedAt = datetime()
                 ON CREATE SET o.createdAt = datetime()
                 """,
                 beingOrder=being_order_json,
                 avatarOrders=avatar_orders_json,
-                objectOrders=object_orders_json
+                objectOrders=object_orders_json,
+                sectorOrder=sector_order_json,
+                domainOrder=domain_order_json,
+                countryOrder=country_order_json
             )
             
             print(f"✅ Saved objects order: {len(order.beingOrder)} beings, {len(order.avatarOrders)} avatar contexts, {len(order.objectOrders)} object contexts")
@@ -149,19 +180,25 @@ async def get_variables_order():
                 RETURN o.partOrder as partOrder,
                        o.sectionOrders as sectionOrders,
                        o.groupOrders as groupOrders,
-                       o.variableOrders as variableOrders
+                       o.variableOrders as variableOrders,
+                       o.sectorOrder as sectorOrder,
+                       o.domainOrder as domainOrder,
+                       o.countryOrder as countryOrder
                 LIMIT 1
                 """
             )
             record = result.single()
             
-            if record and (record.get("partOrder") or record.get("sectionOrders") or record.get("groupOrders") or record.get("variableOrders")):
+            if record and (record.get("partOrder") or record.get("sectionOrders") or record.get("groupOrders") or record.get("variableOrders") or record.get("sectorOrder") or record.get("domainOrder") or record.get("countryOrder")):
                 # Parse JSON strings if they're stored as strings
                 import json
                 part_order = record.get("partOrder")
                 section_orders = record.get("sectionOrders")
                 group_orders = record.get("groupOrders")
                 variable_orders = record.get("variableOrders")
+                sector_order = record.get("sectorOrder")
+                domain_order = record.get("domainOrder")
+                country_order = record.get("countryOrder")
                 
                 if isinstance(part_order, str):
                     part_order = json.loads(part_order) if part_order else []
@@ -171,12 +208,21 @@ async def get_variables_order():
                     group_orders = json.loads(group_orders) if group_orders else {}
                 if isinstance(variable_orders, str):
                     variable_orders = json.loads(variable_orders) if variable_orders else {}
+                if isinstance(sector_order, str):
+                    sector_order = json.loads(sector_order) if sector_order else []
+                if isinstance(domain_order, str):
+                    domain_order = json.loads(domain_order) if domain_order else []
+                if isinstance(country_order, str):
+                    country_order = json.loads(country_order) if country_order else []
                 
                 return {
                     "partOrder": part_order or [],
                     "sectionOrders": section_orders or {},
                     "groupOrders": group_orders or {},
-                    "variableOrders": variable_orders or {}
+                    "variableOrders": variable_orders or {},
+                    "sectorOrder": sector_order or [],
+                    "domainOrder": domain_order or [],
+                    "countryOrder": country_order or []
                 }
             else:
                 return None
@@ -203,6 +249,9 @@ async def save_variables_order(order: VariablesOrderRequest):
             section_orders_json = json.dumps(order.sectionOrders)
             group_orders_json = json.dumps(order.groupOrders)
             variable_orders_json = json.dumps(order.variableOrders)
+            sector_order_json = json.dumps(order.sectorOrder or [])
+            domain_order_json = json.dumps(order.domainOrder or [])
+            country_order_json = json.dumps(order.countryOrder or [])
             
             session.run(
                 """
@@ -211,13 +260,19 @@ async def save_variables_order(order: VariablesOrderRequest):
                     o.sectionOrders = $sectionOrders,
                     o.groupOrders = $groupOrders,
                     o.variableOrders = $variableOrders,
+                    o.sectorOrder = $sectorOrder,
+                    o.domainOrder = $domainOrder,
+                    o.countryOrder = $countryOrder,
                     o.updatedAt = datetime()
                 ON CREATE SET o.createdAt = datetime()
                 """,
                 partOrder=part_order_json,
                 sectionOrders=section_orders_json,
                 groupOrders=group_orders_json,
-                variableOrders=variable_orders_json
+                variableOrders=variable_orders_json,
+                sectorOrder=sector_order_json,
+                domainOrder=domain_order_json,
+                countryOrder=country_order_json
             )
             
             print(f"✅ Saved variables order: {len(order.partOrder)} parts, {len(order.sectionOrders)} section contexts, {len(order.groupOrders)} group contexts, {len(order.variableOrders)} variable contexts")
@@ -244,18 +299,24 @@ async def get_lists_order():
                 MATCH (o:Order {gridType: 'lists'})
                 RETURN o.setOrder as setOrder,
                        o.groupingOrders as groupingOrders,
-                       o.listOrders as listOrders
+                       o.listOrders as listOrders,
+                       o.sectorOrder as sectorOrder,
+                       o.domainOrder as domainOrder,
+                       o.countryOrder as countryOrder
                 LIMIT 1
                 """
             )
             record = result.single()
             
-            if record and (record.get("setOrder") or record.get("groupingOrders") or record.get("listOrders")):
+            if record and (record.get("setOrder") or record.get("groupingOrders") or record.get("listOrders") or record.get("sectorOrder") or record.get("domainOrder") or record.get("countryOrder")):
                 # Parse JSON strings if they're stored as strings
                 import json
                 set_order = record.get("setOrder")
                 grouping_orders = record.get("groupingOrders")
                 list_orders = record.get("listOrders")
+                sector_order = record.get("sectorOrder")
+                domain_order = record.get("domainOrder")
+                country_order = record.get("countryOrder")
                 
                 if isinstance(set_order, str):
                     set_order = json.loads(set_order) if set_order else []
@@ -263,11 +324,20 @@ async def get_lists_order():
                     grouping_orders = json.loads(grouping_orders) if grouping_orders else {}
                 if isinstance(list_orders, str):
                     list_orders = json.loads(list_orders) if list_orders else {}
+                if isinstance(sector_order, str):
+                    sector_order = json.loads(sector_order) if sector_order else []
+                if isinstance(domain_order, str):
+                    domain_order = json.loads(domain_order) if domain_order else []
+                if isinstance(country_order, str):
+                    country_order = json.loads(country_order) if country_order else []
                 
                 return {
                     "setOrder": set_order or [],
                     "groupingOrders": grouping_orders or {},
-                    "listOrders": list_orders or {}
+                    "listOrders": list_orders or {},
+                    "sectorOrder": sector_order or [],
+                    "domainOrder": domain_order or [],
+                    "countryOrder": country_order or []
                 }
             else:
                 return None
@@ -293,6 +363,9 @@ async def save_lists_order(order: ListsOrderRequest):
             set_order_json = json.dumps(order.setOrder)
             grouping_orders_json = json.dumps(order.groupingOrders)
             list_orders_json = json.dumps(order.listOrders)
+            sector_order_json = json.dumps(order.sectorOrder or [])
+            domain_order_json = json.dumps(order.domainOrder or [])
+            country_order_json = json.dumps(order.countryOrder or [])
             
             session.run(
                 """
@@ -300,12 +373,18 @@ async def save_lists_order(order: ListsOrderRequest):
                 SET o.setOrder = $setOrder,
                     o.groupingOrders = $groupingOrders,
                     o.listOrders = $listOrders,
+                    o.sectorOrder = $sectorOrder,
+                    o.domainOrder = $domainOrder,
+                    o.countryOrder = $countryOrder,
                     o.updatedAt = datetime()
                 ON CREATE SET o.createdAt = datetime()
                 """,
                 setOrder=set_order_json,
                 groupingOrders=grouping_orders_json,
-                listOrders=list_orders_json
+                listOrders=list_orders_json,
+                sectorOrder=sector_order_json,
+                domainOrder=domain_order_json,
+                countryOrder=country_order_json
             )
             
             print(f"✅ Saved lists order: {len(order.setOrder)} sets, {len(order.groupingOrders)} grouping contexts, {len(order.listOrders)} list contexts")

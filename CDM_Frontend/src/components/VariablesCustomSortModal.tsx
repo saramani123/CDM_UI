@@ -174,7 +174,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
                       <select
                         value={rule.column}
                         onChange={(e) => updateSortRule(rule.id, 'column', e.target.value)}
-                        className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                        disabled={defaultOrderEnabled}
+                        className={`w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          defaultOrderEnabled 
+                            ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50' 
+                            : 'text-ag-dark-text'
+                        }`}
                         style={{
                           backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                           backgroundPosition: 'right 8px center',
@@ -202,7 +207,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
                       <select
                         value={rule.sortOn}
                         onChange={(e) => updateSortRule(rule.id, 'sortOn', e.target.value)}
-                        className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                        disabled={defaultOrderEnabled}
+                        className={`w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          defaultOrderEnabled 
+                            ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50' 
+                            : 'text-ag-dark-text'
+                        }`}
                         style={{
                           backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                           backgroundPosition: 'right 8px center',
@@ -225,7 +235,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
                       <select
                         value={rule.order}
                         onChange={(e) => updateSortRule(rule.id, 'order', e.target.value as 'asc' | 'desc')}
-                        className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                        disabled={defaultOrderEnabled}
+                        className={`w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-sm focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          defaultOrderEnabled 
+                            ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50' 
+                            : 'text-ag-dark-text'
+                        }`}
                         style={{
                           backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                           backgroundPosition: 'right 8px center',
@@ -246,7 +261,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
                   {sortRules.length > 1 && (
                     <button
                       onClick={() => removeSortRule(rule.id)}
-                      className="flex-shrink-0 text-ag-dark-error hover:text-red-400 transition-colors p-2"
+                      disabled={defaultOrderEnabled}
+                      className={`flex-shrink-0 transition-colors p-2 ${
+                        defaultOrderEnabled
+                          ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                          : 'text-ag-dark-error hover:text-red-400'
+                      }`}
                       title="Delete Level"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -261,7 +281,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
               <div className="flex items-center gap-3">
                 <button
                   onClick={addSortRule}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-ag-dark-text border border-ag-dark-border rounded hover:bg-ag-dark-bg transition-colors"
+                  disabled={defaultOrderEnabled}
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-ag-dark-border rounded transition-colors ${
+                    defaultOrderEnabled
+                      ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                      : 'text-ag-dark-text hover:bg-ag-dark-bg'
+                  }`}
                 >
                   <Plus className="w-4 h-4" />
                   Add Level
@@ -269,7 +294,12 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
                 
                 <button
                   onClick={clearAllRules}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium text-ag-dark-text border border-ag-dark-border rounded hover:bg-ag-dark-bg transition-colors"
+                  disabled={defaultOrderEnabled}
+                  className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium border border-ag-dark-border rounded transition-colors ${
+                    defaultOrderEnabled
+                      ? 'text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                      : 'text-ag-dark-text hover:bg-ag-dark-bg'
+                  }`}
                 >
                   <RotateCcw className="w-4 h-4" />
                   Clear All

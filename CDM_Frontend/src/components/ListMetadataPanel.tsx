@@ -14,6 +14,7 @@ import { SingleListValuesModal } from './SingleListValuesModal';
 import { apiService, getTieredListValues } from '../services/api';
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
+import { LoadingSpinner } from './LoadingSpinner';
 
 interface ListMetadataField {
   key: string;
@@ -130,8 +131,16 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     return initial;
   });
 
+  // Track previous selected list ID to detect actual list changes
+  const prevSelectedListId = useRef<string | null>(null);
+  
+  // Loading state for metadata panel
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+
   // Update form data when selectedList changes (when a new row is selected)
   React.useEffect(() => {
+    const currentListId = selectedList?.id;
+    
     if (!selectedList) {
       // Reset to empty if no selection
       const emptyData: Record<string, any> = {};
@@ -140,86 +149,159 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       });
       setFormData(emptyData);
       setDriverSelections({ sector: [], domain: [], country: [] });
+      setIsLoadingMetadata(false);
+      prevSelectedListId.current = null;
       return;
     }
 
-    const newFormData: Record<string, any> = {};
-    
-    // Populate all metadata fields from selectedList
-    newFormData.format = selectedList.format || '';
-    newFormData.source = selectedList.source || '';
-    newFormData.upkeep = selectedList.upkeep || '';
-    newFormData.graph = selectedList.graph || '';
-    newFormData.origin = selectedList.origin || '';
-    newFormData.set = selectedList.set || '';
-    newFormData.grouping = selectedList.grouping || '';
-    newFormData.list = selectedList.list || '';
-    
-    // Update driver selections from selectedList
-    // Helper function to process driver values and detect if ALL is selected
-    const processDriverValues = (value: string | string[] | undefined, allPossibleValues: string[]): string[] => {
-      if (!value) return [];
+    // Only reset form data when the selected list actually changes
+    if (currentListId && currentListId !== prevSelectedListId.current) {
+      console.log('ListMetadataPanel: selected list changed from', prevSelectedListId.current, 'to', currentListId);
       
-      let valuesArray: string[];
-      if (Array.isArray(value)) {
-        // If it's an array, check if it contains a single comma-separated string
-        if (value.length === 1 && typeof value[0] === 'string' && value[0].includes(',')) {
-          // Single element that's a comma-separated string - split it
-          if (value[0] === 'ALL') {
+      // Set loading state immediately and clear form data
+      setIsLoadingMetadata(true);
+      const emptyData: Record<string, any> = {};
+      fields.forEach(field => {
+        emptyData[field.key] = '';
+      });
+      setFormData(emptyData);
+      setDriverSelections({ sector: [], domain: [], country: [] });
+      
+      prevSelectedListId.current = currentListId;
+      
+      // Use setTimeout to allow React to render the loading state first, then populate data
+      setTimeout(() => {
+        const newFormData: Record<string, any> = {};
+        
+        // Populate all metadata fields from selectedList
+        newFormData.format = selectedList.format || '';
+        newFormData.source = selectedList.source || '';
+        newFormData.upkeep = selectedList.upkeep || '';
+        newFormData.graph = selectedList.graph || '';
+        newFormData.origin = selectedList.origin || '';
+        newFormData.set = selectedList.set || '';
+        newFormData.grouping = selectedList.grouping || '';
+        newFormData.list = selectedList.list || '';
+        
+        // Update driver selections from selectedList
+        // Helper function to process driver values and detect if ALL is selected
+        const processDriverValues = (value: string | string[] | undefined, allPossibleValues: string[]): string[] => {
+          if (!value) return [];
+          
+          let valuesArray: string[];
+          if (Array.isArray(value)) {
+            // If it's an array, check if it contains a single comma-separated string
+            if (value.length === 1 && typeof value[0] === 'string' && value[0].includes(',')) {
+              // Single element that's a comma-separated string - split it
+              if (value[0] === 'ALL') {
+                valuesArray = ['ALL'];
+              } else {
+                valuesArray = value[0].split(',').map(v => v.trim()).filter(Boolean);
+              }
+            } else {
+              // Use array as-is
+              valuesArray = value;
+            }
+          } else if (typeof value === 'string') {
+            // If it's a string, check if it's "ALL" or a comma-separated list
+            if (value === 'ALL') {
+              valuesArray = ['ALL'];
+            } else {
+              // Split by comma and trim each value
+              valuesArray = value.split(',').map(v => v.trim()).filter(Boolean);
+            }
+          } else {
+            return [];
+          }
+          
+          // Check if "ALL" is already in the array
+          if (valuesArray.includes('ALL')) {
+            // Expand to include all individual values for proper multiselect display
+            return ['ALL', ...allPossibleValues];
+          }
+          
+          // Check if all possible values are selected
+          if (allPossibleValues.length > 0) {
+            const selectedSet = new Set(valuesArray);
+            const allSet = new Set(allPossibleValues);
+            const isAllSelected = selectedSet.size === allSet.size && 
+                                 [...selectedSet].every(val => allSet.has(val));
+            
+            if (isAllSelected) {
+              // All values are selected, add "ALL" to the array
+              return ['ALL', ...allPossibleValues];
+            }
+          }
+          
+          // Return the array as-is if not all values are selected
+          return valuesArray;
+        };
+        
+        const sectors = processDriverValues(selectedList.sector, driversData.sectors);
+        const domains = processDriverValues(selectedList.domain, driversData.domains);
+        const countries = processDriverValues(selectedList.country, driversData.countries);
+        
+        setDriverSelections({ sector: sectors, domain: domains, country: countries });
+        newFormData.sector = sectors;
+        newFormData.domain = domains;
+        newFormData.country = countries;
+        
+        setFormData(newFormData);
+        
+        // Clear loading state after data is populated
+        setIsLoadingMetadata(false);
+      }, 0);
+    } else if (currentListId === prevSelectedListId.current) {
+      // Same list, just update driver selections if drivers data changed
+      const processDriverValues = (value: string | string[] | undefined, allPossibleValues: string[]): string[] => {
+        if (!value) return [];
+        
+        let valuesArray: string[];
+        if (Array.isArray(value)) {
+          if (value.length === 1 && typeof value[0] === 'string' && value[0].includes(',')) {
+            if (value[0] === 'ALL') {
+              valuesArray = ['ALL'];
+            } else {
+              valuesArray = value[0].split(',').map(v => v.trim()).filter(Boolean);
+            }
+          } else {
+            valuesArray = value;
+          }
+        } else if (typeof value === 'string') {
+          if (value === 'ALL') {
             valuesArray = ['ALL'];
           } else {
-            valuesArray = value[0].split(',').map(v => v.trim()).filter(Boolean);
+            valuesArray = value.split(',').map(v => v.trim()).filter(Boolean);
           }
         } else {
-          // Use array as-is
-          valuesArray = value;
+          return [];
         }
-      } else if (typeof value === 'string') {
-        // If it's a string, check if it's "ALL" or a comma-separated list
-        if (value === 'ALL') {
-          valuesArray = ['ALL'];
-        } else {
-          // Split by comma and trim each value
-          valuesArray = value.split(',').map(v => v.trim()).filter(Boolean);
-        }
-      } else {
-        return [];
-      }
-      
-      // Check if "ALL" is already in the array
-      if (valuesArray.includes('ALL')) {
-        // Expand to include all individual values for proper multiselect display
-        return ['ALL', ...allPossibleValues];
-      }
-      
-      // Check if all possible values are selected
-      if (allPossibleValues.length > 0) {
-        const selectedSet = new Set(valuesArray);
-        const allSet = new Set(allPossibleValues);
-        const isAllSelected = selectedSet.size === allSet.size && 
-                             [...selectedSet].every(val => allSet.has(val));
         
-        if (isAllSelected) {
-          // All values are selected, add "ALL" to the array
+        if (valuesArray.includes('ALL')) {
           return ['ALL', ...allPossibleValues];
         }
-      }
+        
+        if (allPossibleValues.length > 0) {
+          const selectedSet = new Set(valuesArray);
+          const allSet = new Set(allPossibleValues);
+          const isAllSelected = selectedSet.size === allSet.size && 
+                               [...selectedSet].every(val => allSet.has(val));
+          
+          if (isAllSelected) {
+            return ['ALL', ...allPossibleValues];
+          }
+        }
+        
+        return valuesArray;
+      };
       
-      // Return the array as-is if not all values are selected
-      return valuesArray;
-    };
-    
-    const sectors = processDriverValues(selectedList.sector, driversData.sectors);
-    const domains = processDriverValues(selectedList.domain, driversData.domains);
-    const countries = processDriverValues(selectedList.country, driversData.countries);
-    
-    setDriverSelections({ sector: sectors, domain: domains, country: countries });
-    newFormData.sector = sectors;
-    newFormData.domain = domains;
-    newFormData.country = countries;
-    
-    setFormData(newFormData);
-  }, [selectedList, fields, driversData]);
+      const sectors = processDriverValues(selectedList.sector, driversData.sectors);
+      const domains = processDriverValues(selectedList.domain, driversData.domains);
+      const countries = processDriverValues(selectedList.country, driversData.countries);
+      
+      setDriverSelections({ sector: sectors, domain: domains, country: countries });
+    }
+  }, [selectedList?.id, fields, driversData]);
 
   // Initialize variables attached state
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>(() => {
@@ -1284,6 +1366,11 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
 
       {/* Scrollable Content Area - with bottom padding to account for button */}
       <div className="flex-1 overflow-y-auto px-6" style={{ minHeight: 0, paddingBottom: onSave ? '90px' : '24px' }}>
+      {/* Loading Indicator */}
+      {isLoadingMetadata ? (
+        <LoadingSpinner message="Loading list metadata..." />
+      ) : (
+        <>
       {/* List Name Field - Moved to header section */}
       <div className="mb-6">
         <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -2143,6 +2230,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           </div>
         )}
       </div>
+
+        </>
+      )}
       </div>
 
       {/* Actions - Fixed at bottom of panel, always visible */}
