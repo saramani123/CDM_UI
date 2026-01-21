@@ -327,9 +327,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Clone identifiers modal state
   const [isCloneIdentifiersModalOpen, setIsCloneIdentifiersModalOpen] = useState(false);
   
-  // Check if any selected objects have relationships
-  const [hasExistingRelationships, setHasExistingRelationships] = useState(false);
-  const [objectsWithRelationships, setObjectsWithRelationships] = useState<string[]>([]);
+  // Note: hasExistingRelationships check removed - clone now works for all objects
+  // (preserves default relationships and only replaces non-default ones)
   
   // Check if any selected objects have identifiers
   const [hasExistingIdentifiers, setHasExistingIdentifiers] = useState(false);
@@ -1053,28 +1052,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     // No need to call it here explicitly as the panel closes when selection becomes single
   };
 
-    // Check if any selected objects have existing relationships
-    useEffect(() => {
-      const checkRelationships = async () => {
-        if (activeTab !== 'objects' || selectedObjects.length === 0) {
-          setHasExistingRelationships(false);
-          setObjectsWithRelationships([]);
-          return;
-        }
-
-        const objectsWithRels: string[] = [];
-        for (const obj of selectedObjects) {
-          if (obj.relationships && obj.relationships > 0) {
-            objectsWithRels.push(obj.object || obj.id);
-          }
-        }
-
-        setHasExistingRelationships(objectsWithRels.length > 0);
-        setObjectsWithRelationships(objectsWithRels);
-      };
-
-      checkRelationships();
-    }, [selectedObjects, activeTab]);
+    // Note: Relationship checking removed - clone now works for all objects
+    // (preserves default relationships and only replaces non-default ones)
 
     // Check if any selected objects have existing identifiers
     useEffect(() => {
@@ -2432,16 +2411,14 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                 e.stopPropagation();
                 setIsCloneRelationshipsModalOpen(true);
               }}
-              disabled={selectedObjects.length === 0 || hasExistingRelationships}
+              disabled={selectedObjects.length === 0}
               className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                selectedObjects.length === 0 || hasExistingRelationships ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
               }`}
               title={
                 selectedObjects.length === 0 
                   ? "Select objects to clone relationships" 
-                  : hasExistingRelationships 
-                    ? `Please delete existing relationships for: ${objectsWithRelationships.join(', ')}` 
-                    : "Clone relationships from another object"
+                  : "Clone non-default relationships from another object (default relationships will be preserved)"
               }
             >
               <Copy className="w-5 h-5" />

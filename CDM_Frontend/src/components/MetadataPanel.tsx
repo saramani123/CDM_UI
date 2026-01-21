@@ -2106,11 +2106,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                   e.stopPropagation();
                   setIsCloneRelationshipsModalOpen(true);
                 }}
-                disabled={!isPanelEnabled || relationships.length > 0}
+                disabled={!isPanelEnabled}
                 className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                  !isPanelEnabled || relationships.length > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                  !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
                 }`}
-                title={relationships.length > 0 ? "Please delete existing relationships to use clone" : "Clone relationships from another object"}
+                title="Clone non-default relationships from another object (default relationships will be preserved)"
               >
                 <Copy className="w-5 h-5" />
               </button>

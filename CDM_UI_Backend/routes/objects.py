@@ -2578,8 +2578,9 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
 @router.post("/objects/{target_object_id}/clone-relationships/{source_object_id}", response_model=Dict[str, Any])
 async def clone_relationships(target_object_id: str, source_object_id: str):
     """
-    Clone all relationships from a source object to a target object.
-    Only works if the target object has no existing relationships.
+    Clone non-default relationships from a source object to a target object.
+    Preserves default relationships of the target object (role = target object name, frequency = Possible).
+    Only clones non-default relationships from source (those that appear in the relationships modal).
     Handles intra-table relationships (self-referential) correctly.
     """
     driver = get_driver()
@@ -2588,7 +2589,7 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
     
     try:
         with driver.session() as session:
-            # Check if target object exists
+            # Check if target object exists and get its name
             target_check = session.run("""
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.object as object_name
@@ -2597,7 +2598,9 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
             if not target_check:
                 raise HTTPException(status_code=404, detail=f"Target object with ID {target_object_id} not found")
             
-            # Check if source object exists
+            target_object_name = target_check["object_name"]
+            
+            # Check if source object exists and get its name
             source_check = session.run("""
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.object as object_name
@@ -2606,54 +2609,54 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
             if not source_check:
                 raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
             
-            # Check if target object already has relationships
-            existing_rels_count = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
-            """, object_id=target_object_id).single()
+            source_object_name = source_check["object_name"]
             
-            if existing_rels_count and existing_rels_count["rel_count"] > 0:
-                raise HTTPException(
-                    status_code=400, 
-                    detail="Target object already has relationships. Please delete existing relationships before cloning."
-                )
+            # Delete only non-default relationships from target object
+            # Default relationships have: role = target object name, frequency = Possible
+            print(f"Deleting non-default relationships from target object {target_object_id} ({target_object_name})")
+            deleted_count = session.run("""
+                MATCH (target:Object {id: $target_id})-[r:RELATES_TO]->(other:Object)
+                WHERE NOT (r.role = $target_object_name AND r.frequency = 'Possible')
+                DELETE r
+                RETURN count(r) as deleted_count
+            """, target_id=target_object_id, target_object_name=target_object_name).single()
             
-            # Get all relationships from source object
+            deleted_rels = deleted_count["deleted_count"] if deleted_count else 0
+            print(f"Deleted {deleted_rels} non-default relationships from target object")
+            
+            # Get only non-default relationships from source object
+            # Non-default relationships are those that don't have: role = source object name, frequency = Possible
             source_relationships = session.run("""
                 MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
-                RETURN r.id as relationship_id, r.type as type, r.role as role,
+                WHERE NOT (r.role = $source_object_name AND r.frequency = 'Possible')
+                RETURN r.id as relationship_id, r.type as type, r.role as role, r.frequency as frequency,
                        r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject,
                        target.id as target_object_id, target.being as target_being,
                        target.avatar as target_avatar, target.object as target_object
-            """, source_id=source_object_id).data()
+            """, source_id=source_object_id, source_object_name=source_object_name).data()
             
             if not source_relationships:
                 return {
-                    "message": "Source object has no relationships to clone",
-                    "cloned_count": 0
+                    "message": "Source object has no non-default relationships to clone",
+                    "cloned_count": 0,
+                    "deleted_count": deleted_rels
                 }
             
-            print(f"DEBUG: Found {len(source_relationships)} relationships to clone from source object {source_object_id}")
-            for i, rel in enumerate(source_relationships, 1):
-                role_value = rel.get('role')
-                role_type = type(role_value).__name__
-                role_repr = repr(role_value)
-                print(f"DEBUG: Relationship {i}/{len(source_relationships)}: {rel['type']} -> {rel['target_being']} - {rel['target_avatar']} - {rel['target_object']} (ID: {rel['target_object_id']})")
-                print(f"DEBUG:   Role value: {role_repr} (type: {role_type}, is None: {role_value is None}, is empty string: {role_value == ''})")
+            print(f"Found {len(source_relationships)} non-default relationships to clone from source object {source_object_id} ({source_object_name})")
             
             # Clone relationships
             cloned_count = 0
             failed_relationships = []
             for rel in source_relationships:
-                relationship_type = rel["type"]
+                relationship_type = rel.get("type", "Inter-Table")
                 role = rel.get("role") or ""  # Handle None/empty roles
-                to_being = rel["toBeing"]
-                to_avatar = rel["toAvatar"]
-                to_object = rel["toObject"]
+                frequency = rel.get("frequency", "Critical")
+                to_being = rel.get("toBeing", "ALL")
+                to_avatar = rel.get("toAvatar", "ALL")
+                to_object = rel.get("toObject", "ALL")
                 target_obj_id = rel["target_object_id"]
                 
-                # Debug log to see role value
-                print(f"DEBUG: Processing relationship with role: '{role}' (type: {type(role)}, is_empty: {not role})")
+                print(f"Processing relationship: {relationship_type} -> {to_being} - {to_avatar} - {to_object} (role: '{role}', frequency: '{frequency}')")
                 
                 # Check if this is an intra-table relationship (source relates to itself)
                 is_intra_table = (source_object_id == target_obj_id)
@@ -2675,11 +2678,16 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                             }]->(target)
                         """, target_id=target_object_id, relationship_id=relationship_id,
                             relationship_type=relationship_type, role=role,
-                            frequency=rel.get("frequency", "Critical"),
+                            frequency=frequency,
                             to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                         cloned_count += 1
+                        print(f"Successfully cloned intra-table relationship with role '{role}' and frequency '{frequency}'")
                     except Exception as e:
-                        print(f"DEBUG: Error cloning intra-table relationship: {e}")
+                        print(f"Error cloning intra-table relationship: {e}")
+                        failed_relationships.append({
+                            "target": f"{to_being} - {to_avatar} - {to_object}",
+                            "reason": str(e)
+                        })
                 else:
                     # For non-intra-table relationships, create relationship from target to the same target object
                     relationship_id = str(uuid.uuid4())
@@ -2724,23 +2732,23 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                             RETURN r.id as relationship_id
                         """, target_id=target_object_id, target_obj_id=target_obj_id,
                             relationship_id=relationship_id, relationship_type=relationship_type,
-                            role=role, frequency=rel.get("frequency", "Critical"),
+                            role=role, frequency=frequency,
                             to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                         
                         created_rel = result.single()
                         if created_rel and created_rel.get("relationship_id"):
                             cloned_count += 1
-                            print(f"DEBUG: Successfully cloned relationship from {target_object_id} to {target_obj_id} ({to_being} - {to_avatar} - {to_object}) with role '{role}'")
+                            print(f"Successfully cloned relationship from {target_object_id} to {target_obj_id} ({to_being} - {to_avatar} - {to_object}) with role '{role}' and frequency '{frequency}'")
                         else:
                             error_msg = f"Failed to create relationship from {target_object_id} to {target_obj_id} ({to_being} - {to_avatar} - {to_object}) - CREATE returned no result"
-                            print(f"DEBUG: {error_msg}")
+                            print(f"Error: {error_msg}")
                             failed_relationships.append({
                                 "target": f"{to_being} - {to_avatar} - {to_object}",
                                 "reason": "CREATE query returned no result"
                             })
                     except Exception as e:
                         error_msg = f"Error cloning relationship to {target_obj_id} ({to_being} - {to_avatar} - {to_object}): {e}"
-                        print(f"DEBUG: {error_msg}")
+                        print(f"Error: {error_msg}")
                         failed_relationships.append({
                             "target": f"{to_being} - {to_avatar} - {to_object}",
                             "reason": str(e)
@@ -2762,8 +2770,9 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
             """, object_id=target_object_id, rel_count=rel_count)
             
             response = {
-                "message": f"Successfully cloned {cloned_count} relationship(s)",
+                "message": f"Successfully cloned {cloned_count} non-default relationship(s) (deleted {deleted_rels} existing non-default relationships)",
                 "cloned_count": cloned_count,
+                "deleted_count": deleted_rels,
                 "total_source_relationships": len(source_relationships)
             }
             
@@ -2781,8 +2790,9 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
 @router.post("/objects/bulk-clone-relationships/{source_object_id}", response_model=Dict[str, Any])
 async def bulk_clone_relationships(source_object_id: str, target_object_ids: List[str] = Body(...)):
     """
-    Clone all relationships from a source object to multiple target objects.
-    Only works if all target objects have no existing relationships.
+    Clone non-default relationships from a source object to multiple target objects.
+    Preserves default relationships of each target object (role = target object name, frequency = Possible).
+    Only clones non-default relationships from source (those that appear in the relationships modal).
     Handles intra-table relationships (self-referential) correctly for each target.
     """
     driver = get_driver()
@@ -2791,7 +2801,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
     
     try:
         with driver.session() as session:
-            # Check if source object exists
+            # Check if source object exists and get its name
             source_check = session.run("""
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.object as object_name
@@ -2800,10 +2810,12 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
             if not source_check:
                 raise HTTPException(status_code=404, detail=f"Source object with ID {source_object_id} not found")
             
+            source_object_name = source_check["object_name"]
+            
             if not target_object_ids:
                 raise HTTPException(status_code=400, detail="At least one target object ID must be provided")
             
-            # Check if all target objects exist and have no relationships
+            # Check if all target objects exist
             target_objects_info = []
             for target_id in target_object_ids:
                 target_check = session.run("""
@@ -2814,58 +2826,63 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                 if not target_check:
                     raise HTTPException(status_code=404, detail=f"Target object with ID {target_id} not found")
                 
-                # Check if target object already has relationships
-                existing_rels_count = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                    RETURN count(other) as rel_count
-                """, object_id=target_id).single()
-                
-                if existing_rels_count and existing_rels_count["rel_count"] > 0:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Target object '{target_check['object_name']}' (ID: {target_id}) already has relationships. Please delete existing relationships before cloning."
-                    )
-                
                 target_objects_info.append({
                     "id": target_id,
                     "name": target_check["object_name"]
                 })
             
-            # Get all relationships from source object
+            # Get only non-default relationships from source object
+            # Non-default relationships are those that don't have: role = source object name, frequency = Possible
             source_relationships = session.run("""
                 MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                WHERE NOT (r.role = $source_object_name AND r.frequency = 'Possible')
                 RETURN r.id as relationship_id, r.type as type, r.role as role, r.frequency as frequency,
                        r.toBeing as toBeing, r.toAvatar as toAvatar, r.toObject as toObject,
                        target.id as target_object_id, target.being as target_being,
                        target.avatar as target_avatar, target.object as target_object
-            """, source_id=source_object_id).data()
+            """, source_id=source_object_id, source_object_name=source_object_name).data()
             
             if not source_relationships:
                 return {
-                    "message": "Source object has no relationships to clone",
+                    "message": "Source object has no non-default relationships to clone",
                     "cloned_count": 0,
                     "total_targets": len(target_object_ids)
                 }
             
-            print(f"DEBUG: Bulk cloning {len(source_relationships)} relationships from source {source_object_id} to {len(target_object_ids)} target objects")
+            print(f"Bulk cloning {len(source_relationships)} non-default relationships from source {source_object_id} ({source_object_name}) to {len(target_object_ids)} target objects")
             
             # Clone relationships to each target object
             total_cloned = 0
+            total_deleted = 0
             failed_relationships = []
             results_by_target = {}
             
             for target_info in target_objects_info:
                 target_object_id = target_info["id"]
                 target_name = target_info["name"]
+                
+                # Delete only non-default relationships from this target object
+                deleted_count = session.run("""
+                    MATCH (target:Object {id: $target_id})-[r:RELATES_TO]->(other:Object)
+                    WHERE NOT (r.role = $target_object_name AND r.frequency = 'Possible')
+                    DELETE r
+                    RETURN count(r) as deleted_count
+                """, target_id=target_object_id, target_object_name=target_name).single()
+                
+                deleted_rels = deleted_count["deleted_count"] if deleted_count else 0
+                total_deleted += deleted_rels
+                print(f"Deleted {deleted_rels} non-default relationships from target object {target_object_id} ({target_name})")
+                
                 cloned_count = 0
                 target_failed = []
                 
                 for rel in source_relationships:
-                    relationship_type = rel["type"]
+                    relationship_type = rel.get("type", "Inter-Table")
                     role = rel.get("role") or ""
-                    to_being = rel["toBeing"]
-                    to_avatar = rel["toAvatar"]
-                    to_object = rel["toObject"]
+                    frequency = rel.get("frequency", "Critical")
+                    to_being = rel.get("toBeing", "ALL")
+                    to_avatar = rel.get("toAvatar", "ALL")
+                    to_object = rel.get("toObject", "ALL")
                     target_obj_id = rel["target_object_id"]
                     
                     # Check if this is an intra-table relationship (source relates to itself)
@@ -2889,7 +2906,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                 RETURN r.id as relationship_id
                             """, target_id=target_object_id, relationship_id=relationship_id,
                                 relationship_type=relationship_type, role=role,
-                                frequency=rel.get("frequency", "Critical"),
+                                frequency=frequency,
                                 to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                             
                             created_rel = result.single()
@@ -2938,7 +2955,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                                 RETURN r.id as relationship_id
                             """, target_id=target_object_id, target_obj_id=target_obj_id,
                                 relationship_id=relationship_id, relationship_type=relationship_type,
-                                role=role, frequency=rel.get("frequency", "Critical"),
+                                role=role, frequency=frequency,
                                 to_being=to_being, to_avatar=to_avatar, to_object=to_object)
                             
                             created_rel = result.single()
@@ -2972,6 +2989,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                 total_cloned += cloned_count
                 results_by_target[target_name] = {
                     "cloned_count": cloned_count,
+                    "deleted_count": deleted_rels,
                     "failed_count": len(target_failed)
                 }
                 
@@ -2979,8 +2997,9 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                     failed_relationships.extend([{**f, "target_object": target_name} for f in target_failed])
             
             response = {
-                "message": f"Successfully cloned relationships to {len(target_object_ids)} object(s). Total relationships created: {total_cloned}",
+                "message": f"Successfully cloned {total_cloned} non-default relationship(s) to {len(target_object_ids)} object(s) (deleted {total_deleted} existing non-default relationships)",
                 "cloned_count": total_cloned,
+                "deleted_count": total_deleted,
                 "total_targets": len(target_object_ids),
                 "total_source_relationships": len(source_relationships),
                 "results_by_target": results_by_target
