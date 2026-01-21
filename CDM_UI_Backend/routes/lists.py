@@ -86,7 +86,6 @@ class ListUpdateRequest(BaseModel):
     isMeme: Optional[bool] = Field(None, alias="is_meme", description="Is this list a meme?")
     listValuesList: Optional[List[ListValueRequest]] = None
     listValuesVariations: Optional[Dict[str, List[str]]] = None  # Dict mapping list value to list of its variations (abbreviated versions, can have multiple)
-    listValuesSiblings: Optional[Dict[str, List[str]]] = None  # Dict mapping list value to list of its siblings
     tieredListsList: Optional[List[TieredListRequest]] = None
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
     variationsList: Optional[List[dict]] = None  # List of variations to append to the list
@@ -471,7 +470,7 @@ async def create_sibling_value(session, from_list_value: str, to_sibling_value: 
         import traceback
         traceback.print_exc()
 
-async def create_list_values(session, list_id: str, list_values: List[Any], replace: bool = False, variations: Optional[Dict[str, str]] = None, siblings: Optional[Dict[str, List[str]]] = None):
+async def create_list_values(session, list_id: str, list_values: List[Any], replace: bool = False, variations: Optional[Dict[str, str]] = None):
     """
     Create list value nodes and HAS_LIST_VALUE relationships from List to ListValue nodes.
     Prevents duplicate values within the same list (case-insensitive).
@@ -559,23 +558,6 @@ async def create_list_values(session, list_id: str, list_values: List[Any], repl
                         var_list = [v.strip() for v in variation_values.split(',') if v.strip()]
                         for var_value in var_list:
                             await create_value_variation(session, value, var_value, list_name)
-        
-        # Create sibling relationships if provided
-        if siblings:
-            print(f"Creating sibling relationships for {len(siblings)} values")
-            for value, sibling_list in siblings.items():
-                if not value or not value.strip():
-                    continue
-                value = value.strip()
-                if isinstance(sibling_list, list):
-                    for sibling_value in sibling_list:
-                        if sibling_value and sibling_value.strip():
-                            await create_sibling_value(session, value, sibling_value.strip(), list_name)
-                elif isinstance(sibling_list, str) and sibling_list.strip():
-                    # Handle comma-separated siblings
-                    for sibling_value in sibling_list.split(','):
-                        if sibling_value and sibling_value.strip():
-                            await create_sibling_value(session, value, sibling_value.strip(), list_name)
         
         print(f"Created {created_count} list values, skipped {skipped_duplicates} duplicates")
         return created_count
@@ -883,30 +865,6 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                             # Convert single string to list
                             variations[tier1_value][value] = [vars_list] if vars_list else []
         
-        # Extract siblings if present
-        siblings = {}
-        if "_siblings" in tiered_values:
-            siblings = tiered_values.pop("_siblings")
-            print(f"🔵 Found siblings data in tiered_values: {siblings}")
-            print(f"🔵 Siblings type: {type(siblings)}, keys: {list(siblings.keys()) if isinstance(siblings, dict) else 'N/A'}")
-            # Ensure siblings are in correct format: { "Tier1Value": { "Tier1Value": ["sib1", "sib2"], "Tier2Value": ["sib3"] } }
-            # Convert any string values to lists
-            for tier1_value, value_siblings in siblings.items():
-                if isinstance(value_siblings, dict):
-                    for value, sibs_data in value_siblings.items():
-                        if not isinstance(sibs_data, list):
-                            # Convert single string to list, or split comma-separated
-                            if isinstance(sibs_data, str):
-                                siblings[tier1_value][value] = [v.strip() for v in sibs_data.split(',') if v.strip()]
-                            else:
-                                siblings[tier1_value][value] = []
-            # Ensure all sibling values are lists
-            for tier1_value, value_siblings in siblings.items():
-                if isinstance(value_siblings, dict):
-                    for value, sibs_list in value_siblings.items():
-                        if not isinstance(sibs_list, list):
-                            # Convert single string to list
-                            siblings[tier1_value][value] = [sibs_list] if sibs_list else []
         
         # Get the tiered list structure
         if not tiered_lists or len(tiered_lists) == 0:
@@ -987,20 +945,6 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                 elif variation_values and variation_values.strip():
                     # Single variation as string
                     await create_value_variation(session, tier1_value, variation_values.strip(), tier1_list_name, 1)
-            
-            # Create siblings for Tier 1 value if present (comma-separated from multiple rows)
-            tier1_siblings = siblings.get(tier1_value, {})
-            if tier1_value in tier1_siblings:
-                sibling_values = tier1_siblings[tier1_value]
-                if isinstance(sibling_values, list):
-                    for sib_value in sibling_values:
-                        if sib_value and sib_value.strip():
-                            await create_sibling_value(session, tier1_value, sib_value.strip(), tier1_list_name, 1)
-                elif sibling_values and sibling_values.strip():
-                    # Single sibling as string (could be comma-separated)
-                    for sib_value in sibling_values.split(','):
-                        if sib_value and sib_value.strip():
-                            await create_sibling_value(session, tier1_value, sib_value.strip(), tier1_list_name, 1)
             
             # STEP 4: Process each array of tiered values (Tier 2, Tier 3, etc.)
             # Each array represents one row in the modal
@@ -1100,19 +1044,6 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
                                     # Single variation as string
                                     await create_value_variation(session, tier_value, variation_values.strip(), current_tier_list_name, current_tier_number)
                             
-                            # Create siblings for Tier 2+ values if present (one per row)
-                            if tier1_value in siblings:
-                                tier_siblings = siblings[tier1_value]
-                                if tier_value in tier_siblings:
-                                    sibling_values = tier_siblings[tier_value]
-                                    if isinstance(sibling_values, list):
-                                        for sib_value in sibling_values:
-                                            if sib_value and sib_value.strip():
-                                                await create_sibling_value(session, tier_value, sib_value.strip(), current_tier_list_name, current_tier_number)
-                                    elif sibling_values and sibling_values.strip():
-                                        # Single sibling as string
-                                        await create_sibling_value(session, tier_value, sibling_values.strip(), current_tier_list_name, current_tier_number)
-                        
                         # Update for next iteration in the chain
                         previous_lv_value = tier_value
                         previous_tier_number = current_tier_number
@@ -1530,7 +1461,7 @@ async def create_list(list_data: ListCreateRequest):
             # Create list values as nodes with HAS_LIST_VALUE relationships (replace all)
             # Only for Single lists - Multi-Level lists don't have direct values
             if list_data.listType != 'Multi-Level' and list_data.listValuesList is not None:
-                await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=getattr(list_data, 'listValuesVariations', None), siblings=getattr(list_data, 'listValuesSiblings', None))
+                await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=getattr(list_data, 'listValuesVariations', None))
             
             # Create tiered list relationships (for backward compatibility with old API)
             # Only do this if we haven't already created them above (for Multi-Level lists)
@@ -1998,7 +1929,7 @@ async def update_list(list_id: str, request: Request):
             # Note: Even if listValuesList is an empty array, we still want to replace (clear all values)
             # CRITICAL: If listValuesList is None, we don't touch existing values (preserves data)
             if list_data.listValuesList is not None:
-                await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=list_data.listValuesVariations, siblings=list_data.listValuesSiblings)
+                await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=list_data.listValuesVariations)
             
             # Update tiered list relationships if provided (replace all existing)
             # This handles the old structure where tieredListsList is explicitly provided
@@ -2010,8 +1941,6 @@ async def update_list(list_id: str, request: Request):
                 print(f"🔵 Processing tieredListValues for list {list_id}")
                 print(f"🔵 tieredListValues type: {type(list_data.tieredListValues)}")
                 print(f"🔵 tieredListValues keys: {list(list_data.tieredListValues.keys()) if isinstance(list_data.tieredListValues, dict) else 'N/A'}")
-                if isinstance(list_data.tieredListValues, dict) and "_siblings" in list_data.tieredListValues:
-                    print(f"🔵 _siblings found in tieredListValues: {list_data.tieredListValues.get('_siblings')}")
                 print(f"🔵 tieredListValues data (first 500 chars): {str(list_data.tieredListValues)[:500]}")
                 
                 # Get current tiered lists structure from database
@@ -2644,7 +2573,6 @@ async def get_tiered_list_values(list_id: str):
             # For each tier 1 value, traverse the tiered relationships
             result_data: Dict[str, List[List[str]]] = {}
             variations_data: Dict[str, Dict[str, List[str]]] = {}
-            siblings_data: Dict[str, Dict[str, List[str]]] = {}
             
             print(f"🔵 GET_TIERED_VALUES: Found {len(tier1_values)} Tier 1 values: {tier1_values}")
             
@@ -2713,8 +2641,8 @@ async def get_tiered_list_values(list_id: str):
                 else:
                     print(f"   ⚠️ No tiered arrays found for '{tier1_value}'")
             
-            # Now fetch variations and siblings for all list values across all tier lists
-            # Query all tier lists to get their values with variations and siblings
+            # Now fetch variations for all list values across all tier lists
+            # Query all tier lists to get their values with variations
             for tier_info in tiered_lists_with_numbers:
                 tier_list_id = tier_info.get("listId")
                 tier_number = tier_info.get("tier", 1)
@@ -2722,9 +2650,8 @@ async def get_tiered_list_values(list_id: str):
                     tier_values_query = """
                         MATCH (tier_list:List {id: $tier_list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
                         OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
-                        OPTIONAL MATCH (lv)-[sib_rel:HAS_SIBLING_VALUE]->(sib:ListValue)
-                        WITH lv, collect(DISTINCT var.name) as variations, collect(DISTINCT sib.value) as siblings
-                        RETURN lv.value as value, variations, siblings
+                        WITH lv, collect(DISTINCT var.name) as variations
+                        RETURN lv.value as value, variations
                     """
                     tier_values_result = session.run(tier_values_query, {"tier_list_id": tier_list_id})
                     
@@ -2733,20 +2660,15 @@ async def get_tiered_list_values(list_id: str):
                         if not value:
                             continue
                         variations = [v for v in record.get("variations", []) if v]
-                        siblings = [s for s in record.get("siblings", []) if s]
                         
                         # For tier 1 values, organize directly by value
                         if tier_number == 1:
                             if value in result_data:
                                 if value not in variations_data:
                                     variations_data[value] = {}
-                                if value not in siblings_data:
-                                    siblings_data[value] = {}
                                 
                                 if variations:
                                     variations_data[value][value] = variations
-                                if siblings:
-                                    siblings_data[value][value] = siblings
                         else:
                             # For tier 2+ values, find which tier1_value they belong to
                             find_tier1_query = """
@@ -2767,23 +2689,17 @@ async def get_tiered_list_values(list_id: str):
                                 if tier1_value and tier1_value in result_data:
                                     if tier1_value not in variations_data:
                                         variations_data[tier1_value] = {}
-                                    if tier1_value not in siblings_data:
-                                        siblings_data[tier1_value] = {}
                                     
                                     if variations:
                                         variations_data[tier1_value][value] = variations
-                                    if siblings:
-                                        siblings_data[tier1_value][value] = siblings
             
             print(f"🔵 GET_TIERED_VALUES: Returning {len(result_data)} tier 1 values with paths")
             print(f"🔵 GET_TIERED_VALUES: Found variations for {len(variations_data)} tier 1 values")
-            print(f"🔵 GET_TIERED_VALUES: Found siblings for {len(siblings_data)} tier 1 values")
             
-            # Return data with variations and siblings
+            # Return data with variations
             return {
                 **result_data,
-                "_variations": variations_data,
-                "_siblings": siblings_data
+                "_variations": variations_data
             }
 
     except Exception as e:

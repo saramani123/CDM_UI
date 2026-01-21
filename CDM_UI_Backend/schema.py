@@ -480,6 +480,7 @@ class BulkVariableUpdateRequest(BaseModel):
     formatII: Optional[str] = None
     gType: Optional[str] = None
     validation: Optional[str] = None
+    shouldAppendValidations: Optional[bool] = False  # If true, append validations to existing ones instead of replacing
     default: Optional[str] = None
     graph: Optional[str] = None
     status: Optional[str] = None

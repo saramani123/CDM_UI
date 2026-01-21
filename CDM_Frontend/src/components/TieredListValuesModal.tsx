@@ -16,7 +16,6 @@ interface TieredListValuesModalProps {
 interface TieredValueRow {
   id: string;
   values: string[]; // One value per tier column
-  siblings: string[]; // One sibling per tier column
   variations: string[]; // One variation per tier column (abbreviated versions)
 }
 
@@ -32,7 +31,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [tieredValueRows, setTieredValueRows] = useState<TieredValueRow[]>([]);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number; isSibling?: boolean; isVariation?: boolean } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number; isVariation?: boolean } | null>(null);
   const [editValue, setEditValue] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Track if we've loaded initial data to prevent reloading when parent state updates
@@ -51,11 +50,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     });
     return headers;
   }, [tierNames]);
-
-  // Build sibling column headers: one for each tier
-  const siblingColumnHeaders: string[] = React.useMemo(() => {
-    return columnHeaders.map(header => `${header} Value Siblings`);
-  }, [columnHeaders]);
 
   // Build variation column headers: one for each tier
   const variationColumnHeaders: string[] = React.useMemo(() => {
@@ -94,22 +88,21 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       // Use the current initialValues prop (not from closure) - but we'll access it directly
       const currentInitialValues = initialValues;
       
-      // Extract variations and siblings FIRST (before filtering out _variations and _siblings from existingValues)
+      // Extract variations FIRST (before filtering out _variations from existingValues)
       const savedVariations = (currentInitialValues as any)?._variations || {};
-      const savedSiblings = (currentInitialValues as any)?._siblings || {};
       
       // Determine where to get the actual tiered values from
       let backendData: any = null;
       if (currentInitialValues !== undefined && currentInitialValues !== null) {
         // initialValues was explicitly provided
-        // Filter out _variations and _siblings to get only the actual tiered values
-        const { _variations, _siblings, ...tieredValuesOnly } = currentInitialValues as any;
+        // Filter out _variations to get only the actual tiered values
+        const { _variations, ...tieredValuesOnly } = currentInitialValues as any;
         existingValues = tieredValuesOnly;
         
-        // If initialValues only had _variations/_siblings (no actual values), try to load from backend
-        // But preserve the variations and siblings we extracted
-        if (Object.keys(existingValues).length === 0 && (Object.keys(savedVariations).length > 0 || Object.keys(savedSiblings).length > 0)) {
-          console.log('⚠️ initialValues only has _variations/_siblings, loading actual values from backend');
+        // If initialValues only had _variations (no actual values), try to load from backend
+        // But preserve the variations we extracted
+        if (Object.keys(existingValues).length === 0 && Object.keys(savedVariations).length > 0) {
+          console.log('⚠️ initialValues only has _variations, loading actual values from backend');
           backendData = await getTieredListValues(selectedList.id);
           existingValues = backendData || {};
         }
@@ -119,13 +112,10 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         existingValues = backendData || {};
       }
       
-      // If we loaded from backend, extract variations and siblings from backend response
+      // If we loaded from backend, extract variations from backend response
       if (backendData) {
         if (backendData._variations && Object.keys(backendData._variations).length > 0) {
           Object.assign(savedVariations, backendData._variations);
-        }
-        if (backendData._siblings && Object.keys(backendData._siblings).length > 0) {
-          Object.assign(savedSiblings, backendData._siblings);
         }
       }
       
@@ -152,8 +142,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
               rowValues.push('');
             }
             
-            // Initialize siblings and variations arrays
-            const rowSiblings: string[] = columnHeaders.map(() => '');
+            // Initialize variations array
             const rowVariations: string[] = columnHeaders.map(() => '');
             
             // Load variations for this row's values from savedVariations
@@ -174,28 +163,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
               });
             }
             
-            // Load siblings for this row's values from savedSiblings
-            // Siblings format: { "Tier1Value": { "Tier1Value": ["sib1", "sib2"], "Tier2Value": ["sib3"] } }
-            if (savedSiblings[tier1Value]) {
-              const tierSiblings = savedSiblings[tier1Value];
-              
-              // Tier 1 siblings (index 0)
-              if (tierSiblings[tier1Value] && Array.isArray(tierSiblings[tier1Value])) {
-                rowSiblings[0] = tierSiblings[tier1Value].join(', ');
-              }
-              
-              // Tier 2+ siblings
-              rowValues.slice(1).forEach((value, index) => {
-                if (value && value.trim() && tierSiblings[value] && Array.isArray(tierSiblings[value])) {
-                  rowSiblings[index + 1] = tierSiblings[value].join(', ');
-                }
-              });
-            }
-            
             rows.push({
               id: `row-${Date.now()}-${rows.length}`,
               values: rowValues.slice(0, columnHeaders.length),
-              siblings: rowSiblings,
               variations: rowVariations
             });
           });
@@ -207,7 +177,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         rows.push({
           id: `row-${Date.now()}-${rows.length}`,
           values: columnHeaders.map(() => ''),
-          siblings: columnHeaders.map(() => ''),
           variations: columnHeaders.map(() => '')
         });
       }
@@ -224,12 +193,11 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       if (tieredValueRows.length === 0) {
         const initialRows: TieredValueRow[] = [];
         for (let i = 0; i < 100; i++) {
-          initialRows.push({ 
-            id: `row-${i + 1}`, 
-            values: columnHeaders.map(() => ''),
-            siblings: columnHeaders.map(() => ''),
-            variations: columnHeaders.map(() => '')
-          });
+        initialRows.push({ 
+          id: `row-${i + 1}`, 
+          values: columnHeaders.map(() => ''),
+          variations: columnHeaders.map(() => '')
+        });
         }
         setTieredValueRows(initialRows);
       }
@@ -286,7 +254,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     const newRow: TieredValueRow = {
       id: Date.now().toString(),
       values: columnHeaders.map(() => ''),
-      siblings: columnHeaders.map(() => ''),
       variations: columnHeaders.map(() => '')
     };
     if (index !== undefined) {
@@ -300,9 +267,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     setTieredValueRows(prev => prev.filter(row => row.id !== rowId));
   };
 
-  const handleCellClick = (rowId: string, colIndex: number, currentValue: string, isSibling: boolean = false, isVariation: boolean = false) => {
-    console.log('🔵 handleCellClick called:', { rowId, colIndex, currentValue, isSibling, isVariation });
-    setEditingCell({ rowId, colIndex, isSibling, isVariation });
+  const handleCellClick = (rowId: string, colIndex: number, currentValue: string, isVariation: boolean = false) => {
+    console.log('🔵 handleCellClick called:', { rowId, colIndex, currentValue, isVariation });
+    setEditingCell({ rowId, colIndex, isVariation });
     setEditValue(currentValue);
     console.log('✅ handleCellClick state updated');
   };
@@ -311,7 +278,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     setEditValue(value);
   };
 
-  const handlePaste = (e: React.ClipboardEvent, startRowId: string, startColIndex: number, isSibling: boolean = false, isVariation: boolean = false) => {
+  const handlePaste = (e: React.ClipboardEvent, startRowId: string, startColIndex: number, isVariation: boolean = false) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData('text');
     
@@ -333,21 +300,15 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       const values = line.split('\t');
       
       const newValues = [...row.values];
-      const newSiblings = [...row.siblings];
       const newVariations = [...row.variations];
       
-      // Paste into the same column type (values, siblings, or variations) starting from startColIndex
+      // Paste into the same column type (values or variations) starting from startColIndex
       values.forEach((value, colOffset) => {
         const targetColIndex = startColIndex + colOffset;
         if (isVariation) {
           // Pasting into variations column - paste into consecutive variation columns
           if (targetColIndex >= 0 && targetColIndex < newVariations.length) {
             newVariations[targetColIndex] = value.trim();
-          }
-        } else if (isSibling) {
-          // Pasting into siblings column - paste into consecutive sibling columns
-          if (targetColIndex >= 0 && targetColIndex < newSiblings.length) {
-            newSiblings[targetColIndex] = value.trim();
           }
         } else {
           // Pasting into values column - paste into consecutive value columns
@@ -357,7 +318,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         }
       });
       
-      return { ...row, values: newValues, siblings: newSiblings, variations: newVariations };
+      return { ...row, values: newValues, variations: newVariations };
     });
     
     // Add more rows if needed
@@ -372,7 +333,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           const colOffset = colIndex - startColIndex;
           return colOffset >= 0 && colOffset < values.length ? values[colOffset].trim() : '';
         });
-        const newSiblings = columnHeaders.map(() => '');
         const newVariations = columnHeaders.map(() => '');
         
         // If pasting into variations, populate variations instead
@@ -383,17 +343,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
               newVariations[colIndex] = values[colOffset].trim();
             }
           });
-        } else if (isSibling) {
-          // If pasting into siblings, populate siblings instead
-          columnHeaders.forEach((_, colIndex) => {
-            const colOffset = colIndex - startColIndex;
-            if (colOffset >= 0 && colOffset < values.length) {
-              newSiblings[colIndex] = values[colOffset].trim();
-            }
-          });
         }
         
-        additionalRows.push({ id: `row-${Date.now()}-${i}`, values: newValues, siblings: newSiblings, variations: newVariations });
+        additionalRows.push({ id: `row-${Date.now()}-${i}`, values: newValues, variations: newVariations });
       }
       setTieredValueRows([...newRows, ...additionalRows]);
     } else {
@@ -414,10 +366,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
             const newVariations = [...row.variations];
             newVariations[currentEditingCell.colIndex] = currentEditValue;
             return { ...row, variations: newVariations };
-          } else if (currentEditingCell.isSibling) {
-            const newSiblings = [...row.siblings];
-            newSiblings[currentEditingCell.colIndex] = currentEditValue;
-            return { ...row, siblings: newSiblings };
           } else {
             const newValues = [...row.values];
             newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -431,7 +379,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     }
   };
 
-  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string, colIndex: number, isSibling: boolean = false, isVariation: boolean = false) => {
+  const handleCellKeyDown = (e: React.KeyboardEvent, rowId: string, colIndex: number, isVariation: boolean = false) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       // Save current cell first before moving
@@ -447,10 +395,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                 const newVariations = [...row.variations];
                 newVariations[currentEditingCell.colIndex] = currentEditValue;
                 return { ...row, variations: newVariations };
-              } else if (currentEditingCell.isSibling) {
-                const newSiblings = [...row.siblings];
-                newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                return { ...row, siblings: newSiblings };
               } else {
                 const newValues = [...row.values];
                 newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -464,11 +408,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           const currentRowIndex = updated.findIndex(r => r.id === rowId);
           if (currentRowIndex < updated.length - 1) {
             const nextRow = updated[currentRowIndex + 1];
-            setEditingCell({ rowId: nextRow.id, colIndex, isSibling, isVariation });
+            setEditingCell({ rowId: nextRow.id, colIndex, isVariation });
             if (isVariation) {
               setEditValue(nextRow.variations[colIndex] || '');
-            } else if (isSibling) {
-              setEditValue(nextRow.siblings[colIndex] || '');
             } else {
               setEditValue(nextRow.values[colIndex] || '');
             }
@@ -484,11 +426,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
         const currentRowIndex = tieredValueRows.findIndex(r => r.id === rowId);
         if (currentRowIndex < tieredValueRows.length - 1) {
           const nextRow = tieredValueRows[currentRowIndex + 1];
-          setEditingCell({ rowId: nextRow.id, colIndex, isSibling, isVariation });
+          setEditingCell({ rowId: nextRow.id, colIndex, isVariation });
           if (isVariation) {
             setEditValue(nextRow.variations[colIndex] || '');
-          } else if (isSibling) {
-            setEditValue(nextRow.siblings[colIndex] || '');
           } else {
             setEditValue(nextRow.values[colIndex] || '');
           }
@@ -669,10 +609,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
     // Group by Tier 1 value, then create arrays of [Tier2, Tier3, ...] values
     // Format: { "Tier1Value": [["Tier2Value1", "Tier3Value1"], ["Tier2Value2", "Tier3Value2"]], ... }
     // Also include variations: { "Tier1Value": { "Tier1Value": ["var1", "var2"], "Tier2Value1": ["var3"], ... } }
-    // Also include siblings: { "Tier1Value": { "Tier1Value": ["sib1", "sib2"], "Tier2Value1": ["sib3"], ... } }
     const tieredValues: Record<string, string[][]> = {};
     const variations: Record<string, Record<string, string[]>> = {}; // Aggregate variations for distinct values
-    const siblings: Record<string, Record<string, string[]>> = {}; // Aggregate siblings for distinct values
     
     tieredValueRows.forEach(row => {
       if (row.values[0] && row.values[0].trim()) { // Tier 1 value (first column)
@@ -742,60 +680,14 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           }
         });
         
-        // Store siblings for tier 1 value if present (can be comma-separated)
-        // For Tier 1, concatenate siblings from multiple rows (comma-separated)
-        // Aggregate siblings for the same distinct value across multiple rows
-        if (row.siblings[0] && row.siblings[0].trim()) {
-          if (!siblings[tier1Value]) {
-            siblings[tier1Value] = {};
-          }
-          // Parse comma-separated siblings
-          const tier1Siblings = row.siblings[0].split(',').map(v => v.trim()).filter(v => v);
-          if (tier1Siblings.length > 0) {
-            if (!siblings[tier1Value][tier1Value]) {
-              siblings[tier1Value][tier1Value] = [];
-            }
-            // Add siblings, avoiding duplicates for the same distinct value
-            tier1Siblings.forEach(v => {
-              if (!siblings[tier1Value][tier1Value].includes(v)) {
-                siblings[tier1Value][tier1Value].push(v);
-              }
-            });
-          }
-        }
-        
-        // Store siblings for tier 2+ values (one per row, no concatenation needed)
-        // Aggregate siblings for the same distinct value across multiple rows
-        remainingTierValues.forEach((value, index) => {
-          const siblingIndex = index + 1; // +1 because siblings[0] is for tier 1
-          if (row.siblings[siblingIndex] && row.siblings[siblingIndex].trim()) {
-            if (!siblings[tier1Value]) {
-              siblings[tier1Value] = {};
-            }
-            // For Tier 2+, siblings are one per column (not comma-separated)
-            const siblingValue = row.siblings[siblingIndex].trim();
-            if (siblingValue) {
-              if (!siblings[tier1Value][value]) {
-                siblings[tier1Value][value] = [];
-              }
-              // Add sibling, avoiding duplicates for the same distinct value
-              if (!siblings[tier1Value][value].includes(siblingValue)) {
-                siblings[tier1Value][value].push(siblingValue);
-              }
-            }
-          }
-        });
       }
     });
     
-    // Include variations and siblings in the save data as special keys
-    // If user only added variations/siblings (no tiered values edited), preserve existing tiered values
+    // Include variations in the save data as special keys
+    // If user only added variations (no tiered values edited), preserve existing tiered values
     const saveData: any = { ...tieredValues };
     if (Object.keys(variations).length > 0) {
       saveData._variations = variations;
-    }
-    if (Object.keys(siblings).length > 0) {
-      saveData._siblings = siblings;
     }
 
     // Update parent component's state (local only, no backend call)
@@ -805,11 +697,9 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
       tieredValueRowsCount: tieredValueRows.length,
       tieredValuesKeys: Object.keys(tieredValues).length,
       variationsKeys: Object.keys(variations).length,
-      siblingsKeys: Object.keys(siblings).length,
       saveDataKeys: Object.keys(saveData).length,
       saveData: saveData,
-      hasVariations: !!saveData._variations,
-      hasSiblings: !!saveData._siblings
+      hasVariations: !!saveData._variations
     });
     onSave(saveData);
     
@@ -1014,7 +904,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           <div className="border border-ag-dark-border rounded">
             {/* Table Header */}
             <div className="sticky top-0 bg-ag-dark-bg border-b border-ag-dark-border z-10">
-              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 3}, 250px) auto` }}>
+              <div className="grid gap-2 p-2" style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 2}, 250px) auto` }}>
                 <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
                 {columnHeaders.map((header, index) => (
                   <React.Fragment key={index}>
@@ -1038,9 +928,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
-                      <span>{siblingColumnHeaders[index]}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs font-medium text-ag-dark-text-secondary text-left">
                       <span>{variationColumnHeaders[index]}</span>
                     </div>
                   </React.Fragment>
@@ -1055,7 +942,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                   <div 
                     key={row.id} 
                     className="grid gap-2 p-2 hover:bg-ag-dark-bg/50"
-                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 3}, 250px) auto` }}
+                    style={{ gridTemplateColumns: `40px repeat(${columnHeaders.length * 2}, 250px) auto` }}
                   >
                     <div className="flex items-center text-xs text-ag-dark-text-secondary">
                       {rowIndex + 1}
@@ -1064,7 +951,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                       <React.Fragment key={colIndex}>
                         {/* Value Column */}
                         <div className="flex items-center">
-                          {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex && !editingCell?.isSibling && !editingCell?.isVariation ? (
+                          {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex && !editingCell?.isVariation ? (
                             <input
                               type="text"
                               value={editValue}
@@ -1088,10 +975,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                         const newVariations = [...r.variations];
                                         newVariations[currentEditingCell.colIndex] = currentEditValue;
                                         return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
                                       } else {
                                         const newValues = [...r.values];
                                         newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -1105,7 +988,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                 }
                                 // Small delay to ensure state is saved before switching
                                 setTimeout(() => {
-                                  handleCellClick(row.id, colIndex, value, false, false);
+                                  handleCellClick(row.id, colIndex, value);
                                 }, 0);
                               }}
                               className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
@@ -1121,10 +1004,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                         const newVariations = [...r.variations];
                                         newVariations[currentEditingCell.colIndex] = currentEditValue;
                                         return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
                                       } else {
                                         const newValues = [...r.values];
                                         newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -1138,98 +1017,11 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                 }
                                 // Small delay to ensure state is saved before switching
                                 setTimeout(() => {
-                                  handleCellClick(row.id, colIndex, value, false, false);
+                                  handleCellClick(row.id, colIndex, value);
                                 }, 0);
                               }}
                             >
                               {value || <span className="text-ag-dark-text-secondary opacity-0">Click to edit</span>}
-                            </div>
-                          )}
-                        </div>
-                        {/* Sibling Column */}
-                        <div className="flex items-center">
-                          {editingCell?.rowId === row.id && editingCell?.colIndex === colIndex && editingCell?.isSibling ? (
-                            <input
-                              type="text"
-                              value={editValue}
-                              onChange={(e) => handleCellChange(e.target.value)}
-                              onBlur={handleCellBlur}
-                              onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, true, false)}
-                              onPaste={(e) => handlePaste(e, row.id, colIndex, true, false)}
-                              autoFocus
-                              className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
-                            />
-                          ) : (
-                            <div
-                              onClick={() => {
-                                console.log('🔵 Sibling cell clicked:', { rowId: row.id, colIndex, currentSibling: row.siblings[colIndex] });
-                                // Save any currently editing cell before switching
-                                if (editingCell) {
-                                  const currentEditValue = editValue;
-                                  const currentEditingCell = editingCell;
-                                  console.log('💾 Saving current cell before switching:', currentEditingCell);
-                                  setTieredValueRows(prev => prev.map(r => {
-                                    if (r.id === currentEditingCell.rowId) {
-                                      if (currentEditingCell.isVariation) {
-                                        const newVariations = [...r.variations];
-                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
-                                      } else {
-                                        const newValues = [...r.values];
-                                        newValues[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, values: newValues };
-                                      }
-                                    }
-                                    return r;
-                                  }));
-                                  setEditingCell(null);
-                                  setEditValue('');
-                                }
-                                // Small delay to ensure state is saved before switching
-                                setTimeout(() => {
-                                  console.log('🎯 Calling handleCellClick for sibling:', { rowId: row.id, colIndex, isSibling: true });
-                                  handleCellClick(row.id, colIndex, row.siblings[colIndex] || '', true, false);
-                                }, 0);
-                              }}
-                              className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
-                              tabIndex={0}
-                              onFocus={() => {
-                                // Save any currently editing cell before switching
-                                if (editingCell) {
-                                  const currentEditValue = editValue;
-                                  const currentEditingCell = editingCell;
-                                  setTieredValueRows(prev => prev.map(r => {
-                                    if (r.id === currentEditingCell.rowId) {
-                                      if (currentEditingCell.isVariation) {
-                                        const newVariations = [...r.variations];
-                                        newVariations[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
-                                      } else {
-                                        const newValues = [...r.values];
-                                        newValues[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, values: newValues };
-                                      }
-                                    }
-                                    return r;
-                                  }));
-                                  setEditingCell(null);
-                                  setEditValue('');
-                                }
-                                // Small delay to ensure state is saved before switching
-                                setTimeout(() => {
-                                  handleCellClick(row.id, colIndex, row.siblings[colIndex] || '', true, false);
-                                }, 0);
-                              }}
-                            >
-                              {row.siblings[colIndex] || <span className="text-ag-dark-text-secondary opacity-0">Click to edit</span>}
                             </div>
                           )}
                         </div>
@@ -1241,8 +1033,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                               value={editValue}
                               onChange={(e) => handleCellChange(e.target.value)}
                               onBlur={handleCellBlur}
-                              onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, false, true)}
-                              onPaste={(e) => handlePaste(e, row.id, colIndex, false, true)}
+                              onKeyDown={(e) => handleCellKeyDown(e, row.id, colIndex, true)}
+                              onPaste={(e) => handlePaste(e, row.id, colIndex, true)}
                               autoFocus
                               className="w-full px-2 py-1 bg-ag-dark-bg border border-ag-dark-accent rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent text-left"
                             />
@@ -1259,10 +1051,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                         const newVariations = [...r.variations];
                                         newVariations[currentEditingCell.colIndex] = currentEditValue;
                                         return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
                                       } else {
                                         const newValues = [...r.values];
                                         newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -1276,7 +1064,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                 }
                                 // Small delay to ensure state is saved before switching
                                 setTimeout(() => {
-                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', false, true);
+                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', true);
                                 }, 0);
                               }}
                               className="w-full px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text cursor-text hover:border-ag-dark-accent min-h-[32px] flex items-center text-left"
@@ -1292,10 +1080,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                         const newVariations = [...r.variations];
                                         newVariations[currentEditingCell.colIndex] = currentEditValue;
                                         return { ...r, variations: newVariations };
-                                      } else if (currentEditingCell.isSibling) {
-                                        const newSiblings = [...r.siblings];
-                                        newSiblings[currentEditingCell.colIndex] = currentEditValue;
-                                        return { ...r, siblings: newSiblings };
                                       } else {
                                         const newValues = [...r.values];
                                         newValues[currentEditingCell.colIndex] = currentEditValue;
@@ -1309,7 +1093,7 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                                 }
                                 // Small delay to ensure state is saved before switching
                                 setTimeout(() => {
-                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', false, true);
+                                  handleCellClick(row.id, colIndex, row.variations[colIndex] || '', true);
                                 }, 0);
                               }}
                             >

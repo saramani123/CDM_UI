@@ -359,7 +359,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   }, [allData]);
   const [singleListValues, setSingleListValues] = useState<string[]>([]);
   const [singleListValuesVariations, setSingleListValuesVariations] = useState<Record<string, string>>({});
-  const [singleListValuesSiblings, setSingleListValuesSiblings] = useState<Record<string, string[]>>({});
   // Store tiered list values locally - only save to Neo4j when clicking Save Changes on metadata panel
   const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
   
@@ -978,10 +977,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           saveData.listValuesVariations = singleListValuesVariations;
         }
         
-        // Include siblings if present
-        if (Object.keys(singleListValuesSiblings).length > 0) {
-          saveData.listValuesSiblings = singleListValuesSiblings;
-        }
         
         saveData.tieredListsList = [];
         saveData.listType = 'Single';
@@ -1075,15 +1070,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     // 2. If user cleared values in grid modal, they get cleared in backend
     // 3. If user hasn't opened grid modal, we preserve existing backend values by not including it
     if (listType === 'Multi-Level' && tieredValuesEditedRef.current) {
-      // Check if tieredListValues only has _variations or _siblings (user only added variations/siblings, didn't edit values)
+      // Check if tieredListValues only has _variations (user only added variations, didn't edit values)
       const hasOnlyVariations = Object.keys(tieredListValues).length === 1 && tieredListValues._variations;
-      const hasOnlySiblings = Object.keys(tieredListValues).length === 1 && tieredListValues._siblings;
-      const hasOnlyVariationsAndSiblings = Object.keys(tieredListValues).length === 2 && 
-        tieredListValues._variations && tieredListValues._siblings;
-      const hasActualValues = Object.keys(tieredListValues).some(k => k !== '_variations' && k !== '_siblings' && 
+      const hasActualValues = Object.keys(tieredListValues).some(k => k !== '_variations' && 
         Array.isArray(tieredListValues[k]) && tieredListValues[k].length > 0);
       
-      if ((hasOnlyVariations || hasOnlySiblings || hasOnlyVariationsAndSiblings) && !hasActualValues) {
+      if (hasOnlyVariations && !hasActualValues) {
         // User only added variations - merge with existing tiered values to preserve them
         // Get existing tiered values from selectedList
         // If selectedList doesn't have tieredListValues loaded, we'll need to preserve by not including it
@@ -1091,20 +1083,18 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         const existingTieredValues = selectedList?.tieredListValues;
         
         if (existingTieredValues && Object.keys(existingTieredValues).length > 0) {
-          // Merge: keep existing values, add new variations and siblings
+          // Merge: keep existing values, add new variations
           saveData.tieredListValues = {
             ...existingTieredValues,
-            _variations: tieredListValues._variations,
-            _siblings: tieredListValues._siblings
+            _variations: tieredListValues._variations
           };
         } else {
           // Existing values not loaded - don't include tieredListValues to preserve backend values
           // Only include variations separately if possible, or skip this save
           console.warn('⚠️ Cannot merge variations: existing tiered values not loaded. Variations will be saved separately.');
-          // For now, include only _variations and _siblings - backend should handle this
+          // For now, include only _variations - backend should handle this
           saveData.tieredListValues = {
-            _variations: tieredListValues._variations,
-            _siblings: tieredListValues._siblings
+            _variations: tieredListValues._variations
           };
         }
       } else {
@@ -2425,12 +2415,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               // Old format - just variations
               setSingleListValuesVariations(variationsOrData as Record<string, string[]>);
             }
-            if ('siblings' in variationsOrData) {
-              setSingleListValuesSiblings((variationsOrData as any).siblings || {});
-            }
           } else {
             setSingleListValuesVariations(variationsOrData || {});
-            setSingleListValuesSiblings({});
           }
           // Modal will stay open - user can continue editing or close manually
         }}

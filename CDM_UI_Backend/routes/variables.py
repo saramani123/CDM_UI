@@ -524,6 +524,8 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
         print(f"DEBUG: Bulk update - Processing {len(valid_variable_ids)} variables", flush=True)
         print(f"DEBUG: Bulk update - Variable IDs: {valid_variable_ids}", flush=True)
         print(f"DEBUG: Bulk update - Update fields provided: {[k for k, v in bulk_data.model_dump().items() if k != 'variable_ids' and v is not None]}", flush=True)
+        print(f"DEBUG: Bulk update - validation field: {bulk_data.validation}", flush=True)
+        print(f"DEBUG: Bulk update - shouldAppendValidations: {bulk_data.shouldAppendValidations}", flush=True)
         
         with driver.session(default_access_mode=WRITE_ACCESS) as session:
             for variable_id in valid_variable_ids:
@@ -597,25 +599,61 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         set_clauses.append("v.gType = $gType")
                         params["gType"] = bulk_data.gType
                     if should_update_field(bulk_data.validation, "Keep Current Validation"):
+                        print(f"DEBUG: Processing validation field for variable {variable_id_str}: {bulk_data.validation}", flush=True)
+                        print(f"DEBUG: shouldAppendValidations flag: {bulk_data.shouldAppendValidations}", flush=True)
                         # Handle special bulk validation formats
-                        validation_value = bulk_data.validation
+                        # The validation_value may contain multiple validations separated by commas
+                        # Each validation might be a special format (_BULK_RANGE_<operator> or _BULK_RELATIVE_<operator>)
+                        validation_parts = [v.strip() for v in bulk_data.validation.split(',') if v.strip()]
+                        print(f"DEBUG: Split validation into {len(validation_parts)} parts: {validation_parts}", flush=True)
+                        processed_validations = []
                         
-                        # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
-                        if validation_value.startswith("_BULK_RANGE_"):
-                            operator = validation_value.replace("_BULK_RANGE_", "")
-                            # Use the variable's formatI as the value, with Val Type prefix
-                            formatI_value = current_variable.get('formatI', '')
-                            validation_value = f"Range {operator} {formatI_value}" if formatI_value else ""
+                        for part in validation_parts:
+                            # Check if it's a bulk Range validation (format: _BULK_RANGE_<operator>)
+                            if part.startswith("_BULK_RANGE_"):
+                                operator = part.replace("_BULK_RANGE_", "")
+                                # Use the variable's formatI as the value, with Val Type prefix
+                                formatI_value = current_variable.get('formatI', '')
+                                if formatI_value:
+                                    processed_validations.append(f"Range {operator} {formatI_value}")
+                            
+                            # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
+                            elif part.startswith("_BULK_RELATIVE_"):
+                                operator = part.replace("_BULK_RELATIVE_", "")
+                                # Use the variable's name as the value, with Val Type prefix
+                                variable_name = current_variable.get('name', '')
+                                if variable_name:
+                                    processed_validations.append(f"Relative {operator} {variable_name}")
+                            
+                            # Regular validation (already in correct format)
+                            else:
+                                processed_validations.append(part)
                         
-                        # Check if it's a bulk Relative validation (format: _BULK_RELATIVE_<operator>)
-                        elif validation_value.startswith("_BULK_RELATIVE_"):
-                            operator = validation_value.replace("_BULK_RELATIVE_", "")
-                            # Use the variable's name as the value, with Val Type prefix
-                            variable_name = current_variable.get('name', '')
-                            validation_value = f"Relative {operator} {variable_name}" if variable_name else ""
+                        validation_value = ', '.join(processed_validations)
+                        print(f"DEBUG: Processed validation value: {validation_value}", flush=True)
+                        
+                        # Check if we should append validations instead of replacing
+                        if bulk_data.shouldAppendValidations:
+                            # Get current validation value
+                            current_validation = current_variable.get('validation', '') or ''
+                            current_validation = str(current_validation).strip()
+                            print(f"DEBUG: Current validation for variable {variable_id_str}: '{current_validation}'", flush=True)
+                            
+                            # Append new validations to existing ones (comma-separated)
+                            if current_validation:
+                                # Combine with existing
+                                validation_value = f"{current_validation}, {validation_value}"
+                                print(f"DEBUG: Appended validation: '{validation_value}'", flush=True)
+                            else:
+                                print(f"DEBUG: No existing validation, using new validation: '{validation_value}'", flush=True)
+                            # If no existing validation, just use the new one
+                            # (validation_value is already set above)
+                        else:
+                            print(f"DEBUG: Replacing validation (not appending): '{validation_value}'", flush=True)
                         
                         set_clauses.append("v.validation = $validation")
                         params["validation"] = validation_value
+                        print(f"DEBUG: Final validation value to save: '{validation_value}'", flush=True)
                     if should_update_field(bulk_data.default, "Keep Current Default"):
                         set_clauses.append("v.default = $default")
                         params["default"] = bulk_data.default
@@ -674,77 +712,80 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         
                         # Always update if both part and group are provided (even if they match current values)
                         # This ensures the relationship is properly set even if it was missing or incorrect
-                        if part_provided and group_provided:
+                        if part_provided and group_provided and new_part and new_group:
                             print(f"DEBUG: Bulk edit - Part/Group update for variable {variable_id_str}. Current: Part={current_part}, Group={current_group}. New: Part={new_part}, Group={new_group}", flush=True)
                             
-                            # Delete ALL existing Group -> Variable relationships for this variable
-                            # This ensures we don't have duplicate or incorrect relationships
                             try:
-                                delete_result = session.run("""
-                                    MATCH (g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-                                    DELETE gv
-                                    RETURN count(gv) as deleted_count
-                                """, variable_id=variable_id_str)
-                                delete_record = delete_result.single()
-                                deleted_count = delete_record["deleted_count"] if delete_record else 0
-                                print(f"DEBUG: Bulk edit - Deleted {deleted_count} Group -> Variable relationship(s) for variable {variable_id_str}", flush=True)
+                                # Execute all operations in a single transaction to ensure atomicity
+                                # This query:
+                                # 1. Ensures Variable exists (will fail if it doesn't)
+                                # 2. Deletes ALL existing Group -> Variable relationships for this variable
+                                # 3. Ensures Part node exists (MERGE - won't delete if exists)
+                                # 4. Ensures Group node exists (MERGE - won't delete if exists)
+                                # 5. Ensures Part -> Group relationship exists (MERGE - won't delete if exists)
+                                # 6. Creates new Group -> Variable relationship
+                                # 7. Updates section property if provided
+                                
+                                update_params = {
+                                    "variable_id": variable_id_str,
+                                    "new_part": new_part,
+                                    "new_group": new_group
+                                }
+                                
+                                # Build the query dynamically to include section update if needed
+                                section_set_clause = ""
+                                if section_provided and new_section:
+                                    section_set_clause = "\n                                    SET v.section = $new_section"
+                                    update_params["new_section"] = new_section
+                                    # Also add to set_clauses for consistency
+                                    if "v.section = $section" not in set_clauses:
+                                        set_clauses.append("v.section = $section")
+                                        params["section"] = new_section
+                                
+                                bulk_update_query = f"""
+                                    // Ensure Variable exists (will fail if it doesn't)
+                                    MATCH (v:Variable {{id: $variable_id}})
+                                    
+                                    // Delete ALL existing Group -> Variable relationships for this variable
+                                    // This severs the old relationships without deleting any nodes
+                                    OPTIONAL MATCH (old_g:Group)-[old_r:HAS_VARIABLE]->(v)
+                                    DELETE old_r
+                                    
+                                    // Ensure Part node exists (MERGE - creates if doesn't exist, doesn't delete)
+                                    MERGE (p:Part {{name: $new_part}})
+                                    
+                                    // Ensure Group node exists (MERGE - creates if doesn't exist, doesn't delete)
+                                    MERGE (g:Group {{name: $new_group}})
+                                    
+                                    // Ensure Part -> Group relationship exists (MERGE - creates if doesn't exist)
+                                    // Note: p and g are in scope from previous MERGE statements
+                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                    
+                                    // Create new Group -> Variable relationship
+                                    // Note: g and v are in scope from previous statements
+                                    MERGE (g)-[:HAS_VARIABLE]->(v)
+                                    {section_set_clause}
+                                    
+                                    // Return confirmation
+                                    RETURN v.id as var_id, p.name as part_name, g.name as group_name, v.section as section
+                                """
+                                
+                                result = session.run(bulk_update_query, update_params)
+                                record = result.single()
+                                
+                                if record:
+                                    print(f"DEBUG: Bulk edit - ✅ Successfully updated Part/Group relationships for variable {variable_id_str}", flush=True)
+                                    print(f"DEBUG: Bulk edit -   New Part: {record.get('part_name')}, New Group: {record.get('group_name')}, Section: {record.get('section')}", flush=True)
+                                else:
+                                    print(f"DEBUG: Bulk edit - ⚠️ WARNING - Query executed but no record returned for variable {variable_id_str}", flush=True)
+                                    errors.append(f"Variable {variable_id_str}: Bulk update query executed but no confirmation returned")
+                                    
                             except Exception as e:
-                                print(f"DEBUG: Bulk edit - Error deleting relationships for variable {variable_id_str}: {e}", flush=True)
+                                print(f"DEBUG: Bulk edit - ❌ ERROR updating Part/Group relationships for variable {variable_id_str}: {e}", flush=True)
                                 import traceback
                                 traceback.print_exc()
-                            
-                            # Ensure Part node exists
-                            if new_part:
-                                session.run("""
-                                    MERGE (p:Part {name: $part})
-                                """, part=new_part)
-                                print(f"DEBUG: Bulk edit - Ensured Part node exists: {new_part}", flush=True)
-                            
-                            # Ensure Group node exists
-                            if new_group:
-                                session.run("""
-                                    MERGE (g:Group {name: $group})
-                                """, group=new_group)
-                                print(f"DEBUG: Bulk edit - Ensured Group node exists: {new_group}", flush=True)
-                            
-                            # Ensure Part -> Group relationship exists (MERGE, don't delete)
-                            if new_part and new_group:
-                                session.run("""
-                                    MATCH (p:Part {name: $part})
-                                    MATCH (g:Group {name: $group})
-                                    MERGE (p)-[:HAS_GROUP]->(g)
-                                """, part=new_part, group=new_group)
-                                print(f"DEBUG: Bulk edit - Ensured Part -> Group relationship exists: {new_part} -> {new_group}", flush=True)
-                            
-                            # Create new Group -> Variable relationship
-                            if new_group:
-                                try:
-                                    create_result = session.run("""
-                                        MATCH (g:Group {name: $group})
-                                        MATCH (v:Variable {id: $variable_id})
-                                        MERGE (g)-[r:HAS_VARIABLE]->(v)
-                                        RETURN r, g.name as group_name, v.id as var_id
-                                    """, group=new_group, variable_id=variable_id_str)
-                                    create_record = create_result.single()
-                                    if create_record and create_record.get("group_name"):
-                                        print(f"DEBUG: Bulk edit - ✅ Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
-                                    else:
-                                        print(f"DEBUG: Bulk edit - ⚠️ WARNING - Failed to create Group -> Variable relationship for group={new_group}, variable_id={variable_id_str}", flush=True)
-                                        errors.append(f"Variable {variable_id_str}: Failed to create Group -> Variable relationship - group or variable not found")
-                                except Exception as e:
-                                    print(f"DEBUG: Bulk edit - ❌ ERROR creating Group -> Variable relationship for variable {variable_id_str}: {e}", flush=True)
-                                    import traceback
-                                    traceback.print_exc()
-                                    errors.append(f"Variable {variable_id_str}: Failed to create Group -> Variable relationship: {str(e)}")
-                            
-                            # Update section property if provided (this should happen as part of the same transaction)
-                            if section_provided and new_section:
-                                if "v.section = $section" not in set_clauses:
-                                    set_clauses.append("v.section = $section")
-                                    params["section"] = new_section
-                                    print(f"DEBUG: Bulk edit - Added section update to set_clauses: {new_section}", flush=True)
-                            
-                            print(f"DEBUG: Bulk edit - ✅ Successfully updated Group -> Variable relationship for variable {variable_id_str}", flush=True)
+                                errors.append(f"Variable {variable_id_str}: Failed to update Part/Group relationships: {str(e)}")
+                                continue  # Skip to next variable
 
                     # Only update if there are fields to update
                     if set_clauses:

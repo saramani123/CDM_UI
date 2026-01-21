@@ -65,12 +65,12 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     graph: ''
   });
 
-  // Validation components state for bulk edit
-  const [validationComponents, setValidationComponents] = useState<ValidationComponents>({
+  // Validation components state for bulk edit - now supports multiple entries
+  const [validationComponentsList, setValidationComponentsList] = useState<ValidationComponents[]>([{
     valType: '',
     operator: '',
     value: ''
-  });
+  }]);
   const [validationError, setValidationError] = useState<string>('');
 
   const driversData = getDriversData();
@@ -167,9 +167,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const lastSectionChangeTimeRef = useRef<number>(0);
 
   // Validation value input focus management
-  const validationValueInputRef = useRef<HTMLInputElement>(null);
-  const isValidationValueInputFocusedRef = useRef<boolean>(false);
-  const lastValidationValueChangeTimeRef = useRef<number>(0);
+  // Note: Removed validationValueInputRef, isValidationValueInputFocusedRef, lastValidationValueChangeTimeRef
+  // as they're no longer needed with the multi-entry validation system
 
   // Collapsible sections state
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -569,6 +568,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const handleSaveBulkEdit = () => {
+    console.log('🔵 handleSaveBulkEdit called');
+    console.log('🔵 validationComponentsList:', validationComponentsList);
+    
     // Validate that if Part or Group is being changed, BOTH must be provided
     const partProvided = formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part';
     const groupProvided = formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group';
@@ -650,11 +652,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     }
 
     // Validate validation components before saving
-    if (validationComponents.valType) {
+    for (let i = 0; i < validationComponentsList.length; i++) {
+      const validationComponents = validationComponentsList[i];
+      if (!validationComponents.valType) continue; // Skip empty entries
+      
       // Check if operator is required and selected
       const requiresOperator = ['Range', 'Relative', 'Length'].includes(validationComponents.valType);
       if (requiresOperator && !validationComponents.operator) {
-        alert('Please select an operator for the selected validation type.');
+        alert(`Please select an operator for Validation #${i + 1} (${validationComponents.valType}).`);
         setValidationError('Operator is required');
         return;
       }
@@ -662,7 +667,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       // Check if value is required and entered
       const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
       if (requiresValue && !validationComponents.value.trim()) {
-        alert('Please enter a value for the selected validation type.');
+        alert(`Please enter a value for Validation #${i + 1} (${validationComponents.valType}).`);
         setValidationError('Value is required');
         return;
       }
@@ -681,26 +686,51 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       ...(metadata.formatI && metadata.formatI.trim() !== '' && metadata.formatI !== 'Keep Current Format I' && { formatI: metadata.formatI }),
       ...(metadata.formatII && metadata.formatII.trim() !== '' && metadata.formatII !== 'Keep Current Format II' && { formatII: metadata.formatII }),
       ...(metadata.gType && metadata.gType.trim() !== '' && metadata.gType !== 'Keep Current G-Type' && { gType: metadata.gType }),
-      // Build validation string from components
-      // For Range and Relative in bulk edit, we use a special format that backend can interpret
-      ...(validationComponents.valType && (() => {
-        if (validationComponents.valType === 'Range' && validationComponents.operator) {
-          // Pass special format: _BULK_RANGE_<operator> so backend can use each variable's formatI
-          return { validation: `_BULK_RANGE_${validationComponents.operator}` };
-        } else if (validationComponents.valType === 'Relative' && validationComponents.operator) {
-          // Pass special format: _BULK_RELATIVE_<operator> so backend can use each variable's name
-          return { validation: `_BULK_RELATIVE_${validationComponents.operator}` };
-        } else if (validationComponents.valType) {
-          // For List, Length, Character - build with Val Type prefix
-          // For Range and Relative, we use special format that backend handles
-          if (validationComponents.valType !== 'Range' && validationComponents.valType !== 'Relative') {
-            // Use buildValidationString to ensure consistent format with Val Type prefix
+      // Build validation strings from all validation entries
+      // For bulk edit, we append validations to existing ones (comma-separated)
+      ...(validationComponentsList.some(comp => comp.valType) && (() => {
+        const validationStrings: string[] = [];
+        
+        for (const validationComponents of validationComponentsList) {
+          if (!validationComponents.valType) continue;
+          
+          // Validate required fields
+          const requiresOperator = ['Range', 'Relative', 'Length'].includes(validationComponents.valType);
+          if (requiresOperator && !validationComponents.operator) {
+            continue; // Skip invalid entries
+          }
+          
+          const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
+          if (requiresValue && !validationComponents.value.trim()) {
+            continue; // Skip invalid entries
+          }
+          
+          // Build validation string
+          if (validationComponents.valType === 'Range' && validationComponents.operator) {
+            // Pass special format: _BULK_RANGE_<operator> so backend can use each variable's formatI
+            validationStrings.push(`_BULK_RANGE_${validationComponents.operator}`);
+          } else if (validationComponents.valType === 'Relative' && validationComponents.operator) {
+            // Pass special format: _BULK_RELATIVE_<operator> so backend can use each variable's name
+            validationStrings.push(`_BULK_RELATIVE_${validationComponents.operator}`);
+          } else if (validationComponents.valType) {
+            // For List, Length, Character - build with Val Type prefix
             const validationString = buildValidationString(validationComponents);
             if (validationString) {
-              return { validation: validationString };
+              validationStrings.push(validationString);
             }
           }
         }
+        
+        if (validationStrings.length > 0) {
+          // Join all validation strings with comma and space
+          // Backend will append this to existing validations
+          console.log('🔵 Building validation strings:', validationStrings);
+          return { 
+            validation: validationStrings.join(', '),
+            shouldAppendValidations: true // Flag to indicate we should append instead of replace
+          };
+        }
+        console.log('🔵 No valid validation strings to save');
         return null;
       })()),
       ...(metadata.default && metadata.default.trim() !== '' && metadata.default !== 'Keep Current Default' && { default: metadata.default }),
@@ -712,12 +742,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       ...(variationsList.length > 0 && { variationsList: variationsList })
     };
     
+    console.log('🔵 BulkEditVariablesPanel - saveData:', saveData);
+    console.log('🔵 BulkEditVariablesPanel - validationComponentsList:', validationComponentsList);
+    console.log('🔵 BulkEditVariablesPanel - validation in saveData:', saveData.validation);
+    console.log('🔵 BulkEditVariablesPanel - shouldAppendValidations:', saveData.shouldAppendValidations);
+    console.log('🔵 BulkEditVariablesPanel - saveData keys:', Object.keys(saveData));
+    
+    // Check if saveData is empty (no fields to update)
+    const hasDataToSave = Object.keys(saveData).length > 0;
+    if (!hasDataToSave) {
+      alert('No changes to save. Please make at least one change before saving.');
+      return;
+    }
+    
     // If relationships are being changed, show confirmation
     if (selectedObjectRelationships.length > 0) {
       setPendingSaveData(saveData);
       setShowOverrideConfirmation(true);
     } else {
       // No relationships to change, save directly
+      console.log('🔵 BulkEditVariablesPanel - Calling onSave with:', saveData);
       onSave(saveData);
       onClose();
     }
@@ -1278,35 +1322,70 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       </CollapsibleSection>
 
       {/* Validations Section */}
-      <CollapsibleSection title="Validations" sectionKey="validations" icon={<Settings className="w-4 h-4 text-ag-dark-text-secondary" />}>
-        <div className="space-y-4">
-          {/* Val Type Dropdown */}
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Val Type
-            </label>
-            <select
-              value={validationComponents.valType}
-              onChange={(e) => {
-                const newValType = e.target.value as ValType | '';
-                const newComponents: ValidationComponents = {
-                  valType: newValType,
-                  operator: '',
-                  value: ''
-                };
-                
-                // Auto-set value for List
-                if (newValType === 'List') {
-                  newComponents.value = 'List';
-                }
-                // For Range and Relative in bulk edit, value will be "Same as Variables'"
-                else if (newValType === 'Range' || newValType === 'Relative') {
-                  newComponents.value = "Same as Variables'";
-                }
-                
-                setValidationComponents(newComponents);
-                setValidationError('');
-              }}
+      <CollapsibleSection 
+        title="Validations" 
+        sectionKey="validations" 
+        icon={<Settings className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setValidationComponentsList(prev => [...prev, { valType: '', operator: '', value: '' }]);
+            }}
+            className="p-1.5 text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors rounded hover:bg-ag-dark-bg"
+            title="Add another validation"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+        }
+      >
+        <div className="space-y-6">
+          {validationComponentsList.map((validationComponents, index) => (
+            <div key={index} className="space-y-4 border-b border-ag-dark-border pb-4 last:border-b-0 last:pb-0">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-semibold text-ag-dark-text">
+                  Validation #{index + 1}
+                </h4>
+                {validationComponentsList.length > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setValidationComponentsList(prev => prev.filter((_, i) => i !== index));
+                    }}
+                    className="text-red-400 hover:text-red-300 transition-colors"
+                    title="Remove this validation"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {/* Val Type Dropdown */}
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Val Type
+                </label>
+                <select
+                  value={validationComponents.valType}
+                  onChange={(e) => {
+                    const newValType = e.target.value as ValType | '';
+                    const newComponents: ValidationComponents = {
+                      valType: newValType,
+                      operator: newValType === 'Character' ? 'is' : '',
+                      value: ''
+                    };
+                    
+                    // Auto-set value for List
+                    if (newValType === 'List') {
+                      newComponents.value = 'List';
+                    }
+                    // For Range and Relative in bulk edit, value will be "Same as Variables'"
+                    else if (newValType === 'Range' || newValType === 'Relative') {
+                      newComponents.value = "Same as Variables'";
+                    }
+                    
+                    setValidationComponentsList(prev => prev.map((comp, i) => i === index ? newComponents : comp));
+                    setValidationError('');
+                  }}
               className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1324,21 +1403,20 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </select>
           </div>
 
-          {/* Operator Dropdown */}
-          {validationComponents.valType && getOperatorsForValType(validationComponents.valType).length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Operator
-              </label>
-              <select
-                value={validationComponents.operator}
-                onChange={(e) => {
-                  setValidationComponents(prev => ({
-                    ...prev,
-                    operator: e.target.value as Operator
-                  }));
-                  setValidationError('');
-                }}
+              {/* Operator Dropdown - Hidden for Character (always 'is'), shown for others */}
+              {validationComponents.valType && validationComponents.valType !== 'Character' && getOperatorsForValType(validationComponents.valType).length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                    Operator
+                  </label>
+                  <select
+                    value={validationComponents.operator}
+                    onChange={(e) => {
+                      setValidationComponentsList(prev => prev.map((comp, i) => 
+                        i === index ? { ...comp, operator: e.target.value as Operator } : comp
+                      ));
+                      setValidationError('');
+                    }}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                   validationError && validationError.includes('Operator') ? 'border-red-500' : 'border-ag-dark-border'
                 }`}
@@ -1362,152 +1440,103 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </div>
           )}
 
-          {/* Value Field */}
-          {validationComponents.valType && (
-            <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Value
-              </label>
-              {validationComponents.valType === 'List' ? (
-                <input
-                  type="text"
-                  value={validationComponents.value}
-                  disabled
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                />
-              ) : validationComponents.valType === 'Range' ? (
-                <input
-                  type="text"
-                  value={validationComponents.value}
-                  disabled
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                />
-              ) : validationComponents.valType === 'Relative' ? (
-                <input
-                  type="text"
-                  value={validationComponents.value}
-                  disabled
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                />
-              ) : validationComponents.valType === 'Length' ? (
+              {/* Character type shows operator as 'is' (non-editable) */}
+              {validationComponents.valType === 'Character' && (
                 <div>
+                  <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                    Operator
+                  </label>
                   <input
-                    ref={validationValueInputRef}
                     type="text"
-                    value={validationComponents.value}
-                    onInput={(e) => {
-                      e.stopPropagation();
-                      const input = e.target as HTMLInputElement;
-                      const cursorPosition = input.selectionStart;
-                      const newValue = input.value;
-                      lastValidationValueChangeTimeRef.current = Date.now();
-                      const validation = validateValidationInput('Length', newValue);
-                      setValidationError(validation.isValid ? '' : (validation.error || ''));
-                      setValidationComponents(prev => ({
-                        ...prev,
-                        value: newValue
-                      }));
-                      const restoreFocus = () => {
-                        if (validationValueInputRef.current) {
-                          validationValueInputRef.current.focus();
-                          const maxPos = validationValueInputRef.current.value.length;
-                          const safePos = Math.min(cursorPosition, maxPos);
-                          validationValueInputRef.current.setSelectionRange(safePos, safePos);
-                        }
-                      };
-                      restoreFocus();
-                      Promise.resolve().then(restoreFocus);
-                      requestAnimationFrame(restoreFocus);
-                    }}
-                    onChange={(e) => { e.stopPropagation(); }}
-                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isValidationValueInputFocusedRef.current = true; }}
-                    onBlur={(e) => {
-                      const timeSinceLastChange = Date.now() - lastValidationValueChangeTimeRef.current;
-                      const wasRecentTyping = timeSinceLastChange < 300;
-                      const relatedTarget = e.relatedTarget as HTMLElement;
-                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                      if (wasRecentTyping && !clickedOnInput && validationValueInputRef.current && isValidationValueInputFocusedRef.current) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setTimeout(() => { if (validationValueInputRef.current) validationValueInputRef.current.focus(); }, 0);
-                      } else if (!wasRecentTyping) {
-                        isValidationValueInputFocusedRef.current = false;
-                      }
-                    }}
-                    placeholder="Enter integer"
-                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                      validationError ? 'border-red-500' : ''
-                    }`}
+                    value="is"
+                    disabled
+                    className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
                   />
-                  {validationError && (
-                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
-                  )}
                 </div>
-              ) : validationComponents.valType === 'Character' ? (
+              )}
+
+              {/* Value Field */}
+              {validationComponents.valType && (
                 <div>
-                  <input
-                    ref={validationValueInputRef}
-                    type="text"
-                    value={validationComponents.value}
-                    onInput={(e) => {
-                      e.stopPropagation();
-                      const input = e.target as HTMLInputElement;
-                      const cursorPosition = input.selectionStart;
-                      const newValue = input.value;
-                      lastValidationValueChangeTimeRef.current = Date.now();
-                      const validation = validateValidationInput('Character', newValue);
-                      setValidationError(validation.isValid ? '' : (validation.error || ''));
-                      setValidationComponents(prev => ({
-                        ...prev,
-                        value: newValue
-                      }));
-                      const restoreFocus = () => {
-                        if (validationValueInputRef.current) {
-                          validationValueInputRef.current.focus();
-                          const maxPos = validationValueInputRef.current.value.length;
-                          const safePos = Math.min(cursorPosition, maxPos);
-                          validationValueInputRef.current.setSelectionRange(safePos, safePos);
-                        }
-                      };
-                      restoreFocus();
-                      Promise.resolve().then(restoreFocus);
-                      requestAnimationFrame(restoreFocus);
-                    }}
-                    onChange={(e) => { e.stopPropagation(); }}
-                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                    onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isValidationValueInputFocusedRef.current = true; }}
-                    onBlur={(e) => {
-                      const timeSinceLastChange = Date.now() - lastValidationValueChangeTimeRef.current;
-                      const wasRecentTyping = timeSinceLastChange < 300;
-                      const relatedTarget = e.relatedTarget as HTMLElement;
-                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                      if (wasRecentTyping && !clickedOnInput && validationValueInputRef.current && isValidationValueInputFocusedRef.current) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setTimeout(() => { if (validationValueInputRef.current) validationValueInputRef.current.focus(); }, 0);
-                      } else if (!wasRecentTyping) {
-                        isValidationValueInputFocusedRef.current = false;
-                      }
-                    }}
-                    placeholder="Enter alphanumeric character"
-                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                      validationError ? 'border-red-500' : ''
-                    }`}
-                  />
-                  {validationError && (
-                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
-                  )}
+                  <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                    Value
+                  </label>
+                  {validationComponents.valType === 'List' ? (
+                    <input
+                      type="text"
+                      value={validationComponents.value}
+                      disabled
+                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                    />
+                  ) : validationComponents.valType === 'Range' ? (
+                    <input
+                      type="text"
+                      value={validationComponents.value}
+                      disabled
+                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                    />
+                  ) : validationComponents.valType === 'Relative' ? (
+                    <input
+                      type="text"
+                      value={validationComponents.value}
+                      disabled
+                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
+                    />
+                  ) : validationComponents.valType === 'Length' ? (
+                    <div>
+                      <input
+                        type="text"
+                        value={validationComponents.value}
+                        onInput={(e) => {
+                          e.stopPropagation();
+                          const input = e.target as HTMLInputElement;
+                          const newValue = input.value;
+                          const validation = validateValidationInput('Length', newValue);
+                          setValidationError(validation.isValid ? '' : (validation.error || ''));
+                          setValidationComponentsList(prev => prev.map((comp, i) => 
+                            i === index ? { ...comp, value: newValue } : comp
+                          ));
+                        }}
+                        onChange={(e) => { e.stopPropagation(); }}
+                        placeholder="Enter integer"
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          validationError ? 'border-red-500' : ''
+                        }`}
+                      />
+                      {validationError && (
+                        <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                      )}
+                    </div>
+                  ) : validationComponents.valType === 'Character' ? (
+                    <div>
+                      <input
+                        type="text"
+                        value={validationComponents.value}
+                        onInput={(e) => {
+                          e.stopPropagation();
+                          const input = e.target as HTMLInputElement;
+                          const newValue = input.value;
+                          const validation = validateValidationInput('Character', newValue);
+                          setValidationError(validation.isValid ? '' : (validation.error || ''));
+                          setValidationComponentsList(prev => prev.map((comp, i) => 
+                            i === index ? { ...comp, value: newValue } : comp
+                          ));
+                        }}
+                        onChange={(e) => { e.stopPropagation(); }}
+                        placeholder="Enter alphanumeric character"
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                          validationError ? 'border-red-500' : ''
+                        }`}
+                      />
+                      {validationError && (
+                        <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
+              )}
             </div>
-          )}
+          ))}
         </div>
       </CollapsibleSection>
 
