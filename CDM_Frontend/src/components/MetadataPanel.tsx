@@ -706,34 +706,166 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     return ['ALL', ...objects];
   };
 
-  // Helper functions to get filtered data from variables
+  // State for API-based cascading data (per entry/row)
+  const [partsList, setPartsList] = useState<string[]>([]);
+  const [sectionsCache, setSectionsCache] = useState<Record<string, string[]>>({});
+  const [groupsCache, setGroupsCache] = useState<Record<string, string[]>>({});
+  const [variablesCache, setVariablesCache] = useState<Record<string, Array<{ id: string; name: string }>>>({});
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+
+  // Load parts from API on mount
+  useEffect(() => {
+    const loadParts = async () => {
+      try {
+        const response = await apiService.getVariableParts() as { parts: string[] };
+        setPartsList(response.parts || []);
+      } catch (error) {
+        console.error('Error loading parts:', error);
+        // Fallback to local data
+        if (variablesData && Array.isArray(variablesData)) {
+          const parts = [...new Set(variablesData.map(v => v.part))].filter(Boolean).sort();
+          setPartsList(parts);
+        }
+      }
+    };
+    loadParts();
+  }, []);
+
+  // Helper to load sections for a part (with caching)
+  const loadSectionsForPart = async (part: string) => {
+    if (!part) return [];
+    const cacheKey = `part:${part}`;
+    
+    if (sectionsCache[cacheKey]) {
+      return sectionsCache[cacheKey];
+    }
+
+    setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
+    try {
+      const response = await apiService.getVariableSections(part) as { sections: string[] };
+      const sections = response.sections || [];
+      setSectionsCache(prev => ({ ...prev, [cacheKey]: sections }));
+      return sections;
+    } catch (error) {
+      console.error('Error loading sections:', error);
+      // Fallback to local data
+      if (variablesData && Array.isArray(variablesData)) {
+        const sections = [...new Set(variablesData.filter(v => v.part === part).map(v => v.section))].filter(Boolean).sort();
+        setSectionsCache(prev => ({ ...prev, [cacheKey]: sections }));
+        return sections;
+      }
+      return [];
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+    }
+  };
+
+  // Helper to load groups for part+section (with caching)
+  const loadGroupsForPartAndSection = async (part: string, section: string) => {
+    if (!part || !section) return [];
+    const cacheKey = `part:${part}|section:${section}`;
+    
+    if (groupsCache[cacheKey]) {
+      return groupsCache[cacheKey];
+    }
+
+    setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
+    try {
+      const response = await apiService.getVariableGroups(part, section) as { groups: string[] };
+      const groups = response.groups || [];
+      setGroupsCache(prev => ({ ...prev, [cacheKey]: groups }));
+      return groups;
+    } catch (error) {
+      console.error('Error loading groups:', error);
+      // Fallback to local data
+      if (variablesData && Array.isArray(variablesData)) {
+        const groups = [...new Set(variablesData.filter(v => v.part === part && v.section === section).map(v => v.group))].filter(Boolean).sort();
+        setGroupsCache(prev => ({ ...prev, [cacheKey]: groups }));
+        return groups;
+      }
+      return [];
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+    }
+  };
+
+  // Helper to load variables for part+section+group (with caching)
+  const loadVariablesForPartSectionAndGroup = async (part: string, section: string, group: string) => {
+    if (!part || !section || !group) return [];
+    const cacheKey = `part:${part}|section:${section}|group:${group}`;
+    
+    if (variablesCache[cacheKey]) {
+      return variablesCache[cacheKey];
+    }
+
+    setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
+    try {
+      const response = await apiService.getVariablesForSelection(part, section, group) as { variables: Array<{ id: string; name: string }> };
+      const variables = response.variables || [];
+      setVariablesCache(prev => ({ ...prev, [cacheKey]: variables }));
+      return variables;
+    } catch (error) {
+      console.error('Error loading variables:', error);
+      // Fallback to local data
+      if (variablesData && Array.isArray(variablesData)) {
+        const variables = variablesData
+          .filter(v => v.part === part && v.section === section && v.group === group)
+          .map(v => ({ id: v.id, name: v.variable }));
+        setVariablesCache(prev => ({ ...prev, [cacheKey]: variables }));
+        return variables;
+      }
+      return [];
+    } finally {
+      setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+    }
+  };
+
+  // Helper functions to get filtered data from variables (using API with caching)
   const getAllParts = () => {
+    if (partsList.length > 0) return partsList;
+    // Fallback to local data
     if (!variablesData || !Array.isArray(variablesData)) return [];
     const parts = [...new Set(variablesData.map(v => v.part))].filter(Boolean).sort();
     return parts;
   };
 
-  const getSectionsForPart = (part: string) => {
-    if (!part || !variablesData || !Array.isArray(variablesData)) return [];
-    const sections = [...new Set(
-      variablesData.filter(v => v.part === part).map(v => v.section)
-    )].filter(Boolean).sort();
-    return sections;
+  const getSectionsForPart = (part: string): string[] => {
+    if (!part) return [];
+    const cacheKey = `part:${part}`;
+    // Return cached data if available, otherwise trigger load
+    if (sectionsCache[cacheKey]) {
+      return sectionsCache[cacheKey];
+    }
+    // Trigger async load (will update cache)
+    loadSectionsForPart(part);
+    // Return empty array while loading (will update when cache is populated)
+    return [];
   };
 
-  const getGroupsForPartAndSection = (part: string, section: string) => {
-    if (!part || !section || !variablesData || !Array.isArray(variablesData)) return [];
-    const groups = [...new Set(
-      variablesData.filter(v => v.part === part && v.section === section).map(v => v.group)
-    )].filter(Boolean).sort();
-    return groups;
+  const getGroupsForPartAndSection = (part: string, section: string): string[] => {
+    if (!part || !section) return [];
+    const cacheKey = `part:${part}|section:${section}`;
+    // Return cached data if available, otherwise trigger load
+    if (groupsCache[cacheKey]) {
+      return groupsCache[cacheKey];
+    }
+    // Trigger async load (will update cache)
+    loadGroupsForPartAndSection(part, section);
+    // Return empty array while loading (will update when cache is populated)
+    return [];
   };
 
-  const getVariablesForPartSectionAndGroup = (part: string, section: string, group: string) => {
-    if (!part || !section || !group || !variablesData || !Array.isArray(variablesData)) return [];
-    return variablesData
-      .filter(v => v.part === part && v.section === section && v.group === group)
-      .map(v => ({ id: v.id, name: v.variable }));
+  const getVariablesForPartSectionAndGroup = (part: string, section: string, group: string): Array<{ id: string; name: string }> => {
+    if (!part || !section || !group) return [];
+    const cacheKey = `part:${part}|section:${section}|group:${group}`;
+    // Return cached data if available, otherwise trigger load
+    if (variablesCache[cacheKey]) {
+      return variablesCache[cacheKey];
+    }
+    // Trigger async load (will update cache)
+    loadVariablesForPartSectionAndGroup(part, section, group);
+    // Return empty array while loading (will update when cache is populated)
+    return [];
   };
 
   // Legacy function for backward compatibility (used in some places)
@@ -789,33 +921,158 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     setUniqueIdEntries(prev => prev.filter(entry => entry.id !== entryId));
   };
   
+  // Load sections when part changes in any unique ID entry
+  useEffect(() => {
+    const loadSectionsForAllParts = async () => {
+      const partsToLoad = new Set(uniqueIdEntries.map(e => e.part).filter(Boolean));
+      for (const part of partsToLoad) {
+        const cacheKey = `part:${part}`;
+        if (!sectionsCache[cacheKey]) {
+          await loadSectionsForPart(part);
+        }
+      }
+    };
+    loadSectionsForAllParts();
+  }, [uniqueIdEntries.map(e => e.part).join(',')]);
+
+  // Load groups when part+section changes in any unique ID entry
+  useEffect(() => {
+    const loadGroupsForAllCombinations = async () => {
+      const combinations = uniqueIdEntries
+        .filter(e => e.part && e.section)
+        .map(e => ({ part: e.part, section: e.section }));
+      
+      for (const { part, section } of combinations) {
+        const cacheKey = `part:${part}|section:${section}`;
+        if (!groupsCache[cacheKey]) {
+          await loadGroupsForPartAndSection(part, section);
+        }
+      }
+    };
+    loadGroupsForAllCombinations();
+  }, [uniqueIdEntries.map(e => `${e.part}|${e.section}`).join(',')]);
+
+  // Load variables when part+section+group changes in any unique ID entry
+  useEffect(() => {
+    const loadVariablesForAllCombinations = async () => {
+      const combinations = uniqueIdEntries
+        .filter(e => e.part && e.section && e.group && e.group !== 'ANY')
+        .map(e => ({ part: e.part, section: e.section, group: e.group }));
+      
+      for (const { part, section, group } of combinations) {
+        const cacheKey = `part:${part}|section:${section}|group:${group}`;
+        if (!variablesCache[cacheKey]) {
+          await loadVariablesForPartSectionAndGroup(part, section, group);
+        }
+      }
+    };
+    loadVariablesForAllCombinations();
+  }, [uniqueIdEntries.map(e => `${e.part}|${e.section}|${e.group}`).join(',')]);
+
+  // Load sections when part changes in any composite ID row
+  useEffect(() => {
+    const loadSectionsForAllParts = async () => {
+      const partsToLoad = new Set<string>();
+      compositeIdBlocks.forEach(block => {
+        block.rows.forEach(row => {
+          if (row.part) partsToLoad.add(row.part);
+        });
+      });
+      for (const part of partsToLoad) {
+        const cacheKey = `part:${part}`;
+        if (!sectionsCache[cacheKey]) {
+          await loadSectionsForPart(part);
+        }
+      }
+    };
+    loadSectionsForAllParts();
+  }, [compositeIdBlocks.map(b => b.rows.map(r => r.part).join(',')).join('|')]);
+
+  // Load groups when part+section changes in any composite ID row
+  useEffect(() => {
+    const loadGroupsForAllCombinations = async () => {
+      const combinations: Array<{ part: string; section: string }> = [];
+      compositeIdBlocks.forEach(block => {
+        block.rows.forEach(row => {
+          if (row.part && row.section) {
+            combinations.push({ part: row.part, section: row.section });
+          }
+        });
+      });
+      
+      for (const { part, section } of combinations) {
+        const cacheKey = `part:${part}|section:${section}`;
+        if (!groupsCache[cacheKey]) {
+          await loadGroupsForPartAndSection(part, section);
+        }
+      }
+    };
+    loadGroupsForAllCombinations();
+  }, [compositeIdBlocks.map(b => b.rows.map(r => `${r.part}|${r.section}`).join(',')).join('|')]);
+
+  // Load variables when part+section+group changes in any composite ID row
+  useEffect(() => {
+    const loadVariablesForAllCombinations = async () => {
+      const combinations: Array<{ part: string; section: string; group: string }> = [];
+      compositeIdBlocks.forEach(block => {
+        block.rows.forEach(row => {
+          if (row.part && row.section && row.group && row.group !== 'ANY') {
+            combinations.push({ part: row.part, section: row.section, group: row.group });
+          }
+        });
+      });
+      
+      for (const { part, section, group } of combinations) {
+        const cacheKey = `part:${part}|section:${section}|group:${group}`;
+        if (!variablesCache[cacheKey]) {
+          await loadVariablesForPartSectionAndGroup(part, section, group);
+        }
+      }
+    };
+    loadVariablesForAllCombinations();
+  }, [compositeIdBlocks.map(b => b.rows.map(r => `${r.part}|${r.section}|${r.group}`).join(',')).join('|')]);
+
   // Update part selection for a specific unique ID entry
-  const handleUniqueIdPartChange = (entryId: string, part: string) => {
+  const handleUniqueIdPartChange = async (entryId: string, part: string) => {
     setUniqueIdEntries(prev => prev.map(entry => 
       entry.id === entryId ? { ...entry, part, section: '', group: '', variableId: '' } : entry
     ));
+    // Load sections for the new part
+    if (part) {
+      await loadSectionsForPart(part);
+    }
   };
   
   // Update section selection for a specific unique ID entry
-  const handleUniqueIdSectionChange = (entryId: string, section: string) => {
-    setUniqueIdEntries(prev => prev.map(entry => 
-      entry.id === entryId ? { ...entry, section, group: '', variableId: '' } : entry
+  const handleUniqueIdSectionChange = async (entryId: string, section: string) => {
+    const entry = uniqueIdEntries.find(e => e.id === entryId);
+    setUniqueIdEntries(prev => prev.map(e => 
+      e.id === entryId ? { ...e, section, group: '', variableId: '' } : e
     ));
+    // Load groups for the new part+section
+    if (entry?.part && section) {
+      await loadGroupsForPartAndSection(entry.part, section);
+    }
   };
   
   // Update group selection for a specific unique ID entry
-  const handleUniqueIdGroupChange = (entryId: string, group: string) => {
-    setUniqueIdEntries(prev => prev.map(entry => {
-      if (entry.id === entryId) {
+  const handleUniqueIdGroupChange = async (entryId: string, group: string) => {
+    const entry = uniqueIdEntries.find(e => e.id === entryId);
+    setUniqueIdEntries(prev => prev.map(e => {
+      if (e.id === entryId) {
         // If "ANY" is selected for group, auto-set variableId to "ANY"
         if (group === 'ANY') {
-          return { ...entry, group, variableId: 'ANY' };
+          return { ...e, group, variableId: 'ANY' };
         } else {
-          return { ...entry, group, variableId: '' };
+          return { ...e, group, variableId: '' };
         }
       }
-      return entry;
+      return e;
     }));
+    // Load variables for the new part+section+group
+    if (entry?.part && entry?.section && group && group !== 'ANY') {
+      await loadVariablesForPartSectionAndGroup(entry.part, entry.section, group);
+    }
   };
   
   // Update variable selection for a specific unique ID entry
@@ -858,40 +1115,52 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   // Update a row in a composite ID block
-  const handleCompositeIdRowChange = (blockNumber: number, rowId: string, field: 'part' | 'section' | 'group' | 'variableId', value: string) => {
-    setCompositeIdBlocks(prev => prev.map(block => {
-      if (block.blockNumber === blockNumber) {
+  const handleCompositeIdRowChange = async (blockNumber: number, rowId: string, field: 'part' | 'section' | 'group' | 'variableId', value: string) => {
+    const block = compositeIdBlocks.find(b => b.blockNumber === blockNumber);
+    const row = block?.rows.find(r => r.id === rowId);
+    
+    setCompositeIdBlocks(prev => prev.map(b => {
+      if (b.blockNumber === blockNumber) {
         return {
-          ...block,
-          rows: block.rows.map(row => {
-            if (row.id === rowId) {
+          ...b,
+          rows: b.rows.map(r => {
+            if (r.id === rowId) {
               // When part changes, clear section, group, and variableId
               if (field === 'part') {
-                return { ...row, part: value, section: '', group: '', variableId: '' };
+                return { ...r, part: value, section: '', group: '', variableId: '' };
               }
               // When section changes, clear group and variableId
               else if (field === 'section') {
-                return { ...row, section: value, group: '', variableId: '' };
+                return { ...r, section: value, group: '', variableId: '' };
               }
               // When group changes, clear variableId (or set to ANY if group is ANY)
               else if (field === 'group') {
                 if (value === 'ANY') {
-                  return { ...row, group: value, variableId: 'ANY' };
+                  return { ...r, group: value, variableId: 'ANY' };
                 } else {
-                  return { ...row, group: value, variableId: '' };
+                  return { ...r, group: value, variableId: '' };
                 }
               }
               // When variableId changes, just update it
               else {
-                return { ...row, variableId: value };
+                return { ...r, variableId: value };
               }
             }
-            return row;
+            return r;
           })
         };
       }
-      return block;
+      return b;
     }));
+    
+    // Trigger API loading based on what changed
+    if (field === 'part' && value) {
+      await loadSectionsForPart(value);
+    } else if (field === 'section' && row?.part && value) {
+      await loadGroupsForPartAndSection(row.part, value);
+    } else if (field === 'group' && row?.part && row?.section && value && value !== 'ANY') {
+      await loadVariablesForPartSectionAndGroup(row.part, row.section, value);
+    }
   };
 
   // Helper to convert variable IDs to names for display
@@ -1865,7 +2134,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={entry.section}
                           onChange={(e) => handleUniqueIdSectionChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part}
+                          disabled={!isPanelEnabled || !entry.part || loadingStates[`part:${entry.part}`]}
                           className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1875,16 +2144,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Section</option>
-                          {getSectionsForPart(entry.part).map(section => (
-                            <option key={section} value={section}>{section}</option>
-                          ))}
+                          {loadingStates[`part:${entry.part}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            getSectionsForPart(entry.part).map(section => (
+                              <option key={section} value={section}>{section}</option>
+                            ))
+                          )}
                         </select>
                         
                         {/* Group Dropdown */}
                         <select
                           value={entry.group}
                           onChange={(e) => handleUniqueIdGroupChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part || !entry.section}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section || loadingStates[`part:${entry.part}|section:${entry.section}`]}
                           className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1895,16 +2168,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         >
                           <option value="">Select Group</option>
                           <option value="ANY">ANY</option>
-                          {getGroupsForPartAndSection(entry.part, entry.section).map(group => (
-                            <option key={group} value={group}>{group}</option>
-                          ))}
+                          {loadingStates[`part:${entry.part}|section:${entry.section}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            getGroupsForPartAndSection(entry.part, entry.section).map(group => (
+                              <option key={group} value={group}>{group}</option>
+                            ))
+                          )}
                         </select>
                         
                         {/* Variable Dropdown */}
                         <select
                           value={entry.variableId}
                           onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part || !entry.section || !entry.group}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section || !entry.group || (entry.group !== 'ANY' && loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`])}
                           className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1915,9 +2192,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         >
                           <option value="">Select Variable</option>
                           <option value="ANY">ANY</option>
-                          {variableOptions.map(v => (
-                            <option key={v.id} value={v.id}>{v.name}</option>
-                          ))}
+                          {entry.group !== 'ANY' && loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            variableOptions.map(v => (
+                              <option key={v.id} value={v.id}>{v.name}</option>
+                            ))
+                          )}
                         </select>
                         {index > 0 && (
                           <button
@@ -2018,9 +2299,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={row.section}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'section', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part}
+                          disabled={!isPanelEnabled || !row.part || loadingStates[`part:${row.part}`]}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                            !isPanelEnabled || !row.part ? 'opacity-50 cursor-not-allowed' : ''
+                            !isPanelEnabled || !row.part || loadingStates[`part:${row.part}`] ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -2030,20 +2311,24 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Section</option>
-                          {getSectionsForPart(row.part).map((section) => (
-                            <option key={section} value={section}>
-                              {section}
-                            </option>
-                          ))}
+                          {loadingStates[`part:${row.part}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            getSectionsForPart(row.part).map((section) => (
+                              <option key={section} value={section}>
+                                {section}
+                              </option>
+                            ))
+                          )}
                         </select>
 
                         {/* Group Dropdown */}
                         <select
                           value={row.group}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'group', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part || !row.section}
+                          disabled={!isPanelEnabled || !row.part || !row.section || loadingStates[`part:${row.part}|section:${row.section}`]}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                            !isPanelEnabled || !row.part || !row.section ? 'opacity-50 cursor-not-allowed' : ''
+                            !isPanelEnabled || !row.part || !row.section || loadingStates[`part:${row.part}|section:${row.section}`] ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -2054,20 +2339,24 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         >
                           <option value="">Select Group</option>
                           <option value="ANY">ANY</option>
-                          {getGroupsForPartAndSection(row.part, row.section).map((group) => (
-                            <option key={group} value={group}>
-                              {group}
-                            </option>
-                          ))}
+                          {loadingStates[`part:${row.part}|section:${row.section}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            getGroupsForPartAndSection(row.part, row.section).map((group) => (
+                              <option key={group} value={group}>
+                                {group}
+                              </option>
+                            ))
+                          )}
                         </select>
 
                         {/* Variable Dropdown */}
                         <select
                           value={row.variableId}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'variableId', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part || !row.section || !row.group}
+                          disabled={!isPanelEnabled || !row.part || !row.section || !row.group || (row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`])}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                            !isPanelEnabled || !row.part || !row.section || !row.group ? 'opacity-50 cursor-not-allowed' : ''
+                            !isPanelEnabled || !row.part || !row.section || !row.group || (row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`]) ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -2077,9 +2366,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Variable</option>
-                          {variableOptions.map(v => (
-                            <option key={v.id} value={v.id}>{v.name}</option>
-                          ))}
+                          <option value="ANY">ANY</option>
+                          {row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`] ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            variableOptions.map(v => (
+                              <option key={v.id} value={v.id}>{v.name}</option>
+                            ))
+                          )}
                         </select>
                       </div>
                     );

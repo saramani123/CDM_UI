@@ -238,8 +238,83 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     handleChange('section', sectionValue);
   };
 
-  // Get distinct sections from all variables data (irrespective of part/group)
+  // State for cascading dropdowns
+  const [partsList, setPartsList] = useState<string[]>([]);
+  const [sectionsList, setSectionsList] = useState<string[]>([]);
+  const [groupsList, setGroupsList] = useState<string[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState(false);
+  const [isLoadingSections, setIsLoadingSections] = useState(false);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+
+  // Load parts from API on mount
+  useEffect(() => {
+    const loadParts = async () => {
+      setIsLoadingParts(true);
+      try {
+        const response = await apiService.getVariableParts() as { parts: string[] };
+        setPartsList(response.parts || []);
+      } catch (error) {
+        console.error('Error loading parts:', error);
+        // Fallback to local data
+        const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+        const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
+        setPartsList(parts.length > 0 ? parts : dynamicFieldOptions.part);
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+    loadParts();
+  }, []);
+
+  // Load sections when part changes
+  useEffect(() => {
+    const loadSections = async () => {
+      if (!formData.part) {
+        setSectionsList([]);
+        return;
+      }
+      setIsLoadingSections(true);
+      try {
+        const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
+        setSectionsList(response.sections || []);
+      } catch (error) {
+        console.error('Error loading sections:', error);
+        setSectionsList([]);
+      } finally {
+        setIsLoadingSections(false);
+      }
+    };
+    loadSections();
+  }, [formData.part]);
+
+  // Load groups when part and section change
+  useEffect(() => {
+    const loadGroups = async () => {
+      if (!formData.part || !formData.section) {
+        setGroupsList([]);
+        return;
+      }
+      setIsLoadingGroups(true);
+      try {
+        const response = await apiService.getVariableGroups(formData.part, formData.section) as { groups: string[] };
+        setGroupsList(response.groups || []);
+      } catch (error) {
+        console.error('Error loading groups:', error);
+        setGroupsList([]);
+      } finally {
+        setIsLoadingGroups(false);
+      }
+    };
+    loadGroups();
+  }, [formData.part, formData.section]);
+
+  // Get distinct sections from all variables data (irrespective of part/group) - fallback
   const getDistinctSections = (): string[] => {
+    // If we have sections from API, use those
+    if (sectionsList.length > 0) {
+      return sectionsList;
+    }
+    // Otherwise fallback to local data
     const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
     const sectionsFromData = [...new Set(variablesData.map((item: any) => item.section))].filter(Boolean).sort() as string[];
     
@@ -248,11 +323,39 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     return allSections;
   };
 
-  // Get distinct parts from variables data
+  // Get distinct parts from variables data - fallback
   const getDistinctParts = (): string[] => {
+    // If we have parts from API, use those
+    if (partsList.length > 0) {
+      return partsList;
+    }
+    // Otherwise fallback to local data
     const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
     const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
     return parts.length > 0 ? parts : dynamicFieldOptions.part;
+  };
+
+  // Get groups for part - updated to use API data
+  const getGroupsForPart = (part: string): string[] => {
+    // If we have groups from API (based on part + section), use those
+    if (groupsList.length > 0 && formData.part === part && formData.section) {
+      return groupsList;
+    }
+    // Otherwise fallback to local data
+    if (!part) return [];
+    
+    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
+    const groupsFromData = [...new Set(
+      variablesData
+        .filter((item: any) => item.part === part && item.group)
+        .map((item: any) => item.group)
+    )].filter(Boolean) as string[];
+    
+    const associations = getPartGroupAssociations();
+    const groupsFromStorage = associations[part] || [];
+    
+    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
+    return allGroups;
   };
 
   // Collapsible sections state
@@ -1063,9 +1166,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
-              disabled={!isPanelEnabled}
+              disabled={!isPanelEnabled || isLoadingParts}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || isLoadingParts ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1075,11 +1178,15 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Part</option>
-              {dynamicFieldOptions.part.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {isLoadingParts ? (
+                <option value="">Loading...</option>
+              ) : (
+                getDistinctParts().map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -1103,9 +1210,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <select
               value={formData.section}
               onChange={(e) => handleChange('section', e.target.value)}
-              disabled={!isPanelEnabled || !formData.part}
+              disabled={!isPanelEnabled || !formData.part || isLoadingSections}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled || !formData.part ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || !formData.part || isLoadingSections ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1115,11 +1222,15 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Section</option>
-              {getDistinctSections().map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {isLoadingSections ? (
+                <option value="">Loading...</option>
+              ) : (
+                getDistinctSections().map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -1144,9 +1255,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
-                disabled={!isPanelEnabled || !formData.part || !formData.section}
+                disabled={!isPanelEnabled || !formData.part || !formData.section || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                  !isPanelEnabled || !formData.part || !formData.section ? 'opacity-50 cursor-not-allowed' : ''
+                  !isPanelEnabled || !formData.part || !formData.section || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1156,7 +1267,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 }}
               >
                 <option value="">Select Group</option>
-                {formData.part ? (
+                {isLoadingGroups ? (
+                  <option value="">Loading...</option>
+                ) : formData.part && formData.section ? (
                   getGroupsForPart(formData.part).map((option) => (
                     <option key={option} value={option}>
                       {option}

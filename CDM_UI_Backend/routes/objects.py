@@ -745,11 +745,18 @@ async def create_object(object_data: ObjectCreateRequest):
                                                     MERGE (o)-[:HAS_DISCRETE_ID]->(v)
                                                 """, object_id=new_id, var_id=var_id)
                                     elif variable_id == 'ANY':
-                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
-                                        all_vars_result = session.run("""
-                                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                            RETURN v.id as variableId
-                                        """, part=part, group=group)
+                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
+                                        if section:
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE v.section = $section
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group, section=section)
+                                        else:
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
                                         
                                         # Create relationships to all variables
@@ -1418,11 +1425,18 @@ async def update_object(
                                                     MERGE (o)-[:HAS_DISCRETE_ID]->(v)
                                                 """, object_id=object_id, var_id=var_id)
                                     elif variable_id == 'ANY':
-                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
-                                        all_vars_result = session.run("""
-                                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                            RETURN v.id as variableId
-                                        """, part=part, group=group)
+                                        # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
+                                        if section:
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE v.section = $section
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group, section=section)
+                                        else:
+                                            all_vars_result = session.run("""
+                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                RETURN v.id as variableId
+                                            """, part=part, group=group)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
                                         
                                         # Create relationships to all variables
@@ -1496,11 +1510,18 @@ async def update_object(
                                                         MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
                                                     """, object_id=object_id, var_id=var_id)
                                         elif variable_id == 'ANY':
-                                            # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
-                                            all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                                RETURN v.id as variableId
-                                            """, part=part, group=group)
+                                            # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
+                                            if section:
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                    WHERE v.section = $section
+                                                    RETURN v.id as variableId
+                                                """, part=part, group=group, section=section)
+                                            else:
+                                                all_vars_result = session.run("""
+                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                    RETURN v.id as variableId
+                                                """, part=part, group=group)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
                                             
                                             # Create relationships to all variables

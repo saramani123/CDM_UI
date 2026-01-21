@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, GripVertical, Maximize2, Minimize2, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
 import type { VariableData } from '../data/variablesData';
+import { apiService } from '../services/api';
 
 interface OrderSortOrder {
   partOrder: string[];
@@ -53,9 +54,112 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   
+  // State for API-based cascading data
+  const [partsList, setPartsList] = useState<string[]>([]);
+  const [sectionsList, setSectionsList] = useState<string[]>([]);
+  const [groupsList, setGroupsList] = useState<string[]>([]);
+  const [variablesList, setVariablesList] = useState<string[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState(false);
+  const [isLoadingSections, setIsLoadingSections] = useState(false);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const [isLoadingVariables, setIsLoadingVariables] = useState(false);
+
+  // Load parts from API on mount
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const loadParts = async () => {
+      setIsLoadingParts(true);
+      try {
+        const response = await apiService.getVariableParts() as { parts: string[] };
+        setPartsList(response.parts || []);
+      } catch (error) {
+        console.error('Error loading parts:', error);
+        // Fallback to local data
+        const parts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
+        setPartsList(parts);
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+    loadParts();
+  }, [isOpen]);
+
+  // Load sections when part is selected
+  useEffect(() => {
+    const loadSections = async () => {
+      if (!selectedPart) {
+        setSectionsList([]);
+        return;
+      }
+      setIsLoadingSections(true);
+      try {
+        const response = await apiService.getVariableSections(selectedPart) as { sections: string[] };
+        setSectionsList(response.sections || []);
+      } catch (error) {
+        console.error('Error loading sections:', error);
+        // Fallback to local data
+        const sections = Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.section).filter(Boolean))).sort();
+        setSectionsList(sections);
+      } finally {
+        setIsLoadingSections(false);
+      }
+    };
+    loadSections();
+  }, [selectedPart, variableData]);
+
+  // Load groups when part and section are selected
+  useEffect(() => {
+    const loadGroups = async () => {
+      if (!selectedPart || !selectedSection) {
+        setGroupsList([]);
+        return;
+      }
+      setIsLoadingGroups(true);
+      try {
+        const response = await apiService.getVariableGroups(selectedPart, selectedSection) as { groups: string[] };
+        setGroupsList(response.groups || []);
+      } catch (error) {
+        console.error('Error loading groups:', error);
+        // Fallback to local data
+        const groups = Array.from(new Set(variableData.filter(v => v.part === selectedPart && v.section === selectedSection).map(v => v.group).filter(Boolean))).sort();
+        setGroupsList(groups);
+      } finally {
+        setIsLoadingGroups(false);
+      }
+    };
+    loadGroups();
+  }, [selectedPart, selectedSection, variableData]);
+
+  // Load variables when part, section, and group are selected
+  useEffect(() => {
+    const loadVariables = async () => {
+      if (!selectedPart || !selectedSection || !selectedGroup) {
+        setVariablesList([]);
+        return;
+      }
+      setIsLoadingVariables(true);
+      try {
+        const response = await apiService.getVariablesForSelection(selectedPart, selectedSection, selectedGroup) as { variables: Array<{ id: string; name: string }> };
+        setVariablesList(response.variables?.map(v => v.name) || []);
+      } catch (error) {
+        console.error('Error loading variables:', error);
+        // Fallback to local data
+        const variables = Array.from(new Set(variableData.filter(v => 
+          v.part === selectedPart && 
+          v.section === selectedSection && 
+          v.group === selectedGroup
+        ).map(v => v.variable).filter(Boolean))).sort();
+        setVariablesList(variables);
+      } finally {
+        setIsLoadingVariables(false);
+      }
+    };
+    loadVariables();
+  }, [selectedPart, selectedSection, selectedGroup, variableData]);
 
   // Get distinct values - dynamically updated when variableData changes
-  const distinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
+  const distinctParts = partsList.length > 0 ? partsList : Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
   
   // Get S, D, C values from grid data (including "ALL" and multiple values like "Finance, Healthcare")
   // Extract unique values exactly as they appear in the grid
@@ -63,24 +167,14 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
   const distinctDomains = Array.from(new Set(variableData.map(v => String(v.domain || '').trim()).filter(Boolean))).sort();
   const distinctCountries = Array.from(new Set(variableData.map(v => String(v.country || '').trim()).filter(Boolean))).sort();
   
-  // Section values filtered by selected part (from Part column click)
-  const sectionsForPart = selectedPart
-    ? Array.from(new Set(variableData.filter(v => v.part === selectedPart).map(v => v.section).filter(Boolean))).sort()
-    : [];
+  // Section values filtered by selected part (from Part column click) - use API data
+  const sectionsForPart = selectedPart ? sectionsList : [];
   
-  // Group values filtered by selected part and section (from Part and Section column clicks)
-  const groupsForPartAndSection = selectedPart && selectedSection
-    ? Array.from(new Set(variableData.filter(v => v.part === selectedPart && v.section === selectedSection).map(v => v.group).filter(Boolean))).sort()
-    : [];
+  // Group values filtered by selected part and section (from Part and Section column clicks) - use API data
+  const groupsForPartAndSection = selectedPart && selectedSection ? groupsList : [];
   
-  // Variable values filtered by selected part, section, and group (from Part, Section, and Group column clicks)
-  const variablesForPartSectionAndGroup = selectedPart && selectedSection && selectedGroup
-    ? Array.from(new Set(variableData.filter(v => 
-        v.part === selectedPart && 
-        v.section === selectedSection && 
-        v.group === selectedGroup
-      ).map(v => v.variable).filter(Boolean))).sort()
-    : [];
+  // Variable values filtered by selected part, section, and group (from Part, Section, and Group column clicks) - use API data
+  const variablesForPartSectionAndGroup = selectedPart && selectedSection && selectedGroup ? variablesList : [];
 
   // Initialize working orders from props or create defaults - only once when modal opens
   // CRITICAL: Order should NEVER change unless user explicitly modifies it via drag-and-drop
@@ -91,8 +185,9 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       return;
     }
     
-    if (!isInitialized) {
-      const currentDistinctParts = Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
+    // Wait for parts to load before initializing
+    if (!isInitialized && (partsList.length > 0 || isLoadingParts === false)) {
+      const currentDistinctParts = partsList.length > 0 ? partsList : Array.from(new Set(variableData.map(v => v.part).filter(Boolean))).sort();
       
       if (orderSortOrder) {
         // Start with saved order - this is the source of truth
@@ -110,12 +205,15 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
         const partOrder = [...validSavedParts, ...newParts];
         
         // Handle section orders - preserve existing order, append new sections
+        // Note: We'll load sections from API when parts are selected, but for initialization
+        // we use variableData as fallback
         let sectionOrders = orderSortOrder.sectionOrders || {};
         if (!orderSortOrder.sectionOrders && (orderSortOrder as any).sectionOrder) {
           // Migrate old flat sectionOrder to new structure - distribute across all parts
           const oldSectionOrder = (orderSortOrder as any).sectionOrder as string[];
           sectionOrders = {};
           currentDistinctParts.forEach(part => {
+            // Use API data if available, otherwise fallback to variableData
             const sectionsForThisPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
             // Preserve order from old sectionOrder if sections exist in both
             const orderedSections = oldSectionOrder.filter(s => sectionsForThisPart.includes(s));
@@ -124,6 +222,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
           });
         } else {
           // For each part, preserve saved order and append new sections
+          // When a part is clicked, sections will be loaded from API
           currentDistinctParts.forEach(part => {
             const sectionsForThisPart = Array.from(new Set(variableData.filter(v => v.part === part).map(v => v.section).filter(Boolean))).sort();
             const savedSectionOrder = sectionOrders[part] || [];
@@ -250,7 +349,7 @@ export const VariablesOrderModal: React.FC<VariablesOrderModalProps> = ({
       }
       setIsInitialized(true);
     }
-  }, [isOpen, orderSortOrder, isInitialized, variableData, distinctSectors, distinctDomains, distinctCountries]);
+  }, [isOpen, orderSortOrder, isInitialized, variableData, distinctSectors, distinctDomains, distinctCountries, partsList, isLoadingParts]);
 
   // Initialize working order for sections when a part is selected (from Part column click)
   useEffect(() => {

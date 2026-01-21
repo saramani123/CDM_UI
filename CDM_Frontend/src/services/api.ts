@@ -920,6 +920,26 @@ class ApiService {
     return this.request('/variables/field-options', { method: 'GET' });
   }
 
+  // Variable cascading dropdown API
+  async getVariableParts() {
+    return this.request('/variables/parts', { method: 'GET' });
+  }
+
+  async getVariableSections(part: string) {
+    const params = new URLSearchParams({ part });
+    return this.request(`/variables/sections?${params.toString()}`, { method: 'GET' });
+  }
+
+  async getVariableGroups(part: string, section: string) {
+    const params = new URLSearchParams({ part, section });
+    return this.request(`/variables/groups?${params.toString()}`, { method: 'GET' });
+  }
+
+  async getVariablesForSelection(part: string, section: string, group: string) {
+    const params = new URLSearchParams({ part, section, group });
+    return this.request(`/variables/variables?${params.toString()}`, { method: 'GET' });
+  }
+
   // Lists API - Set and Grouping
   async addSetValue(setValue: string) {
     return this.request('/lists/set', {

@@ -3155,3 +3155,137 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
         error_count=len(errors),
         errors=errors
     )
+
+
+@router.get("/variables/parts")
+async def get_variable_parts():
+    """
+    Get all distinct Part values from Variables.
+    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (p:Part)
+                RETURN DISTINCT p.name as part
+                ORDER BY p.name
+            """)
+            
+            parts = [record["part"] for record in result if record.get("part")]
+            return {"parts": parts}
+    except Exception as e:
+        print(f"Error fetching parts: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch parts: {str(e)}")
+
+
+@router.get("/variables/sections")
+async def get_variable_sections(part: str = None):
+    """
+    Get all distinct Section values for Variables that belong to the specified Part.
+    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    
+    Args:
+        part: The Part name to filter sections by
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    if not part:
+        raise HTTPException(status_code=400, detail="Part parameter is required")
+
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE v.section IS NOT NULL AND v.section <> ''
+                RETURN DISTINCT v.section as section
+                ORDER BY v.section
+            """, part=part)
+            
+            sections = [record["section"] for record in result if record.get("section")]
+            return {"sections": sections}
+    except Exception as e:
+        print(f"Error fetching sections for part {part}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch sections: {str(e)}")
+
+
+@router.get("/variables/groups")
+async def get_variable_groups(part: str = None, section: str = None):
+    """
+    Get all distinct Group values that:
+    1. Belong to the specified Part (via HAS_GROUP relationship)
+    2. Have Variables with the specified Section property
+    
+    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    
+    Args:
+        part: The Part name to filter groups by
+        section: The Section property value to filter groups by
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    if not part:
+        raise HTTPException(status_code=400, detail="Part parameter is required")
+    
+    if not section:
+        raise HTTPException(status_code=400, detail="Section parameter is required")
+
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE v.section = $section
+                RETURN DISTINCT g.name as group
+                ORDER BY g.name
+            """, part=part, section=section)
+            
+            groups = [record["group"] for record in result if record.get("group")]
+            return {"groups": groups}
+    except Exception as e:
+        print(f"Error fetching groups for part {part} and section {section}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch groups: {str(e)}")
+
+
+@router.get("/variables/variables")
+async def get_variables_for_selection(part: str = None, section: str = None, group: str = None):
+    """
+    Get all Variables that:
+    1. Belong to the specified Group (via HAS_VARIABLE relationship)
+    2. Have the specified Section property
+    3. The Group belongs to the specified Part
+    
+    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    
+    Args:
+        part: The Part name
+        section: The Section property value
+        group: The Group name
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    if not part or not section or not group:
+        raise HTTPException(status_code=400, detail="Part, Section, and Group parameters are required")
+
+    try:
+        with driver.session() as session:
+            result = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                WHERE v.section = $section
+                RETURN v.id as id, v.name as variable
+                ORDER BY v.name
+            """, part=part, section=section, group=group)
+            
+            variables = [{"id": record["id"], "name": record["variable"]} for record in result if record.get("id")]
+            return {"variables": variables}
+    except Exception as e:
+        print(f"Error fetching variables for part {part}, section {section}, group {group}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch variables: {str(e)}")

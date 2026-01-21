@@ -202,9 +202,79 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     return ['ALL', ...objects];
   };
 
+  // State for cascading dropdowns
+  const [partsList, setPartsList] = useState<string[]>([]);
+  const [sectionsList, setSectionsList] = useState<string[]>([]);
+  const [groupsList, setGroupsList] = useState<string[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState(false);
+  const [isLoadingSections, setIsLoadingSections] = useState(false);
+  const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+
+  // Load parts from API on mount
+  useEffect(() => {
+    const loadParts = async () => {
+      setIsLoadingParts(true);
+      try {
+        const response = await apiService.getVariableParts() as { parts: string[] };
+        setPartsList(response.parts || []);
+      } catch (error) {
+        console.error('Error loading parts:', error);
+        // Fallback to local data
+        const parts = [...new Set(allData.map(item => item.part))];
+        setPartsList(parts);
+      } finally {
+        setIsLoadingParts(false);
+      }
+    };
+    loadParts();
+  }, []);
+
+  // Load sections when part changes
+  useEffect(() => {
+    const loadSections = async () => {
+      if (!formData.part || formData.part === 'Keep Current Part') {
+        setSectionsList([]);
+        return;
+      }
+      setIsLoadingSections(true);
+      try {
+        const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
+        setSectionsList(response.sections || []);
+      } catch (error) {
+        console.error('Error loading sections:', error);
+        setSectionsList([]);
+      } finally {
+        setIsLoadingSections(false);
+      }
+    };
+    loadSections();
+  }, [formData.part]);
+
+  // Load groups when part and section change
+  useEffect(() => {
+    const loadGroups = async () => {
+      if (!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section') {
+        setGroupsList([]);
+        return;
+      }
+      setIsLoadingGroups(true);
+      try {
+        const response = await apiService.getVariableGroups(formData.part, formData.section) as { groups: string[] };
+        setGroupsList(response.groups || []);
+      } catch (error) {
+        console.error('Error loading groups:', error);
+        setGroupsList([]);
+      } finally {
+        setIsLoadingGroups(false);
+      }
+    };
+    loadGroups();
+  }, [formData.part, formData.section]);
+
   // Get distinct parts and groups from variables data
   const getDistinctParts = () => {
-    const parts = [...new Set(allData.map(item => item.part))];
+    // If we have parts from API, use those
+    const parts = partsList.length > 0 ? partsList : [...new Set(allData.map(item => item.part))];
     return ['Keep Current Part', ...parts];
   };
 
@@ -225,7 +295,12 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const getGroupsForPart = (part: string): string[] => {
     if (!part || part === 'Keep Current Part') return [];
     
-    // Get groups from existing variables data for this part
+    // If we have groups from API (based on part + section), use those
+    if (groupsList.length > 0 && formData.part === part && formData.section && formData.section !== 'Keep Current Section') {
+      return groupsList;
+    }
+    
+    // Otherwise fallback to local data
     const groupsFromData = [...new Set(
       allData
         .filter((item: any) => item.part === part && item.group)
@@ -254,7 +329,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const getDistinctSections = () => {
-    const sections = [...new Set(allData.map(item => item.section).filter(Boolean))];
+    // If we have sections from API, use those
+    const sections = sectionsList.length > 0 
+      ? sectionsList 
+      : [...new Set(allData.map(item => item.section).filter(Boolean))];
     return ['Keep Current Section', ...sections.sort()];
   };
 
@@ -677,7 +755,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     const saveData: Record<string, any> = {
       // Only include formData fields that have values
       ...(formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part' && { part: formData.part }),
-      ...(formData.section && formData.section.trim() !== '' && formData.section !== 'Keep current section' && { section: formData.section }),
+      ...(formData.section && formData.section.trim() !== '' && formData.section !== 'Keep Current Section' && { section: formData.section }),
       ...(formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group' && { group: formData.group }),
       ...(formData.variable && formData.variable.trim() !== '' && formData.variable !== 'Keep current variable' && { variable: formData.variable }),
       // Only include driver if it has a value
@@ -1069,7 +1147,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              disabled={isLoadingParts}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                isLoadingParts ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
@@ -1078,11 +1159,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               }}
             >
               <option value="">Keep Current Part</option>
-              {getDistinctParts().filter(p => p !== 'Keep Current Part').map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
+              {isLoadingParts ? (
+                <option value="">Loading...</option>
+              ) : (
+                getDistinctParts().filter(p => p !== 'Keep Current Part').map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -1105,9 +1190,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.section}
               onChange={(e) => handleChange('section', e.target.value)}
-              disabled={!formData.part || formData.part === 'Keep Current Part'}
+              disabled={!formData.part || formData.part === 'Keep Current Part' || isLoadingSections}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !formData.part || formData.part === 'Keep Current Part' ? 'opacity-50 cursor-not-allowed' : ''
+                !formData.part || formData.part === 'Keep Current Part' || isLoadingSections ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1116,11 +1201,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 backgroundSize: '16px'
               }}
             >
-              {getDistinctSections().map((option) => (
-                <option key={option} value={option === 'Keep Current Section' ? '' : option}>
-                  {option}
-                </option>
-              ))}
+              {isLoadingSections ? (
+                <option value="">Loading...</option>
+              ) : (
+                getDistinctSections().map((option) => (
+                  <option key={option} value={option === 'Keep Current Section' ? '' : option}>
+                    {option}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -1132,9 +1221,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
-                disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section'}
+                disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section' || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                  !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep current section' ? 'opacity-50 cursor-not-allowed' : ''
+                  !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section' || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1144,11 +1233,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 }}
               >
                 <option value="">Keep Current Group</option>
-                {getDistinctGroups().filter(g => g !== 'Keep Current Group').map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                {isLoadingGroups ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  getDistinctGroups().filter(g => g !== 'Keep Current Group').map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
             <div className="w-32 flex-shrink-0">
