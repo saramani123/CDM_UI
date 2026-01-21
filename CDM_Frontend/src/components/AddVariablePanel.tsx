@@ -154,27 +154,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     return {};
   };
 
-  // Get groups filtered by part
-  const getGroupsForPart = (part: string): string[] => {
-    if (!part) return [];
-    
-    // Get groups from existing variables data for this part
-    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
-    const groupsFromData = [...new Set(
-      variablesData
-        .filter((item: any) => item.part === part && item.group)
-        .map((item: any) => item.group)
-    )].filter(Boolean) as string[];
-    
-    // Get groups from localStorage associations
-    const associations = getPartGroupAssociations();
-    const groupsFromStorage = associations[part] || [];
-    
-    // Combine and deduplicate
-    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
-    return allGroups;
-  };
-
   // State for cascading dropdowns
   const [partsList, setPartsList] = useState<string[]>([]);
   const [sectionsList, setSectionsList] = useState<string[]>([]);
