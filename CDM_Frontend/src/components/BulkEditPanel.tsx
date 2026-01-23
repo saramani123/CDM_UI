@@ -2517,10 +2517,17 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
+              // Ensure textarea gets focus - browser will handle cursor positioning
+              if (variantsTextareaRef.current) {
+                variantsTextareaRef.current.focus();
+                isTextareaFocusedRef.current = true;
+              }
             }}
             onMouseDown={(e) => {
               e.stopPropagation();
               e.nativeEvent.stopImmediatePropagation();
+              // Don't prevent default - let the browser handle focus and cursor positioning naturally
+              isTextareaFocusedRef.current = true;
             }}
             onFocus={(e) => {
               e.stopPropagation();
@@ -2536,9 +2543,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               const clickedOutside = !relatedTarget || 
                 (relatedTarget.tagName !== 'TEXTAREA' && 
                  relatedTarget.tagName !== 'INPUT' && 
-                 !relatedTarget.isContentEditable);
+                 !relatedTarget.isContentEditable &&
+                 !relatedTarget.closest('button') &&
+                 !relatedTarget.closest('[role="button"]'));
               
-              // Only restore focus if it was recent typing and user didn't click on another input
+              // Only restore focus if it was recent typing and user didn't click on another input/button
               if (wasRecentTyping && clickedOutside && variantsTextareaRef.current && isTextareaFocusedRef.current) {
                 // Restore focus after a brief delay to let React finish its render cycle
                 setTimeout(() => {
@@ -2546,8 +2555,8 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                     variantsTextareaRef.current.focus();
                   }
                 }, 10);
-              } else if (!wasRecentTyping) {
-                // User intentionally blurred, don't restore
+              } else if (!wasRecentTyping && !clickedOutside) {
+                // User intentionally blurred by clicking elsewhere, don't restore
                 isTextareaFocusedRef.current = false;
               }
             }}

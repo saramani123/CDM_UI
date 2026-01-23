@@ -390,11 +390,15 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }
   }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.relationshipsList]);
 
+  // Loading state for variants
+  const [isLoadingVariants, setIsLoadingVariants] = useState(false);
+  
   // Load variants when selectedObject changes
   const loadVariantsForObject = React.useCallback(async (objectId: string, object: any, skipClear: boolean = false) => {
     // Only clear variants text if we're loading a different object (not just refreshing)
     if (!skipClear) {
       setVariantsText('');
+      setIsLoadingVariants(true);
     }
     
     console.log('MetadataPanel: Loading variants for object:', object?.object, 'id:', objectId, 'skipClear:', skipClear);
@@ -404,6 +408,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       console.log('MetadataPanel: Using variants from cloned object data:', object.variantsList);
       const variantsTextContent = (object.variantsList || []).map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
       setVariantsText(variantsTextContent);
+      setIsLoadingVariants(false);
       return;
     }
     
@@ -412,6 +417,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       console.log('MetadataPanel: Using variants from object data:', object.variantsList);
       const variantsTextContent = object.variantsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
       setVariantsText(variantsTextContent);
+      setIsLoadingVariants(false);
       return;
     }
     
@@ -423,11 +429,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       // Convert variants array to multiline text
       const variantsTextContent = variantsList.map(v => v.name).join('\n');
       setVariantsText(variantsTextContent);
+      setIsLoadingVariants(false);
     } catch (error) {
       console.error('MetadataPanel: failed to load variants:', error);
       if (!skipClear) {
         setVariantsText('');
       }
+      setIsLoadingVariants(false);
     }
   }, []);
   
@@ -439,8 +447,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       const isNewObject = lastLoadedObjectIdRef.current !== selectedObject.id;
       
       if (isNewObject) {
-        // Different object - clear and load fresh
+        // Different object - clear immediately and load fresh
         lastLoadedObjectIdRef.current = selectedObject.id;
+        setVariantsText(''); // Clear immediately
+        setIsLoadingVariants(true); // Show loading
         loadVariantsForObject(selectedObject.id, selectedObject, false);
       } else {
         // Same object, just update variants if they changed (e.g., after save)
@@ -448,6 +458,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         if (selectedObject?.variantsList && Array.isArray(selectedObject.variantsList)) {
           const variantsTextContent = selectedObject.variantsList.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
           setVariantsText(variantsTextContent);
+          setIsLoadingVariants(false);
         } else {
           // No variantsList in object, reload from API but don't clear first
           loadVariantsForObject(selectedObject.id, selectedObject, true);
@@ -456,6 +467,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     } else {
       lastLoadedObjectIdRef.current = null;
       setVariantsText('');
+      setIsLoadingVariants(false);
     }
   }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.variantsList, selectedObject?.variants, loadVariantsForObject]);
   
@@ -712,6 +724,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const [groupsCache, setGroupsCache] = useState<Record<string, string[]>>({});
   const [variablesCache, setVariablesCache] = useState<Record<string, Array<{ id: string; name: string }>>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  
+  // Refs to track pending loads and prevent infinite loops
+  const pendingLoadsRef = useRef<Set<string>>(new Set());
 
   // Load parts from API on mount
   useEffect(() => {
@@ -740,6 +755,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return sectionsCache[cacheKey];
     }
 
+    // Prevent duplicate loads
+    if (pendingLoadsRef.current.has(cacheKey)) {
+      return [];
+    }
+    pendingLoadsRef.current.add(cacheKey);
+
     setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
     try {
       const response = await apiService.getVariableSections(part) as { sections: string[] };
@@ -757,6 +778,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return [];
     } finally {
       setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+      pendingLoadsRef.current.delete(cacheKey);
     }
   };
 
@@ -768,6 +790,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     if (groupsCache[cacheKey]) {
       return groupsCache[cacheKey];
     }
+
+    // Prevent duplicate loads
+    if (pendingLoadsRef.current.has(cacheKey)) {
+      return [];
+    }
+    pendingLoadsRef.current.add(cacheKey);
 
     setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
     try {
@@ -786,6 +814,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return [];
     } finally {
       setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+      pendingLoadsRef.current.delete(cacheKey);
     }
   };
 
@@ -797,6 +826,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     if (variablesCache[cacheKey]) {
       return variablesCache[cacheKey];
     }
+
+    // Prevent duplicate loads
+    if (pendingLoadsRef.current.has(cacheKey)) {
+      return [];
+    }
+    pendingLoadsRef.current.add(cacheKey);
 
     setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
     try {
@@ -817,6 +852,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return [];
     } finally {
       setLoadingStates(prev => ({ ...prev, [cacheKey]: false }));
+      pendingLoadsRef.current.delete(cacheKey);
     }
   };
 
@@ -832,40 +868,25 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const getSectionsForPart = (part: string): string[] => {
     if (!part) return [];
     const cacheKey = `part:${part}`;
-    // Return cached data if available, otherwise trigger load
-    if (sectionsCache[cacheKey]) {
-      return sectionsCache[cacheKey];
-    }
-    // Trigger async load (will update cache)
-    loadSectionsForPart(part);
-    // Return empty array while loading (will update when cache is populated)
-    return [];
+    // Only return cached data - don't trigger loads during render
+    // Loading is handled by useEffect hooks
+    return sectionsCache[cacheKey] || [];
   };
 
   const getGroupsForPartAndSection = (part: string, section: string): string[] => {
     if (!part || !section) return [];
     const cacheKey = `part:${part}|section:${section}`;
-    // Return cached data if available, otherwise trigger load
-    if (groupsCache[cacheKey]) {
-      return groupsCache[cacheKey];
-    }
-    // Trigger async load (will update cache)
-    loadGroupsForPartAndSection(part, section);
-    // Return empty array while loading (will update when cache is populated)
-    return [];
+    // Only return cached data - don't trigger loads during render
+    // Loading is handled by useEffect hooks
+    return groupsCache[cacheKey] || [];
   };
 
   const getVariablesForPartSectionAndGroup = (part: string, section: string, group: string): Array<{ id: string; name: string }> => {
     if (!part || !section || !group) return [];
     const cacheKey = `part:${part}|section:${section}|group:${group}`;
-    // Return cached data if available, otherwise trigger load
-    if (variablesCache[cacheKey]) {
-      return variablesCache[cacheKey];
-    }
-    // Trigger async load (will update cache)
-    loadVariablesForPartSectionAndGroup(part, section, group);
-    // Return empty array while loading (will update when cache is populated)
-    return [];
+    // Only return cached data - don't trigger loads during render
+    // Loading is handled by useEffect hooks
+    return variablesCache[cacheKey] || [];
   };
 
   // Legacy function for backward compatibility (used in some places)
@@ -2486,12 +2507,18 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           </div>
         }
       >
-        <textarea
-          ref={variantsTextareaRef}
-          value={variantsText}
+        {isLoadingVariants ? (
+          <div className="flex items-center justify-center py-8">
+            <LoadingSpinner message="Loading variants..." />
+          </div>
+        ) : (
+          <textarea
+            ref={variantsTextareaRef}
+            value={variantsText}
           onChange={(e) => {
             const textarea = e.target as HTMLTextAreaElement;
             const cursorPosition = textarea.selectionStart;
+            const selectionEnd = textarea.selectionEnd;
             lastChangeTimeRef.current = Date.now();
             setVariantsText(e.target.value);
             // Restore cursor position and focus after state update
@@ -2500,8 +2527,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 variantsTextareaRef.current.focus();
                 // Try to restore cursor position, but if it's out of bounds, put it at the end
                 const maxPos = variantsTextareaRef.current.value.length;
-                const safePos = Math.min(cursorPosition, maxPos);
-                variantsTextareaRef.current.setSelectionRange(safePos, safePos);
+                const safeStart = Math.min(cursorPosition, maxPos);
+                const safeEnd = Math.min(selectionEnd, maxPos);
+                variantsTextareaRef.current.setSelectionRange(safeStart, safeEnd);
               }
             });
           }}
@@ -2521,10 +2549,17 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           onClick={(e) => {
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation();
+            // Ensure textarea gets focus - browser will handle cursor positioning
+            if (variantsTextareaRef.current) {
+              variantsTextareaRef.current.focus();
+              isTextareaFocusedRef.current = true;
+            }
           }}
           onMouseDown={(e) => {
             e.stopPropagation();
             e.nativeEvent.stopImmediatePropagation();
+            // Don't prevent default - let the browser handle focus and cursor positioning naturally
+            isTextareaFocusedRef.current = true;
           }}
           onFocus={(e) => {
             e.stopPropagation();
@@ -2540,9 +2575,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             const clickedOutside = !relatedTarget || 
               (relatedTarget.tagName !== 'TEXTAREA' && 
                relatedTarget.tagName !== 'INPUT' && 
-               !relatedTarget.isContentEditable);
+               !relatedTarget.isContentEditable &&
+               !relatedTarget.closest('button') &&
+               !relatedTarget.closest('[role="button"]'));
             
-            // Only restore focus if it was recent typing and user didn't click on another input
+            // Only restore focus if it was recent typing and user didn't click on another input/button
             if (wasRecentTyping && clickedOutside && variantsTextareaRef.current && isTextareaFocusedRef.current) {
               // Restore focus after a brief delay to let React finish its render cycle
               setTimeout(() => {
@@ -2550,8 +2587,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                   variantsTextareaRef.current.focus();
                 }
               }, 10);
-            } else if (!wasRecentTyping) {
-              // User intentionally blurred, don't restore
+            } else if (!wasRecentTyping && !clickedOutside) {
+              // User intentionally blurred by clicking elsewhere, don't restore
               isTextareaFocusedRef.current = false;
             }
           }}
@@ -2562,6 +2599,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         />
+        )}
       </CollapsibleSection>
         </>
       )}

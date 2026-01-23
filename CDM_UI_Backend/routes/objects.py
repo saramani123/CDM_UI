@@ -1306,35 +1306,44 @@ async def update_object(
                         else:
                             variants_to_create_new.append(variant_name)
                     
-                    # Create new variants in bulk
+                    # Create new variants in bulk using UNWIND for better performance
                     if variants_to_create_new:
-                        print(f"DEBUG: Creating {len(variants_to_create_new)} new variants")
-                        for variant_name in variants_to_create_new:
-                            variant_id = str(uuid.uuid4())
-                            session.run("""
-                                CREATE (v:Variant {
-                                    id: $variant_id,
-                                    name: $variant_name
-                                })
-                            """, variant_id=variant_id, variant_name=variant_name)
-                            
-                            # Connect immediately after creating
-                            session.run("""
-                                MATCH (o:Object {id: $object_id})
-                                MATCH (v:Variant {id: $variant_id})
-                                CREATE (o)-[:HAS_VARIANT]->(v)
-                            """, object_id=object_id, variant_id=variant_id)
+                        print(f"DEBUG: Creating {len(variants_to_create_new)} new variants in batch")
+                        # Generate IDs for all variants upfront
+                        variants_with_ids = [
+                            {"id": str(uuid.uuid4()), "name": name}
+                            for name in variants_to_create_new
+                        ]
+                        
+                        # Create all variants in a single query
+                        session.run("""
+                            UNWIND $variants AS variant
+                            CREATE (v:Variant {
+                                id: variant.id,
+                                name: variant.name
+                            })
+                            RETURN v.id as id, v.name as name
+                        """, variants=variants_with_ids)
+                        
+                        # Connect all new variants to the object in a single query
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            UNWIND $variant_ids AS variant_id
+                            MATCH (v:Variant {id: variant_id})
+                            CREATE (o)-[:HAS_VARIANT]->(v)
+                        """, object_id=object_id, variant_ids=[v["id"] for v in variants_with_ids])
                     
-                    # Connect existing global variants in bulk
+                    # Connect existing global variants in bulk using UNWIND
                     if variants_to_connect:
-                        print(f"DEBUG: Connecting {len(variants_to_connect)} existing variants")
-                        for variant_info in variants_to_connect:
-                            session.run("""
-                                MATCH (o:Object {id: $object_id})
-                                MATCH (v:Variant {id: $variant_id})
-                                WHERE NOT (o)-[:HAS_VARIANT]->(v)
-                                CREATE (o)-[:HAS_VARIANT]->(v)
-                            """, object_id=object_id, variant_id=variant_info["variant_id"])
+                        print(f"DEBUG: Connecting {len(variants_to_connect)} existing variants in batch")
+                        variant_ids_to_connect = [v["variant_id"] for v in variants_to_connect]
+                        session.run("""
+                            MATCH (o:Object {id: $object_id})
+                            UNWIND $variant_ids AS variant_id
+                            MATCH (v:Variant {id: variant_id})
+                            WHERE NOT (o)-[:HAS_VARIANT]->(v)
+                            CREATE (o)-[:HAS_VARIANT]->(v)
+                        """, object_id=object_id, variant_ids=variant_ids_to_connect)
                     
                     # Update variant count after all variants are processed
                     if variants_to_create_new or variants_to_connect:
