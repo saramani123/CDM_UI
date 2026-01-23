@@ -21,7 +21,7 @@ Options:
 import sys
 import os
 from typing import List, Dict, Tuple, Any
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, WRITE_ACCESS
 
 # Add parent directory to path to import db module
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
