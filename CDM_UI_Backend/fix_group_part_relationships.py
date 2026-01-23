@@ -164,7 +164,8 @@ def verify_variable_integrity(session) -> Dict[str, Any]:
     """
     
     result1 = session.run(query1)
-    multi_group_vars = result1.single()['multi_group_vars'] if result1.single() else 0
+    record1 = result1.single()
+    multi_group_vars = record1['multi_group_vars'] if record1 else 0
     
     # Check for groups with multiple parts
     query2 = """
@@ -176,7 +177,8 @@ def verify_variable_integrity(session) -> Dict[str, Any]:
     """
     
     result2 = session.run(query2)
-    multi_part_groups = result2.single()['multi_part_groups'] if result2.single() else 0
+    record2 = result2.single()
+    multi_part_groups = record2['multi_part_groups'] if record2 else 0
     
     # Check for variables with no group
     query3 = """
@@ -186,7 +188,8 @@ def verify_variable_integrity(session) -> Dict[str, Any]:
     """
     
     result3 = session.run(query3)
-    orphaned_vars = result3.single()['orphaned_vars'] if result3.single() else 0
+    record3 = result3.single()
+    orphaned_vars = record3['orphaned_vars'] if record3 else 0
     
     return {
         'variables_with_multiple_groups': multi_group_vars,
