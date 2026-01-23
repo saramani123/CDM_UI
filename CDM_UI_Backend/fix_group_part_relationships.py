@@ -183,7 +183,9 @@ def verify_variable_integrity(session) -> Dict[str, Any]:
     # Check for variables with no group
     query3 = """
         MATCH (v:Variable)
-        WHERE NOT (g:Group)-[:HAS_VARIABLE]->(v)
+        WHERE NOT EXISTS {
+            MATCH (g:Group)-[:HAS_VARIABLE]->(v)
+        }
         RETURN count(v) as orphaned_vars
     """
     
