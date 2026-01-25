@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter } from 'lucide-react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter, GripVertical } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
 import { MetadataPanel } from './components/MetadataPanel';
@@ -92,7 +92,7 @@ function App() {
   const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
   
   // Use API hook for metadata data
-  const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem } = useMetadata();
+  const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem, deleteMetadataItem, reorderMetadata } = useMetadata();
   
   // Use API hook for heuristics data
   const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem } = useHeuristics();
@@ -131,6 +131,16 @@ function App() {
   const [isAddSourcesOpen, setIsAddSourcesOpen] = useState(false);
   const [sourceTypes, setSourceTypes] = useState<string[]>([]);
   
+  // Required metadata concepts - handle both "Group-Type" and "G-Type", "List Set" and "Set", "List Grouping" and "Grouping"
+  const REQUIRED_METADATA_CONCEPTS = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping'];
+  const isRequiredMetadataItem = (concept: string) => {
+    // Handle variations in concept names
+    if (concept === 'Group-Type') return true;  // Also accept Group-Type
+    if (concept === 'List Set') return true;   // Also accept List Set
+    if (concept === 'List Grouping') return true; // Also accept List Grouping
+    return REQUIRED_METADATA_CONCEPTS.includes(concept);
+  };
+
   // Metadata tab columns - larger widths for better visibility
   const metadataColumns = [
     { 
@@ -140,9 +150,10 @@ function App() {
       filterable: true, 
       width: '100px',
       render: (row: MetadataData) => {
-        // Metadata doesn't have sector/domain/country in backend yet, but we'll show empty for now
         const sector = (row as any).sector || '';
-        return <span>{sector === 'All' || sector === 'all' ? 'ALL' : sector || '-'}</span>;
+        // Check for ALL in any case variation
+        const isAll = sector.toUpperCase() === 'ALL';
+        return <span>{isAll ? 'ALL' : sector || '-'}</span>;
       }
     },
     { 
@@ -153,7 +164,9 @@ function App() {
       width: '100px',
       render: (row: MetadataData) => {
         const domain = (row as any).domain || '';
-        return <span>{domain === 'All' || domain === 'all' ? 'ALL' : domain || '-'}</span>;
+        // Check for ALL in any case variation
+        const isAll = domain.toUpperCase() === 'ALL';
+        return <span>{isAll ? 'ALL' : domain || '-'}</span>;
       }
     },
     { 
@@ -164,13 +177,42 @@ function App() {
       width: '100px',
       render: (row: MetadataData) => {
         const country = (row as any).country || '';
-        return <span>{country === 'All' || country === 'all' ? 'ALL' : country || '-'}</span>;
+        // Check for ALL in any case variation
+        const isAll = country.toUpperCase() === 'ALL';
+        return <span>{isAll ? 'ALL' : country || '-'}</span>;
       }
     },
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
     { key: 'concept', title: 'Concept', sortable: true, filterable: true, width: '350px' },
     { key: 'number', title: 'Number', sortable: true, filterable: true, width: '200px' },
-    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' }
+    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' },
+    {
+      key: 'actions',
+      title: '',
+      sortable: false,
+      filterable: false,
+      width: '80px',
+      render: (row: MetadataData) => {
+        const isRequired = isRequiredMetadataItem(row.concept) || (row as any).isRequired;
+        return (
+          <div className="flex items-center gap-2 justify-center">
+            <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
+          {!isRequired && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteMetadata(row.id);
+              }}
+              className="text-ag-dark-error hover:text-red-400 transition-colors"
+              title="Delete"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          </div>
+        );
+      }
+    }
   ];
   
   // Heuristics tab columns
@@ -4820,6 +4862,29 @@ function App() {
     setIsMetadataDetailModalOpen(true);
   };
 
+  const handleDeleteMetadata = async (id: string) => {
+    try {
+      const item = apiMetadata.find(m => m.id === id);
+      if (item && isRequiredMetadataItem(item.concept)) {
+        alert(`Cannot delete required metadata item: ${item.concept}. This item is required for the platform to function.`);
+        return;
+      }
+      
+      if (confirm('Are you sure you want to delete this metadata item?')) {
+        await deleteMetadataItem(id);
+        await fetchMetadata();
+      }
+    } catch (error: any) {
+      alert(error.message || 'Failed to delete metadata item');
+    }
+  };
+
+  const handleMetadataReorder = (newData: Record<string, any>[]) => {
+    // Update metadata order immediately
+    const metadataArray = newData as MetadataData[];
+    reorderMetadata(metadataArray);
+  };
+
   const handleHeuristicsRowClick = (row: HeuristicsData) => {
     setSelectedHeuristicsRow(row);
   };
@@ -5650,14 +5715,15 @@ function App() {
                 </div>
               </div>
             ) : apiMetadata && apiMetadata.length > 0 ? (
-              <div className="flex-1 min-h-0 overflow-auto" style={{ height: '100%' }}>
+              <div className="flex-1 min-h-0" style={{ height: '100%', overflow: 'hidden' }}>
                 <div style={{ 
                   transform: 'scale(1.3)', 
                   transformOrigin: 'top left',
                   width: '76.92%',
-                  minHeight: '76.92%'
+                  minHeight: '76.92%',
+                  height: '100%'
                 }}>
-                  <div style={{ fontSize: '18px' }}>
+                  <div style={{ fontSize: '18px', height: '100%' }}>
                     <DataGrid
                       key="metadata"
                       columns={metadataColumns}
@@ -5667,6 +5733,8 @@ function App() {
                           handleMetadataRowClick(rows[0] as MetadataData);
                         }
                       }}
+                      onReorder={handleMetadataReorder}
+                      onDelete={(row) => handleDeleteMetadata(row.id)}
                       selectedRows={[]}
                       affectedIds={new Set()}
                       deletedDriverType={null}
@@ -5674,7 +5742,7 @@ function App() {
                       isCustomSortActive={false}
                       isColumnSortActive={false}
                       highlightCurrentObject={false}
-                      showActionsColumn={false}
+                      showActionsColumn={true}
                       selectionMode="row"
                       gridType="metadata"
                     />

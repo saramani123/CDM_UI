@@ -64,7 +64,7 @@ interface DataGridProps {
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
   onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
   onIsGroupKeyChange?: (rowId: string, checked: boolean) => void; // Handler for isGroupKey checkbox changes
-  gridType?: 'objects' | 'variables' | 'lists'; // Add grid type to separate localStorage keys
+  gridType?: 'objects' | 'variables' | 'lists' | 'metadata'; // Add grid type to separate localStorage keys
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
   onResetHandlersReady?: (handlers: { clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean }) => void;
@@ -101,6 +101,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
 }) => {
   console.log('🔍 DataGrid - received affectedIds:', Array.from(affectedIds));
   console.log('🔍 DataGrid - received deletedDriverType:', deletedDriverType);
+  
+  // Helper function to check if a metadata row is required
+  const isRequiredMetadataRow = (row: Record<string, any>): boolean => {
+    if (gridType !== 'metadata') return false;
+    const concept = (row as any).concept;
+    if (!concept) return false;
+    const requiredConcepts = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping'];
+    return (row as any).isRequired || requiredConcepts.includes(concept);
+  };
   // Load persisted state from localStorage - use grid-specific keys
   const loadPersistedDataGridState = () => {
     try {
@@ -1212,13 +1221,15 @@ export const DataGrid: React.FC<DataGridProps> = ({
   const handleRowDrop = (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     if (draggedRow && onReorder) {
-      const currentData = [...filteredAndSortedData];
+      // Use the original data array, not filteredAndSortedData, to preserve the actual order
+      const currentData = [...data];
       const dragIndex = currentData.findIndex(item => item.id === draggedRow.id);
       
       if (dragIndex !== -1 && dragIndex !== dropIndex) {
         // Remove dragged item and insert at new position
         const [removed] = currentData.splice(dragIndex, 1);
         currentData.splice(dropIndex, 0, removed);
+        console.log('🔄 Reordering metadata:', { dragIndex, dropIndex, newOrder: currentData.map(r => ({ id: r.id, concept: (r as any).concept })) });
         onReorder(currentData);
       }
     }
@@ -1393,12 +1404,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
         {/* Grid Header - Fixed at top */}
         <div 
           ref={headerScrollRef}
-          className="bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 overflow-x-auto"
+          className={`bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 ${gridType === 'metadata' ? 'overflow-x-hidden' : 'overflow-x-auto'}`}
           style={{ overflowY: 'hidden' }}
         >
-          <div className="flex text-sm font-medium text-ag-dark-text min-w-max">
+          <div className={`flex text-sm font-medium text-ag-dark-text ${gridType === 'metadata' ? 'w-full' : 'min-w-max'}`}>
               {selectionMode === 'checkbox' && !relationshipData && (
-                <div className="w-10 flex items-center justify-center p-2">
+                <div className="w-10 flex items-center justify-center p-2 flex-shrink-0">
                   <input
                     type="checkbox"
                     checked={localSelectedRows.length === filteredAndSortedData.length && filteredAndSortedData.length > 0}
@@ -1420,7 +1431,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 
                 // Check if this column should be flexible (width >= 9999 indicates flexible)
                 const isFlexibleColumn = parsedWidth >= 9999;
-                const isLastColumn = colIndex === columns.length - 1 && !showActionsColumn && !onReorder;
+                // For metadata, the actions column is part of columns array, so last column check is simpler
+                const isLastColumn = colIndex === columns.length - 1;
                 
                 // For flexible columns, render a regular div instead of ResizableColumn
                 if (isFlexibleColumn && isLastColumn) {
@@ -1428,7 +1440,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     <div
                       key={`${gridType}-${column.key}`}
                       className={`flex items-center justify-between px-4 py-2 box-border ${
-                        colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                        colIndex < columns.length - 1 ? 'border-r border-ag-dark-border' : ''
                       } whitespace-nowrap ${getColumnHeaderClass(column)} flex-1`}
                       style={{ flex: '1 1 auto', minWidth: 0 }}
                     >
@@ -1466,8 +1478,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   maxWidth={1000}
                   onResize={(newWidth) => handleColumnResize(column.key, newWidth)}
                   throttleUpdates={isLargeGrid}
-                  className={`flex items-center justify-between px-4 py-2 box-border ${
-                    colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                  className={`flex items-center justify-between px-4 py-2 box-border flex-shrink-0 ${
+                    colIndex < columns.length - 1 ? 'border-r border-ag-dark-border' : ''
                   } whitespace-nowrap ${getColumnHeaderClass(column)}`}
                 >
                   <span className="text-ag-dark-text font-medium text-xs pr-2 flex-1" style={{
@@ -1495,12 +1507,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 );
               })}
               {showActionsColumn && (
-                <div className="w-20 text-center text-ag-dark-text px-4 py-2">
+                <div className="w-20 text-center text-ag-dark-text px-4 py-2 flex-shrink-0">
                   <span className="text-ag-dark-text font-medium text-xs">Actions</span>
                 </div>
               )}
               {onReorder && (
-                <div className="w-12 text-center text-ag-dark-text px-4 py-3">
+                <div className="w-12 text-center text-ag-dark-text px-4 py-3 flex-shrink-0">
                   <GripVertical className="w-4 h-4 mx-auto text-ag-dark-text-secondary" />
                 </div>
               )}
@@ -1510,17 +1522,17 @@ export const DataGrid: React.FC<DataGridProps> = ({
         {/* Grid Body - Scrollable */}
         <div 
           ref={bodyScrollRef}
-          className="flex-1 overflow-x-auto overflow-y-auto" 
+          className={`flex-1 ${gridType === 'metadata' ? 'overflow-auto' : 'overflow-x-auto overflow-y-auto'}`} 
           style={{ minHeight: 0 }}
         >
-          <div className="min-w-max">
+          <div className={gridType === 'metadata' ? 'w-full' : 'min-w-max'}>
             {filteredAndSortedData.map((row, index) => (
               <div
                 key={row.id || index}
-                draggable={onReorder ? true : false}
-                onDragStart={() => onReorder && handleRowDragStart(row)}
-                onDragOver={(e) => onReorder && handleRowDragOver(e, index)}
-                onDrop={(e) => onReorder && handleRowDrop(e, index)}
+                draggable={onReorder && !isRequiredMetadataRow(row) ? true : false}
+                onDragStart={() => onReorder && !isRequiredMetadataRow(row) && handleRowDragStart(row)}
+                onDragOver={(e) => onReorder && !isRequiredMetadataRow(row) && handleRowDragOver(e, index)}
+                onDrop={(e) => onReorder && !isRequiredMetadataRow(row) && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
                 onClick={(e) => {
                   // Prevent row click for tier lists (lists with hasIncomingTier)
@@ -1577,8 +1589,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     }
                   }
                 }}
-                className={`flex border-b border-ag-dark-border transition-colors min-w-full ${
-                  // Tier lists (lists with hasIncomingTier) - grey background, not clickable
+                className={`flex border-b border-ag-dark-border transition-colors ${gridType === 'metadata' ? 'w-full' : 'min-w-full'} ${
+                  // Required metadata rows - darker background (inverse: required = darker, non-required = lighter)
+                  isRequiredMetadataRow(row)
+                    ? 'bg-gray-800 bg-opacity-70 cursor-default'
+                    : // Non-required metadata rows - lighter background
+                  gridType === 'metadata'
+                    ? 'bg-ag-dark-surface hover:bg-ag-dark-bg cursor-pointer'
+                    : // Tier lists (lists with hasIncomingTier) - grey background, not clickable
                   gridType === 'lists' && (row as any).hasIncomingTier
                     ? 'bg-gray-800 bg-opacity-40 cursor-not-allowed opacity-75'
                     : 'hover:bg-ag-dark-bg cursor-pointer'
@@ -1609,7 +1627,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 }`}
               >
                 {selectionMode === 'checkbox' && !relationshipData && (
-                  <div className="w-10 flex items-center justify-center p-1.5">
+                  <div className="w-10 flex items-center justify-center p-1.5 flex-shrink-0">
                     <input
                       type="checkbox"
                       checked={isRowSelected(row)}
@@ -1628,7 +1646,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   
                   // Check if this column should be flexible (width >= 9999 indicates flexible)
                   const isFlexibleColumn = parsedWidth >= 9999;
-                  const isLastColumn = colIndex === columns.length - 1 && !showActionsColumn && !onReorder;
+                  // For metadata, the actions column is part of columns array, so last column check is simpler
+                  const isLastColumn = colIndex === columns.length - 1;
                   
                   const cellWidth = isFlexibleColumn && isLastColumn
                     ? undefined // Let flex handle it
@@ -1640,13 +1659,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   <div
                     key={`${row.id || index}-${column.key}`}
                     className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 box-border ${
-                      colIndex < columns.length - 1 || showActionsColumn || onReorder ? 'border-r border-ag-dark-border' : ''
+                      colIndex < columns.length - 1 ? 'border-r border-ag-dark-border' : ''
                     } ${
                       ['relationships', 'variants', 'variables'].includes(column.key) 
                         ? 'justify-end' 
                         : 'justify-start'
-                    } ${isFlexibleColumn && isLastColumn ? 'flex-1' : ''}`}
-                    style={{ 
+                    } ${isFlexibleColumn && isLastColumn ? 'flex-1' : 'flex-shrink-0'}`}
+                    style={{  
                       ...(cellWidth ? { width: cellWidth } : { flex: '1 1 auto', minWidth: 0 }), 
                       boxSizing: 'border-box',
                       overflow: 'hidden',
@@ -1839,7 +1858,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   );
                 })}
                 {showActionsColumn && (
-                  <div className="w-20 flex items-center justify-center gap-2 px-2 py-1.5">
+                  <div className="w-20 flex items-center justify-center gap-2 px-2 py-1.5 flex-shrink-0">
                     {onClone && (gridType === 'objects' || gridType === 'variables') && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onClone?.(row); }}
@@ -1851,16 +1870,24 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); onDelete?.(row); }}
-                      className="text-ag-dark-error hover:text-red-400 transition-colors"
-                      title="Delete"
+                      className={`text-ag-dark-error hover:text-red-400 transition-colors ${
+                        isRequiredMetadataRow(row)
+                          ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
+                      }`}
+                      disabled={isRequiredMetadataRow(row)}
+                      title={isRequiredMetadataRow(row)
+                        ? 'Cannot delete required row' : 'Delete'}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 )}
                 {onReorder && (
-                  <div className="w-12 flex items-center justify-center px-4 py-2">
-                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
+                  <div className="w-12 flex items-center justify-center px-4 py-2 flex-shrink-0">
+                    <GripVertical className={`w-4 h-4 text-ag-dark-text-secondary ${
+                      isRequiredMetadataRow(row)
+                        ? 'opacity-30 cursor-not-allowed' : 'cursor-move'
+                    }`} />
                   </div>
                 )}
               </div>
