@@ -14,13 +14,13 @@
     "id": "2",
     "layer": "Format",
     "concept": "Vulqan",
-    "number": "",
-    "examples": "",
+    "number": "25",
+    "examples": "Email, Phone, URL, Zip, Binary, CSV, JSON, PDF, Text, XLS, Name, Private, Public, Flag, Specific, Static, Currency, Decimal, Integer, Percentage, Blood, Inter, Intra, Date, DateTime",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 2, \"columns\": [\"Format V-I\", \"Format V-II\"], \"rows\": []}"
+    "detailData": "{\"levels\":3,\"columns\":[\"Format V-I\",\"Format V-II\",\"Definition\"],\"rows\":[[\"Directory\",\"Email\",\"i am\"],[\"Directory\",\"Phone\",\"testing\"],[\"Directory\",\"URL\",\"\"],[\"Directory\",\"Zip\",\"\"],[\"Freeform\",\"Binary\",\"\"],[\"Freeform\",\"CSV\",\"\"],[\"Freeform\",\"JSON\",\"\"],[\"Freeform\",\"PDF\",\"\"],[\"Freeform\",\"Text\",\"\"],[\"Freeform\",\"XLS\",\"\"],[\"ID\",\"Name\",\"\"],[\"ID\",\"Private\",\"\"],[\"ID\",\"Public\",\"\"],[\"List\",\"Flag\",\"\"],[\"List\",\"Specific\",\"\"],[\"List\",\"Static\",\"\"],[\"Number\",\"Currency\",\"\"],[\"Number\",\"Decimal\",\"\"],[\"Number\",\"Integer\",\"\"],[\"Number\",\"Percentage\",\"\"],[\"Reference\",\"Blood\",\"\"],[\"Reference\",\"Inter\",\"\"],[\"Reference\",\"Intra\",\"\"],[\"Time\",\"Date\",\"\"],[\"Time\",\"DateTime\",\"\"]]}"
   },
   {
     "id": "3",
@@ -48,25 +48,25 @@
     "id": "5",
     "layer": "Ontology",
     "concept": "Being",
-    "number": "",
-    "examples": "",
+    "number": "13",
+    "examples": "Adjunct, Cookie, Master, Mate, Process, Roster, Rule, Subby, Subordinate, Test, boo, bug, googoogas",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 1, \"columns\": [\"Being\"], \"rows\": []}"
+    "detailData": "{\"levels\":2,\"columns\":[\"Being\",\"Definition\"],\"rows\":[[\"Adjunct\",\"goo\"],[\"Cookie\",\"moo\"],[\"Master\",\"snoo\"],[\"Mate\",\"\"],[\"Process\",\"\"],[\"Roster\",\"\"],[\"Rule\",\"\"],[\"Subby\",\"\"],[\"Subordinate\",\"\"],[\"Test\",\"\"],[\"boo\",\"\"],[\"bug\",\"\"],[\"googoogas\",\"\"]]}"
   },
   {
     "id": "6",
     "layer": "Ontology",
     "concept": "Avatar",
-    "number": "20",
-    "examples": "Company, Customer, Product, Employees, Supplier, Person, Thing, Reference, Register, Activity, Transaction, Payment, Posting, Validator, Trigger, Account, Affiliate, Attribute, Cohort, List",
+    "number": "36",
+    "examples": "Product, Account, Affiliate, Attribute, Company Affiliate, Company, Customer, Employee, Activity, Transaction, Student, Process, Trigger, Test",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 2, \"columns\": [\"Being\", \"Avatar\"], \"rows\": []}"
+    "detailData": "{\"levels\":3,\"columns\":[\"Being\",\"Avatar\",\"Definition\"],\"rows\":[[\"Adjunct\",\"Product\",\"i\"],[\"Cookie\",\"Account\",\"dont\"],[\"Cookie\",\"Affiliate\",\"\"],[\"Cookie\",\"Attribute\",\"\"],[\"Cookie\",\"Company Affiliate\",\"\"],[\"Cookie\",\"Product\",\"\"],[\"Master\",\"Company\",\"\"],[\"Master\",\"Company Affiliate\",\"\"],[\"Master\",\"Customer\",\"\"],[\"Master\",\"Product\",\"\"],[\"Mate\",\"Company\",\"\"],[\"Mate\",\"Employee\",\"\"],[\"Process\",\"Activity\",\"\"],[\"Process\",\"Product\",\"\"],[\"Process\",\"Transaction\",\"\"],[\"Roster\",\"Company\",\"\"],[\"Roster\",\"Student\",\"\"],[\"Roster\",\"Transaction\",\"\"],[\"Rule\",\"Process\",\"\"],[\"Rule\",\"Trigger\",\"\"],[\"Subby\",\"Account\",\"\"],[\"Subby\",\"Affiliate\",\"\"],[\"Subby\",\"Attribute\",\"\"],[\"Subordinate\",\"Account\",\"\"],[\"Subordinate\",\"Affiliate\",\"\"],[\"Subordinate\",\"Attribute\",\"\"],[\"Test\",\"Test\",\"\"],[\"boo\",\"Account\",\"\"],[\"boo\",\"Affiliate\",\"\"],[\"boo\",\"Attribute\",\"\"],[\"bug\",\"Account\",\"\"],[\"bug\",\"Affiliate\",\"\"],[\"bug\",\"Attribute\",\"\"],[\"googoogas\",\"Account\",\"\"],[\"googoogas\",\"Affiliate\",\"\"],[\"googoogas\",\"Attribute\",\"\"]]}"
   },
   {
     "id": "7",
@@ -105,61 +105,61 @@
     "id": "10",
     "layer": "Ontology",
     "concept": "Part",
-    "number": "",
-    "examples": "",
+    "number": "14",
+    "examples": "Context, Directory, Event, Identifier, Measure, Number, Relationship, Schedule, Tag, Test, Test Part 1, Test Part 2, Test Part 3, Unstructured",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 1, \"columns\": [\"Part\"], \"rows\": []}"
+    "detailData": "{\"levels\":2,\"columns\":[\"Part\",\"Definition\"],\"rows\":[[\"Context\",\"i \"],[\"Directory\",\"like\"],[\"Event\",\"u\"],[\"Identifier\",\"\"],[\"Measure\",\"\"],[\"Number\",\"\"],[\"Relationship\",\"\"],[\"Schedule\",\"\"],[\"Tag\",\"\"],[\"Test\",\"\"],[\"Test Part 1\",\"\"],[\"Test Part 2\",\"\"],[\"Test Part 3\",\"\"],[\"Unstructured\",\"\"]]}"
   },
   {
     "id": "11",
     "layer": "Ontology",
     "concept": "Section",
-    "number": "",
-    "examples": "",
+    "number": "34",
+    "examples": "CDM, QKB, SLF, CDM234, djg, moomoo, moose1, testingthis, CD, CDM1",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 2, \"columns\": [\"Part\", \"Section\"], \"rows\": []}"
+    "detailData": "{\"levels\":3,\"columns\":[\"Part\",\"Section\",\"Definition\"],\"rows\":[[\"Context\",\"CDM\",\"\"],[\"Context\",\"QKB\",\"\"],[\"Context\",\"SLF\",\"\"],[\"Directory\",\"CDM\",\"\"],[\"Directory\",\"CDM234\",\"\"],[\"Directory\",\"djg\",\"\"],[\"Directory\",\"moomoo\",\"\"],[\"Directory\",\"moose1\",\"\"],[\"Directory\",\"testingthis\",\"\"],[\"Event\",\"CDM\",\"\"],[\"Event\",\"QKB\",\"\"],[\"Event\",\"moomoo\",\"\"],[\"Identifier\",\"CD\",\"\"],[\"Identifier\",\"CDM\",\"\"],[\"Identifier\",\"CDM234\",\"\"],[\"Identifier\",\"QKB\",\"\"],[\"Identifier\",\"SLF\",\"\"],[\"Measure\",\"CDM\",\"\"],[\"Measure\",\"CDM234\",\"\"],[\"Measure\",\"SLF\",\"\"],[\"Number\",\"CDM\",\"\"],[\"Number\",\"QKB\",\"\"],[\"Number\",\"moomoo\",\"\"],[\"Relationship\",\"CDM\",\"\"],[\"Relationship\",\"QKB\",\"\"],[\"Schedule\",\"CDM\",\"\"],[\"Schedule\",\"CDM1\",\"\"],[\"Schedule\",\"QKB\",\"\"],[\"Schedule\",\"moomoo\",\"\"],[\"Tag\",\"CDM\",\"\"],[\"Tag\",\"QKB\",\"\"],[\"Tag\",\"SLF\",\"\"],[\"Unstructured\",\"CDM\",\"\"],[\"Unstructured\",\"QKB\",\"\"]]}"
   },
   {
     "id": "12",
     "layer": "Ontology",
     "concept": "G-Type",
-    "number": "",
-    "examples": "",
+    "number": "2",
+    "examples": "Loose, Tight",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 1, \"columns\": [\"G-Type\"], \"rows\": []}"
+    "detailData": "{\"levels\":2,\"columns\":[\"G-Type\",\"Definition\"],\"rows\":[[\"Loose\",\"tight\"],[\"Tight\",\"li\"]]}"
   },
   {
     "id": "13",
     "layer": "Ontology",
     "concept": "Set",
-    "number": "",
-    "examples": "",
+    "number": "6",
+    "examples": "Geography, Rating, Timing, newval, newvalue, newvalz",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 1, \"columns\": [\"Set\"], \"rows\": []}"
+    "detailData": "{\"levels\":2,\"columns\":[\"Set\",\"Definition\"],\"rows\":[[\"Geography\",\"\"],[\"Rating\",\"c\"],[\"Timing\",\"\"],[\"newval\",\"\"],[\"newvalue\",\"\"],[\"newvalz\",\"\"]]}"
   },
   {
     "id": "14",
     "layer": "Ontology",
     "concept": "Grouping",
-    "number": "",
-    "examples": "",
+    "number": "4",
+    "examples": "N/A, ICB, momoo",
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
     "isRequired": true,
-    "detailData": "{\"levels\": 2, \"columns\": [\"Set\", \"Grouping\"], \"rows\": []}"
+    "detailData": "{\"levels\":3,\"columns\":[\"Set\",\"Grouping\",\"Definition\"],\"rows\":[[\"Geography\",\"N/A\",\"\"],[\"Rating\",\"N/A\",\"\"],[\"Timing\",\"ICB\",\"\"],[\"newvalz\",\"momoo\",\"\"]]}"
   },
   {
     "id": "required-group",
@@ -168,9 +168,9 @@
     "sector": "ALL",
     "domain": "ALL",
     "country": "ALL",
-    "number": "",
-    "examples": "",
-    "detailData": "{\"levels\": 3, \"columns\": [\"Part\", \"Section\", \"Group\"], \"rows\": []}",
+    "number": "195",
+    "examples": "Temporality, Tenancy, Versioning, Workflow, Phasing, Attachment, Address, Address Billing, Address Business, Address Home, Address Legal, Address Shipping, Address Work, Email, Phone, Social Media, Website, Bankruptcy, Birth, Credit Card Transaction, Education, Employment, Formation, [Event], [[Event]], Bank Account, Credit Card, Drivers License, Name, Name DBA, Name Individual, Name Institution, Name Thing, Passport, Payment ID, Proprietary ID, Public ID, Security ID, Vulqan ID, [Identifier Type], [Identifier], Technical ID, Private ID, Testing, Amount, Converted, Function, Parameter, Quantity, Rate, [Aggregation], [Amount], [Converted], [Dated], [Function], [Parameter], [Quantity], [Rate], [Related], [[Aggregations]], [[Amount]], [[Parameter]], [[Quantity]], Aggregation, Conversion, Reference, Account, Business Unit, Company, Credit Card Charge, Customer, Department, Employee, Employee Beneficiary, Form Requirements, GL Account, Interest Rates, Interview, Invoice, Item, Legal Entity, Legal Entity Shareholder, Order, Product, Product Instructions, Regulator, Security, Service, Supplier, Supplier Contact, Trading Guidelines, [Related Object], [[Activity]], [[Customer Account]], [[Customer]], [[Employee Affiliate]], [[Employee]], [[Location]], [[Payment]], [[Person]], [[Posting]], [[Product Attribute]], [[Product]], [[Reference]], [[Region]], [[Register]], [[Site]], [[Supplier Adjunct]], [[Supplier]], [[Team]], [[Thing]], [[Transaction]], [[Trigger]], [[Unit]], [[Validator}, Entity, Inventory Site, Lot, Purchase Order, Transaction, Vehicle, Vendor, Fiscal Year, Interest Period, Milestone, Payroll Period, Sickness Period, Tax Year, Vacation Period, [Daily], [Period], [Time Series], [[Common Milestone Date]], [[Common Periods]], [[Daily]], [Milestone], [[Time Series]], Period, Barclays Sector, Bloomberg Industry, Flag, GICS Sector, Geography, Merrill Lynch Asset Class, TypoloJi, [Flag], [Geography Tiered], [Geography], [Tag Derivations], [TypoloJi Tiered], [TypoloJi], [[Common Derivations]], [[Common Flags]], Document, Text, Bar Code, Message",
+    "detailData": "{\"levels\":4,\"columns\":[\"Part\",\"Section\",\"Group\",\"Definition\"],\"rows\":[[\"Context\",\"CDM\",\"Temporality\",\"\"],[\"Context\",\"CDM\",\"Tenancy\",\"\"],[\"Context\",\"CDM\",\"Versioning\",\"\"],[\"Context\",\"CDM\",\"Workflow\",\"\"],[\"Context\",\"QKB\",\"Phasing\",\"\"],[\"Context\",\"QKB\",\"Temporality\",\"\"],[\"Context\",\"QKB\",\"Versioning\",\"\"],[\"Context\",\"SLF\",\"Attachment\",\"\"],[\"Context\",\"SLF\",\"Versioning\",\"\"],[\"Directory\",\"CDM\",\"Address\",\"\"],[\"Directory\",\"CDM\",\"Address Billing\",\"\"],[\"Directory\",\"CDM\",\"Address Business\",\"\"],[\"Directory\",\"CDM\",\"Address Home\",\"\"],[\"Directory\",\"CDM\",\"Address Legal\",\"\"],[\"Directory\",\"CDM\",\"Address Shipping\",\"\"],[\"Directory\",\"CDM\",\"Address Work\",\"\"],[\"Directory\",\"CDM\",\"Email\",\"\"],[\"Directory\",\"CDM\",\"Phone\",\"\"],[\"Directory\",\"CDM\",\"Social Media\",\"\"],[\"Directory\",\"CDM234\",\"Address\",\"\"],[\"Directory\",\"CDM234\",\"Address Shipping\",\"\"],[\"Directory\",\"CDM234\",\"Address Work\",\"\"],[\"Directory\",\"djg\",\"Website\",\"\"],[\"Directory\",\"moomoo\",\"Address Business\",\"\"],[\"Directory\",\"moomoo\",\"Address Legal\",\"\"],[\"Directory\",\"moose1\",\"Phone\",\"\"],[\"Directory\",\"testingthis\",\"Address Business\",\"\"],[\"Event\",\"CDM\",\"Bankruptcy\",\"\"],[\"Event\",\"CDM\",\"Birth\",\"\"],[\"Event\",\"CDM\",\"Credit Card Transaction\",\"\"],[\"Event\",\"CDM\",\"Education\",\"\"],[\"Event\",\"CDM\",\"Employment\",\"\"],[\"Event\",\"CDM\",\"Formation\",\"\"],[\"Event\",\"CDM\",\"[Event]\",\"\"],[\"Event\",\"CDM\",\"[[Event]]\",\"\"],[\"Event\",\"QKB\",\"Birth\",\"\"],[\"Event\",\"QKB\",\"Credit Card Transaction\",\"\"],[\"Event\",\"moomoo\",\"Bankruptcy\",\"\"],[\"Identifier\",\"CD\",\"Bank Account\",\"\"],[\"Identifier\",\"CDM\",\"Bank Account\",\"\"],[\"Identifier\",\"CDM\",\"Credit Card\",\"\"],[\"Identifier\",\"CDM\",\"Drivers License\",\"\"],[\"Identifier\",\"CDM\",\"Name\",\"\"],[\"Identifier\",\"CDM\",\"Name DBA\",\"\"],[\"Identifier\",\"CDM\",\"Name Individual\",\"\"],[\"Identifier\",\"CDM\",\"Name Institution\",\"\"],[\"Identifier\",\"CDM\",\"Name Thing\",\"\"],[\"Identifier\",\"CDM\",\"Passport\",\"\"],[\"Identifier\",\"CDM\",\"Payment ID\",\"\"],[\"Identifier\",\"CDM\",\"Proprietary ID\",\"\"],[\"Identifier\",\"CDM\",\"Public ID\",\"\"],[\"Identifier\",\"CDM\",\"Security ID\",\"\"],[\"Identifier\",\"CDM\",\"Vulqan ID\",\"\"],[\"Identifier\",\"CDM\",\"[Identifier Type]\",\"\"],[\"Identifier\",\"CDM\",\"[Identifier]\",\"\"],[\"Identifier\",\"CDM234\",\"Drivers License\",\"\"],[\"Identifier\",\"QKB\",\"Proprietary ID\",\"\"],[\"Identifier\",\"QKB\",\"Public ID\",\"\"],[\"Identifier\",\"QKB\",\"Technical ID\",\"\"],[\"Identifier\",\"SLF\",\"Private ID\",\"\"],[\"Measure\",\"CDM\",\"Name\",\"\"],[\"Measure\",\"CDM234\",\"Testing\",\"\"],[\"Measure\",\"SLF\",\"Testing\",\"\"],[\"Number\",\"CDM\",\"Amount\",\"\"],[\"Number\",\"CDM\",\"Converted\",\"\"],[\"Number\",\"CDM\",\"Function\",\"\"],[\"Number\",\"CDM\",\"Parameter\",\"\"],[\"Number\",\"CDM\",\"Quantity\",\"\"],[\"Number\",\"CDM\",\"Rate\",\"\"],[\"Number\",\"CDM\",\"[Aggregation]\",\"\"],[\"Number\",\"CDM\",\"[Amount]\",\"\"],[\"Number\",\"CDM\",\"[Converted]\",\"\"],[\"Number\",\"CDM\",\"[Dated]\",\"\"],[\"Number\",\"CDM\",\"[Function]\",\"\"],[\"Number\",\"CDM\",\"[Parameter]\",\"\"],[\"Number\",\"CDM\",\"[Quantity]\",\"\"],[\"Number\",\"CDM\",\"[Rate]\",\"\"],[\"Number\",\"CDM\",\"[Related]\",\"\"],[\"Number\",\"CDM\",\"[[Aggregations]]\",\"\"],[\"Number\",\"CDM\",\"[[Amount]]\",\"\"],[\"Number\",\"CDM\",\"[[Parameter]]\",\"\"],[\"Number\",\"CDM\",\"[[Quantity]]\",\"\"],[\"Number\",\"QKB\",\"Aggregation\",\"\"],[\"Number\",\"QKB\",\"Amount\",\"\"],[\"Number\",\"QKB\",\"Conversion\",\"\"],[\"Number\",\"QKB\",\"Parameter\",\"\"],[\"Number\",\"QKB\",\"Quantity\",\"\"],[\"Number\",\"QKB\",\"Rate\",\"\"],[\"Number\",\"QKB\",\"Reference\",\"\"],[\"Number\",\"moomoo\",\"Converted\",\"\"],[\"Relationship\",\"CDM\",\"Account\",\"\"],[\"Relationship\",\"CDM\",\"Business Unit\",\"\"],[\"Relationship\",\"CDM\",\"Company\",\"\"],[\"Relationship\",\"CDM\",\"Credit Card Charge\",\"\"],[\"Relationship\",\"CDM\",\"Customer\",\"\"],[\"Relationship\",\"CDM\",\"Department\",\"\"],[\"Relationship\",\"CDM\",\"Employee\",\"\"],[\"Relationship\",\"CDM\",\"Employee Beneficiary\",\"\"],[\"Relationship\",\"CDM\",\"Form Requirements\",\"\"],[\"Relationship\",\"CDM\",\"GL Account\",\"\"],[\"Relationship\",\"CDM\",\"Interest Rates\",\"\"],[\"Relationship\",\"CDM\",\"Interview\",\"\"],[\"Relationship\",\"CDM\",\"Invoice\",\"\"],[\"Relationship\",\"CDM\",\"Item\",\"\"],[\"Relationship\",\"CDM\",\"Legal Entity\",\"\"],[\"Relationship\",\"CDM\",\"Legal Entity Shareholder\",\"\"],[\"Relationship\",\"CDM\",\"Order\",\"\"],[\"Relationship\",\"CDM\",\"Product\",\"\"],[\"Relationship\",\"CDM\",\"Product Instructions\",\"\"],[\"Relationship\",\"CDM\",\"Regulator\",\"\"],[\"Relationship\",\"CDM\",\"Security\",\"\"],[\"Relationship\",\"CDM\",\"Service\",\"\"],[\"Relationship\",\"CDM\",\"Supplier\",\"\"],[\"Relationship\",\"CDM\",\"Supplier Contact\",\"\"],[\"Relationship\",\"CDM\",\"Trading Guidelines\",\"\"],[\"Relationship\",\"CDM\",\"[Related Object]\",\"\"],[\"Relationship\",\"CDM\",\"[[Activity]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Customer Account]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Customer]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Employee Affiliate]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Employee]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Location]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Payment]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Person]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Posting]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Product Attribute]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Product]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Reference]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Region]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Register]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Site]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Supplier Adjunct]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Supplier]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Team]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Thing]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Transaction]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Trigger]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Unit]]\",\"\"],[\"Relationship\",\"CDM\",\"[[Validator}\",\"\"],[\"Relationship\",\"QKB\",\"Customer\",\"\"],[\"Relationship\",\"QKB\",\"Employee\",\"\"],[\"Relationship\",\"QKB\",\"Entity\",\"\"],[\"Relationship\",\"QKB\",\"GL Account\",\"\"],[\"Relationship\",\"QKB\",\"Inventory Site\",\"\"],[\"Relationship\",\"QKB\",\"Item\",\"\"],[\"Relationship\",\"QKB\",\"Lot\",\"\"],[\"Relationship\",\"QKB\",\"Purchase Order\",\"\"],[\"Relationship\",\"QKB\",\"Transaction\",\"\"],[\"Relationship\",\"QKB\",\"Vehicle\",\"\"],[\"Relationship\",\"QKB\",\"Vendor\",\"\"],[\"Schedule\",\"CDM\",\"Fiscal Year\",\"\"],[\"Schedule\",\"CDM\",\"Interest Period\",\"\"],[\"Schedule\",\"CDM\",\"Milestone\",\"\"],[\"Schedule\",\"CDM\",\"Payroll Period\",\"\"],[\"Schedule\",\"CDM\",\"Sickness Period\",\"\"],[\"Schedule\",\"CDM\",\"Tax Year\",\"\"],[\"Schedule\",\"CDM\",\"Vacation Period\",\"\"],[\"Schedule\",\"CDM\",\"[Daily]\",\"\"],[\"Schedule\",\"CDM\",\"[Period]\",\"\"],[\"Schedule\",\"CDM\",\"[Time Series]\",\"\"],[\"Schedule\",\"CDM\",\"[[Common Milestone Date]]\",\"\"],[\"Schedule\",\"CDM\",\"[[Common Periods]]\",\"\"],[\"Schedule\",\"CDM\",\"[[Daily]]\",\"\"],[\"Schedule\",\"CDM1\",\"[Milestone]\",\"\"],[\"Schedule\",\"CDM1\",\"[Period]\",\"\"],[\"Schedule\",\"CDM1\",\"[[Time Series]]\",\"\"],[\"Schedule\",\"QKB\",\"Milestone\",\"\"],[\"Schedule\",\"QKB\",\"Period\",\"\"],[\"Schedule\",\"moomoo\",\"Milestone\",\"\"],[\"Tag\",\"CDM\",\"Barclays Sector\",\"\"],[\"Tag\",\"CDM\",\"Bloomberg Industry\",\"\"],[\"Tag\",\"CDM\",\"Flag\",\"\"],[\"Tag\",\"CDM\",\"GICS Sector\",\"\"],[\"Tag\",\"CDM\",\"Geography\",\"\"],[\"Tag\",\"CDM\",\"Merrill Lynch Asset Class\",\"\"],[\"Tag\",\"CDM\",\"TypoloJi\",\"\"],[\"Tag\",\"CDM\",\"[Flag]\",\"\"],[\"Tag\",\"CDM\",\"[Geography Tiered]\",\"\"],[\"Tag\",\"CDM\",\"[Geography]\",\"\"],[\"Tag\",\"CDM\",\"[Tag Derivations]\",\"\"],[\"Tag\",\"CDM\",\"[TypoloJi Tiered]\",\"\"],[\"Tag\",\"CDM\",\"[TypoloJi]\",\"\"],[\"Tag\",\"CDM\",\"[[Common Derivations]]\",\"\"],[\"Tag\",\"CDM\",\"[[Common Flags]]\",\"\"],[\"Tag\",\"QKB\",\"Flag\",\"\"],[\"Tag\",\"QKB\",\"Geography\",\"\"],[\"Tag\",\"QKB\",\"TypoloJi\",\"\"],[\"Tag\",\"SLF\",\"Geography\",\"\"],[\"Tag\",\"SLF\",\"TypoloJi\",\"\"],[\"Unstructured\",\"CDM\",\"Document\",\"\"],[\"Unstructured\",\"CDM\",\"Text\",\"\"],[\"Unstructured\",\"QKB\",\"Bar Code\",\"\"],[\"Unstructured\",\"QKB\",\"Document\",\"\"],[\"Unstructured\",\"QKB\",\"Message\",\"\"],[\"Unstructured\",\"QKB\",\"Text\",\"\"]]}",
     "isRequired": true
   }
 ]

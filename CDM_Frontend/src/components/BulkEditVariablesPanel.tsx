@@ -95,6 +95,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
   const [pendingSaveData, setPendingSaveData] = useState<any>(null);
 
+  // Refs for Range validation inputs (one per validation in the list)
+  const rangeValidationInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const isRangeValidationInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
+  const lastRangeValidationValueChangeTimeRefs = useRef<Map<number, number>>(new Map());
+
   // Ontology modal state
   const [ontologyModalOpen, setOntologyModalOpen] = useState<{
     isOpen: boolean;
@@ -802,11 +807,29 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       }
       
       // Check if value is required and entered
-      const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
+      const requiresValue = ['Length', 'Character', 'Range'].includes(validationComponents.valType);
       if (requiresValue && !validationComponents.value.trim()) {
         alert(`Please enter a value for Validation #${i + 1} (${validationComponents.valType}).`);
         setValidationError('Value is required');
         return;
+      }
+      
+      // Validate Range value if all selected variables have same format
+      if (validationComponents.valType === 'Range' && validationComponents.value.trim()) {
+        const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
+        const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
+        const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
+        
+        // Only validate if all variables have same format
+        if (formatIs.length === 1 && formatIIs.length === 1) {
+          const validation = validateValidationInput('Range', validationComponents.value.trim(), formatIs[0], formatIIs[0]);
+          if (!validation.isValid) {
+            alert(`Invalid value for Validation #${i + 1}: ${validation.error}`);
+            setValidationError(validation.error || 'Invalid value');
+            return;
+          }
+        }
+        // If formats differ, no validation (user can enter any value)
       }
     }
 
@@ -837,15 +860,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             continue; // Skip invalid entries
           }
           
-          const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
+          const requiresValue = ['Length', 'Character', 'Range'].includes(validationComponents.valType);
           if (requiresValue && !validationComponents.value.trim()) {
             continue; // Skip invalid entries
           }
           
           // Build validation string
-          if (validationComponents.valType === 'Range' && validationComponents.operator) {
-            // Pass special format: _BULK_RANGE_<operator> so backend can use each variable's formatI
-            validationStrings.push(`_BULK_RANGE_${validationComponents.operator}`);
+          if (validationComponents.valType === 'Range' && validationComponents.operator && validationComponents.value.trim()) {
+            // For Range, use the typed value (not formatI)
+            validationStrings.push(`Range ${validationComponents.operator} ${validationComponents.value.trim()}`);
           } else if (validationComponents.valType === 'Relative' && validationComponents.operator) {
             // Pass special format: _BULK_RELATIVE_<operator> so backend can use each variable's name
             validationStrings.push(`_BULK_RELATIVE_${validationComponents.operator}`);
@@ -1521,8 +1544,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                     if (newValType === 'List') {
                       newComponents.value = 'List';
                     }
-                    // For Range and Relative in bulk edit, value will be "Same as Variables'"
-                    else if (newValType === 'Range' || newValType === 'Relative') {
+                    // For Range in bulk edit, check if all selected variables have same format
+                    else if (newValType === 'Range') {
+                      const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
+                      const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
+                      const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
+                      
+                      // If all variables have same formatI and formatII, allow typing with validation
+                      // Otherwise, just allow typing without restrictions
+                      if (formatIs.length === 1 && formatIIs.length === 1) {
+                        newComponents.value = ''; // User will type it
+                      } else {
+                        newComponents.value = ''; // User will type it (no restrictions)
+                      }
+                    }
+                    // For Relative in bulk edit, value will be "Same as Variables'"
+                    else if (newValType === 'Relative') {
                       newComponents.value = "Same as Variables'";
                     }
                     
@@ -1612,12 +1649,111 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                       className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
                     />
                   ) : validationComponents.valType === 'Range' ? (
-                    <input
-                      type="text"
-                      value={validationComponents.value}
-                      disabled
-                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                    />
+                    (() => {
+                      // Check if all selected variables have same formatI and formatII
+                      const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
+                      const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
+                      const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
+                      const hasSameFormat = formatIs.length === 1 && formatIIs.length === 1;
+                      const commonFormatI = hasSameFormat ? formatIs[0] : undefined;
+                      const commonFormatII = hasSameFormat ? formatIIs[0] : undefined;
+                      
+                      return (
+                        <div>
+                          <input
+                            ref={(el) => {
+                              if (el) {
+                                rangeValidationInputRefs.current.set(index, el);
+                              } else {
+                                rangeValidationInputRefs.current.delete(index);
+                              }
+                            }}
+                            type="text"
+                            value={validationComponents.value}
+                            onInput={(e) => {
+                              e.stopPropagation();
+                              const input = e.target as HTMLInputElement;
+                              const cursorPosition = input.selectionStart;
+                              const newValue = input.value;
+                              lastRangeValidationValueChangeTimeRefs.current.set(index, Date.now());
+                              // Only validate if all variables have same format
+                              if (hasSameFormat && commonFormatI && commonFormatII) {
+                                const validation = validateValidationInput('Range', newValue, commonFormatI, commonFormatII);
+                                setValidationError(validation.isValid ? '' : (validation.error || ''));
+                              } else {
+                                // No validation if formats differ
+                                setValidationError('');
+                              }
+                              setValidationComponentsList(prev => prev.map((comp, i) => 
+                                i === index ? { ...comp, value: newValue } : comp
+                              ));
+                              const restoreFocus = () => {
+                                const ref = rangeValidationInputRefs.current.get(index);
+                                if (ref) {
+                                  ref.focus();
+                                  const maxPos = ref.value.length;
+                                  const safePos = Math.min(cursorPosition || 0, maxPos);
+                                  ref.setSelectionRange(safePos, safePos);
+                                }
+                              };
+                              restoreFocus();
+                              Promise.resolve().then(restoreFocus);
+                              requestAnimationFrame(restoreFocus);
+                            }}
+                            onChange={(e) => { e.stopPropagation(); }}
+                            onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                            onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                            onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                            onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                            onFocus={(e) => { 
+                              e.stopPropagation(); 
+                              e.nativeEvent.stopImmediatePropagation(); 
+                              isRangeValidationInputFocusedRefs.current.set(index, true);
+                            }}
+                            onBlur={(e) => {
+                              const timeSinceLastChange = Date.now() - (lastRangeValidationValueChangeTimeRefs.current.get(index) || 0);
+                              const wasRecentTyping = timeSinceLastChange < 300;
+                              const relatedTarget = e.relatedTarget as HTMLElement;
+                              const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                              if (wasRecentTyping && !clickedOnInput && rangeValidationInputRefs.current.get(index) && isRangeValidationInputFocusedRefs.current.get(index)) {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setTimeout(() => { 
+                                  const ref = rangeValidationInputRefs.current.get(index);
+                                  if (ref) ref.focus(); 
+                                }, 0);
+                              } else if (!wasRecentTyping) {
+                                isRangeValidationInputFocusedRefs.current.set(index, false);
+                              }
+                            }}
+                            placeholder={hasSameFormat && commonFormatI === 'Time' 
+                              ? 'Enter date/time (e.g., YYYY-MM-DD, MM/DD/YYYY, YYYY-MM-DD HH:MM:SS, or Unix timestamp)'
+                              : hasSameFormat && commonFormatI === 'Number' && commonFormatII
+                                ? commonFormatII === 'Integer'
+                                  ? 'Enter integer (e.g., 42)'
+                                  : commonFormatII === 'Decimal'
+                                    ? 'Enter decimal (e.g., 3.14)'
+                                    : commonFormatII === 'Currency'
+                                      ? 'Enter currency (e.g., $100, €50.00)'
+                                      : commonFormatII === 'Percentage'
+                                        ? 'Enter percentage (e.g., 50%, 12.5%)'
+                                        : 'Enter value'
+                                : 'Enter value (no format restrictions - selected variables have different formats)'}
+                            className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                              validationError && validationError.includes('Value') ? 'border-red-500' : ''
+                            }`}
+                          />
+                          {validationError && validationError.includes('Value') && (
+                            <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                          )}
+                          {!hasSameFormat && (
+                            <p className="mt-1 text-xs text-ag-dark-text-secondary">
+                              Note: Selected variables have different Format V-I or Format V-II values. No format restrictions applied.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()
                   ) : validationComponents.valType === 'Relative' ? (
                     <input
                       type="text"

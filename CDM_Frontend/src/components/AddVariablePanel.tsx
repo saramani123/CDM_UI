@@ -103,6 +103,10 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   const validationValueInputRef = useRef<HTMLInputElement>(null);
   const isValidationValueInputFocusedRef = useRef<boolean>(false);
   const lastValidationValueChangeTimeRef = useRef<number>(0);
+  // Refs for Range validation input
+  const rangeValidationInputRef = useRef<HTMLInputElement>(null);
+  const isRangeValidationInputFocusedRef = useRef<boolean>(false);
+  const lastRangeValidationValueChangeTimeRef = useRef<number>(0);
 
   // Storage key for part-group associations
   const PART_GROUP_STORAGE_KEY = 'cdm_variable_part_group_associations';
@@ -389,15 +393,8 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     variations: false
   });
 
-  // Update validation value when formatI changes (for Range type)
-  useEffect(() => {
-    if (validationComponents.valType === 'Range' && formData.formatI) {
-      setValidationComponents(prev => ({
-        ...prev,
-        value: formData.formatI
-      }));
-    }
-  }, [formData.formatI, validationComponents.valType]);
+  // Note: Range validation values are now freeform typing fields, not auto-populated from formatI
+  // Removed auto-population logic to allow users to type freeform values
 
   // Update validation value when variable name changes (for Relative type)
   useEffect(() => {
@@ -673,11 +670,21 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       }
       
       // Check if value is required and entered
-      const requiresValue = ['Length', 'Character'].includes(validationComponents.valType);
+      const requiresValue = ['Length', 'Character', 'Range'].includes(validationComponents.valType);
       if (requiresValue && !validationComponents.value.trim()) {
         alert('Please enter a value for the selected validation type.');
         setValidationError('Value is required');
         return;
+      }
+      
+      // Validate Range value based on formatI and formatII
+      if (validationComponents.valType === 'Range' && validationComponents.value.trim()) {
+        const validation = validateValidationInput('Range', validationComponents.value.trim(), formData.formatI, formData.formatII);
+        if (!validation.isValid) {
+          alert(`Invalid value: ${validation.error}`);
+          setValidationError(validation.error || 'Invalid value');
+          return;
+        }
       }
     }
 
@@ -1296,9 +1303,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                 if (newValType === 'List') {
                   newComponents.value = 'List';
                 }
-                // Auto-set value for Range (use formatI)
+                // For Range, don't auto-set value - user will type it
                 else if (newValType === 'Range') {
-                  newComponents.value = formData.formatI || '';
+                  newComponents.value = '';
                 }
                 // Auto-set value for Relative (use variable name)
                 else if (newValType === 'Relative') {
@@ -1377,12 +1384,81 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
                 />
               ) : validationComponents.valType === 'Range' ? (
-                <input
-                  type="text"
-                  value={validationComponents.value}
-                  disabled
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                />
+                <div>
+                  <input
+                    ref={rangeValidationInputRef}
+                    type="text"
+                    value={validationComponents.value}
+                    onInput={(e) => {
+                      e.stopPropagation();
+                      const input = e.target as HTMLInputElement;
+                      const cursorPosition = input.selectionStart;
+                      const newValue = input.value;
+                      lastRangeValidationValueChangeTimeRef.current = Date.now();
+                      const validation = validateValidationInput('Range', newValue, formData.formatI, formData.formatII);
+                      setValidationError(validation.isValid ? '' : (validation.error || ''));
+                      setValidationComponents(prev => ({
+                        ...prev,
+                        value: newValue
+                      }));
+                      const restoreFocus = () => {
+                        if (rangeValidationInputRef.current) {
+                          rangeValidationInputRef.current.focus();
+                          const maxPos = rangeValidationInputRef.current.value.length;
+                          const safePos = Math.min(cursorPosition || 0, maxPos);
+                          rangeValidationInputRef.current.setSelectionRange(safePos, safePos);
+                        }
+                      };
+                      restoreFocus();
+                      Promise.resolve().then(restoreFocus);
+                      requestAnimationFrame(restoreFocus);
+                    }}
+                    onChange={(e) => { e.stopPropagation(); }}
+                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onFocus={(e) => { 
+                      e.stopPropagation(); 
+                      e.nativeEvent.stopImmediatePropagation(); 
+                      isRangeValidationInputFocusedRef.current = true;
+                    }}
+                    onBlur={(e) => {
+                      const timeSinceLastChange = Date.now() - lastRangeValidationValueChangeTimeRef.current;
+                      const wasRecentTyping = timeSinceLastChange < 300;
+                      const relatedTarget = e.relatedTarget as HTMLElement;
+                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                      if (wasRecentTyping && !clickedOnInput && rangeValidationInputRef.current && isRangeValidationInputFocusedRef.current) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTimeout(() => { 
+                          if (rangeValidationInputRef.current) rangeValidationInputRef.current.focus(); 
+                        }, 0);
+                      } else if (!wasRecentTyping) {
+                        isRangeValidationInputFocusedRef.current = false;
+                      }
+                    }}
+                    placeholder={formData.formatI === 'Time' 
+                      ? 'Enter date/time (e.g., YYYY-MM-DD, MM/DD/YYYY, YYYY-MM-DD HH:MM:SS, or Unix timestamp)'
+                      : formData.formatI === 'Number' && formData.formatII
+                        ? formData.formatII === 'Integer'
+                          ? 'Enter integer (e.g., 42)'
+                          : formData.formatII === 'Decimal'
+                            ? 'Enter decimal (e.g., 3.14)'
+                            : formData.formatII === 'Currency'
+                              ? 'Enter currency (e.g., $100, €50.00)'
+                              : formData.formatII === 'Percentage'
+                                ? 'Enter percentage (e.g., 50%, 12.5%)'
+                                : 'Enter value'
+                        : 'Enter value'}
+                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                      validationError && validationError.includes('Value') ? 'border-red-500' : ''
+                    }`}
+                  />
+                  {validationError && validationError.includes('Value') && (
+                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                  )}
+                </div>
               ) : validationComponents.valType === 'Relative' ? (
                 <input
                   type="text"

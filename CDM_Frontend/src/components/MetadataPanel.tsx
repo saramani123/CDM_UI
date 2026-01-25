@@ -1067,11 +1067,19 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Update section selection for a specific unique ID entry
   const handleUniqueIdSectionChange = async (entryId: string, section: string) => {
     const entry = uniqueIdEntries.find(e => e.id === entryId);
-    setUniqueIdEntries(prev => prev.map(e => 
-      e.id === entryId ? { ...e, section, group: '', variableId: '' } : e
-    ));
-    // Load groups for the new part+section
-    if (entry?.part && section) {
+    setUniqueIdEntries(prev => prev.map(e => {
+      if (e.id === entryId) {
+        // If "ANY" is selected for section, auto-set group and variableId to "ANY"
+        if (section === 'ANY') {
+          return { ...e, section, group: 'ANY', variableId: 'ANY' };
+        } else {
+          return { ...e, section, group: '', variableId: '' };
+        }
+      }
+      return e;
+    }));
+    // Load groups for the new part+section (only if section is not ANY)
+    if (entry?.part && section && section !== 'ANY') {
       await loadGroupsForPartAndSection(entry.part, section);
     }
   };
@@ -1150,9 +1158,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               if (field === 'part') {
                 return { ...r, part: value, section: '', group: '', variableId: '' };
               }
-              // When section changes, clear group and variableId
+              // When section changes, clear group and variableId (or set to ANY if section is ANY)
               else if (field === 'section') {
-                return { ...r, section: value, group: '', variableId: '' };
+                if (value === 'ANY') {
+                  return { ...r, section: value, group: 'ANY', variableId: 'ANY' };
+                } else {
+                  return { ...r, section: value, group: '', variableId: '' };
+                }
               }
               // When group changes, clear variableId (or set to ANY if group is ANY)
               else if (field === 'group') {
@@ -2165,6 +2177,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Section</option>
+                          <option value="ANY">ANY</option>
                           {loadingStates[`part:${entry.part}`] ? (
                             <option value="">Loading...</option>
                           ) : (
@@ -2178,7 +2191,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={entry.group}
                           onChange={(e) => handleUniqueIdGroupChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part || !entry.section || loadingStates[`part:${entry.part}|section:${entry.section}`]}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section || entry.section === 'ANY' || loadingStates[`part:${entry.part}|section:${entry.section}`]}
                           className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -2202,7 +2215,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={entry.variableId}
                           onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
-                          disabled={!isPanelEnabled || !entry.part || !entry.section || !entry.group || (entry.group !== 'ANY' && loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`])}
+                          disabled={!isPanelEnabled || !entry.part || !entry.section || !entry.group || entry.section === 'ANY' || (entry.group !== 'ANY' && loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`])}
                           className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
                           style={{
                             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -2332,6 +2345,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Section</option>
+                          <option value="ANY">ANY</option>
                           {loadingStates[`part:${row.part}`] ? (
                             <option value="">Loading...</option>
                           ) : (
@@ -2347,7 +2361,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={row.group}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'group', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part || !row.section || loadingStates[`part:${row.part}|section:${row.section}`]}
+                          disabled={!isPanelEnabled || !row.part || !row.section || row.section === 'ANY' || loadingStates[`part:${row.part}|section:${row.section}`]}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                             !isPanelEnabled || !row.part || !row.section || loadingStates[`part:${row.part}|section:${row.section}`] ? 'opacity-50 cursor-not-allowed' : ''
                           }`}
@@ -2375,7 +2389,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                         <select
                           value={row.variableId}
                           onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'variableId', e.target.value)}
-                          disabled={!isPanelEnabled || !row.part || !row.section || !row.group || (row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`])}
+                          disabled={!isPanelEnabled || !row.part || !row.section || !row.group || row.section === 'ANY' || (row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`])}
                           className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                             !isPanelEnabled || !row.part || !row.section || !row.group || (row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`]) ? 'opacity-50 cursor-not-allowed' : ''
                           }`}

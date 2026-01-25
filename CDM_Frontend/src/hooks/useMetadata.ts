@@ -13,6 +13,7 @@ export const useMetadata = () => {
   const [metadata, setMetadata] = useState<MetadataData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reorderState, setReorderState] = useState<MetadataData[] | null>(null);
 
   const fetchMetadata = useCallback(async () => {
     try {
@@ -74,6 +75,10 @@ export const useMetadata = () => {
     }
   };
 
+  const reorderMetadata = useCallback((newOrder: MetadataData[]) => {
+    setMetadata(newOrder);
+  }, []);
+
   return {
     metadata,
     loading,
@@ -82,6 +87,7 @@ export const useMetadata = () => {
     createMetadataItem,
     updateMetadataItem,
     deleteMetadataItem,
+    reorderMetadata,
   };
 };
 
