@@ -185,34 +185,7 @@ function App() {
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
     { key: 'concept', title: 'Concept', sortable: true, filterable: true, width: '350px' },
     { key: 'number', title: 'Number', sortable: true, filterable: true, width: '200px' },
-    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' },
-    {
-      key: 'actions',
-      title: '',
-      sortable: false,
-      filterable: false,
-      width: '80px',
-      render: (row: MetadataData) => {
-        const isRequired = isRequiredMetadataItem(row.concept) || (row as any).isRequired;
-        return (
-          <div className="flex items-center gap-2 justify-center">
-            <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
-          {!isRequired && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteMetadata(row.id);
-              }}
-              className="text-ag-dark-error hover:text-red-400 transition-colors"
-              title="Delete"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-          </div>
-        );
-      }
-    }
+    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' }
   ];
   
   // Heuristics tab columns
