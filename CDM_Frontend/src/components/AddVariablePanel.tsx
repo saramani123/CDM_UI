@@ -11,6 +11,7 @@ import { useObjects } from '../hooks/useObjects';
 import { parseDriverField } from '../data/mockData';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
+import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 
 interface ObjectRelationship {
   id: string;
@@ -187,15 +188,27 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     const loadSections = async () => {
       if (!formData.part) {
         setSectionsList([]);
+        // Reset section when part is cleared
+        if (formData.section) {
+          setFormData(prev => ({ ...prev, section: '' }));
+        }
         return;
       }
       setIsLoadingSections(true);
       try {
         const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
         setSectionsList(response.sections || []);
+        // Reset section if current section is not in the new list
+        if (formData.section && !response.sections.includes(formData.section)) {
+          setFormData(prev => ({ ...prev, section: '' }));
+        }
       } catch (error) {
         console.error('Error loading sections:', error);
         setSectionsList([]);
+        // Reset section on error
+        if (formData.section) {
+          setFormData(prev => ({ ...prev, section: '' }));
+        }
       } finally {
         setIsLoadingSections(false);
       }
@@ -236,19 +249,11 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     return parts.length > 0 ? parts : dynamicFieldOptions.part;
   };
 
-  // Get distinct sections from all variables data (irrespective of part/group) - fallback
+  // Get distinct sections filtered by selected Part
   const getDistinctSections = (): string[] => {
-    // If we have sections from API, use those
-    if (sectionsList.length > 0) {
-      return sectionsList;
-    }
-    // Otherwise fallback to local data
-    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
-    const sectionsFromData = [...new Set(variablesData.map((item: any) => item.section))].filter(Boolean).sort() as string[];
-    
-    // Combine with dynamic field options
-    const allSections = [...new Set([...sectionsFromData, ...dynamicFieldOptions.section])].sort();
-    return allSections;
+    // Only return sections from API (which are already filtered by Part)
+    // Don't fallback to all sections - sections must be Part-specific
+    return sectionsList;
   };
 
   // Get groups for part - updated to use API data
@@ -274,8 +279,8 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     return allGroups;
   };
 
-  const handleAddSectionValue = async (sectionValue: string) => {
-    console.log('handleAddSectionValue - adding section:', sectionValue);
+  const handleAddSectionValue = async (part: string, sectionValue: string) => {
+    console.log('handleAddSectionValue - adding section:', sectionValue, 'for part:', part);
     
     // Update dynamic field options to include the new section
     setDynamicFieldOptions(prev => {
@@ -287,16 +292,34 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       return updated;
     });
     
-    // Also update the form data to select the newly added section
-    // Use setFormData directly to ensure it's set immediately
-    setFormData(prev => {
-      const updated = {
-        ...prev,
-        section: sectionValue
-      };
-      console.log('Updated formData.section:', updated.section);
-      return updated;
-    });
+    // If the part matches the current form's part, select the new section
+    if (formData.part === part) {
+      // Reload sections from API to include the new one
+      try {
+        const response = await apiService.getVariableSections(part) as { sections: string[] };
+        setSectionsList(response.sections || []);
+        // Also update the form data to select the newly added section
+        setFormData(prev => {
+          const updated = {
+            ...prev,
+            section: sectionValue
+          };
+          console.log('Updated formData.section:', updated.section);
+          return updated;
+        });
+      } catch (error) {
+        console.error('Error reloading sections:', error);
+        // Still update the form data even if API call fails
+        setFormData(prev => {
+          const updated = {
+            ...prev,
+            section: sectionValue
+          };
+          console.log('Updated formData.section:', updated.section);
+          return updated;
+        });
+      }
+    }
   };
 
   const handleAddGroupValue = async (part: string, groupValue: string) => {
@@ -453,6 +476,16 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       // When section changes, clear group (sequential dependency)
       if (key === 'section' && value !== prev.section) {
         newData.group = '';
+      }
+      
+      // When Format V-I changes, reset Format V-II if it's not valid for the new Format V-I
+      if (key === 'formatI' && value !== prev.formatI) {
+        const newFormatI = String(value);
+        const currentFormatII = String(newData.formatII || '');
+        // If Format V-II is set and not valid for the new Format V-I, clear it
+        if (currentFormatII && !isValidFormatIIForFormatI(newFormatI, currentFormatII)) {
+          newData.formatII = '';
+        }
       }
       
       return newData;
@@ -1001,8 +1034,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                 onClick={() => {
                   setIsAddSectionValueModalOpen(true);
                 }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Section value"
+                disabled={!formData.part}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={formData.part ? "Add new Section value" : "Please select a Part first"}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1141,7 +1175,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Format I</option>
-              {dynamicFieldOptions.formatI.map((option) => (
+              {getAllFormatIValues().map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -1150,26 +1184,16 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format II <span className="text-ag-dark-error">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Format II value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Format II <span className="text-ag-dark-error">*</span>
+            </label>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              disabled={!formData.formatI}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !formData.formatI ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
@@ -1178,11 +1202,11 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               }}
             >
               <option value="">Select Format II</option>
-              {dynamicFieldOptions.formatII.map((option) => (
+              {formData.formatI ? getFormatIIValuesForFormatI(formData.formatI).map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
-              ))}
+              )) : null}
             </select>
           </div>
 
@@ -1683,6 +1707,8 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           setIsAddSectionValueModalOpen(false);
         }}
         onSave={handleAddSectionValue}
+        availableParts={getDistinctParts()}
+        defaultPart={formData.part || ''}
       />
 
       {/* Add Group Value Modal */}

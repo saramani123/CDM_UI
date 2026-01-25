@@ -10,6 +10,7 @@ import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
+import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 
 interface ObjectRelationship {
   id: string;
@@ -234,15 +235,27 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     const loadSections = async () => {
       if (!formData.part || formData.part === 'Keep Current Part') {
         setSectionsList([]);
+        // Reset section when part is cleared or set to "Keep Current Part"
+        if (formData.section && formData.section !== 'Keep Current Section') {
+          handleChange('section', 'Keep Current Section');
+        }
         return;
       }
       setIsLoadingSections(true);
       try {
         const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
         setSectionsList(response.sections || []);
+        // Reset section if current section is not in the new list and not "Keep Current Section"
+        if (formData.section && formData.section !== 'Keep Current Section' && !response.sections.includes(formData.section)) {
+          handleChange('section', 'Keep Current Section');
+        }
       } catch (error) {
         console.error('Error loading sections:', error);
         setSectionsList([]);
+        // Reset section on error
+        if (formData.section && formData.section !== 'Keep Current Section') {
+          handleChange('section', 'Keep Current Section');
+        }
       } finally {
         setIsLoadingSections(false);
       }
@@ -329,16 +342,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const getDistinctSections = () => {
-    // If we have sections from API, use those
-    const sections = sectionsList.length > 0 
-      ? sectionsList 
-      : [...new Set(allData.map(item => item.section).filter(Boolean))];
-    return ['Keep Current Section', ...sections.sort()];
+    // Only return sections from API (which are already filtered by Part)
+    // Don't fallback to all sections - sections must be Part-specific
+    return ['Keep Current Section', ...sectionsList.sort()];
   };
 
-  const handleAddSectionValue = async (sectionValue: string) => {
-    // Update the section in formData to the newly added value
-    handleChange('section', sectionValue);
+  const handleAddSectionValue = async (part: string, sectionValue: string) => {
+    // If the part matches the current form's part, select the new section
+    if (formData.part === part || formData.part === 'Keep Current Part') {
+      // Reload sections from API to include the new one
+      try {
+        const response = await apiService.getVariableSections(part) as { sections: string[] };
+        setSectionsList(response.sections || []);
+        // Also update the form data to select the newly added section
+        handleChange('section', sectionValue);
+      } catch (error) {
+        console.error('Error reloading sections:', error);
+        // Still update the form data even if API call fails
+        handleChange('section', sectionValue);
+      }
+    }
   };
 
   const getDistinctVariables = () => {
@@ -407,15 +430,16 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const getDistinctFormatI = () => {
-    const formatIValuesFromData = [...new Set(allData.map(item => item.formatI).filter(val => val && val.trim() !== ''))];
-    const allFormatI = [...new Set([...formatIValuesFromData, ...fieldOptions.formatI])];
-    return ['Keep Current Format I', ...allFormatI.sort()];
+    // Use the predefined Format V-I values from the mapping
+    return ['Keep Current Format I', ...getAllFormatIValues()];
   };
 
   const getDistinctFormatII = () => {
-    const formatIIValuesFromData = [...new Set(allData.map(item => item.formatII).filter(val => val && val.trim() !== ''))];
-    const allFormatII = [...new Set([...formatIIValuesFromData, ...fieldOptions.formatII])];
-    return ['Keep Current Format II', ...allFormatII.sort()];
+    // Filter Format V-II values based on selected Format V-I
+    if (!metadata.formatI || metadata.formatI === 'Keep Current Format I') {
+      return ['Keep Current Format II'];
+    }
+    return ['Keep Current Format II', ...getFormatIIValuesForFormatI(metadata.formatI)];
   };
 
   const handleAddFieldValue = async (value: string) => {
@@ -484,10 +508,21 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const handleMetadataChange = (key: string, value: string) => {
-    setMetadata(prev => ({
-      ...prev,
-      [key]: value
-    }));
+    setMetadata(prev => {
+      const newMetadata = { ...prev, [key]: value };
+      
+      // When Format V-I changes, reset Format V-II if it's not valid for the new Format V-I
+      if (key === 'formatI' && value !== prev.formatI) {
+        const newFormatI = String(value);
+        const currentFormatII = String(newMetadata.formatII || '');
+        // If Format V-II is set and not valid for the new Format V-I (and not "Keep Current"), clear it
+        if (currentFormatII && currentFormatII !== 'Keep Current Format II' && !isValidFormatIIForFormatI(newFormatI, currentFormatII)) {
+          newMetadata.formatII = 'Keep Current Format II';
+        }
+      }
+      
+      return newMetadata;
+    });
   };
 
   const handleDriverSelectionChange = (type: 'sector' | 'domain' | 'country', values: string[]) => {
@@ -727,6 +762,30 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       
       alert(`Cannot save: Duplicate variation names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
       return;
+    }
+
+    // Validate Format V-I and Format V-II: both must be selected together or both must be "Keep Current"
+    const formatIValue = metadata.formatI?.trim() || '';
+    const formatIIValue = metadata.formatII?.trim() || '';
+    const formatIChanged = formatIValue && formatIValue !== 'Keep Current Format I';
+    const formatIIChanged = formatIIValue && formatIIValue !== 'Keep Current Format II';
+    
+    if (formatIChanged && !formatIIChanged) {
+      alert('Please select both Format V-I and Format V-II together, or keep both as "Keep Current".');
+      return;
+    }
+    
+    if (!formatIChanged && formatIIChanged) {
+      alert('Please select both Format V-I and Format V-II together, or keep both as "Keep Current".');
+      return;
+    }
+    
+    // If both are selected, validate that Format V-II is valid for Format V-I
+    if (formatIChanged && formatIIChanged) {
+      if (!isValidFormatIIForFormatI(formatIValue, formatIIValue)) {
+        alert(`Format V-II "${formatIIValue}" is not valid for Format V-I "${formatIValue}". Please select a valid Format V-II value.`);
+        return;
+      }
     }
 
     // Validate validation components before saving
@@ -1181,8 +1240,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 onClick={() => {
                   setIsAddSectionValueModalOpen(true);
                 }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Section value"
+                disabled={!formData.part || formData.part === 'Keep Current Part'}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={formData.part && formData.part !== 'Keep Current Part' ? "Add new Section value" : "Please select a Part first"}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1311,26 +1371,16 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-ag-dark-text">
-                  Format II
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
-                    setIsAddFieldValueModalOpen(true);
-                  }}
-                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                  title="Add new Format II value"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
+              <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                Format II
+              </label>
               <select
                 value={metadata.formatII}
                 onChange={(e) => handleMetadataChange('formatII', e.target.value)}
-                className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                disabled={!metadata.formatI || metadata.formatI === 'Keep Current Format I'}
+                className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                  !metadata.formatI || metadata.formatI === 'Keep Current Format I' ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
                 style={{
                   backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                   backgroundPosition: 'right 12px center',
@@ -1339,11 +1389,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 }}
               >
                 <option value="">Keep Current Format II</option>
-                {getDistinctFormatII().filter(f => f !== 'Keep Current Format II').map((option) => (
+                {metadata.formatI && metadata.formatI !== 'Keep Current Format I' ? getDistinctFormatII().filter(f => f !== 'Keep Current Format II').map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
-                ))}
+                )) : null}
               </select>
             </div>
           </div>
@@ -1899,6 +1949,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           setIsAddSectionValueModalOpen(false);
         }}
         onSave={handleAddSectionValue}
+        availableParts={getDistinctParts().filter(p => p !== 'Keep Current Part')}
+        defaultPart={formData.part && formData.part !== 'Keep Current Part' ? formData.part : ''}
       />
 
       {/* Add Field Value Modal */}

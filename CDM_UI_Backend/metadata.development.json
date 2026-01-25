@@ -4,97 +4,173 @@
     "layer": "Format",
     "concept": "Source",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "2",
     "layer": "Format",
     "concept": "Vulqan",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 2, \"columns\": [\"Format V-I\", \"Format V-II\"], \"rows\": []}"
   },
   {
     "id": "3",
     "layer": "Format",
     "concept": "Metric",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "4",
     "layer": "Ontology",
     "concept": "Element",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "5",
     "layer": "Ontology",
     "concept": "Being",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 1, \"columns\": [\"Being\"], \"rows\": []}"
   },
   {
     "id": "6",
     "layer": "Ontology",
     "concept": "Avatar",
     "number": "20",
-    "examples": "Company, Customer, Product, Employees, Supplier, Person, Thing, Reference, Register, Activity, Transaction, Payment, Posting, Validator, Trigger, Account, Affiliate, Attribute, Cohort, List"
+    "examples": "Company, Customer, Product, Employees, Supplier, Person, Thing, Reference, Register, Activity, Transaction, Payment, Posting, Validator, Trigger, Account, Affiliate, Attribute, Cohort, List",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 2, \"columns\": [\"Being\", \"Avatar\"], \"rows\": []}"
   },
   {
     "id": "7",
     "layer": "Ontology",
     "concept": "Tier",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "8",
     "layer": "Ontology",
     "concept": "Variant",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "9",
     "layer": "Ontology",
     "concept": "Universal",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "",
+    "domain": "",
+    "country": "",
+    "isRequired": false
   },
   {
     "id": "10",
     "layer": "Ontology",
     "concept": "Part",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 1, \"columns\": [\"Part\"], \"rows\": []}"
   },
   {
     "id": "11",
     "layer": "Ontology",
     "concept": "Section",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 2, \"columns\": [\"Part\", \"Section\"], \"rows\": []}"
   },
   {
     "id": "12",
     "layer": "Ontology",
-    "concept": "Group-Type",
+    "concept": "G-Type",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 1, \"columns\": [\"G-Type\"], \"rows\": []}"
   },
   {
     "id": "13",
     "layer": "Ontology",
-    "concept": "List Set",
+    "concept": "Set",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 1, \"columns\": [\"Set\"], \"rows\": []}"
   },
   {
     "id": "14",
     "layer": "Ontology",
-    "concept": "List Grouping",
+    "concept": "Grouping",
     "number": "",
-    "examples": ""
+    "examples": "",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "isRequired": true,
+    "detailData": "{\"levels\": 2, \"columns\": [\"Set\", \"Grouping\"], \"rows\": []}"
+  },
+  {
+    "id": "required-group",
+    "layer": "Ontology",
+    "concept": "Group",
+    "sector": "ALL",
+    "domain": "ALL",
+    "country": "ALL",
+    "number": "",
+    "examples": "",
+    "detailData": "{\"levels\": 3, \"columns\": [\"Part\", \"Section\", \"Group\"], \"rows\": []}",
+    "isRequired": true
   }
 ]

@@ -12,6 +12,7 @@ import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
 import { LoadingSpinner } from './LoadingSpinner';
+import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 
 interface VariableMetadataField {
   key: string;
@@ -206,15 +207,27 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
   };
 
-  const handleAddSectionValue = async (sectionValue: string) => {
+  const handleAddSectionValue = async (part: string, sectionValue: string) => {
     // Update dynamic field options to include the new section
     setDynamicFieldOptions(prev => ({
       ...prev,
       section: [...new Set([...prev.section, sectionValue])].sort()
     }));
     
-    // Also update the form data to select the newly added section
-    handleChange('section', sectionValue);
+    // If the part matches the current form's part, select the new section
+    if (formData.part === part) {
+      // Reload sections from API to include the new one
+      try {
+        const response = await apiService.getVariableSections(part) as { sections: string[] };
+        setSectionsList(response.sections || []);
+        // Also update the form data to select the newly added section
+        handleChange('section', sectionValue);
+      } catch (error) {
+        console.error('Error reloading sections:', error);
+        // Still update the form data even if API call fails
+        handleChange('section', sectionValue);
+      }
+    }
   };
 
   // State for cascading dropdowns
@@ -250,15 +263,27 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     const loadSections = async () => {
       if (!formData.part) {
         setSectionsList([]);
+        // Reset section when part is cleared
+        if (formData.section) {
+          handleChange('section', '');
+        }
         return;
       }
       setIsLoadingSections(true);
       try {
         const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
         setSectionsList(response.sections || []);
+        // Reset section if current section is not in the new list
+        if (formData.section && !response.sections.includes(formData.section)) {
+          handleChange('section', '');
+        }
       } catch (error) {
         console.error('Error loading sections:', error);
         setSectionsList([]);
+        // Reset section on error
+        if (formData.section) {
+          handleChange('section', '');
+        }
       } finally {
         setIsLoadingSections(false);
       }
@@ -287,19 +312,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     loadGroups();
   }, [formData.part, formData.section]);
 
-  // Get distinct sections from all variables data (irrespective of part/group) - fallback
+  // Get distinct sections filtered by selected Part
   const getDistinctSections = (): string[] => {
-    // If we have sections from API, use those
-    if (sectionsList.length > 0) {
-      return sectionsList;
-    }
-    // Otherwise fallback to local data
-    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
-    const sectionsFromData = [...new Set(variablesData.map((item: any) => item.section))].filter(Boolean).sort() as string[];
-    
-    // Combine with dynamic field options
-    const allSections = [...new Set([...sectionsFromData, ...dynamicFieldOptions.section])].sort();
-    return allSections;
+    // Only return sections from API (which are already filtered by Part)
+    // Don't fallback to all sections - sections must be Part-specific
+    return sectionsList;
   };
 
   // Get distinct parts from variables data - fallback
@@ -620,6 +637,18 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       if (key === 'section' && value !== prev.section) {
         console.log(`🟡 Section changed from ${prev.section} to ${value}, clearing group`);
         newData.group = '';
+      }
+      
+      // When Format V-I changes, reset Format V-II if it's not valid for the new Format V-I
+      if (key === 'formatI' && value !== prev.formatI) {
+        console.log(`🟡 Format V-I changed from ${prev.formatI} to ${value}, checking Format V-II validity`);
+        const newFormatI = String(value);
+        const currentFormatII = String(newData.formatII || '');
+        // If Format V-II is set and not valid for the new Format V-I, clear it
+        if (currentFormatII && !isValidFormatIIForFormatI(newFormatI, currentFormatII)) {
+          console.log(`🟡 Format V-II "${currentFormatII}" is not valid for Format V-I "${newFormatI}", clearing Format V-II`);
+          newData.formatII = '';
+        }
       }
       
       console.log(`🟢 New formData after change:`, newData);
@@ -1179,9 +1208,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 onClick={() => {
                   setIsAddSectionValueModalOpen(true);
                 }}
-                disabled={!isPanelEnabled}
+                disabled={!isPanelEnabled || !formData.part}
                 className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Section value"
+                title={formData.part ? "Add new Section value" : "Please select a Part first"}
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -1327,7 +1356,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format I</option>
-              {dynamicFieldOptions.formatI.map((option) => (
+              {getAllFormatIValues().map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -1336,29 +1365,15 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format II
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'formatII', label: 'Format II' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Format II value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Format II
+            </label>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
-              disabled={!isPanelEnabled}
+              disabled={!isPanelEnabled || !formData.formatI}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || !formData.formatI ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1368,11 +1383,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format II</option>
-              {dynamicFieldOptions.formatII.map((option) => (
+              {formData.formatI ? getFormatIIValuesForFormatI(formData.formatI).map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
-              ))}
+              )) : null}
             </select>
           </div>
 
@@ -1967,6 +1982,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           setIsAddSectionValueModalOpen(false);
         }}
         onSave={handleAddSectionValue}
+        availableParts={getDistinctParts()}
+        defaultPart={formData.part || ''}
       />
 
       {/* Ontology Modal */}
