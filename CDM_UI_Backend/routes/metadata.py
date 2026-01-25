@@ -9,8 +9,9 @@ import json
 import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pathlib import Path
+from db import get_driver
 
 # Try to import PostgreSQL, fall back to JSON if not available
 try:
@@ -465,6 +466,430 @@ async def get_metadata():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metadata: {str(e)}")
+
+# Format V-I to Format V-II mapping (must match frontend formatMapping.ts exactly)
+# This is the source of truth for all valid Format V-I/V-II combinations
+FORMAT_I_TO_FORMAT_II_MAPPING = {
+    'ID': ['Public', 'Private', 'Name'],
+    'Reference': ['Blood', 'Intra', 'Inter'],
+    'Time': ['Date', 'DateTime'],
+    'List': ['Static', 'Specific', 'Flag'],
+    'Number': ['Integer', 'Decimal', 'Currency', 'Percentage'],
+    'Directory': ['Phone', 'Email', 'URL', 'Zip'],
+    'Freeform': ['Text', 'Binary', 'JSON', 'CSV', 'XLS', 'PDF']
+}
+
+# Valid Format V-I values in sorted order (matches frontend getAllFormatIValues())
+VALID_FORMAT_I_VALUES = sorted(FORMAT_I_TO_FORMAT_II_MAPPING.keys())
+
+@router.get("/metadata/being-values")
+async def get_being_values():
+    """
+    Get all distinct Being values from Being nodes in Neo4j.
+    Returns all Being values that are used in the Objects grid.
+    Used for populating the Being metadata concept widget.
+    
+    Results are sorted alphabetically.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Being values from Being nodes
+            # These are the same values shown in the Objects grid's Being column
+            result = session.run("""
+                MATCH (b:Being)
+                WHERE b.name IS NOT NULL AND b.name <> ''
+                RETURN DISTINCT b.name as being
+                ORDER BY b.name
+            """)
+            
+            beings = []
+            for record in result:
+                being = record.get("being", "").strip()
+                if being:
+                    beings.append(being)
+            
+            print(f"Found {len(beings)} distinct Being values from Neo4j")
+            
+            return {
+                "beings": beings,
+                "count": len(beings)
+            }
+    except Exception as e:
+        print(f"Error fetching Being values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Being values: {str(e)}")
+
+@router.get("/metadata/group-values")
+async def get_group_values():
+    """
+    Get all distinct Group values with their associated Part and Section values from Variables in Neo4j.
+    Returns all Part-Section-Group triplets that are used in the Variables grid.
+    Used for populating the Group metadata concept widget.
+    
+    Group values are nodes in Neo4j that connect to Parts and Variables.
+    Section values are properties on Variable nodes.
+    The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
+    
+    Results are sorted by Part first, then Section, then Group alphabetically.
+    This ensures proper grouping: all Groups for a Part-Section combination are together.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Part-Section-Group triplets from Variables
+            # Group is a node, Section is a property on Variable nodes
+            # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
+            result = session.run("""
+                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE v.section IS NOT NULL AND v.section <> ''
+                  AND p.name IS NOT NULL AND p.name <> ''
+                  AND g.name IS NOT NULL AND g.name <> ''
+                RETURN DISTINCT p.name as part, v.section as section, g.name as group
+                ORDER BY p.name, v.section, g.name
+            """)
+            
+            group_triplets = []
+            for record in result:
+                part = record.get("part", "").strip()
+                section = record.get("section", "").strip()
+                group = record.get("group", "").strip()
+                if part and section and group:
+                    group_triplets.append({
+                        "part": part,
+                        "section": section,
+                        "group": group
+                    })
+            
+            print(f"Found {len(group_triplets)} distinct Part-Section-Group triplets from Neo4j")
+            
+            return {
+                "groupTriplets": group_triplets,
+                "count": len(group_triplets)
+            }
+    except Exception as e:
+        print(f"Error fetching Group values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Group values: {str(e)}")
+
+@router.get("/metadata/section-values")
+async def get_section_values():
+    """
+    Get all distinct Section values with their associated Part values from Variables in Neo4j.
+    Returns all Part-Section pairs that are used in the Variables grid.
+    Used for populating the Section metadata concept widget.
+    
+    Section values are properties on Variable nodes, and they're cascading with Part values.
+    Results are sorted by Part first, then Section alphabetically.
+    This ensures proper grouping: all Sections for a Part are together.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Part-Section pairs from Variables
+            # Section is a property on Variable nodes
+            # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
+            result = session.run("""
+                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE v.section IS NOT NULL AND v.section <> ''
+                  AND p.name IS NOT NULL AND p.name <> ''
+                RETURN DISTINCT p.name as part, v.section as section
+                ORDER BY p.name, v.section
+            """)
+            
+            section_pairs = []
+            for record in result:
+                part = record.get("part", "").strip()
+                section = record.get("section", "").strip()
+                if part and section:
+                    section_pairs.append({
+                        "part": part,
+                        "section": section
+                    })
+            
+            print(f"Found {len(section_pairs)} distinct Part-Section pairs from Neo4j")
+            
+            return {
+                "sectionPairs": section_pairs,
+                "count": len(section_pairs)
+            }
+    except Exception as e:
+        print(f"Error fetching Section values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Section values: {str(e)}")
+
+@router.get("/metadata/part-values")
+async def get_part_values():
+    """
+    Get all distinct Part values from Part nodes in Neo4j.
+    Returns all Part values that are used in the Variables grid.
+    Used for populating the Part metadata concept widget.
+    
+    Results are sorted alphabetically.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Part values from Part nodes
+            # These are the same values shown in the Variables grid's Part column
+            result = session.run("""
+                MATCH (p:Part)
+                WHERE p.name IS NOT NULL AND p.name <> ''
+                RETURN DISTINCT p.name as part
+                ORDER BY p.name
+            """)
+            
+            parts = []
+            for record in result:
+                part = record.get("part", "").strip()
+                if part:
+                    parts.append(part)
+            
+            print(f"Found {len(parts)} distinct Part values from Neo4j")
+            
+            return {
+                "parts": parts,
+                "count": len(parts)
+            }
+    except Exception as e:
+        print(f"Error fetching Part values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Part values: {str(e)}")
+
+@router.get("/metadata/avatar-values")
+async def get_avatar_values():
+    """
+    Get all distinct Avatar values with their associated Being values from Neo4j.
+    Returns all Avatar-Being pairs that are used in the Objects grid.
+    Used for populating the Avatar metadata concept widget.
+    
+    Results are sorted by Being first, then Avatar alphabetically.
+    This ensures proper grouping: all Avatars for a Being are together.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Avatar values with their associated Being values
+            # These are the same values shown in the Objects grid's Avatar column
+            # The relationship is: Being-[:HAS_AVATAR]->Avatar
+            result = session.run("""
+                MATCH (b:Being)-[:HAS_AVATAR]->(a:Avatar)
+                WHERE a.name IS NOT NULL AND a.name <> ''
+                  AND b.name IS NOT NULL AND b.name <> ''
+                RETURN DISTINCT a.name as avatar, b.name as being
+                ORDER BY b.name, a.name
+            """)
+            
+            avatar_pairs = []
+            for record in result:
+                avatar = record.get("avatar", "").strip()
+                being = record.get("being", "").strip()
+                if avatar and being:
+                    avatar_pairs.append({
+                        "avatar": avatar,
+                        "being": being
+                    })
+            
+            print(f"Found {len(avatar_pairs)} distinct Avatar-Being pairs from Neo4j")
+            
+            return {
+                "avatarPairs": avatar_pairs,
+                "count": len(avatar_pairs)
+            }
+    except Exception as e:
+        print(f"Error fetching Avatar values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Avatar values: {str(e)}")
+
+@router.get("/metadata/vulqan-format-values")
+async def get_vulqan_format_values():
+    """
+    Get all valid Format V-I and Format V-II pairs from the mapping.
+    Returns ALL possible combinations from the formatMapping, not from actual Variable nodes.
+    This ensures the Vulqan widget shows exactly the same options as the Variables grid dropdowns.
+    
+    Results are sorted: Format V-I first (alphabetical), then Format V-II within each Format V-I group.
+    This matches the exact order and values shown in the Variables grid dropdowns.
+    """
+    try:
+        # Generate all valid Format V-I/V-II pairs from the mapping
+        format_pairs = []
+        
+        # Sort Format V-I values alphabetically to match frontend
+        for format_i in VALID_FORMAT_I_VALUES:
+            format_ii_values = FORMAT_I_TO_FORMAT_II_MAPPING.get(format_i, [])
+            # Sort Format V-II values alphabetically within each Format V-I
+            for format_ii in sorted(format_ii_values):
+                format_pairs.append({
+                    "formatI": format_i,
+                    "formatII": format_ii
+                })
+        
+        print(f"Generated {len(format_pairs)} Format V-I/V-II pairs from mapping")
+        
+        return {
+            "formatPairs": format_pairs,
+            "count": len(format_pairs)
+        }
+    except Exception as e:
+        print(f"Error generating Format V-I/V-II pairs: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to generate format values: {str(e)}")
+
+@router.get("/metadata/g-type-values")
+async def get_g_type_values():
+    """
+    Get all distinct G-Type values from Variable nodes in Neo4j.
+    Returns all G-Type values that are used in the Variables grid.
+    Used for populating the G-Type metadata concept widget.
+    
+    G-Type values are properties on Variable nodes (v.gType).
+    Results are sorted alphabetically.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct G-Type values from Variable nodes
+            # These are the same values shown in the Variables grid's G-Type column
+            result = session.run("""
+                MATCH (v:Variable)
+                WHERE v.gType IS NOT NULL AND v.gType <> ''
+                RETURN DISTINCT v.gType as gType
+                ORDER BY v.gType
+            """)
+            
+            g_types = []
+            for record in result:
+                g_type = record.get("gType", "").strip()
+                if g_type:
+                    g_types.append(g_type)
+            
+            print(f"Found {len(g_types)} distinct G-Type values from Neo4j")
+            
+            return {
+                "gTypes": g_types,
+                "count": len(g_types)
+            }
+    except Exception as e:
+        print(f"Error fetching G-Type values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch G-Type values: {str(e)}")
+
+@router.get("/metadata/set-values")
+async def get_set_values():
+    """
+    Get all distinct Set values from Set nodes in Neo4j.
+    Returns all Set values that are used in the Lists grid.
+    Used for populating the Set metadata concept widget.
+    
+    Set values are nodes in Neo4j (Set nodes).
+    Results are sorted alphabetically.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Set values from Set nodes
+            # These are the same values shown in the Lists grid's Set column
+            result = session.run("""
+                MATCH (s:Set)
+                WHERE s.name IS NOT NULL AND s.name <> ''
+                RETURN DISTINCT s.name as set
+                ORDER BY s.name
+            """)
+            
+            sets = []
+            for record in result:
+                set_name = record.get("set", "").strip()
+                if set_name:
+                    sets.append(set_name)
+            
+            print(f"Found {len(sets)} distinct Set values from Neo4j")
+            
+            return {
+                "sets": sets,
+                "count": len(sets)
+            }
+    except Exception as e:
+        print(f"Error fetching Set values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Set values: {str(e)}")
+
+@router.get("/metadata/grouping-values")
+async def get_grouping_values():
+    """
+    Get all distinct Grouping values with their associated Set values from Neo4j.
+    Returns all Set-Grouping pairs that are used in the Lists grid.
+    Used for populating the Grouping metadata concept widget.
+    
+    Grouping values are nodes in Neo4j (Grouping nodes) connected to Sets via HAS_GROUPING relationship.
+    Results are sorted by Set name, then Grouping name.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    try:
+        with driver.session() as session:
+            # Get all distinct Grouping values with their associated Set values
+            # These are the same values shown in the Lists grid's Set and Grouping columns
+            # Relationship: Set-[:HAS_GROUPING]->Grouping
+            result = session.run("""
+                MATCH (s:Set)-[:HAS_GROUPING]->(g:Grouping)
+                WHERE s.name IS NOT NULL AND s.name <> '' AND g.name IS NOT NULL AND g.name <> ''
+                RETURN DISTINCT s.name as set, g.name as grouping
+                ORDER BY s.name, g.name
+            """)
+            
+            groupingPairs = []
+            for record in result:
+                set_name = record.get("set", "").strip()
+                grouping_name = record.get("grouping", "").strip()
+                if set_name and grouping_name:
+                    groupingPairs.append({
+                        "set": set_name,
+                        "grouping": grouping_name
+                    })
+            
+            print(f"Found {len(groupingPairs)} distinct Set-Grouping pairs from Neo4j")
+            
+            return {
+                "groupingPairs": groupingPairs,
+                "count": len(groupingPairs)
+            }
+    except Exception as e:
+        print(f"Error fetching Grouping values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch Grouping values: {str(e)}")
 
 @router.get("/metadata/{item_id}")
 async def get_metadata_item(item_id: str):

@@ -1057,6 +1057,42 @@ class ApiService {
     });
   }
 
+  async getVulqanFormatValues() {
+    return this.request('/metadata/vulqan-format-values', { method: 'GET' });
+  }
+
+  async getBeingValues() {
+    return this.request('/metadata/being-values', { method: 'GET' });
+  }
+
+  async getAvatarValues() {
+    return this.request('/metadata/avatar-values', { method: 'GET' });
+  }
+
+  async getPartValues() {
+    return this.request('/metadata/part-values', { method: 'GET' });
+  }
+
+  async getSectionValues() {
+    return this.request('/metadata/section-values', { method: 'GET' });
+  }
+
+  async getGroupValues() {
+    return this.request('/metadata/group-values', { method: 'GET' });
+  }
+
+  async getGTypeValues() {
+    return this.request('/metadata/g-type-values', { method: 'GET' });
+  }
+
+  async getSetValues() {
+    return this.request('/metadata/set-values', { method: 'GET' });
+  }
+
+  async getGroupingValues() {
+    return this.request('/metadata/grouping-values', { method: 'GET' });
+  }
+
   // Heuristics API
   async getHeuristics() {
     return this.request('/heuristics', { method: 'GET' });
