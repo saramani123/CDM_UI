@@ -1507,7 +1507,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 );
               })}
               {showActionsColumn && (
-                <div className="w-20 text-center text-ag-dark-text px-4 py-2 flex-shrink-0">
+                <div className="w-20 text-center text-ag-dark-text px-4 py-2 flex-shrink-0 border-l border-ag-dark-border">
                   <span className="text-ag-dark-text font-medium text-xs">Actions</span>
                 </div>
               )}
@@ -1540,9 +1540,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     return; // Don't allow clicking on tier lists
                   }
                   
-                  // Prevent row click when clicking on inputs or selects
+                  // Prevent row click when clicking on inputs, selects, or buttons
                   const target = e.target as HTMLElement;
-                  if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.closest('input') || target.closest('select')) {
+                  if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'BUTTON' || 
+                      target.closest('input') || target.closest('select') || target.closest('button')) {
                     return;
                   }
                   
@@ -1858,7 +1859,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   );
                 })}
                 {showActionsColumn && (
-                  <div className="w-20 flex items-center justify-center gap-2 px-2 py-1.5 flex-shrink-0">
+                  <div className="w-20 flex items-center justify-center gap-2 px-2 py-1.5 flex-shrink-0 border-l border-ag-dark-border">
                     {onClone && (gridType === 'objects' || gridType === 'variables') && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onClone?.(row); }}
@@ -1869,7 +1870,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                       </button>
                     )}
                     <button
-                      onClick={(e) => { e.stopPropagation(); onDelete?.(row); }}
+                      type="button"
+                      onClick={(e) => { 
+                        e.stopPropagation(); 
+                        e.preventDefault();
+                        if (!isRequiredMetadataRow(row) && onDelete) {
+                          onDelete(row);
+                        }
+                      }}
                       className={`text-ag-dark-error hover:text-red-400 transition-colors ${
                         isRequiredMetadataRow(row)
                           ? 'opacity-30 cursor-not-allowed pointer-events-none' : ''
