@@ -930,9 +930,21 @@ class ApiService {
     return this.request(`/variables/sections?${params.toString()}`, { method: 'GET' });
   }
 
-  async getVariableGroups(part: string, section: string) {
-    const params = new URLSearchParams({ part, section });
+  async getVariableGroups(part: string, section?: string) {
+    // Groups are filtered only by part, not by section
+    // Section parameter is kept for backward compatibility but not used
+    const params = new URLSearchParams({ part });
+    if (section) {
+      params.append('section', section);
+    }
     return this.request(`/variables/groups?${params.toString()}`, { method: 'GET' });
+  }
+
+  async addVariableSection(part: string, section: string) {
+    return this.request('/variables/sections', {
+      method: 'POST',
+      body: JSON.stringify({ part, section }),
+    });
   }
 
   async getVariablesForSelection(part: string, section: string, group: string) {

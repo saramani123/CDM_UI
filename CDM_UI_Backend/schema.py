@@ -539,6 +539,11 @@ class VariableCSVRowData(BaseModel):
         allow_population_by_field_name = True
         populate_by_name = True
 
+class VariableSectionRequest(BaseModel):
+    """Schema for adding a new section value for a part"""
+    part: str = Field(..., description="Part name")
+    section: str = Field(..., description="New section value to add")
+
 class VariableFieldOptionRequest(BaseModel):
     """Schema for adding a new field option"""
     field_name: str = Field(..., description="Field name (formatI, formatII, gType, validation, default)")

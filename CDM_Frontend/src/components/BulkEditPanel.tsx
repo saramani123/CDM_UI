@@ -10,6 +10,7 @@ import { AddBeingValueModal } from './AddBeingValueModal';
 import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
+import { VariantsModal } from './VariantsModal';
 import { apiService } from '../services/api';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
@@ -318,6 +319,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // CSV upload modal states
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
+  const [isVariantsModalOpen, setIsVariantsModalOpen] = useState(false);
   const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
   
   // Relationship modal state
@@ -1105,24 +1107,21 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     useEffect(() => {
       if (!isOpen) return;
 
-      // Use setTimeout to ensure the listener is attached after the state update
-      // This prevents the dropdown from closing immediately when opened
-      let handleClickOutside: ((event: MouseEvent) => void) | null = null;
-      const timeoutId = setTimeout(() => {
-        handleClickOutside = (event: MouseEvent) => {
-          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-            setIsOpen(false);
-          }
-        };
+      // Use mousedown instead of click to avoid conflicts with button click
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+          setIsOpen(false);
+        }
+      };
 
-        document.addEventListener('click', handleClickOutside);
+      // Use a small delay to ensure the click event that opened the dropdown has finished
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
       }, 0);
 
       return () => {
         clearTimeout(timeoutId);
-        if (handleClickOutside) {
-          document.removeEventListener('click', handleClickOutside);
-        }
+        document.removeEventListener('mousedown', handleClickOutside);
       };
     }, [isOpen]);
     
@@ -1175,7 +1174,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) {
+              setIsOpen(!isOpen);
+            }
+          }}
           disabled={disabled}
           className={buttonClass}
           style={{
@@ -1189,7 +1193,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         </button>
         
         {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div 
+            className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {options.map((option) => (
               <label
                 key={option}
@@ -2458,112 +2465,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleSortVariants('asc')}
+              onClick={() => setIsVariantsModalOpen(true)}
               className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort A-Z"
+              title="View and manage variants"
             >
-              <ArrowUpAZ className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => handleSortVariants('desc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort Z-A"
-            >
-              <ArrowDownZA className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setIsVariantUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Variants CSV"
-            >
-              <Upload className="w-4 h-4" />
+              <Grid3x3 className="w-5 h-5" />
             </button>
           </div>
         }
       >
-        <div
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <textarea
-            ref={variantsTextareaRef}
-            value={variantsText}
-            onChange={(e) => {
-              const textarea = e.target as HTMLTextAreaElement;
-              const cursorPosition = textarea.selectionStart;
-              lastChangeTimeRef.current = Date.now();
-              handleVariantsTextChange(e.target.value);
-              // Restore cursor position and focus after state update
-              requestAnimationFrame(() => {
-                if (variantsTextareaRef.current && isTextareaFocusedRef.current) {
-                  variantsTextareaRef.current.focus();
-                  // Try to restore cursor position, but if it's out of bounds, put it at the end
-                  const maxPos = variantsTextareaRef.current.value.length;
-                  const safePos = Math.min(cursorPosition, maxPos);
-                  variantsTextareaRef.current.setSelectionRange(safePos, safePos);
-                }
-              });
-            }}
-            onKeyDown={(e) => {
-              // Prevent Enter key from propagating to parent components
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-              // Prevent default only for Escape, not Enter
-              if (e.key === 'Escape') {
-                variantsTextareaRef.current?.blur();
-              }
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-              // Ensure textarea gets focus - browser will handle cursor positioning
-              if (variantsTextareaRef.current) {
-                variantsTextareaRef.current.focus();
-                isTextareaFocusedRef.current = true;
-              }
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-              // Don't prevent default - let the browser handle focus and cursor positioning naturally
-              isTextareaFocusedRef.current = true;
-            }}
-            onFocus={(e) => {
-              e.stopPropagation();
-              isTextareaFocusedRef.current = true;
-            }}
-            onBlur={(e) => {
-              // Only restore focus if blur happened very recently after typing (likely accidental)
-              const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
-              const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-              
-              // Check if blur was intentional (user clicked on another focusable element)
-              const relatedTarget = e.relatedTarget as HTMLElement;
-              const clickedOutside = !relatedTarget || 
-                (relatedTarget.tagName !== 'TEXTAREA' && 
-                 relatedTarget.tagName !== 'INPUT' && 
-                 !relatedTarget.isContentEditable &&
-                 !relatedTarget.closest('button') &&
-                 !relatedTarget.closest('[role="button"]'));
-              
-              // Only restore focus if it was recent typing and user didn't click on another input/button
-              if (wasRecentTyping && clickedOutside && variantsTextareaRef.current && isTextareaFocusedRef.current) {
-                // Restore focus after a brief delay to let React finish its render cycle
-                setTimeout(() => {
-                  if (variantsTextareaRef.current && document.activeElement !== variantsTextareaRef.current) {
-                    variantsTextareaRef.current.focus();
-                  }
-                }, 10);
-              } else if (!wasRecentTyping && !clickedOutside) {
-                // User intentionally blurred by clicking elsewhere, don't restore
-                isTextareaFocusedRef.current = false;
-              }
-            }}
-            placeholder="Type one variant per line. Press Enter to add more."
-            rows={8}
-            className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-          />
+        {/* Variants display removed - use the grid icon button to view variants in the modal */}
+        <div className="mb-6">
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              <span className="font-medium">Bulk variants management:</span> Click the grid icon above to add variants. These variants will be appended to each selected object's existing variants.
+            </div>
+          </div>
         </div>
       </CollapsibleSection>
         </>
@@ -2627,6 +2544,22 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         onUpload={handleRelationshipCsvUpload}
       />
       
+      {/* Variants Modal */}
+      {activeTab === 'objects' && selectedObjects.length > 0 && (
+        <VariantsModal
+          isOpen={isVariantsModalOpen}
+          onClose={() => setIsVariantsModalOpen(false)}
+          selectedObjects={selectedObjects}
+          isBulkMode={true}
+          onSave={async () => {
+            // Refresh objects data after saving
+            if (onObjectsRefresh) {
+              await onObjectsRefresh();
+            }
+          }}
+        />
+      )}
+
       <CsvUploadModal
         isOpen={isVariantUploadOpen}
         onClose={() => setIsVariantUploadOpen(false)}

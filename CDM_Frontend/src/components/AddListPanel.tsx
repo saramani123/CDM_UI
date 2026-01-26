@@ -134,11 +134,11 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     }
   };
 
-  // Driver selections state
+  // Driver selections state - default to 'ALL' for sector, domain, and country
   const [driverSelections, setDriverSelections] = useState({
-    sector: [] as string[],
-    domain: [] as string[],
-    country: [] as string[]
+    sector: ['ALL'] as string[],
+    domain: ['ALL'] as string[],
+    country: ['ALL'] as string[]
   });
 
   // Relationship modal state
@@ -224,6 +224,22 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     relationships: false,
     variations: false
   });
+
+  // Reset to defaults when panel opens
+  useEffect(() => {
+    if (isOpen) {
+      // Only reset if all driver selections are empty
+      if (driverSelections.sector.length === 0 && 
+          driverSelections.domain.length === 0 && 
+          driverSelections.country.length === 0) {
+        setDriverSelections({
+          sector: ['ALL'],
+          domain: ['ALL'],
+          country: ['ALL']
+        });
+      }
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -599,9 +615,9 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       origin: ''
     });
     setDriverSelections({
-      sector: [],
-      domain: [],
-      country: []
+      sector: ['ALL'],
+      domain: ['ALL'],
+      country: ['ALL']
     });
     setVariablesAttached([]);
     setListValuesText('');
@@ -628,17 +644,21 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
     // Close dropdown when clicking outside
     useEffect(() => {
+      if (!isOpen) return;
+
       const handleClickOutside = (event: MouseEvent) => {
         if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
           setIsOpen(false);
         }
       };
 
-      if (isOpen) {
+      // Use a small delay to ensure the click event that opened the dropdown has finished
+      const timeoutId = setTimeout(() => {
         document.addEventListener('mousedown', handleClickOutside);
-      }
+      }, 0);
 
       return () => {
+        clearTimeout(timeoutId);
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }, [isOpen]);
@@ -678,7 +698,12 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) {
+              setIsOpen(!isOpen);
+            }
+          }}
           disabled={disabled}
           className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -694,22 +719,32 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         </button>
         
         {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {options.map((option) => (
-              <label
-                key={option}
-                className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <input
-                  type="checkbox"
-                  checked={values.includes(option)}
-                  onChange={() => handleToggle(option)}
-                  className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
-                />
-                <span className="text-sm text-ag-dark-text">{option}</span>
-              </label>
-            ))}
+          <div 
+            className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {options.map((option) => {
+              // If "ALL" is selected, show all individual options as checked
+              const isChecked = option === 'ALL' 
+                ? values.includes('ALL')
+                : values.includes(option) || values.includes('ALL');
+              
+              return (
+                <label
+                  key={option}
+                  className="flex items-center gap-2 px-3 py-2 hover:bg-ag-dark-bg cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => handleToggle(option)}
+                    className="rounded border-ag-dark-border bg-ag-dark-bg text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0"
+                  />
+                  <span className="text-sm text-ag-dark-text">{option}</span>
+                </label>
+              );
+            })}
           </div>
         )}
       </div>

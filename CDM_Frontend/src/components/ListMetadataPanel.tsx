@@ -1163,24 +1163,21 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     useEffect(() => {
       if (!isOpen) return;
 
-      // Use setTimeout to ensure the listener is attached after the state update
-      // This prevents the dropdown from closing immediately when opened
-      let handleClickOutside: ((event: MouseEvent) => void) | null = null;
-      const timeoutId = setTimeout(() => {
-        handleClickOutside = (event: MouseEvent) => {
-          if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-            setIsOpen(false);
-          }
-        };
+      // Use mousedown instead of click to avoid conflicts with button click
+      const handleClickOutside = (event: MouseEvent) => {
+        if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+          setIsOpen(false);
+        }
+      };
 
-        document.addEventListener('click', handleClickOutside);
+      // Use a small delay to ensure the click event that opened the dropdown has finished
+      const timeoutId = setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside);
       }, 0);
 
       return () => {
         clearTimeout(timeoutId);
-        if (handleClickOutside) {
-          document.removeEventListener('click', handleClickOutside);
-        }
+        document.removeEventListener('mousedown', handleClickOutside);
       };
     }, [isOpen]);
     
@@ -1219,7 +1216,12 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => !disabled && setIsOpen(!isOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!disabled) {
+              setIsOpen(!isOpen);
+            }
+          }}
           disabled={disabled}
           className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left ${
             disabled ? 'opacity-50 cursor-not-allowed' : ''
@@ -1235,7 +1237,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         </button>
         
         {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div 
+            className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {options.map((option) => (
               <label
                 key={option}

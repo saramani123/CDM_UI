@@ -183,9 +183,40 @@ function App() {
       }
     },
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
-    { key: 'concept', title: 'Concept', sortable: true, filterable: true, width: '350px' },
+    { 
+      key: 'concept', 
+      title: 'Concept', 
+      sortable: true, 
+      filterable: true, 
+      width: '350px',
+      render: (row: MetadataData) => (
+        <span className="font-bold" style={{ color: '#FFD700' }}>
+          {(row as any).concept || '-'}
+        </span>
+      )
+    },
     { key: 'number', title: 'Number', sortable: true, filterable: true, width: '200px' },
-    { key: 'examples', title: 'Examples', sortable: true, filterable: true, width: '500px' }
+    { 
+      key: 'examples', 
+      title: 'Examples', 
+      sortable: true, 
+      filterable: true, 
+      width: '500px',
+      render: (row: MetadataData) => {
+        const examples = (row as any).examples || '';
+        if (!examples || examples === '-') return <span>-</span>;
+        
+        // Split by comma and trim each value
+        const values = examples.split(',').map((v: string) => v.trim()).filter((v: string) => v);
+        
+        // Limit to 3 values
+        const displayValues = values.slice(0, 3);
+        const displayText = displayValues.join(', ');
+        
+        // Add ellipsis if there are more than 3 values
+        return <span>{displayText}{values.length > 3 ? '...' : ''}</span>;
+      }
+    }
   ];
   
   // Heuristics tab columns
@@ -239,7 +270,18 @@ function App() {
       )
     },
     { key: 'agent', title: 'Agent', sortable: true, filterable: true, width: '200px' },
-    { key: 'procedure', title: 'Procedure', sortable: true, filterable: true, width: '300px' },
+    { 
+      key: 'procedure', 
+      title: 'Procedure', 
+      sortable: true, 
+      filterable: true, 
+      width: '300px',
+      render: (row: HeuristicsData) => (
+        <span className="font-bold" style={{ color: '#FFA500' }}>
+          {row.procedure || '-'}
+        </span>
+      )
+    },
     { key: 'rules', title: 'Rules', sortable: true, filterable: true, width: '120px' },
     { key: 'best', title: 'Best', sortable: true, filterable: true, width: '120px' }
   ];
@@ -622,7 +664,6 @@ function App() {
     { id: 'objects', label: 'Objects', count: objectsCount },
     { id: 'variables', label: 'Variables', count: variablesCount },
     { id: 'lists', label: 'Lists', count: 45 }, // Keep lists as static for now
-    { id: 'ledgers', label: 'Ledgers' },
     { id: 'heuristics', label: 'Heuristics' },
     { id: 'sources', label: 'Sources' }
   ], [driversCount, objectsCount, variablesCount]);
@@ -5653,15 +5694,7 @@ function App() {
       {/* Main Content */}
       <div className="px-6 py-6 flex-1 min-h-0 bg-ag-dark-bg overflow-hidden flex flex-col" style={{backgroundColor: '#1a1d23'}}>
         {/* Coming Soon Tabs */}
-        {activeTab === 'ledgers' ? (
-          <div className="flex items-center justify-center min-h-[400px]">
-            <div className="text-center">
-              <div className="text-6xl mb-4">🚧</div>
-              <h2 className="text-2xl font-semibold text-ag-dark-text mb-2 capitalize">{activeTab}</h2>
-              <p className="text-lg text-ag-dark-text-secondary">Coming Soon</p>
-            </div>
-          </div>
-        ) : activeTab === 'metadata' ? (
+        {activeTab === 'metadata' ? (
           <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             {/* Add Button */}
             <div className="mb-4 flex items-center justify-start">

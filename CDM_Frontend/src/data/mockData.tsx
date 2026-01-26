@@ -1,3 +1,5 @@
+import React from 'react';
+
 // Real data structure based on your sample data
 export interface ObjectData {
   id: string;
@@ -47,6 +49,34 @@ export const objectColumns = [
   { key: 'isMeme', title: 'Is Meme', sortable: true, filterable: true, width: '100px' },
   { key: 'relationships', title: 'Relationships', sortable: true, filterable: false, width: '160px' },
   { key: 'variants', title: 'Variants', sortable: true, filterable: false, width: '120px' },
+  { 
+    key: 'variantsEx', 
+    title: 'Variants ex.', 
+    sortable: true, 
+    filterable: false, 
+    width: '200px',
+    render: (row: any) => {
+      const variantsList = row.variantsList || [];
+      if (!variantsList || variantsList.length === 0) {
+        return <span>-</span>;
+      }
+      
+      // Get variant names (handle both string and object formats)
+      const variantNames = variantsList
+        .map((v: any) => typeof v === 'string' ? v : v.name)
+        .filter((name: string) => name && name.trim());
+      
+      if (variantNames.length === 0) {
+        return <span>-</span>;
+      }
+      
+      // Limit to first 3 variants
+      const displayValues = variantNames.slice(0, 3);
+      const displayText = displayValues.join(', ');
+      
+      return <span>{displayText}</span>;
+    }
+  },
   { key: 'variables', title: 'Variables', sortable: true, filterable: false, width: '140px' }
 ];
 

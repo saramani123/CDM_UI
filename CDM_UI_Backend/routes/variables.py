@@ -7,7 +7,7 @@ import csv
 from pydantic import BaseModel, Field
 from neo4j import WRITE_ACCESS
 from db import get_driver
-from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest, VariableFieldOptionRequest, VariableFieldOptionsResponse
+from schema import VariableCreateRequest, VariableUpdateRequest, VariableResponse, CSVUploadResponse, CSVRowData, BulkVariableUpdateRequest, BulkVariableUpdateResponse, ObjectRelationshipCreateRequest, VariableFieldOptionRequest, VariableFieldOptionsResponse, VariableSectionRequest
 
 # Pydantic models for JSON body parameters
 class BulkVariableObjectRelationshipItem(BaseModel):
@@ -253,22 +253,18 @@ async def get_variable_sections(part: str = None):
         raise HTTPException(status_code=500, detail=f"Failed to fetch sections: {str(e)}")
 
 
-@router.get("/variables/groups")
-async def get_variable_groups(part: str = None, section: str = None):
+@router.post("/variables/sections")
+async def add_variable_section(section_data: VariableSectionRequest):
     """
-    Get all distinct Group values that:
-    1. Belong to the specified Part (via HAS_GROUP relationship)
-    2. Have Variables with the specified Section property
-    
-    Used for cascading dropdown: Part -> Section -> Group -> Variable
-    
-    Args:
-        part: The Part name to filter groups by
-        section: The Section property value to filter groups by
+    Add a new section value for a specific part.
+    This creates a placeholder variable with the new section so it appears in section queries.
     """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    part = section_data.part.strip()
+    section = section_data.section.strip()
 
     if not part:
         raise HTTPException(status_code=400, detail="Part parameter is required")
@@ -277,18 +273,110 @@ async def get_variable_groups(part: str = None, section: str = None):
         raise HTTPException(status_code=400, detail="Section parameter is required")
 
     try:
-        with driver.session() as session:
-            result = session.run("""
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Check if section already exists for this part
+            existing_check = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE v.section = $section
+                RETURN count(v) as count
+            """, part=part, section=section)
+            
+            existing_count = existing_check.single()["count"]
+            if existing_count > 0:
+                # Section already exists, return success
+                return {"success": True, "message": f"Section '{section}' already exists for part '{part}'"}
+            
+            # Create a placeholder variable with the new section
+            # We need to create: Part -> Group -> Variable with the section property
+            # Use a temporary group name that can be cleaned up later if needed
+            placeholder_group = f"__PLACEHOLDER_{uuid.uuid4().hex[:8]}"
+            placeholder_variable_id = str(uuid.uuid4())
+            placeholder_variable_name = f"__PLACEHOLDER_SECTION_{section.strip()}"
+            
+            result = session.run("""
+                // MERGE Part node
+                MERGE (p:Part {name: $part})
+                
+                // MERGE Group node (placeholder)
+                MERGE (g:Group {name: $group})
+                
+                // Create relationship Part -> Group
+                MERGE (p)-[:HAS_GROUP]->(g)
+                
+                // Create placeholder Variable node with the new section
+                CREATE (v:Variable {
+                    id: $variable_id,
+                    name: $variable_name,
+                    section: $section,
+                    driver: "ALL, ALL, ALL, None",
+                    formatI: "",
+                    formatII: "",
+                    gType: "",
+                    validation: "",
+                    default: "",
+                    graph: "Yes",
+                    status: "Placeholder"
+                })
+                
+                // Create relationship Group -> Variable
+                MERGE (g)-[:HAS_VARIABLE]->(v)
+                
+                RETURN v.id as id, v.section as section
+            """, {
+                "part": part,
+                "group": placeholder_group,
+                "variable_id": placeholder_variable_id,
+                "variable_name": placeholder_variable_name,
+                "section": section
+            })
+            
+            record = result.single()
+            if record:
+                return {"success": True, "message": f"Section '{section}' added successfully for part '{part}'"}
+            else:
+                raise HTTPException(status_code=500, detail="Failed to create section")
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error adding section {section} for part {part}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to add section: {str(e)}")
+
+
+@router.get("/variables/groups")
+async def get_variable_groups(part: str = None, section: str = None):
+    """
+    Get all distinct Group values that belong to the specified Part (via HAS_GROUP relationship).
+    Groups are filtered only by Part, not by Section, since Part -> Group -> Variable relationships
+    are independent of the Variable's section property.
+    
+    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    
+    Args:
+        part: The Part name to filter groups by (required)
+        section: Optional - kept for backward compatibility but not used in filtering
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    if not part:
+        raise HTTPException(status_code=400, detail="Part parameter is required")
+
+    try:
+        with driver.session() as session:
+            # Get all groups for the part, regardless of section
+            # Part -> HAS_GROUP -> Group relationship is independent of Variable section property
+            result = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)
                 RETURN DISTINCT g.name as group
                 ORDER BY g.name
-            """, part=part, section=section)
+            """, part=part)
             
             groups = [record["group"] for record in result if record.get("group")]
             return {"groups": groups}
     except Exception as e:
-        print(f"Error fetching groups for part {part} and section {section}: {e}")
+        print(f"Error fetching groups for part {part}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch groups: {str(e)}")
 
 
@@ -1123,6 +1211,8 @@ async def update_variable(variable_id: str, request: Request):
             current_variable = current_record["v"]
             current_part = current_record["part"] if current_record["part"] else ""
             current_group = current_record["group"] if current_record["group"] else ""
+            # Get driver from current variable node
+            current_driver = current_variable.get("driver", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'driver', "")
             # Get is_meme and is_group_key from node properties
             current_is_meme = current_variable.get("is_meme", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_meme', False)
             current_is_group_key = current_variable.get("is_group_key", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_group_key', False)
@@ -1287,7 +1377,8 @@ async def update_variable(variable_id: str, request: Request):
                     RETURN v.id as id, v.name as variable, v.section as section,
                            v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                            v.validation as validation, v.default as default, v.graph as graph,
-                           v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                           v.status as status, COALESCE(v.driver, '') as driver,
+                           COALESCE(v.is_meme, false) as is_meme,
                            COALESCE(v.is_group_key, false) as is_group_key
                 """
                 
@@ -1301,14 +1392,14 @@ async def update_variable(variable_id: str, request: Request):
                 record = {
                     "id": current_variable["id"],
                     "variable": current_variable["name"],
-                    "section": current_variable["section"],
-                    "formatI": current_variable["formatI"],
-                    "formatII": current_variable["formatII"],
-                    "gType": current_variable["gType"],
-                    "validation": current_variable["validation"],
-                    "default": current_variable["default"],
-                    "graph": current_variable["graph"],
-                    "status": current_variable["status"],
+                    "section": current_variable.get("section", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'section', ""),
+                    "formatI": current_variable.get("formatI", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'formatI', ""),
+                    "formatII": current_variable.get("formatII", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'formatII', ""),
+                    "gType": current_variable.get("gType", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'gType', ""),
+                    "validation": current_variable.get("validation", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'validation', ""),
+                    "default": current_variable.get("default", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'default', ""),
+                    "graph": current_variable.get("graph", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'graph', ""),
+                    "status": current_variable.get("status", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'status', ""),
                     "is_meme": current_is_meme,
                     "is_group_key": current_is_group_key
                 }
@@ -1549,7 +1640,8 @@ async def update_variable(variable_id: str, request: Request):
                 final_section = record.get("section") or ""
                 print(f"DEBUG: Using computed part/group (relationship query returned None or missing values): Part={final_part}, Group={final_group}, Section={final_section}", flush=True)
             
-            final_driver = variable_data.driver if variable_data.driver is not None else (record.get("driver") if record else "")
+            # Get driver: use provided value, or fall back to current driver from Neo4j, or from record if available
+            final_driver = variable_data.driver if variable_data.driver is not None else (record.get("driver") if record and record.get("driver") is not None else current_driver)
 
             # Get all validation properties and combine them into comma-separated string
             # Query the variable node again to get all properties including Validation #2, #3, etc.

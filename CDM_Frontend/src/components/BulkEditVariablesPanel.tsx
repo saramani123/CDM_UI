@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy, ArrowUpAZ, ArrowDownZA } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
 import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
@@ -8,6 +8,7 @@ import { AddFieldValueModal } from './AddFieldValueModal';
 import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
+import { VariationsModal } from './VariationsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
@@ -166,6 +167,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const lastChangeTimeRef = useRef<number>(0);
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
+  const [isVariationsModalOpen, setIsVariationsModalOpen] = useState(false);
 
   // Section input focus management
   const sectionInputRef = useRef<HTMLInputElement>(null);
@@ -268,16 +270,16 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     loadSections();
   }, [formData.part]);
 
-  // Load groups when part and section change
+  // Load groups when part changes (groups are filtered only by part, not by section)
   useEffect(() => {
     const loadGroups = async () => {
-      if (!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section') {
+      if (!formData.part || formData.part === 'Keep Current Part') {
         setGroupsList([]);
         return;
       }
       setIsLoadingGroups(true);
       try {
-        const response = await apiService.getVariableGroups(formData.part, formData.section) as { groups: string[] };
+        const response = await apiService.getVariableGroups(formData.part) as { groups: string[] };
         setGroupsList(response.groups || []);
       } catch (error) {
         console.error('Error loading groups:', error);
@@ -287,7 +289,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       }
     };
     loadGroups();
-  }, [formData.part, formData.section]);
+  }, [formData.part]);
 
   // Get distinct parts and groups from variables data
   const getDistinctParts = () => {
@@ -313,8 +315,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const getGroupsForPart = (part: string): string[] => {
     if (!part || part === 'Keep Current Part') return [];
     
-    // If we have groups from API (based on part + section), use those
-    if (groupsList.length > 0 && formData.part === part && formData.section && formData.section !== 'Keep Current Section') {
+    // If we have groups from API (based on part only), use those
+    if (groupsList.length > 0 && formData.part === part) {
       return groupsList;
     }
     
@@ -353,19 +355,28 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const handleAddSectionValue = async (part: string, sectionValue: string) => {
-    // If the part matches the current form's part, select the new section
-    if (formData.part === part || formData.part === 'Keep Current Part') {
-      // Reload sections from API to include the new one
-      try {
-        const response = await apiService.getVariableSections(part) as { sections: string[] };
-        setSectionsList(response.sections || []);
-        // Also update the form data to select the newly added section
-        handleChange('section', sectionValue);
-      } catch (error) {
-        console.error('Error reloading sections:', error);
-        // Still update the form data even if API call fails
-        handleChange('section', sectionValue);
+    try {
+      // Call API to add the section (creates placeholder variable in Neo4j)
+      await apiService.addVariableSection(part, sectionValue);
+      
+      // If the part matches the current form's part, reload sections and select the new one
+      if (formData.part === part || formData.part === 'Keep Current Part') {
+        // Reload sections from API to include the new one
+        try {
+          const response = await apiService.getVariableSections(part) as { sections: string[] };
+          setSectionsList(response.sections || []);
+          // Also update the form data to select the newly added section
+          handleChange('section', sectionValue);
+        } catch (error) {
+          console.error('Error reloading sections:', error);
+          // Still update the form data even if API call fails
+          handleChange('section', sectionValue);
+        }
       }
+    } catch (error) {
+      console.error('Error adding section:', error);
+      alert(`Failed to add section: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error; // Re-throw so modal can handle it
     }
   };
 
@@ -689,17 +700,25 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     console.log('🔵 handleSaveBulkEdit called');
     console.log('🔵 validationComponentsList:', validationComponentsList);
     
-    // Validate that if Part or Group is being changed, BOTH must be provided
+    // Cascading validation: Part -> Section -> Group
+    // If Part is being changed, Section and Group must be provided
+    // If Section is being changed, Group must be provided
     const partProvided = formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part';
+    const sectionProvided = formData.section && formData.section.trim() !== '' && formData.section !== 'Keep Current Section';
     const groupProvided = formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group';
     
-    if (partProvided && !groupProvided) {
-      alert('When changing Part in bulk edit, you must also specify Group. Please select both Part and Group.');
+    if (partProvided && !sectionProvided) {
+      alert('Error: When changing Part, you must also select a Section. Please select both Part and Section.');
       return;
     }
     
-    if (groupProvided && !partProvided) {
-      alert('When changing Group in bulk edit, you must also specify Part. Please select both Part and Group.');
+    if (partProvided && !groupProvided) {
+      alert('Error: When changing Part, you must also select a Group. Please select Part, Section, and Group.');
+      return;
+    }
+    
+    if (sectionProvided && !groupProvided) {
+      alert('Error: When changing Section, you must also select a Group. Please select both Section and Group.');
       return;
     }
     
@@ -953,17 +972,21 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
     // Close dropdown when clicking outside
     useEffect(() => {
+      if (!isOpen) return;
+
       const handleClickOutside = (event: MouseEvent) => {
         if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
           setIsOpen(false);
         }
       };
 
-      if (isOpen) {
+      // Use a small delay to ensure the click event that opened the dropdown has finished
+      const timeoutId = setTimeout(() => {
         document.addEventListener('mousedown', handleClickOutside);
-      }
+      }, 0);
 
       return () => {
+        clearTimeout(timeoutId);
         document.removeEventListener('mousedown', handleClickOutside);
       };
     }, [isOpen]);
@@ -1006,7 +1029,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       <div className="relative" ref={dropdownRef}>
         <button
           type="button"
-          onClick={() => setIsOpen(!isOpen)}
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsOpen(!isOpen);
+          }}
           className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent text-left"
           style={{
             backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1019,7 +1045,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </button>
         
         {isOpen && (
-          <div className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+          <div 
+            className="absolute z-10 w-full mt-1 bg-ag-dark-surface border border-ag-dark-border rounded-lg shadow-lg max-h-60 overflow-y-auto"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {options.length === 0 ? (
               <div className="px-3 py-2 text-sm text-ag-dark-text-secondary italic">
                 No values found — please add new items in Drivers tab
@@ -1304,7 +1333,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
-                disabled={!formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section' || isLoadingGroups}
+                disabled={!formData.part || formData.part === 'Keep Current Part' || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                   !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section' || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
@@ -1875,25 +1904,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         actions={
           <div className="flex items-center gap-2">
             <button
-              onClick={() => handleSortVariations('asc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort A-Z"
+              onClick={() => setIsVariationsModalOpen(true)}
+              disabled={selectedCount === 0}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
+                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              title={selectedCount === 0 ? "Select variables to manage variations" : "View and manage variations"}
             >
-              <ArrowUpAZ className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => handleSortVariations('desc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort Z-A"
-            >
-              <ArrowDownZA className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setIsVariationUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Variations CSV"
-            >
-              <Upload className="w-4 h-4" />
+              <Grid3x3 className="w-5 h-5" />
             </button>
             <button
               onClick={() => setIsVariationsGraphModalOpen(true)}
@@ -1908,74 +1926,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           </div>
         }
       >
-        <textarea
-          ref={variationsTextareaRef}
-          value={variationsText}
-          onChange={(e) => {
-            const textarea = e.target as HTMLTextAreaElement;
-            const cursorPosition = textarea.selectionStart;
-            lastChangeTimeRef.current = Date.now();
-            handleVariationsTextChange(e.target.value);
-            // Restore cursor position and focus after state update
-            requestAnimationFrame(() => {
-              if (variationsTextareaRef.current && isTextareaFocusedRef.current) {
-                variationsTextareaRef.current.focus();
-                // Try to restore cursor position, but if it's out of bounds, put it at the end
-                const maxPos = variationsTextareaRef.current.value.length;
-                const safePos = Math.min(cursorPosition, maxPos);
-                variationsTextareaRef.current.setSelectionRange(safePos, safePos);
-              }
-            });
-          }}
-          onKeyDown={(e) => {
-            // Prevent Enter key from propagating to parent components
-            e.stopPropagation();
-            // Prevent default only for Escape, not Enter
-            if (e.key === 'Escape') {
-              variationsTextareaRef.current?.blur();
-            }
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onFocus={(e) => {
-            e.stopPropagation();
-            isTextareaFocusedRef.current = true;
-          }}
-          onBlur={(e) => {
-            // Only restore focus if blur happened very recently after typing (likely accidental)
-            const timeSinceLastChange = Date.now() - lastChangeTimeRef.current;
-            const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-            
-            // Check if blur was intentional (user clicked on another focusable element)
-            const relatedTarget = e.relatedTarget as HTMLElement;
-            const clickedOutside = !relatedTarget || 
-              (relatedTarget.tagName !== 'TEXTAREA' && 
-               relatedTarget.tagName !== 'INPUT' && 
-               !relatedTarget.isContentEditable);
-            
-            // Only restore focus if it was recent typing and user didn't click on another input
-            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isTextareaFocusedRef.current) {
-              // Restore focus after a brief delay to let React finish its render cycle
-              setTimeout(() => {
-                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
-                  variationsTextareaRef.current.focus();
-                }
-              }, 10);
-            } else if (!wasRecentTyping) {
-              // User intentionally blurred, don't restore
-              isTextareaFocusedRef.current = false;
-            }
-          }}
-          placeholder="Type one variation per line. Press Enter to add more. Variations will be appended to existing ones for all selected variables."
-          rows={8}
-          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-        />
+        {/* Variations display removed - use the grid icon button to view variations in the modal */}
+        <div className="mb-6">
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              <span className="font-medium">Bulk variations management:</span> Click the grid icon above to add variations. These variations will be appended to each selected variable's existing variations.
+            </div>
+          </div>
+        </div>
       </CollapsibleSection>
 
       {/* Apply Changes Button */}
@@ -2026,6 +1984,24 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         initialCsvData={pendingCsvData}
         isBulkMode={true}
       />
+
+      {/* Variations Modal */}
+      {selectedVariableIds && selectedVariableIds.length > 0 && (
+        <VariationsModal
+          isOpen={isVariationsModalOpen}
+          onClose={() => setIsVariationsModalOpen(false)}
+          selectedVariables={allData.filter((v: any) => selectedVariableIds.includes(v.id))}
+          isBulkMode={true}
+          onSave={async () => {
+            // Refresh variables data after saving
+            // The modal's onSave callback will trigger a refresh via onSave
+            if (onSave) {
+              // Call onSave to trigger parent refresh, but variations are already saved
+              await onSave({});
+            }
+          }}
+        />
+      )}
 
       {/* Variations CSV Upload Modal */}
       <CsvUploadModal
