@@ -2351,7 +2351,40 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               <div key={block.blockNumber} className="border border-ag-dark-border rounded">
                 {/* Block Header */}
                 <div className="flex items-center justify-between bg-ag-dark-bg border-b border-ag-dark-border p-2">
-                  <h6 className="text-sm font-medium text-ag-dark-text">Composite ID #{block.blockNumber}</h6>
+                  <div className="flex flex-col">
+                    <h6 className="text-sm font-medium text-ag-dark-text">Composite ID #{block.blockNumber}</h6>
+                    {/* Display concatenated string for saved composite IDs */}
+                    {(() => {
+                      const hasSavedData = block.rows.some(row => row.part || row.section || row.group || row.variableId);
+                      if (!hasSavedData) return null;
+                      
+                      const displayParts: string[] = [];
+                      block.rows.forEach(row => {
+                        if (row.variableId && row.variableId !== 'ANY' && row.variableId.trim() !== '') {
+                          const varName = getVariableNameFromId(row.variableId);
+                          if (varName) displayParts.push(varName);
+                        } else if (row.variableId === 'ANY') {
+                          // Fallback to next level up
+                          if (row.group && row.group !== 'ANY' && row.group.trim() !== '') {
+                            displayParts.push(row.group);
+                          } else if (row.section && row.section !== 'ANY' && row.section.trim() !== '') {
+                            displayParts.push(row.section);
+                          } else if (row.part && row.part.trim() !== '') {
+                            displayParts.push(row.part);
+                          }
+                        }
+                      });
+                      
+                      if (displayParts.length > 0) {
+                        return (
+                          <span className="text-xs text-ag-dark-text-secondary mt-1">
+                            {displayParts.join(' + ')}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                   {blockIndex > 0 && (
                     <button
                       onClick={() => handleRemoveCompositeIdBlock(block.blockNumber)}
@@ -2376,7 +2409,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 {/* Table Rows - 5 rows per block */}
                 <div className="divide-y divide-ag-dark-border">
                   {block.rows.map((row, rowIndex) => {
-                    const variableOptions = row.part && row.section && row.group
+                    // Get variables for the selected part, section, and group (even if group is 'ANY')
+                    // Similar to unique IDs - show all variables for the combination
+                    const variableOptions = row.part && row.section && row.group && row.group !== 'ANY'
                       ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group)
                       : [];
                     
@@ -2485,11 +2520,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           <option value="ANY">ANY</option>
                           {row.group !== 'ANY' && loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`] ? (
                             <option value="">Loading...</option>
-                          ) : (
+                          ) : row.group !== 'ANY' ? (
+                            // Show all variables for the selected part, section, and group + ANY option
                             variableOptions.map(v => (
                               <option key={v.id} value={v.id}>{v.name}</option>
                             ))
-                          )}
+                          ) : null}
                         </select>
                       </div>
                     );
@@ -2582,30 +2618,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               }
             >
               <Grid3x3 className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => {
-                if (selectedObject?.id) {
-                  // Open ontology modal for variants graph view
-                  setOntologyModalOpen({
-                    isOpen: true,
-                    viewType: 'variants'
-                  });
-                }
-              }}
-              disabled={!isPanelEnabled || !selectedObject?.id || (selectedObject?._isCloned && !selectedObject?._isSaved) || selectedCount > 1}
-              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                !isPanelEnabled || !selectedObject?.id || (selectedObject?._isCloned && !selectedObject?._isSaved) || selectedCount > 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
-              }`}
-              title={
-                selectedObject?._isCloned && !selectedObject?._isSaved 
-                  ? "Please save the cloned object before viewing variants graph" 
-                  : selectedCount > 1 
-                    ? "View variants graph (bulk edit not yet supported)" 
-                    : "View variants graph"
-              }
-            >
-              <Network className="w-5 h-5" />
             </button>
           </div>
         }
