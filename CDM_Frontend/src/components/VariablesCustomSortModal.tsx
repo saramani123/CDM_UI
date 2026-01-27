@@ -33,11 +33,29 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
     ]
   );
   const [defaultOrderEnabled, setDefaultOrderEnabled] = useState(isDefaultOrderEnabled);
+  // Backup of sort rules before default order was enabled (to restore when disabled)
+  const [sortRulesBackup, setSortRulesBackup] = useState<SortRule[] | null>(null);
 
   // Sync defaultOrderEnabled with prop when it changes
   useEffect(() => {
     setDefaultOrderEnabled(isDefaultOrderEnabled);
   }, [isDefaultOrderEnabled]);
+
+  // Handle initial state: if modal opens with default order enabled, filter and backup rules
+  useEffect(() => {
+    if (isOpen && defaultOrderEnabled && sortRules.length > 0 && !sortRulesBackup) {
+      // Check if we have rules that would be filtered out
+      const hasConflictingRules = sortRules.some(rule => 
+        rule.column && ['part', 'section', 'group', 'variable'].includes(rule.column)
+      );
+      if (hasConflictingRules) {
+        setSortRulesBackup([...sortRules]);
+        setSortRules(prev => prev.filter(rule => 
+          !rule.column || !['part', 'section', 'group', 'variable'].includes(rule.column)
+        ));
+      }
+    }
+  }, [isOpen]);
 
   // Custom Sort handlers
   const addSortRule = () => {
@@ -71,15 +89,27 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
   };
 
   const handleDefaultOrderToggle = (enabled: boolean) => {
-    setDefaultOrderEnabled(enabled);
-    if (onDefaultOrderToggle) {
-      onDefaultOrderToggle(enabled);
-    }
-    // When enabling default order, remove any rules that use Part, Section, Group, or Variable
     if (enabled) {
+      // When enabling default order, backup current rules and filter out conflicting ones
+      setSortRulesBackup([...sortRules]);
       setSortRules(prev => prev.filter(rule => 
         !rule.column || !['part', 'section', 'group', 'variable'].includes(rule.column)
       ));
+    } else {
+      // When disabling default order, restore the backup if it exists
+      // Merge backup with any new S, D, C rules that were added while default order was enabled
+      if (sortRulesBackup) {
+        const currentNonConflictingRules = sortRules.filter(rule => 
+          rule.column && ['sector', 'domain', 'country'].includes(rule.column)
+        );
+        // Restore backup and add any new S, D, C rules that were added
+        setSortRules([...sortRulesBackup, ...currentNonConflictingRules]);
+        setSortRulesBackup(null);
+      }
+    }
+    setDefaultOrderEnabled(enabled);
+    if (onDefaultOrderToggle) {
+      onDefaultOrderToggle(enabled);
     }
   };
 
