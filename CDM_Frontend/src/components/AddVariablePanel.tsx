@@ -338,26 +338,56 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   };
 
   const handleAddGroupValue = async (part: string, groupValue: string) => {
-    // Save to localStorage
-    const associations = getPartGroupAssociations();
-    if (!associations[part]) {
-      associations[part] = [];
-    }
-    if (!associations[part].includes(groupValue)) {
-      associations[part].push(groupValue);
-      associations[part].sort();
-      localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
+    if (!part || !part.trim()) {
+      throw new Error('Please select a Part first');
     }
     
-    // Update dynamic field options if the current part is selected
-    if (formData.part === part) {
-      setDynamicFieldOptions(prev => ({
-        ...prev,
-        group: [...new Set([...prev.group, groupValue])].sort()
-      }));
+    if (!groupValue || !groupValue.trim()) {
+      throw new Error('Please enter a Group name');
+    }
+    
+    try {
+      // Call backend API to create group
+      await apiService.createVariableGroup(part.trim(), groupValue.trim());
       
-      // Also update the form data to select the newly added group
-      handleChange('group', groupValue);
+      // Also save to localStorage for backward compatibility
+      const associations = getPartGroupAssociations();
+      if (!associations[part.trim()]) {
+        associations[part.trim()] = [];
+      }
+      if (!associations[part.trim()].includes(groupValue.trim())) {
+        associations[part.trim()].push(groupValue.trim());
+        associations[part.trim()].sort();
+        localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
+      }
+      
+      // Refresh groups for this part if it's currently selected
+      if (formData.part === part.trim()) {
+        try {
+          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          setGroupsList(response.groups || []);
+          // Also update the form data to select the newly added group
+          handleChange('group', groupValue.trim());
+        } catch (error) {
+          console.error('Error reloading groups:', error);
+          // Still update the form data even if API call fails
+          handleChange('group', groupValue.trim());
+        }
+      }
+      
+      // Update dynamic field options if the current part is selected
+      if (formData.part === part.trim()) {
+        setDynamicFieldOptions(prev => ({
+          ...prev,
+          group: [...new Set([...prev.group, groupValue.trim()])].sort()
+        }));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
+      if (errorMessage.includes('already exists')) {
+        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+      }
+      throw error;
     }
   };
 

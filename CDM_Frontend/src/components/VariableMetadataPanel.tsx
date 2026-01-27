@@ -195,16 +195,48 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const handleAddGroupValue = async (part: string, groupValue: string) => {
-    // Save to localStorage
-    savePartGroupAssociation(part, groupValue);
+    if (!part || !part.trim()) {
+      throw new Error('Please select a Part first');
+    }
     
-    // Update dynamic field options if the current part is selected
-    // This will trigger a re-render and the Group dropdown will update via getGroupsForPart
-    if (formData.part === part) {
-      setDynamicFieldOptions(prev => ({
-        ...prev,
-        group: [...new Set([...prev.group, groupValue])].sort()
-      }));
+    if (!groupValue || !groupValue.trim()) {
+      throw new Error('Please enter a Group name');
+    }
+    
+    try {
+      // Call backend API to create group
+      await apiService.createVariableGroup(part.trim(), groupValue.trim());
+      
+      // Also save to localStorage for backward compatibility
+      savePartGroupAssociation(part.trim(), groupValue.trim());
+      
+      // Refresh groups for this part
+      if (formData.part === part.trim()) {
+        try {
+          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          setGroupsList(response.groups || []);
+          // Also update the form data to select the newly added group
+          handleChange('group', groupValue.trim());
+        } catch (error) {
+          console.error('Error reloading groups:', error);
+          // Still update the form data even if API call fails
+          handleChange('group', groupValue.trim());
+        }
+      }
+      
+      // Update dynamic field options if the current part is selected
+      if (formData.part === part.trim()) {
+        setDynamicFieldOptions(prev => ({
+          ...prev,
+          group: [...new Set([...prev.group, groupValue.trim()])].sort()
+        }));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
+      if (errorMessage.includes('already exists')) {
+        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+      }
+      throw error;
     }
   };
 

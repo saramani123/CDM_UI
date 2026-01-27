@@ -954,6 +954,13 @@ class ApiService {
     });
   }
 
+  async createVariableGroup(part: string, group: string) {
+    return this.request('/variables/groups', {
+      method: 'POST',
+      body: JSON.stringify({ part, group }),
+    });
+  }
+
   async getVariablesForSelection(part: string, section: string, group: string) {
     const params = new URLSearchParams({ part, section, group });
     return this.request(`/variables/variables?${params.toString()}`, { method: 'GET' });

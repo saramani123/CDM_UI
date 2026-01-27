@@ -4,6 +4,7 @@ import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mo
 import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
+import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
@@ -87,6 +88,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   
   // Modal state for add section value
   const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
+  
+  // Modal state for add group value
+  const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
   
   // Modal state for add field value (Format I, Format II, G-Type, Default)
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
@@ -377,6 +381,41 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       console.error('Error adding section:', error);
       alert(`Failed to add section: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error; // Re-throw so modal can handle it
+    }
+  };
+
+  const handleAddGroupValue = async (part: string, groupValue: string) => {
+    if (!part || !part.trim()) {
+      throw new Error('Please select a Part first');
+    }
+    
+    if (!groupValue || !groupValue.trim()) {
+      throw new Error('Please enter a Group name');
+    }
+    
+    try {
+      // Call backend API to create group
+      await apiService.createVariableGroup(part.trim(), groupValue.trim());
+      
+      // Refresh groups for this part if it's currently selected
+      if (formData.part === part.trim() || (formData.part && formData.part !== 'Keep Current Part' && formData.part === part.trim())) {
+        try {
+          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          setGroupsList(response.groups || []);
+          // Also update the form data to select the newly added group
+          handleChange('group', groupValue.trim());
+        } catch (error) {
+          console.error('Error reloading groups:', error);
+          // Still update the form data even if API call fails
+          handleChange('group', groupValue.trim());
+        }
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
+      if (errorMessage.includes('already exists')) {
+        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+      }
+      throw error;
     }
   };
 
@@ -1327,9 +1366,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
           <div className="flex gap-4 items-end">
             <div className="flex-1">
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Group
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Group
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAddGroupValueModalOpen(true);
+                  }}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new Group value"
+                  disabled={!formData.part || formData.part === 'Keep Current Part'}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
@@ -2061,6 +2113,17 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           setIsAddSectionValueModalOpen(false);
         }}
         onSave={handleAddSectionValue}
+        availableParts={getDistinctParts().filter(p => p !== 'Keep Current Part')}
+        defaultPart={formData.part && formData.part !== 'Keep Current Part' ? formData.part : ''}
+      />
+
+      {/* Add Group Value Modal */}
+      <AddGroupValueModal
+        isOpen={isAddGroupValueModalOpen}
+        onClose={() => {
+          setIsAddGroupValueModalOpen(false);
+        }}
+        onSave={handleAddGroupValue}
         availableParts={getDistinctParts().filter(p => p !== 'Keep Current Part')}
         defaultPart={formData.part && formData.part !== 'Keep Current Part' ? formData.part : ''}
       />

@@ -293,15 +293,67 @@ async def add_variable_section(section_data: VariableSectionRequest):
             placeholder_variable_id = str(uuid.uuid4())
             placeholder_variable_name = f"__PLACEHOLDER_SECTION_{section.strip()}"
             
+            # Find or create Group for this specific Part
+            # Check if a Group with this name already exists for this Part
+            existing_group = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                RETURN g.id as group_id
+                LIMIT 1
+            """, part=part, group=placeholder_group).single()
+            
+            if existing_group:
+                # Group already exists for this Part - use it
+                group_id = existing_group["group_id"]
+            else:
+                # Check if group with same name exists for a different part
+                different_part_group = session.run("""
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                    WHERE p.name <> $part
+                    RETURN g.id as group_id
+                    LIMIT 1
+                """, part=part, group=placeholder_group).single()
+                
+                if different_part_group:
+                    # Group exists for different part - create NEW group node with unique ID
+                    group_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=placeholder_group, part=part)
+                    
+                    # Create relationship from Part to new Group
+                    session.run("""
+                        MATCH (p:Part {name: $part})
+                        MATCH (g:Group {id: $group_id})
+                        MERGE (p)-[:HAS_GROUP]->(g)
+                    """, part=part, group_id=group_id)
+                else:
+                    # No existing group with this name - create new one
+                    group_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=placeholder_group, part=part)
+                    
+                    # Create relationship from Part to new Group
+                    session.run("""
+                        MATCH (p:Part {name: $part})
+                        MATCH (g:Group {id: $group_id})
+                        MERGE (p)-[:HAS_GROUP]->(g)
+                    """, part=part, group_id=group_id)
+            
             result = session.run("""
                 // MERGE Part node
                 MERGE (p:Part {name: $part})
                 
-                // MERGE Group node (placeholder)
-                MERGE (g:Group {name: $group})
-                
-                // Create relationship Part -> Group
-                MERGE (p)-[:HAS_GROUP]->(g)
+                // Match Group by ID
+                MATCH (g:Group {id: $group_id})
                 
                 // Create placeholder Variable node with the new section
                 CREATE (v:Variable {
@@ -324,7 +376,7 @@ async def add_variable_section(section_data: VariableSectionRequest):
                 RETURN v.id as id, v.section as section
             """, {
                 "part": part,
-                "group": placeholder_group,
+                "group_id": group_id,
                 "variable_id": placeholder_variable_id,
                 "variable_name": placeholder_variable_name,
                 "section": section
@@ -342,6 +394,136 @@ async def add_variable_section(section_data: VariableSectionRequest):
         print(f"Error adding section {section} for part {part}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to add section: {str(e)}")
 
+
+@router.post("/variables/groups", response_model=Dict[str, Any])
+async def create_variable_group(part: str = Body(...), group: str = Body(...)):
+    """
+    Create a new Group node and link it to a Part.
+    This ensures that:
+    1. If a group with the same name exists for a different part, create a NEW group node
+    2. If a group with the same name exists for the same part, return an error
+    3. The group is properly linked to the specified part only
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+    
+    if not part or not part.strip():
+        raise HTTPException(status_code=400, detail="Part name is required")
+    
+    if not group or not group.strip():
+        raise HTTPException(status_code=400, detail="Group name is required")
+    
+    part = part.strip()
+    group = group.strip()
+    
+    try:
+        with driver.session() as session:
+            # Check if group with same name already exists for the same part
+            existing_check = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                RETURN g.name as group_name
+            """, part=part, group=group).single()
+            
+            if existing_check:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Group '{group}' already exists for Part '{part}'. Please use a different name."
+                )
+            
+            # Check if group with same name exists for a different part
+            different_part_check = session.run("""
+                MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                WHERE p.name <> $part
+                RETURN p.name as part_name, g.name as group_name, g.id as group_id
+                LIMIT 1
+            """, part=part, group=group).single()
+            
+            # Ensure Part exists
+            session.run("""
+                MERGE (p:Part {name: $part})
+            """, part=part)
+            
+            # Generate unique ID for the new group node
+            group_id = str(uuid.uuid4())
+            
+            if different_part_check:
+                # Group with same name exists for different part - create a NEW group node with unique ID
+                print(f"Note: Group '{group}' exists for Part '{different_part_check['part_name']}', creating NEW group node with ID '{group_id}' for Part '{part}'")
+                
+                # Create a NEW Group node with unique ID and part property
+                session.run("""
+                    CREATE (g:Group {
+                        id: $group_id,
+                        name: $group,
+                        part: $part
+                    })
+                """, group_id=group_id, group=group, part=part)
+            else:
+                # No existing group with this name for a different part
+                # Check if one exists for the same part (should have been caught above, but double-check)
+                same_part_check = session.run("""
+                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                    RETURN g.id as group_id
+                    LIMIT 1
+                """, part=part, group=group).single()
+                
+                if same_part_check:
+                    # This should not happen due to earlier check, but handle it
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Group '{group}' is already linked to Part '{part}'"
+                    )
+                
+                # Create new Group node with unique ID
+                # Check if there's an existing Group with this name but no ID (legacy data)
+                existing_group_no_id = session.run("""
+                    MATCH (g:Group {name: $group})
+                    WHERE NOT EXISTS(g.id)
+                    RETURN g LIMIT 1
+                """, group=group).single()
+                
+                if existing_group_no_id:
+                    # There's a legacy group without an ID - create a new one
+                    print(f"Note: Found legacy Group '{group}' without ID, creating new Group node with ID '{group_id}' for Part '{part}'")
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=group, part=part)
+                else:
+                    # No existing group at all - create new one
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=group, part=part)
+            
+            # Create the relationship from Part to Group
+            session.run("""
+                MATCH (p:Part {name: $part})
+                MATCH (g:Group {id: $group_id})
+                MERGE (p)-[:HAS_GROUP]->(g)
+            """, part=part, group_id=group_id)
+            
+            return {
+                "success": True,
+                "message": f"Group '{group}' created and linked to Part '{part}'",
+                "part": part,
+                "group": group
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating group: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create group: {str(e)}")
 
 @router.get("/variables/groups")
 async def get_variable_groups(part: str = None, section: str = None):
@@ -564,15 +746,96 @@ async def create_variable(variable_data: VariableCreateRequest):
             variable_id = str(uuid.uuid4())
             
             # Create taxonomy structure: Part -> Group -> Variable
+            # Check if group already has relationship from a different part before creating
+            existing_part_check = session.run("""
+                MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                WHERE p.name <> $part
+                RETURN p.name as part_name
+                LIMIT 1
+            """, part=variable_data.part, group=variable_data.group).single()
+            
+            if existing_part_check:
+                # Group already exists for a different part - this is a data integrity issue
+                existing_part = existing_part_check["part_name"]
+                print(f"WARNING: Group '{variable_data.group}' already has relationship from Part '{existing_part}'")
+                print(f"Attempting to create relationship from Part '{variable_data.part}' - this will create duplicate!")
+                print(f"This should be fixed by ensuring unique group names per part or running a fix script")
+            
+            # Ensure Part exists
+            session.run("MERGE (p:Part {name: $part})", part=variable_data.part)
+            
+            # Find or create Group for this specific Part
+            # First, check if a Group with this name already exists for this Part
+            existing_group = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                RETURN g.id as group_id
+                LIMIT 1
+            """, part=variable_data.part, group=variable_data.group).single()
+            
+            if existing_group:
+                # Group already exists for this Part - use it
+                group_id = existing_group["group_id"]
+            else:
+                # Check if group with same name exists for a different part
+                different_part_group = session.run("""
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                    WHERE p.name <> $part
+                    RETURN g.id as group_id
+                    LIMIT 1
+                """, part=variable_data.part, group=variable_data.group).single()
+                
+                if different_part_group:
+                    # Group exists for different part - create NEW group node with unique ID
+                    group_id = str(uuid.uuid4())
+                    print(f"Note: Group '{variable_data.group}' exists for different Part, creating NEW group node with ID '{group_id}' for Part '{variable_data.part}'")
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=variable_data.group, part=variable_data.part)
+                    
+                    # Create relationship from Part to new Group
+                    session.run("""
+                        MATCH (p:Part {name: $part})
+                        MATCH (g:Group {id: $group_id})
+                        MERGE (p)-[:HAS_GROUP]->(g)
+                    """, part=variable_data.part, group_id=group_id)
+                else:
+                    # No existing group with this name - create new one
+                    group_id = str(uuid.uuid4())
+                    session.run("""
+                        CREATE (g:Group {
+                            id: $group_id,
+                            name: $group,
+                            part: $part
+                        })
+                    """, group_id=group_id, group=variable_data.group, part=variable_data.part)
+                    
+                    # Create relationship from Part to new Group
+                    session.run("""
+                        MATCH (p:Part {name: $part})
+                        MATCH (g:Group {id: $group_id})
+                        MERGE (p)-[:HAS_GROUP]->(g)
+                    """, part=variable_data.part, group_id=group_id)
+            
+            # Create Variable and link to Group (use group_id if we have it, otherwise fallback to name)
+            # Get the group_id we just created/found
+            group_for_variable = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                RETURN g.id as group_id
+                LIMIT 1
+            """, part=variable_data.part, group=variable_data.group).single()
+            
+            if not group_for_variable:
+                raise HTTPException(status_code=500, detail=f"Failed to find Group '{variable_data.group}' for Part '{variable_data.part}'")
+            
+            group_id_for_variable = group_for_variable["group_id"]
+            
+            # Create Variable and link to Group using group ID
             result = session.run("""
-                // MERGE Part node (avoid duplicates)
-                MERGE (p:Part {name: $part})
-                
-                // MERGE Group node (avoid duplicates)
-                MERGE (g:Group {name: $group})
-                
-                // Create relationship Part -> Group
-                MERGE (p)-[:HAS_GROUP]->(g)
+                MATCH (g:Group {id: $group_id})
                 
                 // Create Variable node with all properties (including driver string)
                 CREATE (v:Variable {
@@ -603,6 +866,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                        $part as part, $group as group
             """, {
                 "id": variable_id,
+                "group_id": group_id_for_variable,
                 "part": variable_data.part,
                 "group": variable_data.group,
                 "variable": variable_data.variable,
@@ -988,6 +1252,61 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                         set_clauses.append("v.section = $section")
                                         params["section"] = new_section
                                 
+                                # Find or create Group for this specific Part
+                                # First, check if a Group with this name already exists for this Part
+                                existing_group = session.run("""
+                                    MATCH (p:Part {name: $new_part})-[:HAS_GROUP]->(g:Group {name: $new_group})
+                                    RETURN g.id as group_id
+                                    LIMIT 1
+                                """, new_part=new_part, new_group=new_group).single()
+                                
+                                if existing_group:
+                                    # Group already exists for this Part - use it
+                                    group_id = existing_group["group_id"]
+                                else:
+                                    # Check if group with same name exists for a different part
+                                    different_part_group = session.run("""
+                                        MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $new_group})
+                                        WHERE p.name <> $new_part
+                                        RETURN g.id as group_id
+                                        LIMIT 1
+                                    """, new_part=new_part, new_group=new_group).single()
+                                    
+                                    if different_part_group:
+                                        # Group exists for different part - create NEW group node with unique ID
+                                        group_id = str(uuid.uuid4())
+                                        session.run("""
+                                            CREATE (g:Group {
+                                                id: $group_id,
+                                                name: $group,
+                                                part: $part
+                                            })
+                                        """, group_id=group_id, group=new_group, part=new_part)
+                                        
+                                        # Create relationship from Part to new Group
+                                        session.run("""
+                                            MATCH (p:Part {name: $part})
+                                            MATCH (g:Group {id: $group_id})
+                                            MERGE (p)-[:HAS_GROUP]->(g)
+                                        """, part=new_part, group_id=group_id)
+                                    else:
+                                        # No existing group with this name - create new one
+                                        group_id = str(uuid.uuid4())
+                                        session.run("""
+                                            CREATE (g:Group {
+                                                id: $group_id,
+                                                name: $group,
+                                                part: $part
+                                            })
+                                        """, group_id=group_id, group=new_group, part=new_part)
+                                        
+                                        # Create relationship from Part to new Group
+                                        session.run("""
+                                            MATCH (p:Part {name: $part})
+                                            MATCH (g:Group {id: $group_id})
+                                            MERGE (p)-[:HAS_GROUP]->(g)
+                                        """, part=new_part, group_id=group_id)
+                                
                                 bulk_update_query = f"""
                                     // Ensure Variable exists (will fail if it doesn't)
                                     MATCH (v:Variable {{id: $variable_id}})
@@ -997,24 +1316,18 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                     OPTIONAL MATCH (old_g:Group)-[old_r:HAS_VARIABLE]->(v)
                                     DELETE old_r
                                     
-                                    // Ensure Part node exists (MERGE - creates if doesn't exist, doesn't delete)
-                                    MERGE (p:Part {{name: $new_part}})
-                                    
-                                    // Ensure Group node exists (MERGE - creates if doesn't exist, doesn't delete)
-                                    MERGE (g:Group {{name: $new_group}})
-                                    
-                                    // Ensure Part -> Group relationship exists (MERGE - creates if doesn't exist)
-                                    // Note: p and g are in scope from previous MERGE statements
-                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                    // Match Group by ID (ensures we use the correct Group node for this Part)
+                                    MATCH (g:Group {{id: $group_id}})
                                     
                                     // Create new Group -> Variable relationship
-                                    // Note: g and v are in scope from previous statements
                                     MERGE (g)-[:HAS_VARIABLE]->(v)
                                     {section_set_clause}
                                     
                                     // Return confirmation
-                                    RETURN v.id as var_id, p.name as part_name, g.name as group_name, v.section as section
+                                    RETURN v.id as var_id, g.name as group_name, v.section as section
                                 """
+                                
+                                update_params["group_id"] = group_id
                                 
                                 result = session.run(bulk_update_query, update_params)
                                 record = result.single()
@@ -1482,30 +1795,71 @@ async def update_variable(variable_id: str, request: Request):
                         MERGE (p:Part {name: $part})
                     """, part=new_part)
                 
-                # Ensure Group node exists
-                if new_group:
-                    session.run("""
-                        MERGE (g:Group {name: $group})
-                    """, group=new_group)
-                
-                # Ensure Part -> Group relationship exists (MERGE, don't delete)
-                # This relationship should already exist, but we ensure it's there
+                # Find or create Group for this specific Part
                 if new_part and new_group:
-                    session.run("""
-                        MATCH (p:Part {name: $part})
-                        MATCH (g:Group {name: $group})
-                        MERGE (p)-[:HAS_GROUP]->(g)
-                    """, part=new_part, group=new_group)
-                
-                # Create new Group -> Variable relationship
-                if new_group:
+                    # First, check if a Group with this name already exists for this Part
+                    existing_group = session.run("""
+                        MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                        RETURN g.id as group_id
+                        LIMIT 1
+                    """, part=new_part, group=new_group).single()
+                    
+                    if existing_group:
+                        # Group already exists for this Part - use it
+                        group_id = existing_group["group_id"]
+                    else:
+                        # Check if group with same name exists for a different part
+                        different_part_group = session.run("""
+                            MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                            WHERE p.name <> $part
+                            RETURN g.id as group_id
+                            LIMIT 1
+                        """, part=new_part, group=new_group).single()
+                        
+                        if different_part_group:
+                            # Group exists for different part - create NEW group node with unique ID
+                            group_id = str(uuid.uuid4())
+                            print(f"Note: Group '{new_group}' exists for different Part, creating NEW group node with ID '{group_id}' for Part '{new_part}'")
+                            session.run("""
+                                CREATE (g:Group {
+                                    id: $group_id,
+                                    name: $group,
+                                    part: $part
+                                })
+                            """, group_id=group_id, group=new_group, part=new_part)
+                            
+                            # Create relationship from Part to new Group
+                            session.run("""
+                                MATCH (p:Part {name: $part})
+                                MATCH (g:Group {id: $group_id})
+                                MERGE (p)-[:HAS_GROUP]->(g)
+                            """, part=new_part, group_id=group_id)
+                        else:
+                            # No existing group with this name - create new one
+                            group_id = str(uuid.uuid4())
+                            session.run("""
+                                CREATE (g:Group {
+                                    id: $group_id,
+                                    name: $group,
+                                    part: $part
+                                })
+                            """, group_id=group_id, group=new_group, part=new_part)
+                            
+                            # Create relationship from Part to new Group
+                            session.run("""
+                                MATCH (p:Part {name: $part})
+                                MATCH (g:Group {id: $group_id})
+                                MERGE (p)-[:HAS_GROUP]->(g)
+                            """, part=new_part, group_id=group_id)
+                    
+                    # Create new Group -> Variable relationship using group ID
                     try:
                         create_result = session.run("""
-                            MATCH (g:Group {name: $group})
+                            MATCH (g:Group {id: $group_id})
                             MATCH (v:Variable {id: $variable_id})
                             MERGE (g)-[r:HAS_VARIABLE]->(v)
                             RETURN r, g.name as group_name, v.id as var_id
-                        """, group=new_group, variable_id=variable_id)
+                        """, group_id=group_id, variable_id=variable_id)
                         create_record = create_result.single()
                         if create_record and create_record.get("group_name"):
                             print(f"DEBUG: Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
@@ -1516,8 +1870,8 @@ async def update_variable(variable_id: str, request: Request):
                         import traceback
                         traceback.print_exc()
                         raise  # Re-raise to see the full error
-                else:
-                    print(f"DEBUG: WARNING - new_group is empty, cannot create relationship", flush=True)
+                elif new_group and not new_part:
+                    print(f"DEBUG: WARNING - new_group provided but new_part is empty, cannot create relationship", flush=True)
                 
                 print(f"DEBUG: Successfully updated Group -> Variable relationship for variable {variable_id}", flush=True)
 
@@ -2375,15 +2729,67 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 for var_data in batch:
                     try:
                         # Create taxonomy structure: Part -> Group -> Variable
+                        # Ensure Part exists
+                        tx.run("MERGE (p:Part {name: $part})", part=var_data["part"])
+                        
+                        # Find or create Group for this specific Part
+                        # First, check if a Group with this name already exists for this Part
+                        existing_group = tx.run("""
+                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                            RETURN g.id as group_id
+                            LIMIT 1
+                        """, part=var_data["part"], group=var_data["group"]).single()
+                        
+                        if existing_group:
+                            # Group already exists for this Part - use it
+                            group_id = existing_group["group_id"]
+                        else:
+                            # Check if group with same name exists for a different part
+                            different_part_group = tx.run("""
+                                MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                                WHERE p.name <> $part
+                                RETURN g.id as group_id
+                                LIMIT 1
+                            """, part=var_data["part"], group=var_data["group"]).single()
+                            
+                            if different_part_group:
+                                # Group exists for different part - create NEW group node with unique ID
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    CREATE (g:Group {
+                                        id: $group_id,
+                                        name: $group,
+                                        part: $part
+                                    })
+                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
+                                
+                                # Create relationship from Part to new Group
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})
+                                    MATCH (g:Group {id: $group_id})
+                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                """, part=var_data["part"], group_id=group_id)
+                            else:
+                                # No existing group with this name - create new one
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    CREATE (g:Group {
+                                        id: $group_id,
+                                        name: $group,
+                                        part: $part
+                                    })
+                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
+                                
+                                # Create relationship from Part to new Group
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})
+                                    MATCH (g:Group {id: $group_id})
+                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                """, part=var_data["part"], group_id=group_id)
+                        
+                        # Create Variable and link to Group using group ID
                         result = tx.run("""
-                            // MERGE Part node (avoid duplicates)
-                            MERGE (p:Part {name: $part})
-                            
-                            // MERGE Group node (avoid duplicates)
-                            MERGE (g:Group {name: $group})
-                            
-                            // Create relationship Part -> Group
-                            MERGE (p)-[:HAS_GROUP]->(g)
+                            MATCH (g:Group {id: $group_id})
                             
                             // Create Variable node with all properties (including driver string)
                             CREATE (v:Variable {
@@ -2405,7 +2811,10 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                             
                             // Return variable ID to verify creation
                             RETURN v.id as id
-                        """, var_data)
+                        """, {
+                            **var_data,
+                            "group_id": group_id
+                        })
                         
                         # Verify variable was created
                         record = result.single()
