@@ -2413,16 +2413,30 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
     try:
         with driver.session() as session:
             # Check if avatar with same name already exists for the same being
+            # IMPORTANT: Only check via actual HAS_AVATAR relationships, not properties
+            # This ensures we only prevent duplicates when there's an actual relationship
             existing_check = session.run("""
                 MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
-                RETURN a.name as avatar_name
+                RETURN a.name as avatar_name, a.id as avatar_id
             """, being=being, avatar=avatar).single()
             
             if existing_check:
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Avatar '{avatar}' already exists for Being '{being}'. Please use a different name."
-                )
+                # Double-check: verify this avatar is actually linked via relationship
+                # This prevents false positives from orphaned nodes
+                verify_relationship = session.run("""
+                    MATCH (b:Being {name: $being})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                    RETURN count(r) as relationship_count
+                """, being=being, avatar=avatar).single()
+                
+                if verify_relationship and verify_relationship["relationship_count"] > 0:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Avatar '{avatar}' already exists for Being '{being}'. Please use a different name."
+                    )
+                else:
+                    # Avatar node exists but has no relationship - this is an orphaned node
+                    # We can proceed to create a new one, but log a warning
+                    print(f"WARNING: Found orphaned Avatar node '{avatar}' with being property but no relationship to '{being}'. Creating new Avatar node.")
             
             # Ensure Being exists
             session.run("""
@@ -2470,15 +2484,17 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
                 
                 # Create new Avatar node with unique ID
                 # Check if there's an existing Avatar with this name but no ID (legacy data)
+                # BUT: Only create new if it's not linked to this Being via relationship
                 existing_avatar_no_id = session.run("""
                     MATCH (a:Avatar {name: $avatar})
                     WHERE NOT EXISTS(a.id)
+                    AND NOT EXISTS((:Being {name: $being})-[:HAS_AVATAR]->(a))
                     RETURN a LIMIT 1
-                """, avatar=avatar).single()
+                """, avatar=avatar, being=being).single()
                 
                 if existing_avatar_no_id:
-                    # There's a legacy avatar without an ID - create a new one
-                    print(f"Note: Found legacy Avatar '{avatar}' without ID, creating new Avatar node with ID '{avatar_id}' for Being '{being}'")
+                    # There's a legacy avatar without an ID and not linked to this Being - create a new one
+                    print(f"Note: Found legacy Avatar '{avatar}' without ID and not linked to '{being}', creating new Avatar node with ID '{avatar_id}' for Being '{being}'")
                     session.run("""
                         CREATE (a:Avatar {
                             id: $avatar_id,
