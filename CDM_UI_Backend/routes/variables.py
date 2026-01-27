@@ -242,6 +242,8 @@ async def get_variable_sections(part: str = None):
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE v.section IS NOT NULL AND v.section <> ''
+                AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT v.section as section
                 ORDER BY v.section
             """, part=part)
@@ -257,7 +259,9 @@ async def get_variable_sections(part: str = None):
 async def add_variable_section(section_data: VariableSectionRequest):
     """
     Add a new section value for a specific part.
-    This creates a placeholder variable with the new section so it appears in section queries.
+    Note: Sections are properties on Variables, not standalone entities.
+    A section will only appear in dropdowns once a Variable with that section is created.
+    This endpoint now just validates that the section doesn't already exist.
     """
     driver = get_driver()
     if not driver:
@@ -286,107 +290,10 @@ async def add_variable_section(section_data: VariableSectionRequest):
                 # Section already exists, return success
                 return {"success": True, "message": f"Section '{section}' already exists for part '{part}'"}
             
-            # Create a placeholder variable with the new section
-            # We need to create: Part -> Group -> Variable with the section property
-            # Use a temporary group name that can be cleaned up later if needed
-            placeholder_group = f"__PLACEHOLDER_{uuid.uuid4().hex[:8]}"
-            placeholder_variable_id = str(uuid.uuid4())
-            placeholder_variable_name = f"__PLACEHOLDER_SECTION_{section.strip()}"
-            
-            # Find or create Group for this specific Part
-            # Check if a Group with this name already exists for this Part
-            existing_group = session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
-                RETURN g.id as group_id
-                LIMIT 1
-            """, part=part, group=placeholder_group).single()
-            
-            if existing_group:
-                # Group already exists for this Part - use it
-                group_id = existing_group["group_id"]
-            else:
-                # Check if group with same name exists for a different part
-                different_part_group = session.run("""
-                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
-                    WHERE p.name <> $part
-                    RETURN g.id as group_id
-                    LIMIT 1
-                """, part=part, group=placeholder_group).single()
-                
-                if different_part_group:
-                    # Group exists for different part - create NEW group node with unique ID
-                    group_id = str(uuid.uuid4())
-                    session.run("""
-                        CREATE (g:Group {
-                            id: $group_id,
-                            name: $group,
-                            part: $part
-                        })
-                    """, group_id=group_id, group=placeholder_group, part=part)
-                    
-                    # Create relationship from Part to new Group
-                    session.run("""
-                        MATCH (p:Part {name: $part})
-                        MATCH (g:Group {id: $group_id})
-                        MERGE (p)-[:HAS_GROUP]->(g)
-                    """, part=part, group_id=group_id)
-                else:
-                    # No existing group with this name - create new one
-                    group_id = str(uuid.uuid4())
-                    session.run("""
-                        CREATE (g:Group {
-                            id: $group_id,
-                            name: $group,
-                            part: $part
-                        })
-                    """, group_id=group_id, group=placeholder_group, part=part)
-                    
-                    # Create relationship from Part to new Group
-                    session.run("""
-                        MATCH (p:Part {name: $part})
-                        MATCH (g:Group {id: $group_id})
-                        MERGE (p)-[:HAS_GROUP]->(g)
-                    """, part=part, group_id=group_id)
-            
-            result = session.run("""
-                // MERGE Part node
-                MERGE (p:Part {name: $part})
-                
-                // Match Group by ID
-                MATCH (g:Group {id: $group_id})
-                
-                // Create placeholder Variable node with the new section
-                CREATE (v:Variable {
-                    id: $variable_id,
-                    name: $variable_name,
-                    section: $section,
-                    driver: "ALL, ALL, ALL, None",
-                    formatI: "",
-                    formatII: "",
-                    gType: "",
-                    validation: "",
-                    default: "",
-                    graph: "Yes",
-                    status: "Placeholder"
-                })
-                
-                // Create relationship Group -> Variable
-                MERGE (g)-[:HAS_VARIABLE]->(v)
-                
-                RETURN v.id as id, v.section as section
-            """, {
-                "part": part,
-                "group_id": group_id,
-                "variable_id": placeholder_variable_id,
-                "variable_name": placeholder_variable_name,
-                "section": section
-            })
-            
-            record = result.single()
-            if record:
-                return {"success": True, "message": f"Section '{section}' added successfully for part '{part}'"}
-            else:
-                raise HTTPException(status_code=500, detail="Failed to create section")
+            # Section doesn't exist yet - return success
+            # Note: Section will appear in dropdowns once a Variable with that section is created
+            # We no longer create placeholder groups/variables
+            return {"success": True, "message": f"Section '{section}' will be available once a Variable with this section is created for part '{part}'"}
                 
     except HTTPException:
         raise
@@ -549,8 +456,10 @@ async def get_variable_groups(part: str = None, section: str = None):
         with driver.session() as session:
             # Get all groups for the part, regardless of section
             # Part -> HAS_GROUP -> Group relationship is independent of Variable section property
+            # Filter out PLACEHOLDER groups
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT g.name as group
                 ORDER BY g.name
             """, part=part)
@@ -589,6 +498,8 @@ async def get_variables_for_selection(part: str = None, section: str = None, gro
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
                 WHERE v.section = $section
+                AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN v.id as id, v.name as variable
                 ORDER BY v.name
             """, part=part, section=section, group=group)
@@ -622,8 +533,11 @@ async def get_variables():
             all_countries = {record["name"] for record in all_countries_result}
             
             # Get all variables with their taxonomy and relationships
+            # Filter out PLACEHOLDER variables and groups
             result = session.run("""
                 MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 OPTIONAL MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v)
                 OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(s:Sector)
                 OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(d:Domain)
