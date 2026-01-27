@@ -2397,6 +2397,14 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
     2. If an avatar with the same name exists for the same being, return an error
     3. The avatar is properly linked to the specified being only
     """
+    print(f"DEBUG create_avatar: Received request - being='{being}', avatar='{avatar}'")
+    """
+    Create a new Avatar node and link it to a Being.
+    This ensures that:
+    1. If an avatar with the same name exists for a different being, create a NEW avatar node
+    2. If an avatar with the same name exists for the same being, return an error
+    3. The avatar is properly linked to the specified being only
+    """
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -2415,28 +2423,44 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
             # Check if avatar with same name already exists for the same being
             # IMPORTANT: Only check via actual HAS_AVATAR relationships, not properties
             # This ensures we only prevent duplicates when there's an actual relationship
-            existing_check = session.run("""
-                MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
-                RETURN a.name as avatar_name, a.id as avatar_id
+            # Use count to be absolutely sure
+            relationship_count_result = session.run("""
+                MATCH (b:Being {name: $being})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                RETURN count(r) as relationship_count
             """, being=being, avatar=avatar).single()
             
-            if existing_check:
-                # Double-check: verify this avatar is actually linked via relationship
-                # This prevents false positives from orphaned nodes
-                verify_relationship = session.run("""
-                    MATCH (b:Being {name: $being})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar})
-                    RETURN count(r) as relationship_count
-                """, being=being, avatar=avatar).single()
-                
-                if verify_relationship and verify_relationship["relationship_count"] > 0:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Avatar '{avatar}' already exists for Being '{being}'. Please use a different name."
-                    )
-                else:
-                    # Avatar node exists but has no relationship - this is an orphaned node
-                    # We can proceed to create a new one, but log a warning
-                    print(f"WARNING: Found orphaned Avatar node '{avatar}' with being property but no relationship to '{being}'. Creating new Avatar node.")
+            relationship_count = relationship_count_result["relationship_count"] if relationship_count_result else 0
+            
+            # Debug logging - check what we actually found
+            print(f"DEBUG create_avatar: Checking for avatar '{avatar}' for Being '{being}'")
+            print(f"DEBUG create_avatar: Relationship count result: {relationship_count_result}")
+            print(f"DEBUG create_avatar: Relationship count: {relationship_count}")
+            
+            # Also check if there are any Avatar nodes with this name at all (for debugging)
+            all_avatars_check = session.run("""
+                MATCH (a:Avatar {name: $avatar})
+                OPTIONAL MATCH (b:Being)-[r:HAS_AVATAR]->(a)
+                RETURN a.name as name, a.id as id, a.being as being_prop, 
+                       collect(b.name) as linked_beings, count(r) as total_relationships
+            """, avatar=avatar).single()
+            
+            if all_avatars_check:
+                print(f"DEBUG create_avatar: Found Avatar node '{avatar}' with:")
+                print(f"  - ID: {all_avatars_check.get('id')}")
+                print(f"  - being property: {all_avatars_check.get('being_prop')}")
+                print(f"  - Linked to Beings: {all_avatars_check.get('linked_beings')}")
+                print(f"  - Total relationships: {all_avatars_check.get('total_relationships')}")
+            
+            if relationship_count > 0:
+                # There IS a relationship - this is a true duplicate
+                print(f"DEBUG create_avatar: ❌ DUPLICATE FOUND - {relationship_count} relationship(s) exist from '{being}' to '{avatar}'")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Avatar '{avatar}' already exists for Being '{being}'. Please use a different name."
+                )
+            else:
+                # No relationship exists - safe to create
+                print(f"DEBUG create_avatar: ✅ No relationship found - proceeding to create new Avatar for '{being}'")
             
             # Ensure Being exists
             session.run("""
