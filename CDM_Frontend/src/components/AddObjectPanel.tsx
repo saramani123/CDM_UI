@@ -10,6 +10,7 @@ import { AddBeingValueModal } from './AddBeingValueModal';
 import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { VariantsModal } from './VariantsModal';
 import { VariableData } from '../data/variablesData';
+import { apiService } from '../services/api';
 
 interface CompositeKey {
   id: string;
@@ -388,8 +389,41 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     return ['ALL', ...allBeings];
   };
 
+  const [avatarsForBeing, setAvatarsForBeing] = useState<Record<string, string[]>>({});
+
+  // Fetch avatars from backend API when being changes
+  useEffect(() => {
+    const fetchAvatarsForBeing = async (being: string) => {
+      if (!being || being === 'ALL') {
+        setAvatarsForBeing(prev => ({ ...prev, [being]: ['ALL'] }));
+        return;
+      }
+      
+      try {
+        const avatars = await apiService.getAvatars(being);
+        setAvatarsForBeing(prev => ({ ...prev, [being]: avatars }));
+      } catch (error) {
+        console.error('Error fetching avatars for being:', error);
+        // Fallback to local data
+        const avatarsFromData = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
+        setAvatarsForBeing(prev => ({ ...prev, [being]: avatarsFromData }));
+      }
+    };
+
+    if (formData.being) {
+      fetchAvatarsForBeing(formData.being);
+    }
+  }, [formData.being, allData]);
+
   const getDistinctAvatarsForBeing = (being: string) => {
     if (being === 'ALL') return ['ALL'];
+    
+    // First try to get from API-fetched data
+    if (avatarsForBeing[being]) {
+      return avatarsForBeing[being];
+    }
+    
+    // Fallback to local data
     const avatarsFromData = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
     const associations = getBeingAvatarAssociations();
     const avatarsFromStorage = associations[being] || [];
@@ -404,8 +438,33 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   };
 
   const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
-    saveBeingAvatarAssociation(being, avatar);
-    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
+    if (!being || !being.trim()) {
+      throw new Error('Please select a Being first');
+    }
+    
+    if (!avatar || !avatar.trim()) {
+      throw new Error('Please enter an Avatar name');
+    }
+    
+    try {
+      // Call backend API to create avatar
+      await apiService.createAvatar(being.trim(), avatar.trim());
+      
+      // Also save to localStorage for backward compatibility
+      saveBeingAvatarAssociation(being.trim(), avatar.trim());
+      
+      // Refresh avatars for this being
+      const avatars = await apiService.getAvatars(being.trim());
+      setAvatarsForBeing(prev => ({ ...prev, [being.trim()]: avatars }));
+      
+      setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create avatar';
+      if (errorMessage.includes('already exists')) {
+        throw new Error(`Avatar '${avatar}' already exists for Being '${being}'. Please use a different name.`);
+      }
+      throw error;
+    }
   };
 
   // Reset to defaults when panel opens
@@ -503,6 +562,14 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       // If being is changed, reset avatar since avatars are specific to each being
       if (key === 'being') {
         newFormData.avatar = '';
+        // Fetch avatars for the new being
+        if (value && value !== 'ALL') {
+          apiService.getAvatars(value).then(avatars => {
+            setAvatarsForBeing(prev => ({ ...prev, [value]: avatars }));
+          }).catch(error => {
+            console.error('Error fetching avatars:', error);
+          });
+        }
       }
       
       return newFormData;
@@ -574,6 +641,12 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   const handleAddObject = () => {
     if (!isFormValid()) {
       alert('Please fill in all required fields (Sector, Domain, Country, Being, Avatar, Object Name)');
+      return;
+    }
+    
+    // Validate that avatar is selected when being is selected
+    if (formData.being && formData.being !== 'ALL' && (!formData.avatar || formData.avatar === '')) {
+      alert('Please select an Avatar. Avatar is required when Being is selected.');
       return;
     }
 

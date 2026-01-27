@@ -613,6 +613,13 @@ class ApiService {
     return this.request(url);
   }
 
+  async createAvatar(being: string, avatar: string) {
+    return this.request('/objects/taxonomy/avatars', {
+      method: 'POST',
+      body: JSON.stringify({ being, avatar }),
+    });
+  }
+
   async getObjectsByTaxonomy(being?: string, avatar?: string) {
     let url = '/objects/taxonomy/objects';
     const params = new URLSearchParams();

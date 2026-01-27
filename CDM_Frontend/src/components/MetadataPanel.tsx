@@ -284,6 +284,32 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   // Get distinct values from data
+  const [avatarsForBeing, setAvatarsForBeing] = useState<Record<string, string[]>>({});
+
+  // Fetch avatars from backend API when being changes
+  useEffect(() => {
+    const fetchAvatarsForBeing = async (being: string) => {
+      if (!being || being === 'ALL') {
+        setAvatarsForBeing(prev => ({ ...prev, [being]: ['ALL'] }));
+        return;
+      }
+      
+      try {
+        const avatars = await apiService.getAvatars(being);
+        setAvatarsForBeing(prev => ({ ...prev, [being]: avatars }));
+      } catch (error) {
+        console.error('Error fetching avatars for being:', error);
+        // Fallback to local data
+        const avatarsFromData = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
+        setAvatarsForBeing(prev => ({ ...prev, [being]: avatarsFromData }));
+      }
+    };
+
+    if (formData.being) {
+      fetchAvatarsForBeing(formData.being);
+    }
+  }, [formData.being, allData]);
+
   // Use beingAvatarUpdateTrigger to force re-computation when values are added
   const getDistinctBeings = () => {
     const beingsFromData = [...new Set(allData.map(item => item.being))];
@@ -294,6 +320,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   const getDistinctAvatarsForBeing = (being: string) => {
     if (being === 'ALL') return ['ALL'];
+    
+    // First try to get from API-fetched data
+    if (avatarsForBeing[being]) {
+      return avatarsForBeing[being];
+    }
+    
+    // Fallback to local data
     const avatarsFromData = [...new Set(allData.filter(item => item.being === being).map(item => item.avatar))];
     const associations = getBeingAvatarAssociations();
     const avatarsFromStorage = associations[being] || [];
@@ -1266,6 +1299,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       // If being is changed, reset avatar since avatars are specific to each being
       if (key === 'being') {
         newFormData.avatar = '';
+        // Fetch avatars for the new being
+        if (value && value !== 'ALL') {
+          apiService.getAvatars(value).then(avatars => {
+            setAvatarsForBeing(prev => ({ ...prev, [value]: avatars }));
+          }).catch(error => {
+            console.error('Error fetching avatars:', error);
+          });
+        }
       }
       
       console.log('MetadataPanel newFormData after change:', newFormData);
@@ -1486,10 +1527,35 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
-    saveBeingAvatarAssociation(being, avatar);
-    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render to update dropdowns
-    // Force component to re-render by updating state
-    window.dispatchEvent(new Event('storage')); // Trigger storage event for cross-component updates
+    if (!being || !being.trim()) {
+      throw new Error('Please select a Being first');
+    }
+    
+    if (!avatar || !avatar.trim()) {
+      throw new Error('Please enter an Avatar name');
+    }
+    
+    try {
+      // Call backend API to create avatar
+      await apiService.createAvatar(being.trim(), avatar.trim());
+      
+      // Also save to localStorage for backward compatibility
+      saveBeingAvatarAssociation(being.trim(), avatar.trim());
+      
+      // Refresh avatars for this being
+      const avatars = await apiService.getAvatars(being.trim());
+      setAvatarsForBeing(prev => ({ ...prev, [being.trim()]: avatars }));
+      
+      setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render to update dropdowns
+      // Force component to re-render by updating state
+      window.dispatchEvent(new Event('storage')); // Trigger storage event for cross-component updates
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create avatar';
+      if (errorMessage.includes('already exists')) {
+        throw new Error(`Avatar '${avatar}' already exists for Being '${being}'. Please use a different name.`);
+      }
+      throw error;
+    }
   };
 
   const handleSave = () => {
@@ -1603,6 +1669,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       }
     });
 
+    // Validate that avatar is selected when being is selected
+    if (formData.being && formData.being !== 'ALL' && (!formData.avatar || formData.avatar === '')) {
+      alert('Please select an Avatar. Avatar is required when Being is selected.');
+      return;
+    }
+    
     const saveData = {
       ...formData,
       // Use the form data object value (user input)
