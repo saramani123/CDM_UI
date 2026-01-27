@@ -97,13 +97,16 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
       ));
     } else {
       // When disabling default order, restore the backup if it exists
-      // Merge backup with any new S, D, C rules that were added while default order was enabled
+      // Only add new S, D, C rules that don't already exist in the backup (to avoid duplicates)
       if (sortRulesBackup) {
-        const currentNonConflictingRules = sortRules.filter(rule => 
-          rule.column && ['sector', 'domain', 'country'].includes(rule.column)
+        const backupColumnSet = new Set(sortRulesBackup.map(rule => rule.column));
+        const newNonConflictingRules = sortRules.filter(rule => 
+          rule.column && 
+          ['sector', 'domain', 'country'].includes(rule.column) &&
+          !backupColumnSet.has(rule.column)
         );
-        // Restore backup and add any new S, D, C rules that were added
-        setSortRules([...sortRulesBackup, ...currentNonConflictingRules]);
+        // Restore backup and add only truly new S, D, C rules
+        setSortRules([...sortRulesBackup, ...newNonConflictingRules]);
         setSortRulesBackup(null);
       }
     }
