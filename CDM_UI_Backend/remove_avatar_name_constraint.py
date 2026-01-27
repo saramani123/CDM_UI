@@ -60,22 +60,32 @@ def remove_avatar_name_constraint(driver, dry_run=True):
         print("🔍 Checking for existing constraints on Avatar.name...")
         constraints_result = session.run("""
             SHOW CONSTRAINTS
-            YIELD name, type, entityType, properties
-            WHERE entityType = 'NODE' AND 'Avatar' IN labels(node)
-            RETURN name, type, properties
+            YIELD name, type, entityType, properties, labelsOrTypes
+            WHERE entityType = 'NODE' AND 'Avatar' IN labelsOrTypes
+            RETURN name, type, properties, labelsOrTypes
         """)
         
         constraints = []
         for record in constraints_result:
+            properties = record.get("properties", [])
+            if isinstance(properties, str):
+                # Sometimes properties is returned as a string representation
+                properties = [properties] if properties else []
+            elif properties is None:
+                properties = []
+            
             constraints.append({
                 "name": record.get("name"),
                 "type": record.get("type"),
-                "properties": record.get("properties")
+                "properties": properties,
+                "labelsOrTypes": record.get("labelsOrTypes", [])
             })
         
         avatar_name_constraint = None
         for constraint in constraints:
-            if constraint.get("properties") and "name" in constraint.get("properties", []):
+            props = constraint.get("properties", [])
+            # Check if 'name' is in the properties list
+            if props and ("name" in props or any("name" in str(p) for p in props)):
                 avatar_name_constraint = constraint
                 break
         
@@ -97,24 +107,34 @@ def remove_avatar_name_constraint(driver, dry_run=True):
         
         # Try to drop the constraint by name
         constraint_name = avatar_name_constraint['name']
+        print(f"   Attempting to drop constraint: {constraint_name}")
+        
         try:
-            result = session.run(f"DROP CONSTRAINT {constraint_name} IF EXISTS")
+            # Use parameterized query to avoid injection issues
+            result = session.run(f"DROP CONSTRAINT `{constraint_name}` IF EXISTS")
             result.consume()  # Consume the result
             print(f"✅ Successfully removed constraint: {constraint_name}")
         except Exception as e:
             print(f"⚠️  Error removing constraint by name: {e}")
-            # Try alternative method - drop by property
+            # Try alternative method - drop by known constraint name
             try:
-                result = session.run("""
-                    DROP CONSTRAINT avatar_name_unique IF EXISTS
-                """)
+                result = session.run("DROP CONSTRAINT avatar_name_unique IF EXISTS")
                 result.consume()
-                print("✅ Successfully removed constraint using property-based drop")
+                print("✅ Successfully removed constraint using 'avatar_name_unique'")
             except Exception as e2:
-                print(f"❌ Error with alternative method: {e2}")
-                print("\n⚠️  You may need to remove the constraint manually in Neo4j Browser:")
-                print(f"   DROP CONSTRAINT {constraint_name}")
-                raise
+                print(f"⚠️  Error with alternative method: {e2}")
+                # Try one more time with backticks
+                try:
+                    result = session.run("DROP CONSTRAINT `avatar_name_unique` IF EXISTS")
+                    result.consume()
+                    print("✅ Successfully removed constraint using backticks")
+                except Exception as e3:
+                    print(f"❌ All methods failed. Last error: {e3}")
+                    print("\n⚠️  You may need to remove the constraint manually in Neo4j Browser:")
+                    print(f"   DROP CONSTRAINT `{constraint_name}` IF EXISTS")
+                    print("   OR")
+                    print("   DROP CONSTRAINT avatar_name_unique IF EXISTS")
+                    raise
 
 def main():
     """Main function"""
