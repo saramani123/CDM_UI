@@ -39,7 +39,9 @@ def create_constraints_and_indexes():
                 "CREATE CONSTRAINT variable_clarifier_name_unique IF NOT EXISTS FOR (vc:VariableClarifier) REQUIRE vc.name IS UNIQUE",
                 # Objects taxonomy constraints
                 "CREATE CONSTRAINT being_name_unique IF NOT EXISTS FOR (b:Being) REQUIRE b.name IS UNIQUE",
-                "CREATE CONSTRAINT avatar_name_unique IF NOT EXISTS FOR (a:Avatar) REQUIRE a.name IS UNIQUE",
+                # Removed unique constraint on Avatar.name - we now use Avatar.id for uniqueness
+                # Multiple Avatar nodes can have the same name for different Beings
+                # "CREATE CONSTRAINT avatar_name_unique IF NOT EXISTS FOR (a:Avatar) REQUIRE a.name IS UNIQUE",
                 # Removed global unique constraint on variant names - variants can have same name for different objects
                 "CREATE CONSTRAINT object_name_unique IF NOT EXISTS FOR (o:Object) REQUIRE o.name IS UNIQUE",
                 # Variables taxonomy constraints
