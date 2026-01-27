@@ -7,7 +7,7 @@ This script:
 2. For each such avatar, keeps only one relationship (the first one found) and deletes the rest
 3. Verifies that each avatar now has exactly one Being relationship
 
-Run this script on production to fix the data integrity issue.
+Run this script on dev or production to fix the data integrity issue.
 """
 
 import os
@@ -64,6 +64,7 @@ def find_avatars_with_multiple_beings(driver):
             WITH a, collect({being: b.name, relationship: r}) as relationships
             WHERE size(relationships) > 1
             RETURN a.name as avatar_name, 
+                   a.id as avatar_id,
                    relationships,
                    size(relationships) as relationship_count
             ORDER BY avatar_name
@@ -72,12 +73,14 @@ def find_avatars_with_multiple_beings(driver):
         avatars_with_issues = []
         for record in result:
             avatar_name = record["avatar_name"]
+            avatar_id = record.get("avatar_id")
             relationships = record["relationships"]
             count = record["relationship_count"]
             
             beings = [rel["being"] for rel in relationships]
             avatars_with_issues.append({
                 "avatar_name": avatar_name,
+                "avatar_id": avatar_id,
                 "beings": beings,
                 "count": count,
                 "relationships": relationships
@@ -96,7 +99,7 @@ def fix_avatar_relationships(driver, dry_run=True):
     print(f"\n🔍 Found {len(avatars_with_issues)} avatar(s) with multiple Being relationships:\n")
     
     for issue in avatars_with_issues:
-        print(f"  Avatar: '{issue['avatar_name']}'")
+        print(f"  Avatar: '{issue['avatar_name']}'" + (f" (ID: {issue['avatar_id']})" if issue['avatar_id'] else ""))
         print(f"  Has relationships from {issue['count']} Being(s): {', '.join(issue['beings'])}")
     
     if dry_run:
@@ -111,6 +114,7 @@ def fix_avatar_relationships(driver, dry_run=True):
         
         for issue in avatars_with_issues:
             avatar_name = issue["avatar_name"]
+            avatar_id = issue.get("avatar_id")
             beings = issue["beings"]
             
             # Keep the first being, delete relationships from all others
@@ -123,11 +127,20 @@ def fix_avatar_relationships(driver, dry_run=True):
             
             # Delete relationships from beings we don't want to keep
             for being_to_remove in beings_to_remove:
-                result = session.run("""
-                    MATCH (b:Being {name: $being_name})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar_name})
-                    DELETE r
-                    RETURN count(r) as deleted_count
-                """, being_name=being_to_remove, avatar_name=avatar_name)
+                if avatar_id:
+                    # Use ID if available (more precise)
+                    result = session.run("""
+                        MATCH (b:Being {name: $being_name})-[r:HAS_AVATAR]->(a:Avatar {id: $avatar_id})
+                        DELETE r
+                        RETURN count(r) as deleted_count
+                    """, being_name=being_to_remove, avatar_id=avatar_id)
+                else:
+                    # Fallback to name matching
+                    result = session.run("""
+                        MATCH (b:Being {name: $being_name})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar_name})
+                        DELETE r
+                        RETURN count(r) as deleted_count
+                    """, being_name=being_to_remove, avatar_name=avatar_name)
                 
                 deleted = result.single()["deleted_count"]
                 if deleted > 0:
@@ -155,20 +168,26 @@ def verify_all_avatars(driver):
         # Get all avatars
         all_avatars_result = session.run("""
             MATCH (a:Avatar)
-            RETURN a.name as avatar_name
+            RETURN a.name as avatar_name, a.id as avatar_id
             ORDER BY avatar_name
         """)
         
-        all_avatars = [record["avatar_name"] for record in all_avatars_result]
+        all_avatars = [(record["avatar_name"], record.get("avatar_id")) for record in all_avatars_result]
         
         print(f"\n🔍 Verifying all {len(all_avatars)} avatar(s)...")
         
         issues_found = []
-        for avatar_name in all_avatars:
-            result = session.run("""
-                MATCH (b:Being)-[r:HAS_AVATAR]->(a:Avatar {name: $avatar_name})
-                RETURN collect(b.name) as beings, count(r) as relationship_count
-            """, avatar_name=avatar_name)
+        for avatar_name, avatar_id in all_avatars:
+            if avatar_id:
+                result = session.run("""
+                    MATCH (b:Being)-[r:HAS_AVATAR]->(a:Avatar {id: $avatar_id})
+                    RETURN collect(b.name) as beings, count(r) as relationship_count
+                """, avatar_id=avatar_id)
+            else:
+                result = session.run("""
+                    MATCH (b:Being)-[r:HAS_AVATAR]->(a:Avatar {name: $avatar_name})
+                    RETURN collect(b.name) as beings, count(r) as relationship_count
+                """, avatar_name=avatar_name)
             
             record = result.single()
             beings = record["beings"]
