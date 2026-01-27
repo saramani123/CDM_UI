@@ -565,18 +565,65 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             const compositeIdData = compositeIds[key];
             if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
               const blockNumber = index + 1;
-              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
-                id: `block${blockNumber}-row${rowIndex + 1}`,
-                part: ci.part || '',
-                group: ci.group || '',
-                variableId: ci.variableId || ''
-              }));
+              
+              // Group entries by part/section/group to detect "ANY" selections
+              // If multiple variables share the same part/section/group, collapse to "ANY"
+              const groupedEntries = new Map<string, any[]>();
+              compositeIdData.forEach((ci: any) => {
+                // Infer section from variable if available
+                let section = ci.section || '';
+                if (!section && ci.variableId && variablesData) {
+                  const variable = variablesData.find(v => v.id === ci.variableId);
+                  section = variable?.section || '';
+                }
+                
+                const part = ci.part || '';
+                const group = ci.group || '';
+                const groupKey = `${part}|${section}|${group}`;
+                
+                if (!groupedEntries.has(groupKey)) {
+                  groupedEntries.set(groupKey, []);
+                }
+                groupedEntries.get(groupKey)!.push({
+                  ...ci,
+                  section: section
+                });
+              });
+              
+              // Convert grouped entries to rows, collapsing multiple variables to "ANY"
+              const rows: CompositeIdRow[] = [];
+              groupedEntries.forEach((entries, groupKey) => {
+                const firstEntry = entries[0];
+                const part = firstEntry.part || '';
+                const section = firstEntry.section || '';
+                const group = firstEntry.group || '';
+                
+                // If multiple variables for same part/section/group, use "ANY"
+                // Otherwise use the single variable ID
+                let variableId = '';
+                if (entries.length > 1) {
+                  // Multiple variables - this was an "ANY" selection
+                  variableId = 'ANY';
+                } else {
+                  // Single variable
+                  variableId = firstEntry.variableId || '';
+                }
+                
+                rows.push({
+                  id: `block${blockNumber}-row${rows.length + 1}`,
+                  part: part,
+                  section: section,
+                  group: group,
+                  variableId: variableId
+                });
+              });
               
               // Ensure we have exactly 5 rows
               while (rows.length < 5) {
                 rows.push({
                   id: `block${blockNumber}-row${rows.length + 1}`,
                   part: '',
+                  section: '',
                   group: '',
                   variableId: ''
                 });
@@ -665,20 +712,57 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             const compositeIdData = compositeIds[key];
             if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
               const blockNumber = index + 1;
-              const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => {
+              
+              // Group entries by part/section/group to detect "ANY" selections
+              // If multiple variables share the same part/section/group, collapse to "ANY"
+              const groupedEntries = new Map<string, any[]>();
+              compositeIdData.forEach((ci: any) => {
                 // Infer section from variable if available
                 let section = ci.section || '';
                 if (!section && ci.variableId && variablesData) {
                   const variable = variablesData.find(v => v.id === ci.variableId);
                   section = variable?.section || '';
                 }
-                return {
-                  id: `block${blockNumber}-row${rowIndex + 1}`,
-                  part: ci.part || '',
+                
+                const part = ci.part || '';
+                const group = ci.group || '';
+                const groupKey = `${part}|${section}|${group}`;
+                
+                if (!groupedEntries.has(groupKey)) {
+                  groupedEntries.set(groupKey, []);
+                }
+                groupedEntries.get(groupKey)!.push({
+                  ...ci,
+                  section: section
+                });
+              });
+              
+              // Convert grouped entries to rows, collapsing multiple variables to "ANY"
+              const rows: CompositeIdRow[] = [];
+              groupedEntries.forEach((entries, groupKey) => {
+                const firstEntry = entries[0];
+                const part = firstEntry.part || '';
+                const section = firstEntry.section || '';
+                const group = firstEntry.group || '';
+                
+                // If multiple variables for same part/section/group, use "ANY"
+                // Otherwise use the single variable ID
+                let variableId = '';
+                if (entries.length > 1) {
+                  // Multiple variables - this was an "ANY" selection
+                  variableId = 'ANY';
+                } else {
+                  // Single variable
+                  variableId = firstEntry.variableId || '';
+                }
+                
+                rows.push({
+                  id: `block${blockNumber}-row${rows.length + 1}`,
+                  part: part,
                   section: section,
-                  group: ci.group || '',
-                  variableId: ci.variableId || ''
-                };
+                  group: group,
+                  variableId: variableId
+                });
               });
               
               // Ensure we have exactly 5 rows
@@ -1653,6 +1737,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
     // Add composite IDs - each block represents one composite ID
     // Section is needed for backend when group is "ANY" to find all groups matching part and section
+    // When "ANY" is selected, we only send ONE entry with "ANY" - backend will expand it to all variables
     compositeIdBlocks.forEach(block => {
       const blockKey = String(block.blockNumber);
       const entries = block.rows
@@ -1661,7 +1746,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           part: row.part,
           section: row.section, // Include section for backend to handle "ANY" group
           group: row.group,
-          variableId: row.variableId
+          variableId: row.variableId // Keep "ANY" as "ANY" - backend will expand it
         }));
       
       if (entries.length > 0) {
@@ -2360,16 +2445,34 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                       
                       const displayParts: string[] = [];
                       block.rows.forEach(row => {
+                        // Only process rows that have data
+                        if (!row.part && !row.section && !row.group && !row.variableId) return;
+                        
                         if (row.variableId && row.variableId !== 'ANY' && row.variableId.trim() !== '') {
+                          // Specific variable selected - show variable name
                           const varName = getVariableNameFromId(row.variableId);
                           if (varName) displayParts.push(varName);
                         } else if (row.variableId === 'ANY') {
-                          // Fallback to next level up
+                          // "ANY" selected for variable - show next level up (Group)
                           if (row.group && row.group !== 'ANY' && row.group.trim() !== '') {
                             displayParts.push(row.group);
                           } else if (row.section && row.section !== 'ANY' && row.section.trim() !== '') {
+                            // Group is also ANY, show Section
                             displayParts.push(row.section);
                           } else if (row.part && row.part.trim() !== '') {
+                            // Section is also ANY, show Part
+                            displayParts.push(row.part);
+                          }
+                        } else if (row.group === 'ANY' && row.variableId === '') {
+                          // Group is ANY but no variable selected yet - show Section
+                          if (row.section && row.section !== 'ANY' && row.section.trim() !== '') {
+                            displayParts.push(row.section);
+                          } else if (row.part && row.part.trim() !== '') {
+                            displayParts.push(row.part);
+                          }
+                        } else if (row.section === 'ANY' && row.group === '' && row.variableId === '') {
+                          // Section is ANY but nothing else selected - show Part
+                          if (row.part && row.part.trim() !== '') {
                             displayParts.push(row.part);
                           }
                         }
