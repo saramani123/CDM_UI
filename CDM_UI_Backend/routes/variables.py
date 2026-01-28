@@ -718,13 +718,13 @@ async def create_variable(variable_data: VariableCreateRequest):
                 group_id = existing_group["group_id"]
             else:
                 # Check if group with same name exists for a different part
-                    different_part_group = session.run("""
-                        MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
-                        WHERE p.name <> $part
-                        AND NOT g.name STARTS WITH '__PLACEHOLDER_'
-                        RETURN g.id as group_id
-                        LIMIT 1
-                    """, part=variable_data.part, group=variable_data.group).single()
+                different_part_group = session.run("""
+                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                    WHERE p.name <> $part
+                    AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                    RETURN g.id as group_id
+                    LIMIT 1
+                """, part=variable_data.part, group=variable_data.group).single()
                 
                 if different_part_group:
                     # Group exists for different part - create NEW group node with unique ID
