@@ -332,10 +332,10 @@ async def add_variable_section(section_data: VariableSectionRequest):
 async def create_variable_group(part: str = Body(...), group: str = Body(...)):
     """
     Create a new Group node and link it to a Part.
-    This ensures that:
-    1. If a group with the same name exists for a different part, create a NEW group node
-    2. If a group with the same name exists for the same part, return an error
-    3. The group is properly linked to the specified part only
+    Duplicate rule:
+    - Same group name in SAME part: NOT allowed (returns 400).
+    - Same group name in DIFFERENT part: allowed; creates a NEW group node with a unique id.
+    Every new group gets a unique id (uuid). The group is linked to the specified part only.
     """
     driver = get_driver()
     if not driver:
@@ -714,8 +714,19 @@ async def create_variable(variable_data: VariableCreateRequest):
             """, part=variable_data.part, group=variable_data.group).single()
             
             if existing_group:
-                # Group already exists for this Part - use it
-                group_id = existing_group["group_id"]
+                gid = existing_group.get("group_id")
+                if gid is not None and str(gid).strip():
+                    # Group already exists for this Part and has valid id - use it
+                    group_id = gid
+                else:
+                    # Group exists for this Part but has null id (legacy) - backfill id (do not create duplicate)
+                    group_id = str(uuid.uuid4())
+                    session.run("""
+                        MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                        WHERE g.id IS NULL
+                        SET g.id = $group_id
+                        RETURN count(g) AS c
+                    """, part=variable_data.part, group=variable_data.group, group_id=group_id)
             else:
                 # Check if group with same name exists for a different part
                 different_part_group = session.run("""
@@ -762,20 +773,11 @@ async def create_variable(variable_data: VariableCreateRequest):
                         MERGE (p)-[:HAS_GROUP]->(g)
                     """, part=variable_data.part, group_id=group_id)
             
-            # Create Variable and link to Group (use group_id if we have it, otherwise fallback to name)
-            # Get the group_id we just created/found
-            group_for_variable = session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
-                RETURN g.id as group_id
-                LIMIT 1
-            """, part=variable_data.part, group=variable_data.group).single()
+            # Create Variable and link to Group using group_id from find-or-create above
+            if not group_id or not str(group_id).strip():
+                raise HTTPException(status_code=500, detail=f"Failed to resolve Group '{variable_data.group}' for Part '{variable_data.part}' (missing or invalid group id).")
             
-            if not group_for_variable:
-                raise HTTPException(status_code=500, detail=f"Failed to find Group '{variable_data.group}' for Part '{variable_data.part}'")
-            
-            group_id_for_variable = group_for_variable["group_id"]
-            
-            # Create Variable and link to Group using group ID
+            # Create Variable and link to Group using group ID (official flow: Part exists, Group resolved/created with id)
             result = session.run("""
                 MATCH (g:Group {id: $group_id})
                 
@@ -808,7 +810,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                        $part as part, $group as group
             """, {
                 "id": variable_id,
-                "group_id": group_id_for_variable,
+                "group_id": group_id,
                 "part": variable_data.part,
                 "group": variable_data.group,
                 "variable": variable_data.variable,
@@ -1168,16 +1170,11 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                             # If existing_parts is empty, group doesn't belong to any part yet - proceed
                             
                             try:
-                                # Execute all operations in a single transaction to ensure atomicity
-                                # This query:
-                                # 1. Ensures Variable exists (will fail if it doesn't)
-                                # 2. Deletes ALL existing Group -> Variable relationships for this variable
-                                # 3. Ensures Part node exists (MERGE - won't delete if exists)
-                                # 4. Ensures Group node exists (MERGE - won't delete if exists)
-                                # 5. Ensures Part -> Group relationship exists (MERGE - won't delete if exists)
-                                # 6. Creates new Group -> Variable relationship
-                                # 7. Updates section property if provided
-                                
+                                # Official flow: 1) MERGE Part; 2) Resolve or create Group (with id); 3) Create new Group->Variable link first; 4) Set section if provided; 5) Delete old links.
+                                session.run("MERGE (p:Part {name: $part})", part=new_part)
+
+                                # Create new link first, then delete old (variable never loses last link).
+                                # This ensures we never leave a variable without a Group->Variable link.
                                 update_params = {
                                     "variable_id": variable_id_str,
                                     "new_part": new_part,
@@ -1204,8 +1201,19 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                 """, new_part=new_part, new_group=new_group).single()
                                 
                                 if existing_group:
-                                    # Group already exists for this Part - use it
-                                    group_id = existing_group["group_id"]
+                                    gid = existing_group.get("group_id")
+                                    if gid is not None and str(gid).strip():
+                                        # Group already exists for this Part and has valid id - use it
+                                        group_id = gid
+                                    else:
+                                        # Group exists for this Part but has null id (legacy) - backfill id (do not create duplicate)
+                                        group_id = str(uuid.uuid4())
+                                        session.run("""
+                                            MATCH (p:Part {name: $new_part})-[:HAS_GROUP]->(g:Group {name: $new_group})
+                                            WHERE g.id IS NULL
+                                            SET g.id = $group_id
+                                            RETURN count(g) AS c
+                                        """, new_part=new_part, new_group=new_group, group_id=group_id)
                                 else:
                                     # Check if group with same name exists for a different part (exclude placeholder groups)
                                     different_part_group = session.run("""
@@ -1227,7 +1235,7 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                             })
                                         """, group_id=group_id, group=new_group, part=new_part)
                                         
-                                        # Create relationship from Part to new Group
+                                        # Create relationship from Part to new Group (Part already MERGEd above)
                                         session.run("""
                                             MATCH (p:Part {name: $part})
                                             MATCH (g:Group {id: $group_id})
@@ -1244,47 +1252,52 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                             })
                                         """, group_id=group_id, group=new_group, part=new_part)
                                         
-                                        # Create relationship from Part to new Group
+                                        # Create relationship from Part to new Group (Part already MERGEd above)
                                         session.run("""
                                             MATCH (p:Part {name: $part})
                                             MATCH (g:Group {id: $group_id})
                                             MERGE (p)-[:HAS_GROUP]->(g)
                                         """, part=new_part, group_id=group_id)
                                 
-                                bulk_update_query = f"""
-                                    // Ensure Variable exists (will fail if it doesn't)
-                                    MATCH (v:Variable {{id: $variable_id}})
-                                    
-                                    // Delete ALL existing Group -> Variable relationships for this variable
-                                    // This severs the old relationships without deleting any nodes
-                                    OPTIONAL MATCH (old_g:Group)-[old_r:HAS_VARIABLE]->(v)
-                                    DELETE old_r
-                                    
-                                    // WITH clause required after DELETE before MATCH (Neo4j syntax requirement)
-                                    WITH v
-                                    
-                                    // Match Group by ID (ensures we use the correct Group node for this Part)
-                                    MATCH (g:Group {{id: $group_id}})
-                                    
-                                    // Create new Group -> Variable relationship
-                                    MERGE (g)-[:HAS_VARIABLE]->(v)
-                                    {section_set_clause}
-                                    
-                                    // Return confirmation
-                                    RETURN v.id as var_id, g.name as group_name, v.section as section
-                                """
+                                # ATOMIC MOVE: Create new Group->Variable link FIRST, then delete only OLD links.
+                                # This way the variable never loses its last Group link (no "disappearing" variables).
                                 
                                 update_params["group_id"] = group_id
                                 
-                                result = session.run(bulk_update_query, update_params)
-                                record = result.single()
+                                # Step 1: Create new Group -> Variable relationship FIRST
+                                create_query = f"""
+                                    MATCH (v:Variable {{id: $variable_id}})
+                                    MATCH (g:Group {{id: $group_id}})
+                                    MERGE (g)-[:HAS_VARIABLE]->(v)
+                                    {section_set_clause}
+                                    RETURN v.id as var_id, g.name as group_name, v.section as section
+                                """
                                 
-                                if record:
-                                    print(f"DEBUG: Bulk edit - ✅ Successfully updated Part/Group relationships for variable {variable_id_str}", flush=True)
-                                    print(f"DEBUG: Bulk edit -   New Part: {record.get('part_name')}, New Group: {record.get('group_name')}, Section: {record.get('section')}", flush=True)
-                                else:
-                                    print(f"DEBUG: Bulk edit - ⚠️ WARNING - Query executed but no record returned for variable {variable_id_str}", flush=True)
-                                    errors.append(f"Variable {variable_id_str}: Bulk update query executed but no confirmation returned")
+                                create_result = session.run(create_query, update_params)
+                                create_record = create_result.single()
+                                
+                                if not create_record:
+                                    print(f"DEBUG: Bulk edit - ⚠️ WARNING - Failed to create Group->Variable relationship for variable {variable_id_str}", flush=True)
+                                    errors.append(f"Variable {variable_id_str}: Failed to create Group->Variable relationship")
+                                    continue
+                                
+                                print(f"DEBUG: Bulk edit - ✅ Created new Group->Variable relationship for variable {variable_id_str}", flush=True)
+                                
+                                # Step 2: Delete OLD Group -> Variable links (not the one we just created)
+                                # Include groups with null id (legacy) so we remove all old links
+                                delete_query = """
+                                    MATCH (old_g:Group)-[old_r:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                                    WHERE (old_g.id IS NULL OR old_g.id <> $group_id)
+                                    DELETE old_r
+                                    RETURN count(old_r) as deleted_count
+                                """
+                                
+                                delete_result = session.run(delete_query, update_params)
+                                delete_record = delete_result.single()
+                                deleted_count = delete_record["deleted_count"] if delete_record else 0
+                                
+                                print(f"DEBUG: Bulk edit - ✅ Deleted {deleted_count} old Group->Variable relationship(s) for variable {variable_id_str}", flush=True)
+                                print(f"DEBUG: Bulk edit -   New Part: {new_part}, New Group: {create_record.get('group_name')}, Section: {create_record.get('section')}", flush=True)
                                     
                             except Exception as e:
                                 print(f"DEBUG: Bulk edit - ❌ ERROR updating Part/Group relationships for variable {variable_id_str}: {e}", flush=True)
@@ -1708,41 +1721,10 @@ async def update_variable(variable_id: str, request: Request):
             if part_changed or group_changed:
                 print(f"DEBUG: Part/Group changed. Old: Part={current_part}, Group={current_group}. New: Part={new_part}, Group={new_group}")
                 
-                # Delete ALL existing Group -> Variable relationships for this variable
-                # (in case there are multiple or orphaned relationships)
-                # First, count how many relationships exist
-                try:
-                    count_result = session.run("""
-                        MATCH (g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-                        RETURN count(gv) as count
-                    """, variable_id=variable_id)
-                    count_record = count_result.single()
-                    count_before = count_record["count"] if count_record else 0
-                    print(f"DEBUG: Found {count_before} existing Group -> Variable relationship(s) to delete", flush=True)
-                except Exception as e:
-                    print(f"DEBUG: Error counting relationships: {e}", flush=True)
-                    count_before = 0
-                
-                # Now delete all of them
-                try:
-                    session.run("""
-                        MATCH (g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-                        DELETE gv
-                    """, variable_id=variable_id)
-                    print(f"DEBUG: Deleted Group -> Variable relationship(s) for variable {variable_id} (counted {count_before} before deletion)", flush=True)
-                except Exception as e:
-                    print(f"DEBUG: Error deleting relationships: {e}", flush=True)
-                    import traceback
-                    traceback.print_exc()
-                    # Continue anyway - the deletion might have partially succeeded
-                
-                # Ensure Part node exists (if new part is provided)
+                # Official flow: 1) Ensure Part exists; 2) Resolve or create Group (with id); 3) Create new link first; 4) Set section if provided; 5) Delete old links.
                 if new_part:
-                    session.run("""
-                        MERGE (p:Part {name: $part})
-                    """, part=new_part)
+                    session.run("MERGE (p:Part {name: $part})", part=new_part)
                 
-                # Find or create Group for this specific Part
                 if new_part and new_group:
                     # First, check if a Group with this name already exists for this Part
                     existing_group = session.run("""
@@ -1753,8 +1735,19 @@ async def update_variable(variable_id: str, request: Request):
                     """, part=new_part, group=new_group).single()
                     
                     if existing_group:
-                        # Group already exists for this Part - use it
-                        group_id = existing_group["group_id"]
+                        gid = existing_group.get("group_id")
+                        if gid is not None and str(gid).strip():
+                            # Group already exists for this Part and has valid id - use it
+                            group_id = gid
+                        else:
+                            # Group exists for this Part but has null id (legacy) - backfill id (do not create duplicate)
+                            group_id = str(uuid.uuid4())
+                            session.run("""
+                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                                WHERE g.id IS NULL
+                                SET g.id = $group_id
+                                RETURN count(g) AS c
+                            """, part=new_part, group=new_group, group_id=group_id)
                     else:
                         # Check if group with same name exists for a different part
                         different_part_group = session.run("""
@@ -1801,8 +1794,10 @@ async def update_variable(variable_id: str, request: Request):
                                 MERGE (p)-[:HAS_GROUP]->(g)
                             """, part=new_part, group_id=group_id)
                     
-                    # Create new Group -> Variable relationship using group ID
+                    # ATOMIC MOVE: Create new Group->Variable link FIRST, then remove only OLD links.
                     try:
+                        if not group_id or not str(group_id).strip():
+                            raise ValueError(f"Invalid group_id (empty or null). Part={new_part}, Group={new_group}. The Group may lack an 'id' property in the database.")
                         create_result = session.run("""
                             MATCH (g:Group {id: $group_id})
                             MATCH (v:Variable {id: $variable_id})
@@ -1810,10 +1805,29 @@ async def update_variable(variable_id: str, request: Request):
                             RETURN r, g.name as group_name, v.id as var_id
                         """, group_id=group_id, variable_id=variable_id)
                         create_record = create_result.single()
-                        if create_record and create_record.get("group_name"):
-                            print(f"DEBUG: Created Group -> Variable relationship: {create_record['group_name']} -> Variable {create_record['var_id']}", flush=True)
+                        # Success = we got a row back (relationship was created/found). Do not require group_name to be non-null.
+                        if create_record is not None:
+                            print(f"DEBUG: Created Group -> Variable relationship: {create_record.get('group_name') or new_group} -> Variable {create_record.get('var_id') or variable_id}", flush=True)
                         else:
-                            print(f"DEBUG: WARNING - Failed to create Group -> Variable relationship for group={new_group}, variable_id={variable_id}", flush=True)
+                            # No row = MATCH (g) or MATCH (v) failed - Group or Variable not found
+                            verify_group = session.run("MATCH (g:Group {id: $group_id}) RETURN g.id as gid", group_id=group_id).single()
+                            verify_var = session.run("MATCH (v:Variable {id: $variable_id}) RETURN v.id as vid", variable_id=variable_id).single()
+                            if not verify_group:
+                                raise ValueError(f"Group with id '{group_id}' not found. Part={new_part}, Group={new_group}. Ensure the group exists and has a valid id.")
+                            if not verify_var:
+                                raise ValueError(f"Variable with id '{variable_id}' not found.")
+                            raise ValueError("Create Group->Variable relationship returned no record")
+                        # Now remove old Group->Variable links (variable keeps the new link; never orphaned)
+                        # Delete from any other group (different id, or legacy groups with null id)
+                        delete_result = session.run("""
+                            MATCH (old_g:Group)-[gv:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+                            WHERE (old_g.id IS NULL OR old_g.id <> $group_id)
+                            DELETE gv
+                            RETURN count(gv) as deleted_count
+                        """, variable_id=variable_id, group_id=group_id)
+                        delete_record = delete_result.single()
+                        deleted_count = delete_record["deleted_count"] if delete_record else 0
+                        print(f"DEBUG: Removed {deleted_count} old Group->Variable link(s) for variable {variable_id}", flush=True)
                     except Exception as e:
                         print(f"DEBUG: ERROR creating Group -> Variable relationship: {e}", flush=True)
                         import traceback
@@ -2690,8 +2704,19 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                         """, part=var_data["part"], group=var_data["group"]).single()
                         
                         if existing_group:
-                            # Group already exists for this Part - use it
-                            group_id = existing_group["group_id"]
+                            gid = existing_group.get("group_id")
+                            if gid is not None and str(gid).strip():
+                                # Group already exists for this Part and has valid id - use it
+                                group_id = gid
+                            else:
+                                # Group exists for this Part but has null id (legacy) - backfill id (do not create duplicate)
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                                    WHERE g.id IS NULL
+                                    SET g.id = $group_id
+                                    RETURN count(g) AS c
+                                """, part=var_data["part"], group=var_data["group"], group_id=group_id)
                         else:
                             # Check if group with same name exists for a different part
                             different_part_group = tx.run("""
