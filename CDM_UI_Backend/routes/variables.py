@@ -386,7 +386,7 @@ async def create_variable_group(part: str = Body(...), group: str = Body(...)):
                 # Check if there's an existing Group with this name but no ID (legacy data)
                 existing_group_no_id = session.run("""
                     MATCH (g:Group {name: $group})
-                    WHERE NOT EXISTS(g.id)
+                    WHERE g.id IS NULL
                     RETURN g LIMIT 1
                 """, group=group).single()
                 

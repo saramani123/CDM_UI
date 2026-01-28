@@ -2511,7 +2511,7 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
                 # BUT: Only create new if it's not linked to this Being via relationship
                 existing_avatar_no_id = session.run("""
                     MATCH (a:Avatar {name: $avatar})
-                    WHERE NOT EXISTS(a.id)
+                    WHERE a.id IS NULL
                     AND NOT EXISTS((:Being {name: $being})-[:HAS_AVATAR]->(a))
                     RETURN a LIMIT 1
                 """, avatar=avatar, being=being).single()
