@@ -1230,6 +1230,9 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                     OPTIONAL MATCH (old_g:Group)-[old_r:HAS_VARIABLE]->(v)
                                     DELETE old_r
                                     
+                                    // WITH clause required after DELETE before MATCH (Neo4j syntax requirement)
+                                    WITH v
+                                    
                                     // Match Group by ID (ensures we use the correct Group node for this Part)
                                     MATCH (g:Group {{id: $group_id}})
                                     
