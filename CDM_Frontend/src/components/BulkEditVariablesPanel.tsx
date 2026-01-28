@@ -1297,6 +1297,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               disabled={isLoadingParts}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 isLoadingParts ? 'opacity-50 cursor-not-allowed' : ''
@@ -1341,6 +1344,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             <select
               value={formData.section}
               onChange={(e) => handleChange('section', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               disabled={!formData.part || formData.part === 'Keep Current Part' || isLoadingSections}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 !formData.part || formData.part === 'Keep Current Part' || isLoadingSections ? 'opacity-50 cursor-not-allowed' : ''
@@ -1385,6 +1391,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.stopPropagation()}
                 disabled={!formData.part || formData.part === 'Keep Current Part' || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                   !formData.part || formData.part === 'Keep Current Part' || !formData.section || formData.section === 'Keep Current Section' || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''

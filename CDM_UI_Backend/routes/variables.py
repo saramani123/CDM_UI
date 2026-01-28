@@ -239,11 +239,10 @@ async def get_variable_sections(part: str = None):
 
     try:
         with driver.session() as session:
+            # Include sections from placeholder variables so newly added sections appear in dropdown
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE v.section IS NOT NULL AND v.section <> ''
-                AND NOT g.name STARTS WITH '__PLACEHOLDER_'
-                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT v.section as section
                 ORDER BY v.section
             """, part=part)
@@ -259,9 +258,9 @@ async def get_variable_sections(part: str = None):
 async def add_variable_section(section_data: VariableSectionRequest):
     """
     Add a new section value for a specific part.
-    Note: Sections are properties on Variables, not standalone entities.
-    A section will only appear in dropdowns once a Variable with that section is created.
-    This endpoint now just validates that the section doesn't already exist.
+    Creates a minimal placeholder Group and Variable (with __PLACEHOLDER_ names) so the
+    section appears in the Section dropdown. Placeholder groups are filtered out of the
+    Group dropdown; placeholder variables are filtered out of the main Variables grid.
     """
     driver = get_driver()
     if not driver:
@@ -287,13 +286,40 @@ async def add_variable_section(section_data: VariableSectionRequest):
             
             existing_count = existing_check.single()["count"]
             if existing_count > 0:
-                # Section already exists, return success
                 return {"success": True, "message": f"Section '{section}' already exists for part '{part}'"}
             
-            # Section doesn't exist yet - return success
-            # Note: Section will appear in dropdowns once a Variable with that section is created
-            # We no longer create placeholder groups/variables
-            return {"success": True, "message": f"Section '{section}' will be available once a Variable with this section is created for part '{part}'"}
+            # Create a placeholder Group and Variable so this section appears in the Section dropdown.
+            # Group name uses __PLACEHOLDER_ so it is filtered out of get_variable_groups (Group dropdown).
+            # Variable name uses __PLACEHOLDER_ so it is filtered out of get_variables (main grid).
+            # get_variable_sections includes these so the new section appears in the Section dropdown.
+            placeholder_group = f"__PLACEHOLDER_{uuid.uuid4().hex[:8]}"
+            placeholder_variable_id = str(uuid.uuid4())
+            placeholder_variable_name = f"__PLACEHOLDER_SECTION_{section.strip()}"
+            group_id = str(uuid.uuid4())
+            
+            # Ensure Part exists, create Group and Variable, link Part -> Group -> Variable
+            session.run("""
+                MERGE (p:Part {name: $part})
+                CREATE (g:Group { id: $group_id, name: $group, part: $part })
+                CREATE (v:Variable {
+                    id: $variable_id,
+                    name: $variable_name,
+                    section: $section,
+                    driver: "ALL, ALL, ALL, None",
+                    formatI: "",
+                    formatII: "",
+                    gType: "",
+                    validation: "",
+                    default: "",
+                    graph: "Yes",
+                    status: "Placeholder"
+                })
+                MERGE (p)-[:HAS_GROUP]->(g)
+                MERGE (g)-[:HAS_VARIABLE]->(v)
+            """, part=part, group_id=group_id, group=placeholder_group, variable_id=placeholder_variable_id,
+                variable_name=placeholder_variable_name, section=section)
+            
+            return {"success": True, "message": f"Section '{section}' added for part '{part}'"}
                 
     except HTTPException:
         raise

@@ -1286,6 +1286,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               disabled={!isPanelEnabled || isLoadingParts}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 !isPanelEnabled || isLoadingParts ? 'opacity-50 cursor-not-allowed' : ''
@@ -1330,6 +1333,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             <select
               value={formData.section}
               onChange={(e) => handleChange('section', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
               disabled={!isPanelEnabled || !formData.part || isLoadingSections}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                 !isPanelEnabled || !formData.part || isLoadingSections ? 'opacity-50 cursor-not-allowed' : ''
@@ -1375,6 +1381,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               <select
                 value={formData.group}
                 onChange={(e) => handleChange('group', e.target.value)}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.stopPropagation()}
                 disabled={!isPanelEnabled || !formData.part || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                   !isPanelEnabled || !formData.part || !formData.section || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''
