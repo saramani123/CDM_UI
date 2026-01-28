@@ -2,13 +2,8 @@
 """
 Script to fix relationship counts for all objects in production.
 
-This script:
-1. Counts the actual number of relationships for each object
-2. Updates the relationship count property to match the actual count
-3. Identifies objects with incorrect counts
-
-By default, each object should have 1 relationship to each other object (with default role word).
-If there are 119 objects, each object should have 119 relationships (or 118 if excluding self, depending on setup).
+This script updates the 'relationships' property to the count of ADDITIONAL
+(non-default) relationships only. Default = role = object name, frequency = 'Possible'.
 """
 
 from db import get_driver
@@ -46,10 +41,11 @@ def fix_relationship_counts():
                 object_name = obj["object_name"]
                 current_count = obj.get("current_count", 0) or 0
                 
-                # Count actual relationships
+                # Count ADDITIONAL (non-default) relationships only
                 count_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                    RETURN count(*) as actual_count
+                    MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+                    WHERE (r.role IS NULL OR r.frequency IS NULL OR r.role <> o.object OR r.frequency <> 'Possible')
+                    RETURN count(r) as actual_count
                 """, object_id=object_id).single()
                 
                 actual_count = count_result["actual_count"] if count_result else 0

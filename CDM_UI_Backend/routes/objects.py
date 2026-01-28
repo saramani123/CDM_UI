@@ -104,6 +104,21 @@ def create_default_relationships_for_object(session, source_object_id: str, sour
     
     return relationships_created
 
+
+def get_additional_relationship_count(session, object_id: str) -> int:
+    """
+    Count only additional (non-default) relationships for an object.
+    Default = role = object name and frequency = 'Possible'.
+    So additional = NOT (role = o.object AND frequency = 'Possible').
+    """
+    result = session.run("""
+        MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(other:Object)
+        WHERE (r.role IS NULL OR r.frequency IS NULL OR r.role <> o.object OR r.frequency <> 'Possible')
+        RETURN count(r) as rel_count
+    """, object_id=object_id).single()
+    return int(result["rel_count"]) if result and result["rel_count"] is not None else 0
+
+
 @router.get("/objects", response_model=List[Dict[str, Any]])
 async def get_objects():
     """
@@ -122,7 +137,7 @@ async def get_objects():
                 OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
                 OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
                 OPTIONAL MATCH (o)-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
-                WITH o, 
+                WITH o,
                      collect(DISTINCT {
                          id: r.id,
                          type: r.type,
@@ -133,19 +148,19 @@ async def get_objects():
                      }) as relationships,
                      collect(DISTINCT v.name) as variant_names,
                      count(DISTINCT var) as variables_count,
-                     count(r) as relationships_count
-                RETURN o.id as id, 
-                       o.driver as driver, 
+                     count(r) as relationships_count,
+                     sum(CASE WHEN r IS NOT NULL AND (r.role <> o.object OR r.frequency <> 'Possible') THEN 1 ELSE 0 END) as additional_relationships_count
+                RETURN o.id as id,
+                       o.driver as driver,
                        o.being as being,
-                       o.avatar as avatar, 
-                       o.object as object, 
+                       o.avatar as avatar,
+                       o.object as object,
                        o.status as status,
                        COALESCE(o.is_meme, false) as is_meme,
-                       COALESCE(o.relationships, 0) as stored_relationships,
                        relationships,
                        variant_names,
                        variables_count,
-                       relationships_count
+                       additional_relationships_count
                 ORDER BY o.id
             """)
             
@@ -180,22 +195,21 @@ async def get_objects():
                 # Get variables count from the query result
                 variables_count = record.get("variables_count", 0) or 0
                 
-                # Get relationships count - use stored property (kept in sync by update script)
-                # This ensures the UI shows exactly what's stored in Neo4j
-                stored_relationships = record.get("stored_relationships")
-                if stored_relationships is not None:
-                    relationships_count = int(stored_relationships)
+                # Relationships column shows only ADDITIONAL (non-default) relationship count
+                # Default = role = object name, frequency = Possible; those are not counted here
+                relationships_count = record.get("additional_relationships_count", 0) or 0
+                if relationships_count is None:
+                    relationships_count = 0
                 else:
-                    # Fallback to calculated count if stored property doesn't exist
-                    relationships_count = record.get("relationships_count", 0) or 0
-                
+                    relationships_count = int(relationships_count)
+
                 obj = {
                     "id": record["id"],
                     "driver": record["driver"],
                     "being": record["being"],
                     "avatar": record["avatar"],
                     "object": record["object"],
-                    "relationships": relationships_count,  # Use stored property (matches Neo4j)
+                    "relationships": relationships_count,  # Additional relationships only (excludes defaults)
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",
@@ -234,13 +248,9 @@ async def get_object(object_id: str):
             if not record:
                 raise HTTPException(status_code=404, detail="Object not found")
 
-            # Get relationship count - count total relationships (not distinct targets)
-            # Multiple role words to same target = multiple relationships
-            rel_count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(*) as rel_count
-            """, object_id=object_id).single()
-            
+            # Relationships column = additional (non-default) count only
+            additional_rel_count = get_additional_relationship_count(session, object_id)
+
             # Get variant count
             var_count_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
@@ -261,7 +271,7 @@ async def get_object(object_id: str):
                 "object": record["object"],
                 "status": record["status"],
                 "is_meme": record.get("is_meme", False),
-                "relationships": rel_count_result["rel_count"] if rel_count_result else 0,
+                "relationships": additional_rel_count,
                 "variants": var_count_result["var_count"] if var_count_result else 0,
                 "variables": variables_count_result["variables_count"] if variables_count_result else 0,
                 "relationshipsList": [],
@@ -662,19 +672,12 @@ async def create_object(object_data: ObjectCreateRequest):
             )
             print(f"Created {default_rels_created} default relationships")
             
-            # Calculate actual relationship count (includes default + any user-provided relationships)
-            rel_count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(*) as rel_count
-            """, object_id=new_id).single()
-            
-            rel_count = rel_count_result["rel_count"] if rel_count_result else 0
-            
-            # Update the object's relationship count in the database
+            # Store ADDITIONAL (non-default) relationship count only; new object has 0 additional
+            additional_count = get_additional_relationship_count(session, new_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=new_id, rel_count=rel_count)
+            """, object_id=new_id, rel_count=additional_count)
             
             # Clone HAS_SPECIFIC_VARIABLE relationships if variableIds are provided
             # Try multiple ways to access variableIds
@@ -946,7 +949,7 @@ async def create_object(object_data: ObjectCreateRequest):
                                             """, object_id=new_id, var_id=variable_id)
             
             # Log the final counts for debugging
-            print(f"Created object {new_id} ({object_data.object}): {rel_count} relationships, {len(variants)} variants, {variables_count} variables")
+            print(f"Created object {new_id} ({object_data.object}): {additional_count} additional relationships, {len(variants)} variants, {variables_count} variables")
             
             return {
                 "id": new_id,
@@ -956,7 +959,7 @@ async def create_object(object_data: ObjectCreateRequest):
                 "object": object_data.object,
                 "status": getattr(object_data, 'status', 'Active'),
                 "is_meme": is_meme,
-                "relationships": rel_count,
+                "relationships": additional_count,
                 "variants": len(variants),
                 "variables": variables_count,
                 "relationshipsList": relationships,
@@ -1739,12 +1742,13 @@ async def update_object(
                                                 MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
                                             """, object_id=object_id, var_id=variable_id)
 
-                # Update counts
+                # Update counts: relationships = additional (non-default) count only
+                additional_count = get_additional_relationship_count(session, object_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
-                    SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) },
+                    SET o.relationships = $rel_count,
                         o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
-                """, object_id=object_id)
+                """, object_id=object_id, rel_count=additional_count)
                 
                 # Return the updated object data instead of just a message
                 updated_object = session.run("""
@@ -1853,10 +1857,16 @@ async def cleanup_old_relationships():
                 DETACH DELETE r
             """)
             
-            # Update all object relationship counts
+            # Update all object relationship counts to additional (non-default) only
             session.run("""
                 MATCH (o:Object)
-                SET o.relationships = COUNT { (o)-[:RELATES_TO]->(:Object) }
+                SET o.relationships = 0
+            """)
+            session.run("""
+                MATCH (o:Object)-[r:RELATES_TO]->(other:Object)
+                WHERE r.role <> o.object OR r.frequency <> 'Possible'
+                WITH o, count(r) as additional_count
+                SET o.relationships = additional_count
             """)
             
             return {"message": f"Converted {len(old_relationships)} old relationships to RELATES_TO edges"}
@@ -2264,6 +2274,12 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         csv_row.Object
                     )
                     print(f"Created {default_rels_created} default relationships")
+                    # New object has 0 additional relationships; set stored count
+                    additional_count = get_additional_relationship_count(session, new_id)
+                    session.run("""
+                        MATCH (o:Object {id: $object_id})
+                        SET o.relationships = $rel_count
+                    """, object_id=new_id, rel_count=additional_count)
 
                     print(f"DEBUG: Successfully created object {new_id}")
                     # Get relationships for the newly created object
@@ -2706,19 +2722,12 @@ async def create_relationship(
                 except Exception as e:
                     print(f"DEBUG: Error creating relationship to {target_result['object']}: {e}")
             
-            # Update relationship count - count total relationships (not distinct targets)
-            # Multiple role words to same target = multiple relationships
-            count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(*) as rel_count
-            """, object_id=object_id).single()
-            
-            rel_count = count_result["rel_count"] if count_result else 0
-            
+            # Update stored count to additional (non-default) relationships only
+            additional_count = get_additional_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=object_id, rel_count=rel_count)
+            """, object_id=object_id, rel_count=additional_count)
             
             return {
                 "id": str(uuid.uuid4()),  # Generate a new ID for the response
@@ -2748,18 +2757,12 @@ async def delete_relationship(object_id: str, relationship_id: str):
                 DELETE r
             """, object_id=object_id, relationship_id=relationship_id)
             
-            # Update relationship count
-            count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
-            """, object_id=object_id).single()
-            
-            rel_count = count_result["rel_count"] if count_result else 0
-            
+            # Update stored count to additional (non-default) relationships only
+            additional_count = get_additional_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=object_id, rel_count=rel_count)
+            """, object_id=object_id, rel_count=additional_count)
             
             return {"message": "Relationship deleted successfully"}
     except Exception as e:
@@ -2823,19 +2826,12 @@ async def update_relationships_to_target(
             
             updated_count = result["updated_count"] if result else 0
             
-            # Update relationship count - count total relationships (not distinct targets)
-            # Multiple role words to same target = multiple relationships
-            count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(*) as rel_count
-            """, object_id=object_id).single()
-            
-            rel_count = count_result["rel_count"] if count_result else 0
-            
+            # Update stored count to additional (non-default) relationships only
+            additional_count = get_additional_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=object_id, rel_count=rel_count)
+            """, object_id=object_id, rel_count=additional_count)
             
             return {
                 "message": f"Successfully updated {updated_count} relationship(s)",
@@ -3018,20 +3014,13 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                         except Exception as e:
                             print(f"DEBUG: Error creating relationship: {e}")
             
-            # Update relationship counts for all affected source objects
-            # Count total relationships (not distinct targets) since multiple role words = multiple relationships
+            # Update stored relationship count (additional only) for all affected source objects
             for source_id in source_object_ids:
-                count_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                    RETURN count(*) as rel_count
-                """, object_id=source_id).single()
-                
-                rel_count = count_result["rel_count"] if count_result else 0
-                
+                additional_count = get_additional_relationship_count(session, source_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count
-                """, object_id=source_id, rel_count=rel_count)
+                """, object_id=source_id, rel_count=additional_count)
             
             return {
                 "message": f"Successfully created {created_count} relationship(s)",
@@ -3224,18 +3213,12 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                         import traceback
                         traceback.print_exc()
             
-            # Update relationship count for target object
-            count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
-            """, object_id=target_object_id).single()
-            
-            rel_count = count_result["rel_count"] if count_result else 0
-            
+            # Update stored count to additional (non-default) relationships only for target
+            additional_count = get_additional_relationship_count(session, target_object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=target_object_id, rel_count=rel_count)
+            """, object_id=target_object_id, rel_count=additional_count)
             
             response = {
                 "message": f"Successfully cloned {cloned_count} non-default relationship(s) (deleted {deleted_rels} existing non-default relationships)",
@@ -3441,18 +3424,12 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                             })
                             print(f"DEBUG: Error cloning relationship for {target_name}: {e}")
                 
-                # Update relationship count for this target object
-                count_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                    RETURN count(other) as rel_count
-                """, object_id=target_object_id).single()
-                
-                rel_count = count_result["rel_count"] if count_result else 0
-                
+                # Update stored count to additional (non-default) relationships only for this target
+                additional_count = get_additional_relationship_count(session, target_object_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count
-                """, object_id=target_object_id, rel_count=rel_count)
+                """, object_id=target_object_id, rel_count=additional_count)
                 
                 total_cloned += cloned_count
                 results_by_target[target_name] = {
@@ -4335,20 +4312,14 @@ async def bulk_upload_relationships(object_id: str, file: UploadFile = File(...)
                     errors.append(f"Row {row_num}: Error processing relationship - {str(row_error)}")
                     continue
             
-            # Update relationship count for the source object
-            count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:RELATES_TO]->(other:Object)
-                RETURN count(other) as rel_count
-            """, object_id=object_id).single()
-            
-            rel_count = count_result["rel_count"] if count_result else 0
-            
+            # Update stored count to additional (non-default) relationships only for source object
+            additional_count = get_additional_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
-            """, object_id=object_id, rel_count=rel_count)
+            """, object_id=object_id, rel_count=additional_count)
             
-            print(f"DEBUG: Updated relationship count to {rel_count}")
+            print(f"DEBUG: Updated relationship count to {additional_count}")
             
     except Exception as session_error:
         print(f"Error in database session: {session_error}")

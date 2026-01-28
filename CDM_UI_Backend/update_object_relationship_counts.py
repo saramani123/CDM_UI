@@ -3,12 +3,11 @@
 Update Object Relationship Counts Script
 
 This script updates the 'relationships' property on each Object node to match
-the actual count of RELATES_TO relationships to other Object nodes (including itself).
+the count of ADDITIONAL (non-default) RELATES_TO relationships only.
 
-After running the cleanup script, all objects should have exactly N relationships
-(where N = total number of objects). This script ensures the 'relationships' property
-on each Object node reflects the actual count in Neo4j.
-    
+Default relationship = role = object name, frequency = 'Possible'. Those are
+not counted. Only relationships added via the relationships modal (or CSV) are counted.
+
 IMPORTANT: This script ONLY updates the 'relationships' property on Object nodes.
 It does NOT create, delete, or modify any relationships.
 """
@@ -82,9 +81,10 @@ def update_object_relationship_counts():
                 obj_name = obj["object"]
                 current_count = obj.get("current_count")
                 
-                # Count actual RELATES_TO relationships to other Object nodes
+                # Count ADDITIONAL (non-default) RELATES_TO relationships only
                 count_result = session.run("""
-                    MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                    MATCH (o:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                    WHERE (r.role IS NULL OR r.frequency IS NULL OR r.role <> o.object OR r.frequency <> 'Possible')
                     RETURN count(r) as count
                 """, source_id=obj_id).single()
                 
@@ -100,17 +100,14 @@ def update_object_relationship_counts():
                     print(f"[{i}/{total_objects}] {obj_name}: Updated {current_count} → {actual_count}")
                 else:
                     total_unchanged += 1
-                    if actual_count != total_objects:
-                        print(f"[{i}/{total_objects}] {obj_name}: Count is {actual_count} (expected {total_objects}) ⚠️")
-                    else:
-                        print(f"[{i}/{total_objects}] {obj_name}: Count is {actual_count} ✓")
+                    print(f"[{i}/{total_objects}] {obj_name}: Additional count is {actual_count} ✓")
             
             print(f"\n{'='*60}")
             print(f"📊 Update Summary:")
             print(f"  🔧 Objects updated: {total_updated}")
             print(f"  ✓ Objects unchanged: {total_unchanged}")
             print(f"  📦 Total objects processed: {total_objects}")
-            print(f"  🎯 Expected count per object: {total_objects}")
+            print(f"  🎯 Count = additional (non-default) relationships only")
             print(f"{'='*60}\n")
             
             # Final verification: Check all objects have correct counts
@@ -130,9 +127,10 @@ def update_object_relationship_counts():
                 
                 stored_count = node_result["count"] if node_result else None
                 
-                # Count actual relationships
+                # Count additional (non-default) relationships
                 count_result = session.run("""
-                    MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                    MATCH (o:Object {id: $source_id})-[r:RELATES_TO]->(target:Object)
+                    WHERE (r.role IS NULL OR r.frequency IS NULL OR r.role <> o.object OR r.frequency <> 'Possible')
                     RETURN count(r) as count
                 """, source_id=obj_id).single()
                 
@@ -140,10 +138,8 @@ def update_object_relationship_counts():
                 
                 if stored_count != actual_count:
                     verification_errors.append(f"{obj_name}: stored={stored_count}, actual={actual_count}")
-                elif actual_count == total_objects:
-                    correct_count += 1
                 else:
-                    verification_errors.append(f"{obj_name}: count={actual_count} (expected {total_objects})")
+                    correct_count += 1
             
             if verification_errors:
                 print(f"❌ Verification failed for {len(verification_errors)} objects:")
@@ -152,12 +148,11 @@ def update_object_relationship_counts():
                 if len(verification_errors) > 10:
                     print(f"  ... and {len(verification_errors) - 10} more")
             else:
-                print(f"✅ All {total_objects} objects have correct relationship counts!")
-                print(f"✅ All objects have exactly {total_objects} relationships")
-                print(f"✅ All 'relationships' properties match actual counts")
+                print(f"✅ All {total_objects} objects have correct (additional-only) relationship counts!")
+                print(f"✅ All 'relationships' properties match additional relationship counts")
             
             print(f"\n📈 Statistics:")
-            print(f"  ✓ Objects with correct count ({total_objects}): {correct_count}")
+            print(f"  ✓ Objects with correct additional count: {correct_count}")
             print(f"  ⚠️  Objects with incorrect count: {len(verification_errors)}")
                 
     except Exception as e:
@@ -174,7 +169,7 @@ if __name__ == "__main__":
     print("🔢 Object Relationship Counts Update Script")
     print("="*60)
     print("\n⚠️  This script will update the 'relationships' property on Object nodes")
-    print("   to match the actual count of RELATES_TO relationships.")
+    print("   to match the count of ADDITIONAL (non-default) relationships only.")
     print("\n   This script ONLY updates node properties.")
     print("   It does NOT create, delete, or modify any relationships.\n")
     
