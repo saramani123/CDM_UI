@@ -55,7 +55,7 @@ export const variableColumns = [
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '200px' },
-  { key: 'isMeme', title: 'Is Meme', sortable: true, filterable: true, width: '100px' },
+  { key: 'isMeme', title: 'Meme', sortable: true, filterable: true, width: '100px' },
   { key: 'isGroupKey', title: 'Is Group Key', sortable: true, filterable: true, width: '120px' },
   { key: 'formatI', title: 'Format I', sortable: true, filterable: true, width: '120px' },
   { key: 'formatII', title: 'Format II', sortable: true, filterable: true, width: '140px' },

@@ -446,8 +446,16 @@ async def create_object(object_data: ObjectCreateRequest):
             """, being=object_data.being, avatar=object_data.avatar).single()
             
             if existing_avatar:
-                # Avatar already exists for this Being - use it
+                # Avatar already exists for this Being - use it only if id is set; else backfill
                 avatar_id = existing_avatar["avatar_id"]
+                if avatar_id is None or not str(avatar_id).strip():
+                    avatar_id = str(uuid.uuid4())
+                    session.run("""
+                        MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                        WHERE a.id IS NULL
+                        SET a.id = $avatar_id
+                        RETURN count(a) AS c
+                    """, being=object_data.being, avatar=object_data.avatar, avatar_id=avatar_id)
             else:
                 # Check if avatar with same name exists for a different being
                 different_being_avatar = session.run("""
@@ -1201,19 +1209,11 @@ async def update_object(
                             final_avatar = final_result['avatar']
                             final_object = final_result['object']
                             
-                            # Delete old taxonomy relationships
-                            session.run("""
-                                MATCH (b:Being)-[:HAS_AVATAR]->(a:Avatar)-[r:HAS_OBJECT]->(o:Object {id: $object_id})
-                                DELETE r
-                            """, object_id=object_id)
-                            
-                            # Create new taxonomy relationships
                             if final_being and final_avatar:
                                 # Ensure Being exists
                                 session.run("MERGE (b:Being {name: $being})", being=final_being)
                                 
-                                # Find or create Avatar for this specific Being
-                                # First, check if an Avatar with this name already exists for this Being
+                                # Find or create Avatar for this specific Being (with id / backfill)
                                 existing_avatar = session.run("""
                                     MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
                                     RETURN a.id as avatar_id
@@ -1221,10 +1221,16 @@ async def update_object(
                                 """, being=final_being, avatar=final_avatar).single()
                                 
                                 if existing_avatar:
-                                    # Avatar already exists for this Being - use it
                                     avatar_id = existing_avatar["avatar_id"]
+                                    if avatar_id is None or not str(avatar_id).strip():
+                                        avatar_id = str(uuid.uuid4())
+                                        session.run("""
+                                            MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                                            WHERE a.id IS NULL
+                                            SET a.id = $avatar_id
+                                            RETURN count(a) AS c
+                                        """, being=final_being, avatar=final_avatar, avatar_id=avatar_id)
                                 else:
-                                    # Check if avatar with same name exists for a different being
                                     different_being_avatar = session.run("""
                                         MATCH (b:Being)-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
                                         WHERE b.name <> $being
@@ -1233,7 +1239,6 @@ async def update_object(
                                     """, being=final_being, avatar=final_avatar).single()
                                     
                                     if different_being_avatar:
-                                        # Avatar exists for different being - create NEW avatar node with unique ID
                                         avatar_id = str(uuid.uuid4())
                                         print(f"Note: Avatar '{final_avatar}' exists for different Being, creating NEW avatar node with ID '{avatar_id}' for Being '{final_being}'")
                                         session.run("""
@@ -1243,15 +1248,12 @@ async def update_object(
                                                 being: $being
                                             })
                                         """, avatar_id=avatar_id, avatar=final_avatar, being=final_being)
-                                        
-                                        # Create relationship from Being to new Avatar
                                         session.run("""
                                             MATCH (b:Being {name: $being})
                                             MATCH (a:Avatar {id: $avatar_id})
                                             MERGE (b)-[:HAS_AVATAR]->(a)
                                         """, being=final_being, avatar_id=avatar_id)
                                     else:
-                                        # No existing avatar with this name - create new one
                                         avatar_id = str(uuid.uuid4())
                                         session.run("""
                                             CREATE (a:Avatar {
@@ -1260,20 +1262,23 @@ async def update_object(
                                                 being: $being
                                             })
                                         """, avatar_id=avatar_id, avatar=final_avatar, being=final_being)
-                                        
-                                        # Create relationship from Being to new Avatar
                                         session.run("""
                                             MATCH (b:Being {name: $being})
                                             MATCH (a:Avatar {id: $avatar_id})
                                             MERGE (b)-[:HAS_AVATAR]->(a)
                                         """, being=final_being, avatar_id=avatar_id)
                                 
-                                # Link Avatar to Object using avatar ID
+                                # Create new HAS_OBJECT first, then delete only old link(s) from other avatars
                                 session.run("""
                                     MATCH (a:Avatar {id: $avatar_id})
                                     MATCH (o:Object {id: $object_id})
                                     MERGE (a)-[:HAS_OBJECT]->(o)
                                 """, avatar_id=avatar_id, object_id=object_id)
+                                session.run("""
+                                    MATCH (old_a:Avatar)-[r:HAS_OBJECT]->(o:Object {id: $object_id})
+                                    WHERE (old_a.id IS NULL OR old_a.id <> $avatar_id)
+                                    DELETE r
+                                """, object_id=object_id, avatar_id=avatar_id)
                                 
                                 print(f"DEBUG: Updated taxonomy relationships - Being: {final_being}, Avatar: {final_avatar}")
 
@@ -2050,8 +2055,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     # Ensure Being exists
                     session.run("MERGE (b:Being {name: $being})", being=csv_row.Being)
                     
-                    # Find or create Avatar for this specific Being
-                    # First, check if an Avatar with this name already exists for this Being
+                    # Find or create Avatar for this specific Being (with id / backfill)
                     existing_avatar = session.run("""
                         MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
                         RETURN a.id as avatar_id
@@ -2059,10 +2063,16 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     """, being=csv_row.Being, avatar=csv_row.Avatar).single()
                     
                     if existing_avatar:
-                        # Avatar already exists for this Being - use it
                         avatar_id = existing_avatar["avatar_id"]
+                        if avatar_id is None or not str(avatar_id).strip():
+                            avatar_id = str(uuid.uuid4())
+                            session.run("""
+                                MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                                WHERE a.id IS NULL
+                                SET a.id = $avatar_id
+                                RETURN count(a) AS c
+                            """, being=csv_row.Being, avatar=csv_row.Avatar, avatar_id=avatar_id)
                     else:
-                        # Check if avatar with same name exists for a different being
                         different_being_avatar = session.run("""
                             MATCH (b:Being)-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
                             WHERE b.name <> $being
@@ -2071,7 +2081,6 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         """, being=csv_row.Being, avatar=csv_row.Avatar).single()
                         
                         if different_being_avatar:
-                            # Avatar exists for different being - create NEW avatar node with unique ID
                             avatar_id = str(uuid.uuid4())
                             print(f"Note: Avatar '{csv_row.Avatar}' exists for different Being, creating NEW avatar node with ID '{avatar_id}' for Being '{csv_row.Being}'")
                             session.run("""
@@ -2081,15 +2090,12 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                     being: $being
                                 })
                             """, avatar_id=avatar_id, avatar=csv_row.Avatar, being=csv_row.Being)
-                            
-                            # Create relationship from Being to new Avatar
                             session.run("""
                                 MATCH (b:Being {name: $being})
                                 MATCH (a:Avatar {id: $avatar_id})
                                 MERGE (b)-[:HAS_AVATAR]->(a)
                             """, being=csv_row.Being, avatar_id=avatar_id)
                         else:
-                            # No existing avatar with this name - create new one
                             avatar_id = str(uuid.uuid4())
                             session.run("""
                                 CREATE (a:Avatar {
@@ -2098,8 +2104,6 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                     being: $being
                                 })
                             """, avatar_id=avatar_id, avatar=csv_row.Avatar, being=csv_row.Being)
-                            
-                            # Create relationship from Being to new Avatar
                             session.run("""
                                 MATCH (b:Being {name: $being})
                                 MATCH (a:Avatar {id: $avatar_id})
@@ -2452,7 +2456,27 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
                 print(f"  - Total relationships: {all_avatars_check.get('total_relationships')}")
             
             if relationship_count > 0:
-                # There IS a relationship - this is a true duplicate
+                # Relationship exists - if linked Avatar has null id, backfill and return success; else duplicate error
+                linked_without_id = session.run("""
+                    MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                    WHERE a.id IS NULL
+                    RETURN a LIMIT 1
+                """, being=being, avatar=avatar).single()
+                if linked_without_id:
+                    avatar_id = str(uuid.uuid4())
+                    session.run("""
+                        MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                        WHERE a.id IS NULL
+                        SET a.id = $avatar_id
+                        RETURN count(a) AS c
+                    """, being=being, avatar=avatar, avatar_id=avatar_id)
+                    return {
+                        "success": True,
+                        "message": f"Avatar '{avatar}' already linked to Being '{being}'; id backfilled.",
+                        "being": being,
+                        "avatar": avatar,
+                        "avatar_id": avatar_id
+                    }
                 print(f"DEBUG create_avatar: ❌ DUPLICATE FOUND - {relationship_count} relationship(s) exist from '{being}' to '{avatar}'")
                 raise HTTPException(
                     status_code=400, 

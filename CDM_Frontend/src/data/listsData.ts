@@ -207,7 +207,7 @@ export const listColumns = [
   { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' },
   { key: 'totalValuesCount', title: '# Values', sortable: true, filterable: false, width: '100px' },
   { key: 'sampleValues', title: 'Values', sortable: false, filterable: false, width: '200px' },
-  { key: 'isMeme', title: 'Is Meme', sortable: true, filterable: true, width: '100px' } // Added for the "Memez" feature
+  { key: 'isMeme', title: 'Meme', sortable: true, filterable: true, width: '100px' }
 ];
 
 // Dropdown options for list fields

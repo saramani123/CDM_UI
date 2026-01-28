@@ -2065,43 +2065,29 @@ function App() {
       }
     }
     
-    // Update object if changed - rename in place
+    // Update object if changed - rename in place (preserve position in default order modal)
     const oldObjectKey = `${oldBeingKey}|${oldAvatar !== newAvatar ? newAvatar : oldAvatar}`;
     const newObjectKey = `${newBeing}|${newAvatar}`;
+    let objectInsertIndex = -1; // capture position before mutating, so same-key rename keeps position
     if (oldObject !== newObject) {
       if (updatedOrder.objectOrders[oldObjectKey]) {
-      const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
-      if (oldIndex !== -1) {
-          // Remove old object
-        updatedOrder.objectOrders[oldObjectKey] = updatedOrder.objectOrders[oldObjectKey].filter(o => o !== oldObject);
-        if (updatedOrder.objectOrders[oldObjectKey].length === 0) {
-          delete updatedOrder.objectOrders[oldObjectKey];
-        }
-        orderChanged = true;
+        const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
+        if (oldIndex !== -1) {
+          objectInsertIndex = oldIndex; // capture before mutation so we can splice in place
+          updatedOrder.objectOrders[oldObjectKey] = updatedOrder.objectOrders[oldObjectKey].filter(o => o !== oldObject);
+          if (updatedOrder.objectOrders[oldObjectKey].length === 0) {
+            delete updatedOrder.objectOrders[oldObjectKey];
+          }
+          orderChanged = true;
         }
       }
-      
-      // Add new object to new key (preserve position if possible)
       if (!updatedOrder.objectOrders[newObjectKey]) {
         updatedOrder.objectOrders[newObjectKey] = [];
       }
       if (!updatedOrder.objectOrders[newObjectKey].includes(newObject)) {
-        // If we had an old position, try to preserve it
-        if (oldObjectKey !== newObjectKey && updatedOrder.objectOrders[oldObjectKey]) {
-          const oldObjectIndex = updatedOrder.objectOrders[oldObjectKey]?.indexOf(oldObject) ?? -1;
-          if (oldObjectIndex !== -1) {
-            updatedOrder.objectOrders[newObjectKey].splice(oldObjectIndex, 0, newObject);
-          } else {
-        updatedOrder.objectOrders[newObjectKey].push(newObject);
-          }
-        } else if (oldObjectKey === newObjectKey && updatedOrder.objectOrders[oldObjectKey]) {
-          // Same key, preserve position
-          const oldIndex = updatedOrder.objectOrders[oldObjectKey].indexOf(oldObject);
-          if (oldIndex !== -1) {
-            updatedOrder.objectOrders[newObjectKey].splice(oldIndex, 0, newObject);
-          } else {
-            updatedOrder.objectOrders[newObjectKey].push(newObject);
-          }
+        // Preserve position: splice at captured index (same key = rename in place; different key = move)
+        if (objectInsertIndex >= 0) {
+          updatedOrder.objectOrders[newObjectKey].splice(objectInsertIndex, 0, newObject);
         } else {
           updatedOrder.objectOrders[newObjectKey].push(newObject);
         }
