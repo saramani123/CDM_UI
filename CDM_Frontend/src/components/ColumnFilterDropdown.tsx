@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Filter, ArrowUpDown, X, Check, GripVertical } from 'lucide-react';
+import { apiService } from '../services/api';
 
 interface ColumnFilterDropdownProps {
   column: {
@@ -48,11 +49,50 @@ export const ColumnFilterDropdown: React.FC<ColumnFilterDropdownProps> = ({
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [searchText, setSearchText] = useState<string>('');
+  const [apiSections, setApiSections] = useState<string[]>([]);
+
+  // For Section column in Variables grid, also fetch sections from API to include newly added sections
+  useEffect(() => {
+    if (gridType === 'variables' && column.key === 'section' && isOpen) {
+      const fetchAllSections = async () => {
+        try {
+          // Get all parts first
+          const partsResponse = await apiService.getVariableParts() as { parts: string[] };
+          const parts = partsResponse.parts || [];
+          
+          // Fetch sections for each part and combine
+          const allSectionsSet = new Set<string>();
+          for (const part of parts) {
+            try {
+              const sectionsResponse = await apiService.getVariableSections(part) as { sections: string[] };
+              const sections = sectionsResponse.sections || [];
+              sections.forEach(section => allSectionsSet.add(section));
+            } catch (error) {
+              console.error(`Error fetching sections for part ${part}:`, error);
+            }
+          }
+          setApiSections(Array.from(allSectionsSet));
+        } catch (error) {
+          console.error('Error fetching sections from API:', error);
+          setApiSections([]);
+        }
+      };
+      fetchAllSections();
+    } else {
+      setApiSections([]);
+    }
+  }, [gridType, column.key, isOpen]);
 
   // Get distinct values for the column - use availableOptions if provided, otherwise calculate from data
-  const allDistinctValues = availableOptions && availableOptions.length > 0 
+  // For Section column in Variables grid, merge with API sections
+  const dataDistinctValues = availableOptions && availableOptions.length > 0 
     ? availableOptions 
     : [...new Set(data.map(item => String(item[column.key] || '')))].filter(Boolean);
+  
+  // Merge with API sections for Section column in Variables grid
+  const allDistinctValues = (gridType === 'variables' && column.key === 'section' && apiSections.length > 0)
+    ? [...new Set([...dataDistinctValues, ...apiSections])]
+    : dataDistinctValues;
   
   // Filter distinct values based on search text
   const distinctValues = searchText.trim() === ''

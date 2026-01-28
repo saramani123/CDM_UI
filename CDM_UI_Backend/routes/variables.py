@@ -708,6 +708,7 @@ async def create_variable(variable_data: VariableCreateRequest):
             # First, check if a Group with this name already exists for this Part
             existing_group = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
                 RETURN g.id as group_id
                 LIMIT 1
             """, part=variable_data.part, group=variable_data.group).single()
@@ -717,12 +718,13 @@ async def create_variable(variable_data: VariableCreateRequest):
                 group_id = existing_group["group_id"]
             else:
                 # Check if group with same name exists for a different part
-                different_part_group = session.run("""
-                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
-                    WHERE p.name <> $part
-                    RETURN g.id as group_id
-                    LIMIT 1
-                """, part=variable_data.part, group=variable_data.group).single()
+                    different_part_group = session.run("""
+                        MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                        WHERE p.name <> $part
+                        AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                        RETURN g.id as group_id
+                        LIMIT 1
+                    """, part=variable_data.part, group=variable_data.group).single()
                 
                 if different_part_group:
                     # Group exists for different part - create NEW group node with unique ID
@@ -1193,9 +1195,10 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                         params["section"] = new_section
                                 
                                 # Find or create Group for this specific Part
-                                # First, check if a Group with this name already exists for this Part
+                                # First, check if a Group with this name already exists for this Part (exclude placeholder groups)
                                 existing_group = session.run("""
                                     MATCH (p:Part {name: $new_part})-[:HAS_GROUP]->(g:Group {name: $new_group})
+                                    WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
                                     RETURN g.id as group_id
                                     LIMIT 1
                                 """, new_part=new_part, new_group=new_group).single()
@@ -1204,10 +1207,11 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                                     # Group already exists for this Part - use it
                                     group_id = existing_group["group_id"]
                                 else:
-                                    # Check if group with same name exists for a different part
+                                    # Check if group with same name exists for a different part (exclude placeholder groups)
                                     different_part_group = session.run("""
                                         MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $new_group})
                                         WHERE p.name <> $new_part
+                                        AND NOT g.name STARTS WITH '__PLACEHOLDER_'
                                         RETURN g.id as group_id
                                         LIMIT 1
                                     """, new_part=new_part, new_group=new_group).single()
@@ -1743,6 +1747,7 @@ async def update_variable(variable_id: str, request: Request):
                     # First, check if a Group with this name already exists for this Part
                     existing_group = session.run("""
                         MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                        WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
                         RETURN g.id as group_id
                         LIMIT 1
                     """, part=new_part, group=new_group).single()
@@ -1755,6 +1760,7 @@ async def update_variable(variable_id: str, request: Request):
                         different_part_group = session.run("""
                             MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
                             WHERE p.name <> $part
+                            AND NOT g.name STARTS WITH '__PLACEHOLDER_'
                             RETURN g.id as group_id
                             LIMIT 1
                         """, part=new_part, group=new_group).single()
