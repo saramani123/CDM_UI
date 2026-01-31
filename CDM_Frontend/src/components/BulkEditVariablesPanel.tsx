@@ -10,7 +10,7 @@ import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { VariationsModal } from './VariationsModal';
-import { buildValidationString, validateValidationInput, getOperatorsForValType, type ValidationComponents, type ValType, type Operator } from '../utils/validationUtils';
+import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 
@@ -853,41 +853,70 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
     // Validate validation components before saving
     for (let i = 0; i < validationComponentsList.length; i++) {
-      const validationComponents = validationComponentsList[i];
-      if (!validationComponents.valType) continue; // Skip empty entries
-      
-      // Check if operator is required and selected
-      const requiresOperator = ['Range', 'Relative', 'Length'].includes(validationComponents.valType);
-      if (requiresOperator && !validationComponents.operator) {
-        alert(`Please select an operator for Validation #${i + 1} (${validationComponents.valType}).`);
-        setValidationError('Operator is required');
-        return;
-      }
-      
-      // Check if value is required and entered
-      const requiresValue = ['Length', 'Character', 'Range'].includes(validationComponents.valType);
-      if (requiresValue && !validationComponents.value.trim()) {
-        alert(`Please enter a value for Validation #${i + 1} (${validationComponents.valType}).`);
-        setValidationError('Value is required');
-        return;
-      }
-      
-      // Validate Range value if all selected variables have same format
-      if (validationComponents.valType === 'Range' && validationComponents.value.trim()) {
-        const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
-        const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
-        const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
-        
-        // Only validate if all variables have same format
+      const comp = validationComponentsList[i];
+      if (!comp.valType) continue;
+
+      if (comp.valType === 'Range') {
+        const gOp = comp.greaterThanOperator === '>' || comp.greaterThanOperator === '>=';
+        const lOp = comp.lessThanOperator === '<' || comp.lessThanOperator === '<=';
+        const gVal = (comp.greaterThanValue ?? '').trim();
+        const lVal = (comp.lessThanValue ?? '').trim();
+        if (!gOp || !gVal) {
+          alert(`Please select Greater than Operator and enter Greater than Value for Validation #${i + 1} (Range).`);
+          setValidationError('Greater than Operator and Value are required');
+          return;
+        }
+        if (!lOp || !lVal) {
+          alert(`Please select Less than Operator and enter Less than Value for Validation #${i + 1} (Range).`);
+          setValidationError('Less than Operator and Value are required');
+          return;
+        }
+        const selectedVars = allData.filter((v: any) => selectedVariableIds?.includes(v.id));
+        const formatIs = [...new Set(selectedVars.map((v: any) => v.formatI).filter(Boolean))];
+        const formatIIs = [...new Set(selectedVars.map((v: any) => v.formatII).filter(Boolean))];
         if (formatIs.length === 1 && formatIIs.length === 1) {
-          const validation = validateValidationInput('Range', validationComponents.value.trim(), formatIs[0], formatIIs[0]);
-          if (!validation.isValid) {
-            alert(`Invalid value for Validation #${i + 1}: ${validation.error}`);
-            setValidationError(validation.error || 'Invalid value');
+          const vg = validateValidationInput('Range', gVal, formatIs[0], formatIIs[0]);
+          if (!vg.isValid) {
+            alert(`Invalid Greater than Value for Validation #${i + 1}: ${vg.error}`);
+            setValidationError(vg.error || 'Invalid value');
+            return;
+          }
+          const vl = validateValidationInput('Range', lVal, formatIs[0], formatIIs[0]);
+          if (!vl.isValid) {
+            alert(`Invalid Less than Value for Validation #${i + 1}: ${vl.error}`);
+            setValidationError(vl.error || 'Invalid value');
             return;
           }
         }
-        // If formats differ, no validation (user can enter any value)
+      } else {
+        const requiresOperator = ['Relative', 'Length'].includes(comp.valType);
+        if (requiresOperator && !comp.operator) {
+          alert(`Please select an operator for Validation #${i + 1} (${comp.valType}).`);
+          setValidationError('Operator is required');
+          return;
+        }
+        const requiresValue = ['Length', 'Character', 'Relative'].includes(comp.valType);
+        if (requiresValue && !(comp.value ?? '').trim()) {
+          alert(`Please enter or select a value for Validation #${i + 1} (${comp.valType}).`);
+          setValidationError('Value is required');
+          return;
+        }
+        if (comp.valType === 'Length' && comp.value.trim()) {
+          const v = validateValidationInput('Length', comp.value);
+          if (!v.isValid) {
+            alert(`Invalid value for Validation #${i + 1}: ${v.error}`);
+            setValidationError(v.error || 'Invalid value');
+            return;
+          }
+        }
+        if (comp.valType === 'Character' && comp.value.trim()) {
+          const v = validateValidationInput('Character', comp.value);
+          if (!v.isValid) {
+            alert(`Invalid value for Validation #${i + 1}: ${v.error}`);
+            setValidationError(v.error || 'Invalid value');
+            return;
+          }
+        }
       }
     }
 
@@ -908,47 +937,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       // For bulk edit, we append validations to existing ones (comma-separated)
       ...(validationComponentsList.some(comp => comp.valType) && (() => {
         const validationStrings: string[] = [];
-        
-        for (const validationComponents of validationComponentsList) {
-          if (!validationComponents.valType) continue;
-          
-          // Validate required fields
-          const requiresOperator = ['Range', 'Relative', 'Length'].includes(validationComponents.valType);
-          if (requiresOperator && !validationComponents.operator) {
-            continue; // Skip invalid entries
-          }
-          
-          const requiresValue = ['Length', 'Character', 'Range'].includes(validationComponents.valType);
-          if (requiresValue && !validationComponents.value.trim()) {
-            continue; // Skip invalid entries
-          }
-          
-          // Build validation string
-          if (validationComponents.valType === 'Range' && validationComponents.operator && validationComponents.value.trim()) {
-            // For Range, use the typed value (not formatI)
-            validationStrings.push(`Range ${validationComponents.operator} ${validationComponents.value.trim()}`);
-          } else if (validationComponents.valType === 'Relative' && validationComponents.operator) {
-            // Pass special format: _BULK_RELATIVE_<operator> so backend can use each variable's name
-            validationStrings.push(`_BULK_RELATIVE_${validationComponents.operator}`);
-          } else if (validationComponents.valType) {
-            // For List, Length, Character - build with Val Type prefix
-            const validationString = buildValidationString(validationComponents);
-            if (validationString) {
-              validationStrings.push(validationString);
+        for (const comp of validationComponentsList) {
+          if (!comp.valType) continue;
+          if (comp.valType === 'Range') {
+            const hasGreater = (comp.greaterThanOperator === '>' || comp.greaterThanOperator === '>=') && (comp.greaterThanValue ?? '').trim();
+            const hasLess = (comp.lessThanOperator === '<' || comp.lessThanOperator === '<=') && (comp.lessThanValue ?? '').trim();
+            if (hasGreater && hasLess) {
+              const s = buildValidationString(comp);
+              if (s) validationStrings.push(s);
             }
+          } else {
+            const s = buildValidationString(comp);
+            if (s) validationStrings.push(s);
           }
         }
-        
         if (validationStrings.length > 0) {
-          // Join all validation strings with comma and space
-          // Backend will append this to existing validations
-          console.log('🔵 Building validation strings:', validationStrings);
-          return { 
+          return {
             validation: validationStrings.join(', '),
-            shouldAppendValidations: true // Flag to indicate we should append instead of replace
+            shouldAppendValidations: true
           };
         }
-        console.log('🔵 No valid validation strings to save');
         return null;
       })()),
       ...(metadata.default && metadata.default.trim() !== '' && metadata.default !== 'Keep Current Default' && { default: metadata.default }),
@@ -1602,18 +1610,21 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 <h4 className="text-sm font-semibold text-ag-dark-text">
                   Validation #{index + 1}
                 </h4>
-                {validationComponentsList.length > 1 && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setValidationComponentsList(prev => prev.filter((_, i) => i !== index));
-                    }}
-                    className="text-red-400 hover:text-red-300 transition-colors"
-                    title="Remove this validation"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setValidationComponentsList(prev => {
+                      const next = prev.filter((_, i) => i !== index);
+                      return next.length > 0 ? next : [{ valType: '', operator: '', value: '' }];
+                    });
+                    setValidationError('');
+                  }}
+                  className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors"
+                  title="Remove this validation"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
               {/* Val Type Dropdown */}
               <div>
@@ -1630,28 +1641,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                       value: ''
                     };
                     
-                    // Auto-set value for List
                     if (newValType === 'List') {
                       newComponents.value = 'List';
+                    } else if (newValType === 'Range') {
+                      newComponents.greaterThanOperator = '';
+                      newComponents.greaterThanValue = '';
+                      newComponents.lessThanOperator = '';
+                      newComponents.lessThanValue = '';
                     }
-                    // For Range in bulk edit, check if all selected variables have same format
-                    else if (newValType === 'Range') {
-                      const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
-                      const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
-                      const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
-                      
-                      // If all variables have same formatI and formatII, allow typing with validation
-                      // Otherwise, just allow typing without restrictions
-                      if (formatIs.length === 1 && formatIIs.length === 1) {
-                        newComponents.value = ''; // User will type it
-                      } else {
-                        newComponents.value = ''; // User will type it (no restrictions)
-                      }
-                    }
-                    // For Relative in bulk edit, value will be "Same as Variables'"
-                    else if (newValType === 'Relative') {
-                      newComponents.value = "Same as Variables'";
-                    }
+                    // Relative: value is chosen from variable dropdown
                     
                     setValidationComponentsList(prev => prev.map((comp, i) => i === index ? newComponents : comp));
                     setValidationError('');
@@ -1673,8 +1671,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </select>
           </div>
 
-              {/* Operator Dropdown - Hidden for Character (always 'is'), shown for others */}
-              {validationComponents.valType && validationComponents.valType !== 'Character' && getOperatorsForValType(validationComponents.valType).length > 0 && (
+              {/* Operator Dropdown - Hidden for Character and Range */}
+              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && getOperatorsForValType(validationComponents.valType).length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Operator
@@ -1682,35 +1680,30 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                   <select
                     value={validationComponents.operator}
                     onChange={(e) => {
-                      setValidationComponentsList(prev => prev.map((comp, i) => 
+                      setValidationComponentsList(prev => prev.map((comp, i) =>
                         i === index ? { ...comp, operator: e.target.value as Operator } : comp
                       ));
                       setValidationError('');
                     }}
-                className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                  validationError && validationError.includes('Operator') ? 'border-red-500' : 'border-ag-dark-border'
-                }`}
-                style={{
-                  backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                  backgroundPosition: 'right 12px center',
-                  backgroundRepeat: 'no-repeat',
-                  backgroundSize: '16px'
-                }}
-              >
-                <option value="">Select Operator</option>
-                {getOperatorsForValType(validationComponents.valType).map((op) => (
-                  <option key={op} value={op}>
-                    {op}
-                  </option>
-                ))}
-              </select>
-              {validationError && validationError.includes('Operator') && (
-                <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                    className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${validationError && validationError.includes('Operator') ? 'border-red-500' : 'border-ag-dark-border'}`}
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                      backgroundPosition: 'right 12px center',
+                      backgroundRepeat: 'no-repeat',
+                      backgroundSize: '16px'
+                    }}
+                  >
+                    <option value="">Select Operator</option>
+                    {getOperatorsForValType(validationComponents.valType).map((op) => (
+                      <option key={op} value={op}>{op}</option>
+                    ))}
+                  </select>
+                  {validationError && validationError.includes('Operator') && (
+                    <p className="mt-1 text-sm text-red-500">{validationError}</p>
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-              {/* Character type shows operator as 'is' (non-editable) */}
               {validationComponents.valType === 'Character' && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1725,8 +1718,92 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 </div>
               )}
 
-              {/* Value Field */}
-              {validationComponents.valType && (
+              {/* Range: Greater than Operator + Value, Less than Operator + Value */}
+              {validationComponents.valType === 'Range' && (() => {
+                const selectedVars = allData.filter((v: any) => selectedVariableIds?.includes(v.id));
+                const formatIs = [...new Set(selectedVars.map((v: any) => v.formatI).filter(Boolean))];
+                const formatIIs = [...new Set(selectedVars.map((v: any) => v.formatII).filter(Boolean))];
+                const hasSameFormat = formatIs.length === 1 && formatIIs.length === 1;
+                const commonFormatI = hasSameFormat ? formatIs[0] : undefined;
+                const commonFormatII = hasSameFormat ? formatIIs[0] : undefined;
+                const placeholder = hasSameFormat && commonFormatI === 'Time' ? 'e.g. 12/5/2025' : hasSameFormat && commonFormatI === 'Number' && commonFormatII ? (commonFormatII === 'Integer' ? 'e.g. 42' : commonFormatII === 'Decimal' ? 'e.g. 3.14' : 'e.g. 50%') : 'Enter value';
+                return (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">Greater than Operator</label>
+                      <select
+                        value={validationComponents.greaterThanOperator ?? ''}
+                        onChange={(e) => {
+                          setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, greaterThanOperator: e.target.value as RangeOperator | '' } : comp));
+                          setValidationError('');
+                        }}
+                        className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent appearance-none"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 12px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px' }}
+                      >
+                        <option value="">Select</option>
+                        {RANGE_GREATER_OPERATORS.map((op) => <option key={op} value={op}>{op}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">Greater than Value</label>
+                      <input
+                        type="text"
+                        value={validationComponents.greaterThanValue ?? ''}
+                        onInput={(e) => {
+                          const newValue = (e.target as HTMLInputElement).value;
+                          if (hasSameFormat && commonFormatI && commonFormatII) {
+                            const v = validateValidationInput('Range', newValue, commonFormatI, commonFormatII);
+                            setValidationError(v.isValid ? '' : (v.error || ''));
+                          } else setValidationError('');
+                          setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, greaterThanValue: newValue } : comp));
+                        }}
+                        placeholder={placeholder}
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : 'border-ag-dark-border'}`}
+                      />
+                      {validationError && validationError.includes('Value') && <p className="mt-1 text-sm text-red-500">{validationError}</p>}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">Less than Operator</label>
+                      <select
+                        value={validationComponents.lessThanOperator ?? ''}
+                        onChange={(e) => {
+                          setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, lessThanOperator: e.target.value as RangeOperator | '' } : comp));
+                          setValidationError('');
+                        }}
+                        className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent appearance-none"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 12px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px' }}
+                      >
+                        <option value="">Select</option>
+                        {RANGE_LESS_OPERATORS.map((op) => <option key={op} value={op}>{op}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-ag-dark-text mb-2">Less than Value</label>
+                      <input
+                        type="text"
+                        value={validationComponents.lessThanValue ?? ''}
+                        onInput={(e) => {
+                          const newValue = (e.target as HTMLInputElement).value;
+                          if (hasSameFormat && commonFormatI && commonFormatII) {
+                            const v = validateValidationInput('Range', newValue, commonFormatI, commonFormatII);
+                            setValidationError(v.isValid ? '' : (v.error || ''));
+                          } else setValidationError('');
+                          setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, lessThanValue: newValue } : comp));
+                        }}
+                        placeholder={placeholder}
+                        className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : ''}`}
+                      />
+                      {validationError && validationError.includes('Value') && <p className="mt-1 text-sm text-red-500">{validationError}</p>}
+                    </div>
+                    {!hasSameFormat && (
+                      <p className="mt-1 text-xs text-ag-dark-text-secondary">Note: Selected variables have different Format V-I or Format V-II. No format restrictions applied.</p>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Value Field - for List, Relative (variable dropdown), Length, Character */}
+              {validationComponents.valType && validationComponents.valType !== 'Range' && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Value
@@ -1738,135 +1815,35 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                       disabled
                       className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
                     />
-                  ) : validationComponents.valType === 'Range' ? (
-                    (() => {
-                      // Check if all selected variables have same formatI and formatII
-                      const selectedVars = allData.filter(v => selectedVariableIds?.includes(v.id));
-                      const formatIs = [...new Set(selectedVars.map(v => v.formatI).filter(Boolean))];
-                      const formatIIs = [...new Set(selectedVars.map(v => v.formatII).filter(Boolean))];
-                      const hasSameFormat = formatIs.length === 1 && formatIIs.length === 1;
-                      const commonFormatI = hasSameFormat ? formatIs[0] : undefined;
-                      const commonFormatII = hasSameFormat ? formatIIs[0] : undefined;
-                      
-                      return (
-                        <div>
-                          <input
-                            ref={(el) => {
-                              if (el) {
-                                rangeValidationInputRefs.current.set(index, el);
-                              } else {
-                                rangeValidationInputRefs.current.delete(index);
-                              }
-                            }}
-                            type="text"
-                            value={validationComponents.value}
-                            onInput={(e) => {
-                              e.stopPropagation();
-                              const input = e.target as HTMLInputElement;
-                              const cursorPosition = input.selectionStart;
-                              const newValue = input.value;
-                              lastRangeValidationValueChangeTimeRefs.current.set(index, Date.now());
-                              // Only validate if all variables have same format
-                              if (hasSameFormat && commonFormatI && commonFormatII) {
-                                const validation = validateValidationInput('Range', newValue, commonFormatI, commonFormatII);
-                                setValidationError(validation.isValid ? '' : (validation.error || ''));
-                              } else {
-                                // No validation if formats differ
-                                setValidationError('');
-                              }
-                              setValidationComponentsList(prev => prev.map((comp, i) => 
-                                i === index ? { ...comp, value: newValue } : comp
-                              ));
-                              const restoreFocus = () => {
-                                const ref = rangeValidationInputRefs.current.get(index);
-                                if (ref) {
-                                  ref.focus();
-                                  const maxPos = ref.value.length;
-                                  const safePos = Math.min(cursorPosition || 0, maxPos);
-                                  ref.setSelectionRange(safePos, safePos);
-                                }
-                              };
-                              restoreFocus();
-                              Promise.resolve().then(restoreFocus);
-                              requestAnimationFrame(restoreFocus);
-                            }}
-                            onChange={(e) => { e.stopPropagation(); }}
-                            onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                            onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                            onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                            onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                            onFocus={(e) => { 
-                              e.stopPropagation(); 
-                              e.nativeEvent.stopImmediatePropagation(); 
-                              isRangeValidationInputFocusedRefs.current.set(index, true);
-                            }}
-                            onBlur={(e) => {
-                              const timeSinceLastChange = Date.now() - (lastRangeValidationValueChangeTimeRefs.current.get(index) || 0);
-                              const wasRecentTyping = timeSinceLastChange < 300;
-                              const relatedTarget = e.relatedTarget as HTMLElement;
-                              const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                              if (wasRecentTyping && !clickedOnInput && rangeValidationInputRefs.current.get(index) && isRangeValidationInputFocusedRefs.current.get(index)) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setTimeout(() => { 
-                                  const ref = rangeValidationInputRefs.current.get(index);
-                                  if (ref) ref.focus(); 
-                                }, 0);
-                              } else if (!wasRecentTyping) {
-                                isRangeValidationInputFocusedRefs.current.set(index, false);
-                              }
-                            }}
-                            placeholder={hasSameFormat && commonFormatI === 'Time' 
-                              ? 'Enter date/time (e.g., YYYY-MM-DD, MM/DD/YYYY, YYYY-MM-DD HH:MM:SS, or Unix timestamp)'
-                              : hasSameFormat && commonFormatI === 'Number' && commonFormatII
-                                ? commonFormatII === 'Integer'
-                                  ? 'Enter integer (e.g., 42)'
-                                  : commonFormatII === 'Decimal'
-                                    ? 'Enter decimal (e.g., 3.14)'
-                                    : commonFormatII === 'Currency'
-                                      ? 'Enter currency (e.g., $100, €50.00)'
-                                      : commonFormatII === 'Percentage'
-                                        ? 'Enter percentage (e.g., 50%, 12.5%)'
-                                        : 'Enter value'
-                                : 'Enter value (no format restrictions - selected variables have different formats)'}
-                            className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
-                              validationError && validationError.includes('Value') ? 'border-red-500' : ''
-                            }`}
-                          />
-                          {validationError && validationError.includes('Value') && (
-                            <p className="mt-1 text-sm text-red-500">{validationError}</p>
-                          )}
-                          {!hasSameFormat && (
-                            <p className="mt-1 text-xs text-ag-dark-text-secondary">
-                              Note: Selected variables have different Format V-I or Format V-II values. No format restrictions applied.
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })()
                   ) : validationComponents.valType === 'Relative' ? (
-                    <input
-                      type="text"
+                    <select
                       value={validationComponents.value}
-                      disabled
-                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed"
-                    />
+                      onChange={(e) => {
+                        setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, value: e.target.value } : comp));
+                        setValidationError('');
+                      }}
+                      className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent appearance-none"
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 12px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px' }}
+                    >
+                      <option value="">Select variable</option>
+                      {[...new Set((allData || []).map((v: any) => v.variable).filter(Boolean))].sort().map((name: string) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
                   ) : validationComponents.valType === 'Length' ? (
                     <div>
                       <input
                         type="text"
                         value={validationComponents.value}
-                        onInput={(e) => {
+                        onChange={(e) => {
                           e.stopPropagation();
-                          const input = e.target as HTMLInputElement;
-                          const newValue = input.value;
+                          const newValue = e.target.value;
                           const validation = validateValidationInput('Length', newValue);
                           setValidationError(validation.isValid ? '' : (validation.error || ''));
                           setValidationComponentsList(prev => prev.map((comp, i) => 
                             i === index ? { ...comp, value: newValue } : comp
                           ));
                         }}
-                        onChange={(e) => { e.stopPropagation(); }}
                         placeholder="Enter integer"
                         className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                           validationError ? 'border-red-500' : ''
@@ -1881,17 +1858,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                       <input
                         type="text"
                         value={validationComponents.value}
-                        onInput={(e) => {
+                        onChange={(e) => {
                           e.stopPropagation();
-                          const input = e.target as HTMLInputElement;
-                          const newValue = input.value;
+                          const newValue = e.target.value;
                           const validation = validateValidationInput('Character', newValue);
                           setValidationError(validation.isValid ? '' : (validation.error || ''));
                           setValidationComponentsList(prev => prev.map((comp, i) => 
                             i === index ? { ...comp, value: newValue } : comp
                           ));
                         }}
-                        onChange={(e) => { e.stopPropagation(); }}
                         placeholder="Enter alphanumeric character"
                         className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
                           validationError ? 'border-red-500' : ''
