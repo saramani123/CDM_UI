@@ -95,7 +95,7 @@ function App() {
   const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem, deleteMetadataItem, reorderMetadata } = useMetadata();
   
   // Use API hook for heuristics data
-  const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem } = useHeuristics();
+  const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem, deleteHeuristicItem } = useHeuristics();
   
   // Use API hook for sources data
   const { sources: apiSources, loading: sourcesLoading, error: sourcesError, fetchSources, createSourceItem } = useSources();
@@ -283,7 +283,26 @@ function App() {
       )
     },
     { key: 'rules', title: 'Rules', sortable: true, filterable: true, width: '120px' },
-    { key: 'best', title: 'Best', sortable: true, filterable: true, width: '120px' }
+    {
+      key: 'actions',
+      title: 'Actions',
+      sortable: false,
+      filterable: false,
+      width: '100px',
+      render: (row: HeuristicsData) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            handleDeleteHeuristic(row.id);
+          }}
+          className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-error hover:bg-ag-dark-bg rounded transition-colors"
+          title="Delete heuristic"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      )
+    }
   ];
   
   // Sources tab columns
@@ -4819,6 +4838,20 @@ function App() {
       // The optimistic update will show the item immediately
     } catch (error) {
       console.error('Failed to create heuristic:', error);
+      throw error;
+    }
+  };
+
+  const handleDeleteHeuristic = async (id: string) => {
+    if (!confirm('Delete this heuristic? This will remove it from the list and from the database.')) return;
+    try {
+      await deleteHeuristicItem(id);
+      if (selectedHeuristicsRow?.id === id) {
+        setSelectedHeuristicsRow(null);
+      }
+      await fetchHeuristics();
+    } catch (error) {
+      console.error('Failed to delete heuristic:', error);
       throw error;
     }
   };

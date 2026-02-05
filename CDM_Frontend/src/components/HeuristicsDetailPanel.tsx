@@ -33,7 +33,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   onClose
 }) => {
   const { drivers: driversData, loading: driversLoading } = useDrivers();
-  const [columnNames, setColumnNames] = useState<string[]>(['', '']);
+  const [columnNames, setColumnNames] = useState<string[]>(['', 'If']);
   const [rows, setRows] = useState<string[][]>(Array(20).fill(null).map(() => ['', '']));
   const [sector, setSector] = useState<string>('');
   const [domain, setDomain] = useState<string>('');
@@ -103,9 +103,9 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
       }
       
       if (detailData && typeof detailData === 'object') {
-        // Ensure we have exactly 2 columns
-        const loadedColumns = detailData.columns || ['', ''];
-        setColumnNames([loadedColumns[0] || '', loadedColumns[1] || '']);
+        // Ensure we have exactly 2 columns; second column is always "If" (fixed)
+        const loadedColumns = detailData.columns || ['', 'If'];
+        setColumnNames([loadedColumns[0] || '', 'If']);
         // If rows exist, use them; otherwise create 20 empty rows
         const loadedRows = detailData.rows || [];
         // Ensure rows have exactly 2 columns
@@ -121,14 +121,14 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           setRows(normalizedRows);
         }
       } else {
-        // Initialize with default values - create 20 empty rows with 2 columns
-        setColumnNames(['', '']);
+        // Initialize with default values - create 20 empty rows with 2 columns; second column is always "If"
+        setColumnNames(['', 'If']);
         setRows(Array(20).fill(null).map(() => ['', '']));
       }
     } catch (err) {
       console.error('Error loading heuristics detail:', err);
       // Initialize with defaults on error - 20 empty rows with 2 columns
-      setColumnNames(['', '']);
+      setColumnNames(['', 'If']);
       setRows(Array(20).fill(null).map(() => ['', '']));
     } finally {
       setIsLoading(false);
@@ -136,6 +136,8 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   };
 
   const handleColumnNameChange = (index: number, value: string) => {
+    // Second column (index 1) is always "If" and cannot be changed
+    if (index === 1) return;
     const newColumns = [...columnNames];
     newColumns[index] = value;
     setColumnNames(newColumns);
@@ -252,8 +254,11 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
       }
 
       if (!detailData || typeof detailData !== 'object') {
-        detailData = { columns: columnNames, rows: rows, trainingData: {} };
+        detailData = { columns: [columnNames[0] || '', 'If'], rows: rows, trainingData: {} };
       }
+
+      // Ensure columns are correct (second column is always "If")
+      detailData.columns = [columnNames[0] || '', 'If'];
 
       // Initialize trainingData if it doesn't exist
       if (!detailData.trainingData) {
@@ -302,10 +307,10 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
         existingDetailData = {};
       }
 
-      // Prepare detail data - preserve training data
+      // Prepare detail data - preserve training data; second column is always "If"
       const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== '')); // Remove completely empty rows
       const detailData: any = {
-        columns: columnNames,
+        columns: [columnNames[0] || '', 'If'],
         rows: nonEmptyRows
       };
 
@@ -496,11 +501,10 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={columnNames[1] || ''}
-                    onChange={(e) => handleColumnNameChange(1, e.target.value)}
-                    placeholder="Enter condition label"
-                    disabled={isSaving}
-                    className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                    value="If"
+                    readOnly
+                    disabled
+                    className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-90 cursor-not-allowed"
                   />
                 </div>
               </div>
@@ -519,7 +523,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
                     {columnNames[0] || 'Column 1 (Then)'}
                   </div>
                   <div className="px-2">
-                    {columnNames[1] || 'Column 2 (If)'}
+                    {columnNames[1] || 'If'}
                   </div>
                   <div className="px-2 text-center">Data</div>
                 </div>
