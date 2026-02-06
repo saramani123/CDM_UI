@@ -125,7 +125,18 @@ function App() {
   // Heuristics tab state
   const [selectedHeuristicsRow, setSelectedHeuristicsRow] = useState<HeuristicsData | null>(null);
   const [isAddHeuristicsOpen, setIsAddHeuristicsOpen] = useState(false);
-  
+  // Heuristics row order (UI only, persisted in localStorage; not sent to backend)
+  const [heuristicsOrder, setHeuristicsOrder] = useState<string[] | null>(() => {
+    try {
+      const s = localStorage.getItem('cdm_heuristics_row_order');
+      if (!s) return null;
+      const a = JSON.parse(s);
+      return Array.isArray(a) ? a : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Sources tab state
   const [selectedSourceRow, setSelectedSourceRow] = useState<SourcesData | null>(null);
   const [isAddSourcesOpen, setIsAddSourcesOpen] = useState(false);
@@ -290,21 +301,42 @@ function App() {
       filterable: false,
       width: '100px',
       render: (row: HeuristicsData) => (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDeleteHeuristic(row.id);
-          }}
-          className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-error hover:bg-ag-dark-bg rounded transition-colors"
-          title="Delete heuristic"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center justify-center gap-1">
+          <span
+            className="p-1.5 text-ag-dark-text-secondary cursor-move rounded hover:bg-ag-dark-bg inline-flex"
+            title="Drag to reorder"
+            onDragStart={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="w-4 h-4" />
+          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDeleteHeuristic(row.id);
+            }}
+            className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-error hover:bg-ag-dark-bg rounded transition-colors"
+            title="Delete heuristic"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       )
     }
   ];
-  
+
+  // Heuristics display order (from localStorage); order persists on refresh but not to backend
+  const orderedHeuristics = useMemo(() => {
+    if (!apiHeuristics || apiHeuristics.length === 0) return apiHeuristics || [];
+    if (!heuristicsOrder || heuristicsOrder.length === 0) return apiHeuristics;
+    const orderMap = new Map(heuristicsOrder.map((id, i) => [id, i]));
+    return [...apiHeuristics].sort((a, b) => {
+      const ai = orderMap.get(a.id) ?? 1e9;
+      const bi = orderMap.get(b.id) ?? 1e9;
+      return ai - bi;
+    });
+  }, [apiHeuristics, heuristicsOrder]);
+
   // Sources tab columns
   const sourcesColumns = [
     { 
@@ -5818,13 +5850,18 @@ function App() {
                     <DataGrid
                       key="heuristics"
                       columns={heuristicsColumns}
-                      data={apiHeuristics}
+                      data={orderedHeuristics}
                       onRowSelect={(rows) => {
                         if (rows.length > 0) {
                           handleHeuristicsRowClick(rows[0] as HeuristicsData);
                         } else {
                           setSelectedHeuristicsRow(null);
                         }
+                      }}
+                      onReorder={(newData) => {
+                        const ids = (newData as HeuristicsData[]).map((r) => r.id);
+                        setHeuristicsOrder(ids);
+                        localStorage.setItem('cdm_heuristics_row_order', JSON.stringify(ids));
                       }}
                       selectedRows={selectedHeuristicsRow ? [selectedHeuristicsRow] : []}
                       affectedIds={new Set()}

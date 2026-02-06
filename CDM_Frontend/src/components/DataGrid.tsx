@@ -1511,7 +1511,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   <span className="text-ag-dark-text font-medium text-xs">Actions</span>
                 </div>
               )}
-              {onReorder && (
+              {onReorder && gridType !== 'heuristics' && (
                 <div className="w-12 text-center text-ag-dark-text px-4 py-3 flex-shrink-0">
                   <GripVertical className="w-4 h-4 mx-auto text-ag-dark-text-secondary" />
                 </div>
@@ -1890,7 +1890,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     </button>
                   </div>
                 )}
-                {onReorder && (
+                {onReorder && gridType !== 'heuristics' && (
                   <div className="w-12 flex items-center justify-center px-4 py-2 flex-shrink-0">
                     <GripVertical className={`w-4 h-4 text-ag-dark-text-secondary ${
                       isRequiredMetadataRow(row)
