@@ -293,7 +293,31 @@ function App() {
         </span>
       )
     },
-    { key: 'rules', title: 'Rules', sortable: true, filterable: true, width: '120px' },
+    {
+      key: 'is_hero',
+      title: 'Is HERO',
+      sortable: true,
+      filterable: true,
+      width: '90px',
+      render: (row: HeuristicsData) => (
+        <span className={row.is_hero !== false ? 'text-ag-dark-accent' : 'text-ag-dark-text-secondary'}>
+          {row.is_hero !== false ? 'Yes' : 'No'}
+        </span>
+      )
+    },
+    {
+      key: 'rules',
+      title: 'Rules',
+      sortable: true,
+      filterable: true,
+      width: '120px',
+      render: (row: HeuristicsData) =>
+        row.is_hero !== false ? (
+          <span>{row.rules || '0'}</span>
+        ) : (
+          <span className="text-ag-dark-text-secondary">Documentation</span>
+        )
+    },
     {
       key: 'actions',
       title: 'Actions',
@@ -4834,6 +4858,7 @@ function App() {
     country: string;
     agent: string;
     procedure: string;
+    is_hero: boolean;
   }) => {
     try {
       // Check for uniqueness: S + D + C + Agent + Procedure combination must be unique
@@ -4852,8 +4877,7 @@ function App() {
       // Generate a unique ID
       const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      // Create heuristic item via API
-      // Rules and Best will be empty strings initially
+      // Create heuristic item via API; is_hero defaults to false in Add modal
       await createHeuristicItem({
         id: newId,
         sector: heuristicsData.sector,
@@ -4862,7 +4886,8 @@ function App() {
         agent: heuristicsData.agent,
         procedure: heuristicsData.procedure,
         rules: '',
-        best: ''
+        best: '',
+        is_hero: heuristicsData.is_hero
       });
       
       // Note: createHeuristicItem already updates the state optimistically
@@ -5888,7 +5913,7 @@ function App() {
               <div className="lg:col-span-2 h-full flex flex-col min-h-0">
                 <div className="h-full flex flex-col min-h-0">
                   <HeuristicsDetailPanel
-                    heuristicsItem={selectedHeuristicsRow}
+                    heuristicsItem={orderedHeuristics.find(h => h.id === selectedHeuristicsRow?.id) ?? selectedHeuristicsRow}
                     onSave={async () => {
                       await fetchHeuristics();
                     }}

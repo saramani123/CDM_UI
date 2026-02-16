@@ -1137,6 +1137,8 @@ class ApiService {
     procedure: string;
     rules: string;
     best: string;
+    is_hero?: boolean;
+    documentation?: string | null;
   }) {
     return this.request('/heuristics', {
       method: 'POST',
@@ -1153,6 +1155,8 @@ class ApiService {
     rules?: string;
     best?: string;
     detailData?: string;
+    is_hero?: boolean;
+    documentation?: string | null;
   }) {
     return this.request(`/heuristics/${id}`, {
       method: 'PUT',

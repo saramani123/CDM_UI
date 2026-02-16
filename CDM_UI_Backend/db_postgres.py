@@ -4,7 +4,7 @@ This is separate from Neo4j and ensures data persists permanently.
 """
 
 import os
-from sqlalchemy import create_engine, Column, String, Text
+from sqlalchemy import create_engine, Column, String, Text, Boolean, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
@@ -44,6 +44,10 @@ class HeuristicModel(Base):
     rules = Column(Text, default="")
     best = Column(Text, default="")
     detailData = Column(Text, nullable=True)
+    # TRUE = RCPO agent (Datamaia runtime); FALSE = non-RCPO (documentation-only)
+    is_hero = Column(Boolean, nullable=False, default=True)
+    # Free-text documentation when is_hero = FALSE; NULL when is_hero = TRUE
+    documentation = Column(Text, nullable=True)
 
 # Database connection
 def get_postgres_url():
@@ -92,6 +96,19 @@ def init_db():
         
         # Create tables if they don't exist
         Base.metadata.create_all(bind=engine)
+        
+        # Migrate existing heuristics table: add is_hero and documentation if missing
+        with engine.connect() as conn:
+            for stmt in [
+                "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS is_hero BOOLEAN NOT NULL DEFAULT TRUE",
+                "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS documentation TEXT",
+            ]:
+                try:
+                    conn.execute(text(stmt))
+                    conn.commit()
+                except Exception as e:
+                    # Column may already exist or table may not exist yet
+                    print(f"Migration note: {e}")
         
         # Create session factory
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

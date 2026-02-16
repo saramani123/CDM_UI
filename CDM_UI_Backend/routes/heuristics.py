@@ -32,6 +32,7 @@ class HeuristicItem(BaseModel):
     procedure: str
     rules: str
     best: str
+    is_hero: bool = True  # TRUE = RCPO agent, FALSE = non-RCPO (documentation-only)
 
 class HeuristicUpdateRequest(BaseModel):
     sector: Optional[str] = None
@@ -42,6 +43,8 @@ class HeuristicUpdateRequest(BaseModel):
     rules: Optional[str] = None
     best: Optional[str] = None
     detailData: Optional[str] = None
+    is_hero: Optional[bool] = None
+    documentation: Optional[str] = None
 
 def get_environment():
     """Get the current environment (development or production)"""
@@ -105,9 +108,12 @@ def load_heuristics_postgres() -> List[dict]:
                 "procedure": item.procedure or "",
                 "rules": item.rules or "",
                 "best": item.best or "",
+                "is_hero": getattr(item, "is_hero", True),
             }
             if item.detailData:
                 result["detailData"] = item.detailData
+            if getattr(item, "documentation", None) is not None:
+                result["documentation"] = item.documentation
             heuristics.append(result)
         return heuristics
     except Exception as e:
@@ -161,9 +167,12 @@ async def get_heuristic_item(item_id: str):
                             "procedure": item.procedure or "",
                             "rules": item.rules or "",
                             "best": item.best or "",
+                            "is_hero": getattr(item, "is_hero", True),
                         }
                         if item.detailData:
                             result["detailData"] = item.detailData
+                        if getattr(item, "documentation", None) is not None:
+                            result["documentation"] = item.documentation
                         return result
                 finally:
                     db.close()
@@ -207,7 +216,8 @@ async def create_heuristic_item(item: HeuristicItem):
                             detail=f"Heuristic item with this combination already exists."
                         )
                     
-                    # Create new item
+                    # Create new item: is_hero=True -> RCPO (detailData used); is_hero=False -> documentation-only
+                    is_hero = getattr(item, "is_hero", True)
                     new_item = HeuristicModel(
                         id=item.id,
                         sector=item.sector,
@@ -217,7 +227,9 @@ async def create_heuristic_item(item: HeuristicItem):
                         procedure=item.procedure,
                         rules=item.rules,
                         best=item.best,
-                        detailData=None
+                        detailData=None,
+                        is_hero=is_hero,
+                        documentation=None if is_hero else (getattr(item, "documentation", None) or ""),
                     )
                     db.add(new_item)
                     db.commit()
@@ -253,6 +265,8 @@ async def create_heuristic_item(item: HeuristicItem):
             )
         
         new_item = item.dict()
+        new_item["is_hero"] = getattr(item, "is_hero", True)
+        new_item["documentation"] = None if getattr(item, "is_hero", True) else (getattr(item, "documentation", None) or "")
         heuristics.append(new_item)
         save_heuristics_json(heuristics)
         return new_item
@@ -288,11 +302,25 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
                         item.rules = update.rules
                     if update.best is not None:
                         item.best = update.best
+                    if update.is_hero is not None:
+                        item.is_hero = update.is_hero
+                    if update.documentation is not None:
+                        item.documentation = update.documentation
                     if update.detailData is not None:
                         item.detailData = update.detailData
+                    # Validation: is_hero True -> clear documentation; is_hero False -> clear detailData, require documentation
+                    is_hero = getattr(item, "is_hero", True)
+                    if is_hero:
+                        item.documentation = None
+                        if update.detailData is None and item.detailData is None:
+                            pass  # Allow saving metadata without detailData (e.g. new row)
+                    else:
+                        item.detailData = None
+                        if update.documentation is not None and not (update.documentation or "").strip():
+                            raise HTTPException(status_code=400, detail="When Is HERO is FALSE, Documentation must not be empty.")
                     
                     db.commit()
-                    return {
+                    result = {
                         "id": item.id,
                         "sector": item.sector or "",
                         "domain": item.domain or "",
@@ -301,8 +329,12 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
                         "procedure": item.procedure or "",
                         "rules": item.rules or "",
                         "best": item.best or "",
-                        "detailData": item.detailData
+                        "is_hero": getattr(item, "is_hero", True),
+                        "detailData": item.detailData,
                     }
+                    if getattr(item, "documentation", None) is not None:
+                        result["documentation"] = item.documentation
+                    return result
                 except HTTPException:
                     db.rollback()
                     raise
@@ -333,9 +365,19 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
             item["rules"] = update.rules
         if update.best is not None:
             item["best"] = update.best
+        if update.is_hero is not None:
+            item["is_hero"] = update.is_hero
+        if update.documentation is not None:
+            item["documentation"] = update.documentation
         if update.detailData is not None:
             item["detailData"] = update.detailData
-        
+        # Validation for JSON path: is_hero False -> require non-empty documentation when provided
+        if item.get("is_hero") is False and update.documentation is not None and not (update.documentation or "").strip():
+            raise HTTPException(status_code=400, detail="When Is HERO is FALSE, Documentation must not be empty.")
+        if item.get("is_hero") is True:
+            item["documentation"] = None
+        if item.get("is_hero") is False:
+            item["detailData"] = None
         save_heuristics_json(heuristics)
         return item
     except HTTPException:

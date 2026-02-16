@@ -16,17 +16,6 @@ interface PanelData {
   rows: string[][];
 }
 
-const DEFAULT_AGENT_OPTIONS = [
-  'Metadata Analyzer',
-  'Key Finder',
-  'Format Converter',
-  'Table Organizer',
-  'Object Modeler',
-  'Variable Modeler',
-  'List Standardizer',
-  'Semantic Weaver'
-];
-
 export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   heuristicsItem,
   onSave,
@@ -39,8 +28,9 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   const [domain, setDomain] = useState<string>('');
   const [country, setCountry] = useState<string>('');
   const [agent, setAgent] = useState<string>('');
-  const [agentOptions, setAgentOptions] = useState<string[]>(DEFAULT_AGENT_OPTIONS);
   const [procedure, setProcedure] = useState<string>('');
+  const [is_hero, setIsHero] = useState<boolean>(true);
+  const [documentation, setDocumentation] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,16 +57,8 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
       setCountry(heuristicsItem.country || 'ALL');
       setAgent(heuristicsItem.agent || '');
       setProcedure(heuristicsItem.procedure || '');
-      
-      // Add current agent to options if not already present
-      if (heuristicsItem.agent) {
-        setAgentOptions(prev => {
-          if (!prev.includes(heuristicsItem.agent)) {
-            return [...prev, heuristicsItem.agent].sort();
-          }
-          return prev;
-        });
-      }
+      setIsHero(heuristicsItem.is_hero !== false);
+      setDocumentation(heuristicsItem.documentation ?? '');
       
       loadHeuristicsDetail();
     }
@@ -90,7 +72,11 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     
     try {
       const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      let detailData = (item as any).detailData;
+      const itemAny = item as any;
+      setIsHero(itemAny.is_hero !== false);
+      setDocumentation(itemAny.documentation ?? '');
+      
+      let detailData = itemAny.detailData;
       
       // Parse if it's a string
       if (typeof detailData === 'string') {
@@ -109,7 +95,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
         // If rows exist, use them; otherwise create 20 empty rows
         const loadedRows = detailData.rows || [];
         // Ensure rows have exactly 2 columns
-        const normalizedRows = loadedRows.map(row => [
+        const normalizedRows = loadedRows.map((row: string[]) => [
           row[0] || '',
           row[1] || ''
         ]);
@@ -291,49 +277,57 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     setError(null);
 
     try {
-      // Get existing detailData to preserve training data
-      const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      let existingDetailData = (item as any).detailData;
-      
-      if (typeof existingDetailData === 'string') {
-        try {
-          existingDetailData = JSON.parse(existingDetailData);
-        } catch (e) {
+      if (is_hero) {
+        // RCPO agent: require detailData (can be empty structure)
+        const item = await apiService.getHeuristicItem(heuristicsItem.id);
+        let existingDetailData = (item as any).detailData;
+        if (typeof existingDetailData === 'string') {
+          try {
+            existingDetailData = JSON.parse(existingDetailData);
+          } catch (e) {
+            existingDetailData = {};
+          }
+        }
+        if (!existingDetailData || typeof existingDetailData !== 'object') {
           existingDetailData = {};
         }
+        const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== ''));
+        const detailData: any = {
+          columns: [columnNames[0] || '', 'If'],
+          rows: nonEmptyRows
+        };
+        if (existingDetailData.trainingData) {
+          detailData.trainingData = existingDetailData.trainingData;
+        }
+        const rowCount = nonEmptyRows.length.toString();
+        await apiService.updateHeuristicItem(heuristicsItem.id, {
+          sector,
+          domain,
+          country,
+          agent,
+          procedure,
+          rules: rowCount,
+          detailData: JSON.stringify(detailData),
+          is_hero: true,
+        });
+      } else {
+        // Non-RCPO: require non-empty documentation
+        const docTrimmed = (documentation ?? '').trim();
+        if (!docTrimmed) {
+          setError('Documentation is required when Is HERO is FALSE.');
+          setIsSaving(false);
+          return;
+        }
+        await apiService.updateHeuristicItem(heuristicsItem.id, {
+          sector,
+          domain,
+          country,
+          agent,
+          procedure,
+          is_hero: false,
+          documentation: documentation,
+        });
       }
-
-      if (!existingDetailData || typeof existingDetailData !== 'object') {
-        existingDetailData = {};
-      }
-
-      // Prepare detail data - preserve training data; second column is always "If"
-      const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== '')); // Remove completely empty rows
-      const detailData: any = {
-        columns: [columnNames[0] || '', 'If'],
-        rows: nonEmptyRows
-      };
-
-      // Preserve training data if it exists
-      if (existingDetailData.trainingData) {
-        detailData.trainingData = existingDetailData.trainingData;
-      }
-
-      // Count the number of rows (non-empty rows)
-      const rowCount = nonEmptyRows.length.toString();
-
-      // Save detail data and editable fields to backend
-      await apiService.updateHeuristicItem(heuristicsItem.id, {
-        sector: sector,
-        domain: domain,
-        country: country,
-        agent: agent,
-        procedure: procedure,
-        rules: rowCount,
-        detailData: JSON.stringify(detailData)
-      });
-
-      // Refresh
       onSave();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save heuristics detail');
@@ -413,25 +407,20 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           </div>
         </div>
 
-        {/* Agent and Procedure - One below the other */}
+        {/* Agent and Procedure - plain text so agent name can be typed/edited */}
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-ag-dark-text-secondary mb-1">
               Agent
             </label>
-            <select
+            <input
+              type="text"
               value={agent}
               onChange={(e) => setAgent(e.target.value)}
+              placeholder="Enter agent name"
               disabled={isSaving}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            >
-              <option value="">Select Agent</option>
-              {agentOptions.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
+            />
           </div>
           <div>
             <label className="block text-xs text-ag-dark-text-secondary mb-1">
@@ -446,16 +435,40 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
             />
           </div>
+          {/* Is HERO - Toggle */}
+          <div>
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">
+              Is HERO
+            </label>
+            <div className="flex items-center">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={is_hero}
+                onClick={() => setIsHero(!is_hero)}
+                disabled={isSaving}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-ag-dark-accent focus:ring-offset-2 focus:ring-offset-ag-dark-surface disabled:opacity-50 ${
+                  is_hero ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none block h-5 w-5 shrink-0 rounded-full bg-white shadow ring-0 transition ${
+                    is_hero ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* Content - Scrollable */}
-      <div className="flex-1 overflow-y-auto px-6 py-4 pb-6 min-h-0">
+      {/* Content - Scrollable (flex column when documentation so textarea can fill) */}
+      <div className={`flex-1 px-6 py-4 pb-6 min-h-0 flex flex-col ${!is_hero && !isLoading ? 'overflow-hidden' : 'overflow-y-auto'}`}>
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-ag-dark-text-secondary">Loading...</div>
           </div>
-        ) : (
+        ) : is_hero ? (
           <>
             {/* Instructional Text */}
             <div className="mb-4 p-4 bg-ag-dark-bg border border-ag-dark-border rounded">
@@ -581,6 +594,25 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
               </div>
             )}
           </>
+        ) : (
+          /* Non-RCPO: documentation textarea extends to bottom, scroll inside */
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+            <label className="block text-sm font-medium text-ag-dark-text mb-2 flex-shrink-0">
+              Documentation
+            </label>
+            <textarea
+              value={documentation}
+              onChange={(e) => setDocumentation(e.target.value)}
+              placeholder="Enter documentation (prompts, scripts, or procedural notes)..."
+              disabled={isSaving}
+              className="w-full flex-1 min-h-0 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 resize-none overflow-y-auto"
+            />
+            {error && (
+              <div className="mt-4 p-3 bg-red-900 bg-opacity-20 border border-red-500 rounded text-red-400 text-sm flex-shrink-0">
+                {error}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

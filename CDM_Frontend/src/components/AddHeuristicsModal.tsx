@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Plus } from 'lucide-react';
+import React, { useState } from 'react';
+import { X } from 'lucide-react';
 import { useDrivers } from '../hooks/useDrivers';
-import { AddFieldValueModal } from './AddFieldValueModal';
 
 interface AddHeuristicsModalProps {
   isOpen: boolean;
@@ -12,19 +11,9 @@ interface AddHeuristicsModalProps {
     country: string;
     agent: string;
     procedure: string;
+    is_hero: boolean;
   }) => Promise<void>;
 }
-
-const DEFAULT_AGENT_OPTIONS = [
-  'Metadata Analyzer',
-  'Key Finder',
-  'Format Converter',
-  'Table Organizer',
-  'Object Modeler',
-  'Variable Modeler',
-  'List Standardizer',
-  'Semantic Weaver'
-];
 
 export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   isOpen,
@@ -32,14 +21,13 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   onAdd
 }) => {
   const { drivers: driversData, loading: driversLoading } = useDrivers();
-  const [agentOptions, setAgentOptions] = useState<string[]>(DEFAULT_AGENT_OPTIONS);
-  const [isAddAgentModalOpen, setIsAddAgentModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     sector: '',
     domain: '',
     country: '',
     agent: '',
-    procedure: ''
+    procedure: '',
+    is_hero: false  // Default FALSE = non-RCPO (documentation-only)
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +49,11 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
     setError(null);
   };
 
+  const handleToggleIsHero = () => {
+    setFormData(prev => ({ ...prev, is_hero: !prev.is_hero }));
+    setError(null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -78,11 +71,12 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
         domain: formData.domain,
         country: formData.country,
         agent: formData.agent,
-        procedure: formData.procedure.trim()
+        procedure: formData.procedure.trim(),
+        is_hero: formData.is_hero
       });
       
       // Reset form and close
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '' });
+      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_hero: false });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add heuristic item');
@@ -93,18 +87,9 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
   const handleClose = () => {
     if (!isSubmitting) {
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '' });
+      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_hero: false });
       setError(null);
       onClose();
-    }
-  };
-
-  const handleAddAgent = async (newAgent: string) => {
-    // Add the new agent to the list if it doesn't already exist
-    if (!agentOptions.includes(newAgent)) {
-      setAgentOptions([...agentOptions, newAgent].sort());
-      // Automatically select the newly added agent
-      setFormData(prev => ({ ...prev, agent: newAgent }));
     }
   };
 
@@ -188,40 +173,24 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
             </select>
           </div>
 
-          {/* Agent Field */}
+          {/* Agent Field - plain text; agent names are unique, type directly */}
           <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Agent <span className="text-ag-dark-error">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsAddAgentModalOpen(true)}
-                disabled={isSubmitting}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Agent"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
-            <select
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Agent <span className="text-ag-dark-error">*</span>
+            </label>
+            <input
+              type="text"
               value={formData.agent}
               onChange={(e) => handleChange('agent', e.target.value)}
+              placeholder="Enter agent name"
               disabled={isSubmitting}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
+              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
               required
-            >
-              <option value="">Select Agent</option>
-              {agentOptions.map((agent) => (
-                <option key={agent} value={agent}>
-                  {agent}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           {/* Procedure Field */}
-          <div className="mb-6">
+          <div className="mb-4">
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Procedure <span className="text-ag-dark-error">*</span>
             </label>
@@ -234,6 +203,31 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
               required
             />
+          </div>
+
+          {/* Is HERO Field - Toggle */}
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Is HERO <span className="text-ag-dark-error">*</span>
+            </label>
+            <div className="flex items-center">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={formData.is_hero}
+                onClick={handleToggleIsHero}
+                disabled={isSubmitting}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-ag-dark-accent focus:ring-offset-2 focus:ring-offset-ag-dark-surface disabled:opacity-50 ${
+                  formData.is_hero ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none block h-5 w-5 shrink-0 rounded-full bg-white shadow ring-0 transition ${
+                    formData.is_hero ? 'translate-x-5' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           {/* Error Message */}
@@ -256,22 +250,13 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
             <button
               type="submit"
               disabled={isSubmitting || !formData.sector || !formData.domain || !formData.country || !formData.agent || !formData.procedure.trim()}
-              className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {isSubmitting ? 'Adding...' : 'Add'}
             </button>
           </div>
         </form>
       </div>
-
-      {/* Add Agent Modal */}
-      <AddFieldValueModal
-        isOpen={isAddAgentModalOpen}
-        onClose={() => setIsAddAgentModalOpen(false)}
-        onSave={handleAddAgent}
-        fieldName="agent"
-        fieldLabel="Agent"
-      />
     </div>
   );
 };

@@ -10,6 +10,10 @@ export interface HeuristicsData {
   procedure: string;
   rules: string;
   best: string;
+  /** TRUE = RCPO agent (Datamaia runtime); FALSE = non-RCPO (documentation-only). Default true for legacy. */
+  is_hero?: boolean;
+  /** Free-text documentation when is_hero is false; null when is_hero is true. */
+  documentation?: string | null;
 }
 
 export const useHeuristics = () => {
