@@ -343,7 +343,8 @@ function validateNumberFormat(value: string, formatII: string): { isValid: boole
       return { isValid: true };
 
     case 'Percentage':
-      // Percentage: number with % at the end
+    case 'Percent':
+      // Percentage/Percent: number with % at the end
       if (!/^-?\d+(\.\d+)?%$/.test(trimmed)) {
         return { isValid: false, error: 'Value must be a number with percentage sign (e.g., 50%, 12.5%)' };
       }

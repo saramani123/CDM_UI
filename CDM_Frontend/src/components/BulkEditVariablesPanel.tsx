@@ -1441,8 +1441,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 }}
               >
                 <option value="">Keep Current</option>
-                <option value="L">L</option>
+                <option value="Loose">Loose</option>
+                <option value="Tight">Tight</option>
                 <option value="T">T</option>
+                <option value="Multi">Multi</option>
               </select>
             </div>
           </div>

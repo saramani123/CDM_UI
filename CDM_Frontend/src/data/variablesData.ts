@@ -89,7 +89,7 @@ export const variableFieldOptions = {
   ],
   formatI: ['Special', 'List', 'Text', 'Number', 'Date', 'Boolean'],
   formatII: ['Custom', 'Static', 'Free', 'Calculated', 'Derived'],
-  gType: ['Loose', 'Strict', 'Flexible', 'Fixed'],
+  gType: ['Loose', 'Tight', 'T', 'Multi'],
   validation: ['Length', 'Range', 'Pattern', 'Required', 'Unique'],
   default: ['None', 'System', 'User', 'Calculated'],
   graph: ['Y', 'N', 'Conditional']

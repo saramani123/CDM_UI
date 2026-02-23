@@ -21,20 +21,19 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
   const csvFormat = {
     title: 'Upload Variables',
     columns: [
-      { number: 1, name: 'Sector' },
-      { number: 2, name: 'Domain' },
-      { number: 3, name: 'Country' },
-      { number: 4, name: 'Variable Clarifier' },
-      { number: 5, name: 'Part' },
-      { number: 6, name: 'Section' },
-      { number: 7, name: 'Group' },
-      { number: 8, name: 'Variable' },
-      { number: 9, name: 'Format I' },
-      { number: 10, name: 'Format II' },
-      { number: 11, name: 'G-Type' },
-      { number: 12, name: 'Validation' },
-      { number: 13, name: 'Default' },
-      { number: 14, name: 'Graph' }
+      { number: 1, name: 'Sector', required: true },
+      { number: 2, name: 'Domain', required: true },
+      { number: 3, name: 'Country', required: true },
+      { number: 4, name: 'Part', required: true },
+      { number: 5, name: 'Section', required: true },
+      { number: 6, name: 'Group', required: true },
+      { number: 7, name: 'Variable', required: true },
+      { number: 8, name: 'Format I', required: false },
+      { number: 9, name: 'Format II', required: false },
+      { number: 10, name: 'G-Type', required: false },
+      { number: 11, name: 'Validation', required: false },
+      { number: 12, name: 'Default', required: false },
+      { number: 13, name: 'Graph', required: false }
     ]
   };
 
@@ -109,22 +108,22 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
                 <div
                   key={column.number}
                   className={`flex items-center justify-between px-4 py-3 border-b border-ag-dark-border last:border-b-0 ${
-                    column.number <= 8 ? 'bg-red-900 bg-opacity-20' : ''
+                    column.required ? 'bg-red-900 bg-opacity-20' : ''
                   }`}
                 >
                   <span className="text-sm text-ag-dark-text-secondary">
                     Column {column.number}
                   </span>
                   <span className={`text-sm font-medium ${
-                    column.number <= 8 ? 'text-ag-dark-error' : 'text-ag-dark-text'
+                    column.required ? 'text-ag-dark-error' : 'text-ag-dark-text'
                   }`}>
-                    {column.name} {column.number <= 8 ? '*' : ''}
+                    {column.name} {column.required ? '*' : ''}
                   </span>
                 </div>
               ))}
             </div>
             <div className="text-xs text-ag-dark-error">
-              * Required fields (columns 1-8)
+              * Required: Sector, Domain, Country, Part, Section, Group, Variable (columns 1–7)
             </div>
           </div>
 
@@ -185,9 +184,9 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
 
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
-            <p><strong>Required Fields:</strong></p>
-            <p>• Driver through Format II must have values</p>
-            <p>• G-Type, Validation, Default, Graph are optional and can be left empty</p>
+            <p><strong>Required:</strong></p>
+            <p>• CSV must have column headers named exactly: Sector, Domain, Country, Part, Section, Group, Variable (columns 1–7).</p>
+            <p>• Optional: Format I, Format II, G-Type, Validation, Default, Graph (columns 8–13) — may be omitted or left empty.</p>
             <p><strong>After Upload:</strong></p>
             <p>• You can add object relationships through the Variable Metadata panel</p>
             <p>• Select any uploaded variable to edit its object relationships</p>

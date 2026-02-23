@@ -2585,8 +2585,18 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         headers = next(header_reader)
         headers = [h.strip() for h in headers]
         
+        # Validate required column names exist exactly (CSV must have these headers)
+        required_columns = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
+        missing_columns = [col for col in required_columns if col not in headers]
+        if missing_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"CSV must contain these exact column headers (required): {', '.join(required_columns)}. Missing: {', '.join(missing_columns)}. Optional: Variable Clarifier, Format I, Format II, G-Type, Validation, Default, Graph."
+            )
+        
         # Parse data rows using csv module to properly handle quoted fields with commas
         rows = []
+        parse_errors = []
         for i, line in enumerate(lines[1:], start=2):
             if not line.strip():
                 continue
@@ -2605,7 +2615,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             except Exception as e:
                 print(f"⚠️  Error parsing row {i}: {str(e)}")
                 print(f"   Line content: {line[:100]}...")  # First 100 chars
-                errors.append(f"Row {i}: CSV parsing error - {str(e)}")
+                parse_errors.append(f"Row {i}: CSV parsing error - {str(e)}")
                 continue
                     
         print(f"Successfully parsed {len(rows)} rows from CSV")
@@ -2616,7 +2626,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"CSV parsing error: {str(e)}")
     
     variables = []
-    errors = []
+    errors = list(parse_errors)  # Carry over any CSV parse errors
     
     print(f"CSV Headers found: {headers}")
     print(f"First few rows sample: {rows[:3] if len(rows) >= 3 else rows}")
@@ -2624,7 +2634,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
     for row_num, row in enumerate(rows, start=2):  # Start at 2 because of header
         try:
             # Validate required fields
-            required_fields = ['Sector', 'Domain', 'Country', 'Variable Clarifier', 'Part', 'Section', 'Group', 'Variable']
+            required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
             missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
             
             if missing_fields:
@@ -2634,11 +2644,11 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 errors.append(error_msg)
                 continue
 
-            # Parse driver selections
+            # Parse driver selections (Variable Clarifier is optional; default to 'None' if missing or empty)
             sector = ['ALL'] if row['Sector'].strip() == 'ALL' else [s.strip() for s in row['Sector'].split(',')]
             domain = ['ALL'] if row['Domain'].strip() == 'ALL' else [d.strip() for d in row['Domain'].split(',')]
             country = ['ALL'] if row['Country'].strip() == 'ALL' else [c.strip() for c in row['Country'].split(',')]
-            variable_clarifier = row['Variable Clarifier'].strip() if row['Variable Clarifier'].strip() else 'None'
+            variable_clarifier = (row.get('Variable Clarifier') or '').strip() or 'None'
             
             # Create driver string
             sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
@@ -2760,6 +2770,16 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                                     MATCH (g:Group {id: $group_id})
                                     MERGE (p)-[:HAS_GROUP]->(g)
                                 """, part=var_data["part"], group_id=group_id)
+                        
+                        # Check if variable with same name already exists in this group (distinctness at variable name within group)
+                        existing_var = tx.run("""
+                            MATCH (g:Group {id: $group_id})-[:HAS_VARIABLE]->(v:Variable {name: $variable})
+                            RETURN v.id as id
+                            LIMIT 1
+                        """, group_id=group_id, variable=var_data["variable"]).single()
+                        if existing_var:
+                            batch_errors.append(f"Variable '{var_data['variable']}' already exists in this Part/Group; skipped")
+                            continue
                         
                         # Create Variable and link to Group using group ID
                         result = tx.run("""

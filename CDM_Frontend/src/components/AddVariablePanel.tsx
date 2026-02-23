@@ -1248,8 +1248,10 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                 }}
               >
                 <option value="">Select</option>
-                <option value="L">L</option>
+                <option value="Loose">Loose</option>
+                <option value="Tight">Tight</option>
                 <option value="T">T</option>
+                <option value="Multi">Multi</option>
               </select>
             </div>
           </div>

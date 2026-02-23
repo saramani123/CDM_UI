@@ -468,15 +468,14 @@ async def get_metadata():
         raise HTTPException(status_code=500, detail=f"Failed to retrieve metadata: {str(e)}")
 
 # Format V-I to Format V-II mapping (must match frontend formatMapping.ts exactly)
-# This is the source of truth for all valid Format V-I/V-II combinations
+# Format V-II values are dependent on Format V-I. (blank) values excluded.
 FORMAT_I_TO_FORMAT_II_MAPPING = {
-    'ID': ['Public', 'Private', 'Name'],
-    'Reference': ['Blood', 'Intra', 'Inter'],
-    'Time': ['Date', 'DateTime'],
-    'List': ['Static', 'Specific', 'Flag'],
-    'Number': ['Integer', 'Decimal', 'Currency', 'Percentage'],
-    'Directory': ['Phone', 'Email', 'URL', 'Zip'],
-    'Freeform': ['Text', 'Binary', 'JSON', 'CSV', 'XLS', 'PDF']
+    'Contact': ['Email', 'Phone', 'PostalCode', 'URL', 'Zip'],
+    'Freeform': ['Document', 'Label', 'Text'],
+    'ID': ['Private', 'Public', 'Vulqan'],
+    'List': ['Flag', 'Reference', 'Specific', 'Static', 'Vulqan'],
+    'Number': ['Amount', 'Any', 'Currency', 'Decimal', 'Integer', 'Percent'],
+    'Time': ['Date', 'DateTime', 'Month', 'Period']
 }
 
 # Valid Format V-I values in sorted order (matches frontend getAllFormatIValues())

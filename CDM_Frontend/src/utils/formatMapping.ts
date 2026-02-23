@@ -1,15 +1,14 @@
 /**
  * Format V-I to Format V-II cascading mapping
- * Based on the specification provided by the user
+ * Format V-II values are dependent on Format V-I. (blank) values excluded.
  */
 export const FORMAT_I_TO_FORMAT_II_MAPPING: Record<string, string[]> = {
-  'ID': ['Public', 'Private', 'Name'],
-  'Reference': ['Blood', 'Intra', 'Inter'],
-  'Time': ['Date', 'DateTime'],
-  'List': ['Static', 'Specific', 'Flag'],
-  'Number': ['Integer', 'Decimal', 'Currency', 'Percentage'],
-  'Directory': ['Phone', 'Email', 'URL', 'Zip'],
-  'Freeform': ['Text', 'Binary', 'JSON', 'CSV', 'XLS', 'PDF']
+  'Contact': ['Email', 'Phone', 'PostalCode', 'URL', 'Zip'],
+  'Freeform': ['Document', 'Label', 'Text'],
+  'ID': ['Private', 'Public', 'Vulqan'],
+  'List': ['Flag', 'Reference', 'Specific', 'Static', 'Vulqan'],
+  'Number': ['Amount', 'Any', 'Currency', 'Decimal', 'Integer', 'Percent'],
+  'Time': ['Date', 'DateTime', 'Month', 'Period']
 };
 
 /**
