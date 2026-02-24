@@ -23,6 +23,12 @@ class BulkVariableObjectRelationshipItem(BaseModel):
 class BulkVariableObjectRelationshipCreateRequest(BaseModel):
     relationships: List[BulkVariableObjectRelationshipItem]
 
+
+class BulkUploadVariablesChunkRequest(BaseModel):
+    """JSON body for chunked variable upload (avoids long request timeouts on Render)."""
+    rows: List[Dict[str, Any]] = Field(..., description="Array of row objects with keys: Sector, Domain, Country, Part, Section, Group, Variable, and optional Format I, Format II, G-Type, etc.")
+    start_row_index: int = Field(2, description="1-based row index of first row (for error messages)")
+
 router = APIRouter()
 
 async def create_driver_relationships(session, variable_id: str, driver_string: str):
@@ -2548,6 +2554,117 @@ async def bulk_create_variable_object_relationships(request: BulkVariableObjectR
         print(f"Error creating bulk variable-object relationships: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to create bulk variable-object relationships: {e}")
 
+async def _process_variables_to_db(driver, variables: list, errors: list) -> int:
+    """Insert variables into Neo4j in batches and create driver relationships. Modifies errors in place. Returns created_count."""
+    BATCH_SIZE = 250
+    created_count = 0
+    total_batches = (len(variables) + BATCH_SIZE - 1) // BATCH_SIZE
+    print(f"Processing {len(variables)} variables in {total_batches} batches of {BATCH_SIZE}")
+    with driver.session(default_access_mode=WRITE_ACCESS) as session:
+        for batch_idx in range(0, len(variables), BATCH_SIZE):
+            batch = variables[batch_idx:batch_idx + BATCH_SIZE]
+            batch_num = (batch_idx // BATCH_SIZE) + 1
+            print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} variables)")
+
+            def process_batch_tx(tx):
+                batch_created = []
+                batch_errors = []
+                for var_data in batch:
+                    try:
+                        tx.run("MERGE (p:Part {name: $part})", part=var_data["part"])
+                        existing_group = tx.run("""
+                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                            RETURN g.id as group_id
+                            LIMIT 1
+                        """, part=var_data["part"], group=var_data["group"]).single()
+                        if existing_group:
+                            gid = existing_group.get("group_id")
+                            if gid is not None and str(gid).strip():
+                                group_id = gid
+                            else:
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
+                                    WHERE g.id IS NULL
+                                    SET g.id = $group_id
+                                    RETURN count(g) AS c
+                                """, part=var_data["part"], group=var_data["group"], group_id=group_id)
+                        else:
+                            different_part_group = tx.run("""
+                                MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
+                                WHERE p.name <> $part
+                                RETURN g.id as group_id
+                                LIMIT 1
+                            """, part=var_data["part"], group=var_data["group"]).single()
+                            if different_part_group:
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    CREATE (g:Group {id: $group_id, name: $group, part: $part})
+                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})
+                                    MATCH (g:Group {id: $group_id})
+                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                """, part=var_data["part"], group_id=group_id)
+                            else:
+                                group_id = str(uuid.uuid4())
+                                tx.run("""
+                                    CREATE (g:Group {id: $group_id, name: $group, part: $part})
+                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
+                                tx.run("""
+                                    MATCH (p:Part {name: $part})
+                                    MATCH (g:Group {id: $group_id})
+                                    MERGE (p)-[:HAS_GROUP]->(g)
+                                """, part=var_data["part"], group_id=group_id)
+                        existing_var = tx.run("""
+                            MATCH (g:Group {id: $group_id})-[:HAS_VARIABLE]->(v:Variable {name: $variable})
+                            RETURN v.id as id
+                            LIMIT 1
+                        """, group_id=group_id, variable=var_data["variable"]).single()
+                        if existing_var:
+                            batch_errors.append(f"Variable '{var_data['variable']}' already exists in this Part/Group; skipped")
+                            continue
+                        result = tx.run("""
+                            MATCH (g:Group {id: $group_id})
+                            CREATE (v:Variable {
+                                id: $id, name: $variable, section: $section,
+                                formatI: $formatI, formatII: $formatII, gType: $gType,
+                                validation: $validation, default: $default, graph: $graph,
+                                status: $status, driver: $driver
+                            })
+                            MERGE (g)-[:HAS_VARIABLE]->(v)
+                            RETURN v.id as id
+                        """, {**var_data, "group_id": group_id})
+                        record = result.single()
+                        if record and record["id"]:
+                            batch_created.append(var_data)
+                        else:
+                            batch_errors.append(f"Variable {var_data['variable']} creation returned no result")
+                    except Exception as e:
+                        batch_errors.append(f"Failed to create variable {var_data['variable']}: {str(e)}")
+                return {"created": batch_created, "errors": batch_errors}
+
+            try:
+                batch_result = session.execute_write(process_batch_tx)
+                created_vars = batch_result["created"]
+                created_count += len(created_vars)
+                errors.extend(batch_result["errors"])
+                driver_batch_size = 50
+                for driver_batch_idx in range(0, len(created_vars), driver_batch_size):
+                    driver_batch = created_vars[driver_batch_idx:driver_batch_idx + driver_batch_size]
+                    for var_data in driver_batch:
+                        try:
+                            await create_driver_relationships(session, var_data['id'], var_data['driver'])
+                        except Exception as e:
+                            errors.append(f"Variable {var_data['variable']} created but driver relationships failed: {str(e)}")
+                print(f"✅ Batch {batch_num}/{total_batches} completed: {len(created_vars)} variables created")
+            except Exception as e:
+                print(f"❌ Batch {batch_num}/{total_batches} failed: {str(e)}")
+                for var_data in batch:
+                    errors.append(f"Batch {batch_num} failed for variable {var_data['variable']}: {str(e)}")
+    return created_count
+
+
 @router.post("/variables/bulk-upload", response_model=CSVUploadResponse)
 async def bulk_upload_variables(file: UploadFile = File(...)):
     """
@@ -2679,176 +2796,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             errors.append(f"Row {row_num}: {str(e)}")
             continue
 
-    # Insert variables into database in batches
-    # Batch size: 250 rows per transaction (safe for Neo4j, prevents memory issues)
-    BATCH_SIZE = 250
-    created_count = 0
-    
-    # Process variables in batches
-    total_batches = (len(variables) + BATCH_SIZE - 1) // BATCH_SIZE
-    print(f"Processing {len(variables)} variables in {total_batches} batches of {BATCH_SIZE}")
-    
-    with driver.session(default_access_mode=WRITE_ACCESS) as session:
-        for batch_idx in range(0, len(variables), BATCH_SIZE):
-            batch = variables[batch_idx:batch_idx + BATCH_SIZE]
-            batch_num = (batch_idx // BATCH_SIZE) + 1
-            print(f"Processing batch {batch_num}/{total_batches} ({len(batch)} variables)")
-            
-            # Use a single transaction for each batch
-            def process_batch_tx(tx):
-                batch_created = []
-                batch_errors = []
-                
-                for var_data in batch:
-                    try:
-                        # Create taxonomy structure: Part -> Group -> Variable
-                        # Ensure Part exists
-                        tx.run("MERGE (p:Part {name: $part})", part=var_data["part"])
-                        
-                        # Find or create Group for this specific Part
-                        # First, check if a Group with this name already exists for this Part
-                        existing_group = tx.run("""
-                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
-                            RETURN g.id as group_id
-                            LIMIT 1
-                        """, part=var_data["part"], group=var_data["group"]).single()
-                        
-                        if existing_group:
-                            gid = existing_group.get("group_id")
-                            if gid is not None and str(gid).strip():
-                                # Group already exists for this Part and has valid id - use it
-                                group_id = gid
-                            else:
-                                # Group exists for this Part but has null id (legacy) - backfill id (do not create duplicate)
-                                group_id = str(uuid.uuid4())
-                                tx.run("""
-                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})
-                                    WHERE g.id IS NULL
-                                    SET g.id = $group_id
-                                    RETURN count(g) AS c
-                                """, part=var_data["part"], group=var_data["group"], group_id=group_id)
-                        else:
-                            # Check if group with same name exists for a different part
-                            different_part_group = tx.run("""
-                                MATCH (p:Part)-[:HAS_GROUP]->(g:Group {name: $group})
-                                WHERE p.name <> $part
-                                RETURN g.id as group_id
-                                LIMIT 1
-                            """, part=var_data["part"], group=var_data["group"]).single()
-                            
-                            if different_part_group:
-                                # Group exists for different part - create NEW group node with unique ID
-                                group_id = str(uuid.uuid4())
-                                tx.run("""
-                                    CREATE (g:Group {
-                                        id: $group_id,
-                                        name: $group,
-                                        part: $part
-                                    })
-                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
-                                
-                                # Create relationship from Part to new Group
-                                tx.run("""
-                                    MATCH (p:Part {name: $part})
-                                    MATCH (g:Group {id: $group_id})
-                                    MERGE (p)-[:HAS_GROUP]->(g)
-                                """, part=var_data["part"], group_id=group_id)
-                            else:
-                                # No existing group with this name - create new one
-                                group_id = str(uuid.uuid4())
-                                tx.run("""
-                                    CREATE (g:Group {
-                                        id: $group_id,
-                                        name: $group,
-                                        part: $part
-                                    })
-                                """, group_id=group_id, group=var_data["group"], part=var_data["part"])
-                                
-                                # Create relationship from Part to new Group
-                                tx.run("""
-                                    MATCH (p:Part {name: $part})
-                                    MATCH (g:Group {id: $group_id})
-                                    MERGE (p)-[:HAS_GROUP]->(g)
-                                """, part=var_data["part"], group_id=group_id)
-                        
-                        # Check if variable with same name already exists in this group (distinctness at variable name within group)
-                        existing_var = tx.run("""
-                            MATCH (g:Group {id: $group_id})-[:HAS_VARIABLE]->(v:Variable {name: $variable})
-                            RETURN v.id as id
-                            LIMIT 1
-                        """, group_id=group_id, variable=var_data["variable"]).single()
-                        if existing_var:
-                            batch_errors.append(f"Variable '{var_data['variable']}' already exists in this Part/Group; skipped")
-                            continue
-                        
-                        # Create Variable and link to Group using group ID
-                        result = tx.run("""
-                            MATCH (g:Group {id: $group_id})
-                            
-                            // Create Variable node with all properties (including driver string)
-                            CREATE (v:Variable {
-                                id: $id,
-                                name: $variable,
-                                section: $section,
-                                formatI: $formatI,
-                                formatII: $formatII,
-                                gType: $gType,
-                                validation: $validation,
-                                default: $default,
-                                graph: $graph,
-                                status: $status,
-                                driver: $driver
-                            })
-                            
-                            // Create relationship Group -> Variable
-                            MERGE (g)-[:HAS_VARIABLE]->(v)
-                            
-                            // Return variable ID to verify creation
-                            RETURN v.id as id
-                        """, {
-                            **var_data,
-                            "group_id": group_id
-                        })
-                        
-                        # Verify variable was created
-                        record = result.single()
-                        if record and record["id"]:
-                            batch_created.append(var_data)
-                        else:
-                            batch_errors.append(f"Variable {var_data['variable']} creation returned no result")
-                    except Exception as e:
-                        batch_errors.append(f"Failed to create variable {var_data['variable']}: {str(e)}")
-                
-                return {"created": batch_created, "errors": batch_errors}
-            
-            try:
-                # Execute batch transaction (using execute_write for Neo4j driver 5.0+)
-                batch_result = session.execute_write(process_batch_tx)
-                created_vars = batch_result["created"]
-                created_count += len(created_vars)
-                errors.extend(batch_result["errors"])
-                
-                # Create driver relationships only for successfully created variables
-                # Process in smaller sub-batches to avoid overwhelming Neo4j
-                driver_batch_size = 50
-                for driver_batch_idx in range(0, len(created_vars), driver_batch_size):
-                    driver_batch = created_vars[driver_batch_idx:driver_batch_idx + driver_batch_size]
-                    
-                    for var_data in driver_batch:
-                        try:
-                            await create_driver_relationships(session, var_data['id'], var_data['driver'])
-                        except Exception as e:
-                            # If driver relationships fail, still count as created but log error
-                            errors.append(f"Variable {var_data['variable']} created but driver relationships failed: {str(e)}")
-                            print(f"⚠️ Driver relationships failed for variable {var_data['variable']}: {str(e)}")
-                
-                print(f"✅ Batch {batch_num}/{total_batches} completed: {len(created_vars)} variables created")
-            except Exception as e:
-                # If entire batch fails, add all variables to errors
-                print(f"❌ Batch {batch_num}/{total_batches} failed: {str(e)}")
-                for var_data in batch:
-                    errors.append(f"Batch {batch_num} failed for variable {var_data['variable']}: {str(e)}")
-                continue
+    created_count = await _process_variables_to_db(driver, variables, errors)
 
     return CSVUploadResponse(
         success=True,
@@ -2857,6 +2805,67 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         error_count=len(errors),
         errors=errors
     )
+
+
+@router.post("/variables/bulk-upload-chunk", response_model=CSVUploadResponse)
+async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
+    """
+    Upload a chunk of variable rows as JSON. Use this for large CSVs to avoid request timeouts
+    (e.g. Render 30–60s limit). Frontend should parse CSV, split into chunks of ~80–100 rows,
+    and call this endpoint per chunk.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    variables = []
+    errors = []
+    start = body.start_row_index
+    required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
+
+    for i, row in enumerate(body.rows):
+        row_num = start + i
+        if not isinstance(row, dict):
+            errors.append(f"Row {row_num}: Invalid row (expected object)")
+            continue
+        missing = [f for f in required_fields if not (row.get(f) or '').strip()]
+        if missing:
+            errors.append(f"Row {row_num}: Missing required fields: {', '.join(missing)}")
+            continue
+        sector = ['ALL'] if (row.get('Sector') or '').strip() == 'ALL' else [s.strip() for s in (row.get('Sector') or '').split(',')]
+        domain = ['ALL'] if (row.get('Domain') or '').strip() == 'ALL' else [d.strip() for d in (row.get('Domain') or '').split(',')]
+        country = ['ALL'] if (row.get('Country') or '').strip() == 'ALL' else [c.strip() for c in (row.get('Country') or '').split(',')]
+        variable_clarifier = (row.get('Variable Clarifier') or '').strip() or 'None'
+        sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
+        domain_str = 'ALL' if 'ALL' in domain else ', '.join(domain)
+        country_str = 'ALL' if 'ALL' in country else ', '.join(country)
+        driver_string = f"{sector_str}, {domain_str}, {country_str}, {variable_clarifier}"
+        variable_data = {
+            "id": str(uuid.uuid4()),
+            "driver": driver_string,
+            "part": (row.get('Part') or '').strip(),
+            "section": (row.get('Section') or '').strip(),
+            "group": (row.get('Group') or '').strip(),
+            "variable": (row.get('Variable') or '').strip(),
+            "formatI": (row.get('Format I') or '').strip() or '',
+            "formatII": (row.get('Format II') or '').strip() or '',
+            "gType": (row.get('G-Type') or '').strip() or '',
+            "validation": (row.get('Validation') or '').strip() or '',
+            "default": (row.get('Default') or '').strip() or '',
+            "graph": (row.get('Graph') or 'Yes').strip() or 'Yes',
+            "status": "Active",
+        }
+        variables.append(variable_data)
+
+    created_count = await _process_variables_to_db(driver, variables, errors)
+    return CSVUploadResponse(
+        success=True,
+        message=f"Chunk: created {created_count} variables",
+        created_count=created_count,
+        error_count=len(errors),
+        errors=errors,
+    )
+
 
 @router.get("/variables/test/{variable_id}")
 async def test_variable_lookup(variable_id: str):

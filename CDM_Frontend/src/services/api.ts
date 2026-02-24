@@ -863,41 +863,129 @@ class ApiService {
     });
   }
 
-  async bulkUploadVariables(file: File) {
-    const formData = new FormData();
-    formData.append('file', file);
-    
-    // Use longer timeout for bulk uploads (300 seconds = 5 minutes)
-    // This prevents timeout for large CSV files (e.g., 230+ variables)
-    const url = `${API_BASE_URL}/variables/bulk-upload`;
+  /**
+   * Parse CSV text into headers and row objects. Handles quoted fields.
+   */
+  private parseVariableCSV(text: string): { headers: string[]; rows: Record<string, string>[] } {
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
+    if (lines.length < 2) return { headers: [], rows: [] };
+    const headerLine = lines[0];
+    const headers = this.parseCSVLine(headerLine).map((h) => h.trim());
+    const rows: Record<string, string>[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const values = this.parseCSVLine(lines[i]);
+      const row: Record<string, string> = {};
+      headers.forEach((h, j) => { row[h.trim()] = (values[j] ?? '').trim(); });
+      rows.push(row);
+    }
+    return { headers, rows };
+  }
+
+  private parseCSVLine(line: string): string[] {
+    const out: string[] = [];
+    let i = 0;
+    while (i < line.length) {
+      if (line[i] === '"') {
+        i++;
+        let s = '';
+        while (i < line.length && line[i] !== '"') {
+          s += line[i++];
+        }
+        if (i < line.length) i++;
+        out.push(s);
+      } else {
+        let s = '';
+        while (i < line.length && line[i] !== ',') {
+          s += line[i++];
+        }
+        out.push(s.trim());
+        i++;
+      }
+    }
+    return out;
+  }
+
+  async bulkUploadVariablesChunk(rows: Record<string, string>[], startRowIndex: number): Promise<{ created_count: number; error_count: number; errors: string[]; message: string }> {
+    const url = `${API_BASE_URL}/variables/bulk-upload-chunk`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for bulk uploads
-    
+    const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 min per chunk
     try {
       const response = await fetch(url, {
         method: 'POST',
-        body: formData,
+        body: JSON.stringify({ rows, start_row_index: startRowIndex }),
         signal: controller.signal,
-        headers: {
-          // Don't set Content-Type, let browser set it with boundary for FormData
-        },
+        headers: { 'Content-Type': 'application/json' },
       });
-      
       clearTimeout(timeoutId);
-      
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: `API request failed: ${response.status} ${response.statusText}` }));
-        throw new Error(errorData.detail || `API request failed: ${response.status} ${response.statusText}`);
+        const err = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(err.detail || String(response.status));
       }
-      
       return await response.json();
-    } catch (error) {
+    } catch (e) {
       clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Request timeout: The server took too long to respond. This may happen with large CSV files. Please try again or upload a smaller batch.');
+      if (e instanceof Error && e.name === 'AbortError') {
+        throw new Error('Chunk upload timed out. Try a smaller file or try again.');
       }
-      throw error;
+      throw e;
     }
+  }
+
+  async bulkUploadVariables(file: File) {
+    const CHUNK_THRESHOLD = 80;
+    const CHUNK_SIZE = 80;
+
+    const text = await file.text();
+    const { headers, rows } = this.parseVariableCSV(text);
+    const required = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable'];
+    const missingCols = required.filter((c) => !headers.includes(c));
+    if (missingCols.length > 0) {
+      throw new Error(`CSV missing required columns: ${missingCols.join(', ')}. Required: ${required.join(', ')}.`);
+    }
+
+    if (rows.length <= CHUNK_THRESHOLD) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const url = `${API_BASE_URL}/variables/bulk-upload`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300000);
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ detail: `${response.status} ${response.statusText}` }));
+          throw new Error(errorData.detail || 'Upload failed');
+        }
+        return await response.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          throw new Error('Request timeout: The server took too long to respond. Try again or use a smaller file.');
+        }
+        throw error;
+      }
+    }
+
+    let totalCreated = 0;
+    const allErrors: string[] = [];
+    for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+      const chunk = rows.slice(i, i + CHUNK_SIZE);
+      const startRowIndex = i + 2;
+      const result = await this.bulkUploadVariablesChunk(chunk, startRowIndex);
+      totalCreated += result.created_count ?? 0;
+      if (result.errors?.length) allErrors.push(...result.errors);
+    }
+    return {
+      success: true,
+      message: `Successfully created ${totalCreated} variables${allErrors.length ? `. ${allErrors.length} errors.` : ''}`,
+      created_count: totalCreated,
+      error_count: allErrors.length,
+      errors: allErrors,
+    };
   }
 
   async bulkUpdateVariables(bulkData: any) {
