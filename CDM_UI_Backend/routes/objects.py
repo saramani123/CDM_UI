@@ -123,10 +123,11 @@ def get_additional_relationship_count(session, object_id: str) -> int:
 async def get_objects():
     """
     Get all objects from the CDM.
+    When Neo4j is unavailable, returns an empty list so the UI can load.
     """
     driver = get_driver()
     if not driver:
-        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+        return []
 
     try:
         with driver.session() as session:

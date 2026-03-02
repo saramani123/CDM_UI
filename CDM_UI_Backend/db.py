@@ -71,7 +71,7 @@ class Neo4jConnection:
             print("2. Neo4j Aura instance is running")
             print("3. Credentials are correct")
             print("4. URI format is correct (neo4j+s:// for Aura)")
-            print("\nFor now, the API will use dummy data until Neo4j connection is resolved.")
+            print("\nAPI endpoints that need Neo4j will return 500 until the connection is resolved.")
             return False
     
     def get_driver(self):

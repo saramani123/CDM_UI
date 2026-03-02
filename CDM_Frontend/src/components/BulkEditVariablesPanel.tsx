@@ -431,8 +431,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   };
 
   const getDistinctGraph = () => {
-    const graphValues = [...new Set(allData.map(item => item.graph).filter(val => val && val.trim() !== ''))];
-    return ['Keep Current Graph', ...graphValues];
+    const graphValues = [...new Set([...allData.map(item => item.graph).filter(val => val && val.trim() !== ''), 'Yes', 'No'])];
+    return ['Keep Current Graph', ...graphValues.sort()];
   };
 
   // State to track field options from API (for Format I, Format II, G-Type, Default)
@@ -1645,6 +1645,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                     
                     if (newValType === 'List') {
                       newComponents.value = 'List';
+                    } else if (newValType === 'Specific') {
+                      newComponents.value = 'Specific';
                     } else if (newValType === 'Range') {
                       newComponents.greaterThanOperator = '';
                       newComponents.greaterThanValue = '';
@@ -1670,11 +1672,12 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               <option value="Relative">Relative</option>
               <option value="Length">Length</option>
               <option value="Character">Character</option>
+              <option value="Specific">Specific</option>
             </select>
           </div>
 
-              {/* Operator Dropdown - Hidden for Character and Range */}
-              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && getOperatorsForValType(validationComponents.valType).length > 0 && (
+              {/* Operator Dropdown - Hidden for Character, Range, and Specific */}
+              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && validationComponents.valType !== 'Specific' && getOperatorsForValType(validationComponents.valType).length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Operator
@@ -1804,13 +1807,13 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 );
               })()}
 
-              {/* Value Field - for List, Relative (variable dropdown), Length, Character */}
+              {/* Value Field - for List, Specific, Relative (variable dropdown), Length, Character */}
               {validationComponents.valType && validationComponents.valType !== 'Range' && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Value
                   </label>
-                  {validationComponents.valType === 'List' ? (
+                  {validationComponents.valType === 'List' || validationComponents.valType === 'Specific' ? (
                     <input
                       type="text"
                       value={validationComponents.value}

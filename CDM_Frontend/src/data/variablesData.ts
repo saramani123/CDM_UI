@@ -67,6 +67,9 @@ export const variableColumns = [
 export const getVariableFieldOptions = (allData: VariableData[] = []) => {
   const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
   
+  const graphFromData = [...new Set(variablesData.map((item: VariableData) => item.graph))].filter(Boolean);
+  const graphOptions = [...new Set([...graphFromData, 'Yes', 'No'])].sort() as string[];
+
   return {
     part: [...new Set(variablesData.map((item: VariableData) => item.part))].filter(Boolean).sort() as string[],
     section: [...new Set(variablesData.map((item: VariableData) => item.section))].filter(Boolean).sort() as string[],
@@ -76,7 +79,7 @@ export const getVariableFieldOptions = (allData: VariableData[] = []) => {
     gType: [...new Set(variablesData.map((item: VariableData) => item.gType))].filter(Boolean).sort() as string[],
     validation: [...new Set(variablesData.map((item: VariableData) => item.validation))].filter(Boolean).sort() as string[],
     default: [...new Set(variablesData.map((item: VariableData) => item.default))].filter(Boolean).sort() as string[],
-    graph: [...new Set(variablesData.map((item: VariableData) => item.graph))].filter(Boolean).sort() as string[]
+    graph: graphOptions
   };
 };
 
@@ -92,7 +95,7 @@ export const variableFieldOptions = {
   gType: ['Loose', 'Tight', 'T', 'Multi'],
   validation: ['Length', 'Range', 'Pattern', 'Required', 'Unique'],
   default: ['None', 'System', 'User', 'Calculated'],
-  graph: ['Y', 'N', 'Conditional']
+  graph: ['Yes', 'No']
 };
 
 // Helper function to concatenate variable driver selections

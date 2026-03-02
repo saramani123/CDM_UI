@@ -1691,6 +1691,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                     };
                     if (newValType === 'List') {
                       newComponents.value = 'List';
+                    } else if (newValType === 'Specific') {
+                      newComponents.value = 'Specific';
                     } else if (newValType === 'Range') {
                       newComponents.greaterThanOperator = '';
                       newComponents.greaterThanValue = '';
@@ -1718,11 +1720,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                   <option value="Relative">Relative</option>
                   <option value="Length">Length</option>
                   <option value="Character">Character</option>
+                  <option value="Specific">Specific</option>
                 </select>
               </div>
 
-              {/* Operator Dropdown - Hidden for Character (always 'is') and Range (uses Greater/Less operators) */}
-              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && getOperatorsForValType(validationComponents.valType).length > 0 && (
+              {/* Operator Dropdown - Hidden for Character (always 'is'), Range (uses Greater/Less operators), and Specific */}
+              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && validationComponents.valType !== 'Specific' && getOperatorsForValType(validationComponents.valType).length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Operator
@@ -1894,13 +1897,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 </>
               )}
 
-              {/* Value Field - for List, Relative (variable dropdown), Length, Character */}
+              {/* Value Field - for List, Specific, Relative (variable dropdown), Length, Character */}
               {validationComponents.valType && validationComponents.valType !== 'Range' && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">
                     Value
                   </label>
-                  {validationComponents.valType === 'List' ? (
+                  {validationComponents.valType === 'List' || validationComponents.valType === 'Specific' ? (
                     <input
                       type="text"
                       value={validationComponents.value}

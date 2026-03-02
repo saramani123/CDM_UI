@@ -1,0 +1,644 @@
+id,driver,sector,domain,country,part,group,section,variable,formatI,formatII,gType,validation,default,graph,status,is_meme,is_group_key,objectRelationships,variations
+00c0c8b8-3ac0-49fa-8da6-f9e0eb5afcf7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name DBA,Compound ID,DBA Name,Freeform,Text,Multi,Length <40,-,Yes,Active,false,false,0,0
+013de528-d0a4-4eff-a9d0-f26f2a8008a2,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,TSY OAS,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+021f2e3e-9f36-497a-8ce5-c150fb192c38,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,[Meme],[Type Address #],Freeform,Text,Multi,,,Y,Active,true,false,0,0
+0232f928-684e-4e79-b32e-3a3eb5d15470,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Fixed Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+036feb0f-cf45-4aee-adeb-6d35396eadab,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 3Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+03ff6e93-0ac8-43b1-8962-ed913df875de,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,[Compound ID],[Meme],[ID Variable],Freeform,Text,Tight,Specific,-,Yes,Active,true,false,0,0
+045d27c7-2d2b-4e5e-9983-ef2350f725b0,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,OAS,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+04ecc65d-d1c6-4f62-a71d-01244fb66014,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Consolidated,Social Media Address,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+054edb28-59d2-4389-ab1f-20e9dabafff6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Trading Guidelines,CDM,Trading Guidelines,Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+055f02f5-8510-4227-98eb-d2eee18ad316,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Cash Spread,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+06193baf-2d84-40c8-9ce6-830309cb2e41,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Drivers License,Compound ID,Drivers License State,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+06463487-2cd3-429c-bcfb-863f4511f88e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Fiscal Year,Period,Fiscal Year Close Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+06d87996-671b-4823-bca1-a37feb750369,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Volatility,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+071fbf59-6571-43cb-b0ed-c6d380dd3a17,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Daily],[Meme],[Daily Variable],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+072cda3d-0894-4dd6-87f4-ff2e0e44afc8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Tax Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+078775cc-a6fb-46c7-a50b-369e9f9ee0f9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,WALA [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+07f44251-0d58-4ccb-a865-6eb2b49102ac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Unstructured,Document,CDM,Document,Freeform,Text,Loose,Size,-,Yes,Active,false,false,0,0
+08164514-e722-42eb-b6b9-8adbdca3efa7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+08fa8065-f4dc-4c1b-bad2-a773da160f59,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+09022378-fb47-42d4-b0bc-e14b43bbde4e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Regulator,CDM,Regulator,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+0908e49c-59cb-4a00-9b8d-21cb3ef8461e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Amount],[Meme],[[Common Amounts]],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+09561b5f-616a-4f0f-96fc-7d76034ee6e8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+0a4d7ddd-c03d-4ab7-a953-18f625ee0d44,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Open Balance,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+0a6a3a4b-be27-410f-ab43-089163ca6144,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,GICS Sector,Tiered,GICS Industry Group,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+0ab01b33-c5f9-4d05-9b90-a58df250d834,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,DR SEDOL,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+0b1e8e83-6803-4504-a636-6b215aeb94fc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,DBRS ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+0bacd378-0c2c-48e8-9040-e624c17105b3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Unstructured,Document,CDM,Form,Freeform,Text,Loose,Size,-,Yes,Active,false,false,0,0
+0c50d4e3-77f1-41f8-b426-739decf0418b,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,US Veteran,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+0c80918a-add0-4ae8-b12f-b8b6105d2b54,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Barclays Sector,Tiered,Barclays Class 2,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+0caa0c1c-b97f-4d5e-8ff9-464fa5ad1e65,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Count [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+0d1c1683-ac8e-49b4-b4fd-ee5b42c67b04,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,Bloomberg ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+0db5c561-ec6a-455c-a580-7279d4911d19,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,MAID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+0e503986-9d70-4aa9-b058-442bee22f488,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,PSA,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+0ee3d6cb-ebd0-466a-b1db-59147ba96974,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address Notes,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+0fea2b4d-57c3-48cd-9624-3b85199c16c2,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Yield To Maturity,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+108d93e3-7d2b-44f2-8fd2-e4f2ed5b8580,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Period],[Meme],[Period Variable],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+10c3b734-61a4-4b76-b225-723b47aeceb9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,CINS,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+10fe909b-7a89-4719-bbe4-66e55f1c7d81,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Related Object],Complex,[Object] Relationship Type,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+11eae826-d035-4b22-aa36-d56dede3e47d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Kind,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+131548e4-0411-4f97-bb5c-9c54cfe560fe,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,GICS Sector,Tiered,GICS Sector,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+131d5df4-13a8-40c9-b5f8-61468e48c7b6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Daily Interest,Daily,Daily Interest Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+14871f5e-4419-46ba-b13f-8a9817cdb1d6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Hire Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+14a51f27-4a5f-447c-a330-7eb9e5af5239,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Authorization Stamp,Freeform,Text,Tight,Character is Specific,-,Yes,Active,false,false,0,0
+152466ff-1830-4437-bdc0-391f17d9365b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Type,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+160847a6-beec-4a2e-9706-d704dc6da751,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,1
+160904fc-ccfe-4107-92e5-d401bfbf98ba,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Balance Remaining,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+164add2f-e27b-4121-b610-47ab42ef63a0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Rate],[Meme],[[Common Rates]],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+165d157c-81c4-4da5-b475-8d8fa083882a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address City,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+167263b3-c183-4653-a861-fa9bf604b941,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Converted],[Meme],[Conversion Date],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+1686bfcf-b3f6-44b8-bf9e-52088ad9787a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+168eead9-f51c-4c64-a02b-a3a7ea192796,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,IRR,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+16900867-3869-46e9-b93c-6e8994e4f9c8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payment Series,TimeSeries,Payment DateTime,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+16b434fa-feb4-4295-b50f-2e9ee5595704,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Authorization Time,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+16e09707-752e-4b71-b8a2-e55f2124ecf1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,WAL [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+16ffcadd-bac9-4ece-aaac-f483ec664f17,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Business Unit,CDM,Responsible Business Unit,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+172056fb-d046-4b28-ac44-98c326d4ff70,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 30Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+173633a1-1180-4add-a82b-ca5395372051,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Location Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+17cc7af0-a037-490a-84fb-5f7911e36587,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Email,Classified,Professional  Email,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+17f4a052-e0f2-4454-b740-b4a9f860222c,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,US Citizen,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1841b4a2-bb9d-4c90-bcbb-bfac1c93514f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Expiration Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+19679350-07a4-455e-9414-cc12a6ca58b5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,CHIPS UID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+19caef05-48bc-4c97-b50e-2b41ab2f92a2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Tiering By,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1a79c99a-6fb7-4faa-99e4-bbf31612773c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 15Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+1a7a35a7-7a2f-4804-9b1a-15de3e67034e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Vulqan ID,Vulqan,Z ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+1b239ed4-93e2-4afb-bb7d-989e0cd647b3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Consecutive Months,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1b2855cb-4e5b-477c-b3d6-53502a67d057,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Fiscal Year,Period,Fiscal Year,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+1b4399cc-d98c-48e6-82f2-63783b0af9f2,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Modified Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+1b7d90e2-e8cf-4478-b23a-de34ba8fea1f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address Notes,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+1be69b4f-e35c-4d56-97cb-3963888e5ca0,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Macaulay Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+1c376606-06c2-43d6-88eb-a98a0e8b1319,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Loss Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+1d4ab293-2c8d-4cb3-84cd-fb782edcde49,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,NINO,ID,Public,Loose,Length <25,-,Yes,Active,false,false,0,0
+1db20d43-1d31-41d8-a570-76fd2f32c56c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,Education,Event,[Event] Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+1de7f5af-b034-4a00-ab71-e7cd8f42c80e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Target,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+1ded96a2-5eac-4758-88d0-c152c94b2bdc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Style,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1e42d134-4bf6-4bb2-b675-282ab409bdd1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Qualification,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1edf039b-7046-4afa-856a-c819384c7950,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+1f275cc6-6ec3-4aff-9676-c6d03ec45698,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Format,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+1fd0c11e-39cf-4269-8dc6-3a8e042291b7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Input Expiration Year,Freeform,Text,T,List,-,Yes,Active,false,false,0,0
+20958c25-17ba-49a8-a628-e7d53af749ce,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Original Hire Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+209b67ca-622c-4a3d-9721-929f29f078f9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Authorization Code,Freeform,Text,Tight,Character is Specific,-,Yes,Active,false,false,0,0
+2175c055-9069-42e8-adab-419a849706ca,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Object Role],[Object],[Object Role] [#],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+21c2055e-fe77-447d-93bc-808c6b1709b4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic,Preferred Pronoun,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+21c7274c-c60a-4f6d-83b1-19e1718363f7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Email,Consolidated,Email Type,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+2241c7c8-a053-43fd-b078-7950742c770a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,1
+22c160fc-c619-45ce-a58b-391c539f4d1e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Interest Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+232a0615-f7fc-406d-8685-aaf5ce0e0b27,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Rate Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+23999654-7a98-475e-8362-9124b28d0e69,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address Country,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+24613367-4bb7-4c26-9d72-cbeb585ed7d6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Geography Tiered],CDM,[Geography Variable] III,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+253772c9-003a-4294-b1dd-0e3677d5f270,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Sum,Aggregation {Nested},Sum (Date),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+25693116-6ec0-4685-b6cf-cb91aec87862,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Brady,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+256ff1d2-9a84-45fb-89eb-340fda3a85bf,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Duration Spread,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+257d4138-40f6-459d-a2da-8e40a97a1ec8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Period,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+260284d7-299e-49df-b279-1babe2f569df,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[Event],[Meme],[Event Variable],Freeform,Text,Tight,,-,Yes,Active,true,false,0,0
+26114531-750b-412e-abde-db8ef7714333,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Billed Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+276002b3-f64b-4fbb-bd2d-a6a2bb1250da,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Legal Entity,Complex,Parent Entity Control Percentage,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+27b6d25c-6c10-42a0-97c8-e1ef2c6046c0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Some Variable,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+27e4822d-39a5-45bb-a3e1-f8bc74846ec5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Fiscal Year,Period,Fiscal Year Start Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+2817814c-f216-413c-a09c-24cfcd356b4c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Conversion Ratio,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+28e77d2d-c765-4ada-b36a-055b37cf5d6c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Migration,Vulqan,Activation Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+28ea9962-fa05-43dd-9052-22a139c7612a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,Clearstream ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+2936c012-a5ed-4db2-945a-37fe58b6e986,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Geography Tiered],CDM,[Geography Variable] I,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+29cbb26d-64fd-45ae-b1e6-2708ebe1becc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name,Atomic ID,Full Name,Freeform,Text,Tight,Length <40,-,Yes,Active,false,false,0,2
+29dbd1e2-e5e1-41de-ab58-104aea794357,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name,Atomic ID,Common Name,Freeform,Text,Tight,Length <40,-,Yes,Active,false,false,0,5
+2a87f505-8864-4ce2-a0d3-f2201474a2e0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Days Remaining,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+2ae94583-4d53-4380-bc1e-c62a30d56146,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Sum,Aggregation {Flat},Sum (Orders) (YTD) (03312025),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+2af7f6c7-5740-4ec7-8c97-7bb9669697a3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Statutory ID,[Meme],Statutory ID,Freeform,Text,L,,-,Yes,Active,false,false,0,0
+2b27c808-fad5-4f52-ab42-19ce3b9346df,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Computation Date,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+2b59463f-b512-4b50-9ec0-68eda9ebc43e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Allowance,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+2c02c0d9-9756-4368-9dff-38ced8e9dcb6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Tax State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+2c448904-7db0-4414-bbab-df7b6aa4576d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[TimeSeries],[Meme],[TimeSeries Variable],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+2cbae0ba-4c83-4cc1-a3d4-19257c3ef594,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+2d3328b0-bc26-4f1e-a7cc-07bd237af979,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Merrill Lynch Asset Class,Tiered,Merrill Lynch Asset Class Level 4,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+2d83cab3-539c-4c9b-98f8-6ca0ae5159ff,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address Notes,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+2dbb4e15-5269-48e2-b9dd-f62720299069,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Passport,Compound ID,Passport Country,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+2e39bc3d-e04f-48f7-adfe-324153ab5549,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name DBA,Compound ID,DBA Country,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+2e7963e7-c771-4f90-bffd-35b6e90d7415,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Purpose,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+2e7d26a3-e622-483d-b3b4-236d2d1f5943,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Proprietary ID,Atomic ID,Account Number,Freeform,Text,Tight,Tailored,-,Yes,Active,false,false,0,0
+2f518a50-c14f-4307-aa95-ec8024143d40,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Cash Flow Classification,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+2fb6e3da-9793-4af1-8420-203394203023,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,Formation,Event,Formation Date,Freeform,Text,Tight,"Range > 1/1/1900, Range < 12/31/2050",-,Yes,Active,false,false,0,0
+3156fdfc-cc49-4168-b985-7af67fc23c09,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+31a5796f-5a8e-4608-97cf-2f3f2f62fa2a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,PSET BIC,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+31f8723d-69ad-472c-955b-84dfd2b062ce,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Branch,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+327d759d-2199-4bf9-9a0f-9d62d521d5c9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Daily Interest,Daily,Daily Interest Amount,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+328db950-e8f2-4447-b575-fd9e95346abd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Purchase Cost,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3352c901-faae-4beb-8801-0b1686edea8f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Customer,Mediated,Buyer,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+340d4143-a930-4e60-a81e-9357f60e2a50,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Ranking,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+34b4d356-9021-41f5-b44f-486e834552d2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Credit Card Charge,CDM,Credit Card Charge,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+34d960e9-420b-4816-b2a2-4f7816ac63f8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Compounding Frequency,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+34e61185-e82e-4989-8c0d-4abf6128d56b,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Periodic Floor,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+353a7d15-3dfa-47d3-8891-c023a1b929f8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Military Status,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+358c6fc5-a003-4136-b299-aab5fcb392cf,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,DV01,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3594f149-f4c0-427f-a535-535a61352280,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Tenancy,Vulqan,Solution ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+37528204-42ed-4ce8-bedc-073ad588734e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period Amount,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+378f2a44-1947-4503-a1cb-19c077587f52,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Covenant,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+39369293-fe56-444b-b836-1295b441ce3f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,[Compound ID],[Meme],[ID #],Freeform,Text,Multi,,,Y,Active,true,false,0,0
+396bd5ab-ace7-468a-837f-a1c29a3a02dd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address Notes,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+3a064c0e-0eb6-49f5-915f-53df441a6057,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Marital Status,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+3a3c5cc1-de0f-4593-b064-3061f8c8eabe,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Sub Total,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3a3c683e-8fa4-431d-9550-436724f91b55,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Classified,Alternate Phone,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+3a7f7f20-4249-4687-aa8c-77cfb95088ff,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Supplier,CDM,Payee,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+3aa289cd-ad25-44dc-9136-2ad9d2d9e18c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Name On Card,Freeform,Text,Multi,Length <40,-,Yes,Active,false,false,0,0
+3b249a46-2ce7-4c25-85f7-22feb1a12e6f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Email,Consolidated,Email Address,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+3b97f58c-1286-4217-925e-04ea0ca64f9e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+3be3e788-4048-4aa9-a46b-960fec4a3ec7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[Event],CDM,[Event] Start Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+3c6c36ee-f44a-4dc7-961b-350fa0232bf2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Grouping,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+3c7bef05-1260-49e6-b3d6-319e3f480ae3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Legal Entity,Complex,Parent Entity Relationship Type,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+3d08ea69-a9bc-465c-ab35-5b3ad96b283d,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Collateral Kind,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+3ddbb2fd-46f0-4d38-a4ae-b66f0eb81f3c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,GICS Sector,Tiered,GICS Industry,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+3de9f795-cd48-4433-aee2-1740e8ae0da5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Temporality,Vulqan,As Of Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3df5b39a-e602-40b4-b2f3-3495b4145ea8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Delivery Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3e3b3a91-9071-4b14-84bb-f2f28773984e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Quantity,Atomic,Units,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3e64da04-3b16-4345-9589-5318dae1897b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Object Role],[Object],[Object Role #] [Variable],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+3eb9bef3-6556-4acb-a735-0423cea221ef,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Daily Interest,Daily,Daily Interest Date,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+3ebc4e0e-0391-488b-98df-5cbb9f054f33,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Yield,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+3f4fade8-d7c8-4219-9064-26236d5e532f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address Full,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+3f61d3af-6145-40b5-8c67-2d303c874f56,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+3f983cb6-9e22-447b-835c-310955a10eb7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,Tax ID,Freeform,Text,Loose,Length <25,-,Yes,Active,false,false,0,0
+3fe871ae-3dfc-4441-b088-5d1a164d5fa2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,[Meme],Address Full,Freeform,Text,,,,Y,Active,true,false,0,0
+4030fe81-78d0-4ada-9605-70008fad57c1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Salesperson),(Employee),(Customer Salesperson),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4129411f-9ece-4a26-845d-dc85ebd24cb1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Department,Complex,Assgined Department DB ID,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+41346159-d991-4ac9-868a-10170e87a5d1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Time Zone,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+414c5c04-2ca8-4725-88ed-28e9da89bf39,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Converted,Conversion,Base Currency,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+41c19e3f-d0f8-40d6-9822-84e2202d01af,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name Individual,Compound ID,Last Name,Freeform,Text,Tight,Length <20,-,Yes,Active,false,false,0,0
+41e5bb2f-504e-43c0-91e3-341d77de7bcc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,SWIFT,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+421e972d-94e7-4692-bd10-fc7f76d11ef5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payroll Schedule,Period,Payroll Period Start Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+430f86e5-879e-4404-b586-f4bd65df2cbf,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Merrill Lynch Asset Class,Tiered,Merrill Lynch Asset Class Level 3,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+4328a8aa-4018-407a-b6f4-8ace0fe519e9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Gender,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+435d2d3f-aab0-4cd0-9de3-2c7567977442,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Drivers License,Compound ID,Drivers License #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+4376899c-c871-4c31-ba17-f49f46b31e82,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Minimum,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+43c68c31-936b-4338-bf5b-f76d0dfe46d9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment End Date,Freeform,Text,Tight,"Range > 1/1/1925, Range < 12/31/2050",-,Yes,Active,false,false,0,0
+43d9c43b-74e6-4449-ba13-61791f66f3bd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,BIC,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+440657be-aee4-4b61-834b-bd0ebd0a89d3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,CUSIP,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+4417dccf-fda7-47dc-9eb9-51f8d03bdc2c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+44280043-9406-41fc-9618-61cb0a7ed72f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Number,Freeform,Text,Multi,Tailored,-,Yes,Active,false,false,0,0
+44343f07-d85d-4f77-becb-293e92ebb43d,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,CPR,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4489d7b9-6c47-42a8-9407-a04b1f15c938,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Tiering Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+45388ff6-7128-474f-8f69-b84e7520788b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Spread,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+456a7024-6f3d-4896-9aa2-5caa15e7e06b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Maturity Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+45ee554f-7881-496e-a17b-02d332e45c1b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name,Atomic ID,Legal Name,Freeform,Text,Tight,Length <40,-,Yes,Active,false,false,0,1
+47054d22-34cd-4d7e-853b-05b0fa59d203,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Contact),(Customer Affiliate),(Customer Contact),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+47ce96e1-15b4-486f-91ba-6e0994451814,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Characteristic,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+47ea7c5f-0cf5-45e3-9c83-9154ba626a5f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,[Aggregation Date],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+48744821-28a3-496d-91d6-7955e3bb771d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Barclays Sector,Tiered,Barclays Class 1,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+4882e6e1-7468-4cdf-8d0d-c9d8c3f38c6e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Transaction Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4883a70a-b53d-4cf5-82a9-15a81f47b020,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Period,Event,Credit Card Input Number,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+489c9c8d-8d67-477a-a8b3-3a7e5e89c95a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period Rate,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+48a97c26-9e14-444b-9bc8-cccb192000b8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return Current,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+49d2a218-dc03-47e4-a38e-a2103be3b2d4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Current Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+49d89a80-b261-43ad-9579-978879ee0625,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Bank,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+4a2d99c7-dec2-4bd6-9b35-d3a49176702d,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Asset Class,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4a4db497-fcc1-444d-ac7a-e9ecabb3b7a3,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Convertible,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4aeed487-756e-4b9f-bd87-1c2f890dc4ac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Input Address,Freeform,Text,T,,-,Yes,Active,false,false,0,0
+4b0e5b87-85e9-44d3-a10d-51c18dc1cf44,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Computation Method,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4b2f8881-7488-4780-ac5e-7355ae45b4f3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Billable  Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4b7dbd81-d6af-4c3d-8451-838b05e52b51,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Atomic Tag],[Meme],[Tag Variable],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+4bbd6c52-ff98-4226-aaba-a43a08331e0d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Grade,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4c0e78ca-af74-46d0-a554-2c6b6541be72,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Role,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4c4121fa-5ece-45d3-bb24-a6db01b8b5ac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,Factset ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+4d2f412e-7209-4005-9b1d-8a23c590e959,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+4d64690d-3a31-4c0d-8b8f-3971a9f041dd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Net Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4d698777-072f-495c-a431-ea384ae798bb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Drivers License,Compound ID,Drivers License Expiration Date,Freeform,Text,Multi,"Range, Relative",-,Yes,Active,false,false,0,0
+4dd983fa-8115-4464-92cd-16d123e0a6fc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Phasing,Vulqan,Status,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4e18fde1-5107-404b-973c-69c4f182badf,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Classification,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+4e25ea2a-d0cd-4883-aae7-88480368c5cd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Converted,Conversion,Converted Amount,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+4e2d3814-6c7a-46fe-bd5e-63880d03669c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Issuance Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4e4169cf-c083-4961-85e7-f625df75a73a,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,PIK Spread,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4e7e40c0-52f4-4af4-86fa-bfcb1e821051,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,OAD,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4ea39583-29b1-4c38-afef-81b8061cedf2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Cost,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+4f73fff2-6eb9-4b5c-890a-0f2abe1a3e15,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Sum,Aggregation {Flat},Sum (Payments) (2025) (03312025),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+51209722-6631-4f31-ab05-d2460ee06c65,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Outlook,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+512c49be-030b-4652-b54b-21b51bfcba0b,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,Disabled,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+518ddb88-66e7-4d10-80ca-d288a6e35b04,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education #,Freeform,Text,T,List,-,Yes,Active,false,false,0,0
+51e39b2b-8342-44fa-b296-87592dfa55dc,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,144A,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+5212f463-ad55-4eca-a12a-f5b98d8a94e0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Beneficiary),(Customer Affiliate),(Customer Beneficiary #1),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+523d01a8-cd00-48c6-8913-6490a7405dc3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Converted],[Meme],Converted Value [Variable],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+52404c37-a4e9-4c8e-9ada-1a10be293ee4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[Event],Event,[Event] End Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+52e87144-db6d-4ddb-aad7-1f5f4078bee1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Flag],[Meme],[Flag Variable],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+53e1ae84-9302-4e34-a86e-3d2cbb6d1a89,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Employee,Basic,Manager,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+54932ddd-5b98-49c9-8db9-8a78730dc37b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Classified,Mobile Phone,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+54c789d0-dbb0-477d-bf25-768246333791,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Related],[Meme],[Related Record],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+552cb4d4-0df6-4103-a0fc-8dd21b2231bd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,[[Common Tag]],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+55625d5e-77b9-49a0-815f-21da781a26f6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Minimum [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+55f04d9a-a64d-4a8e-b20a-00522281e9b6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Gross Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+564ed40f-03cf-42fc-8971-f8f249d37fd7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Geography Tiered],CDM,[Geography Variable] II,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+5654470c-5761-45fa-b01f-85dee7bc6ac9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Period],[Meme],[Period Start Date],Freeform,Text,Tight,"Range, Relative",-,Yes,Active,true,false,0,0
+56643e17-ec9a-4ef2-9c6d-295a9583ffc4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address Type,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+5699e975-2600-40db-b71a-e79935f109e5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Fire Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+56cdc7b3-2570-419b-a3ad-d0e3047a9ebc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Tenancy,Vulqan,Sub Tenant ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+572d3be8-d1eb-460f-b679-c9ab82cc70e7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Supplier Contact,CDM,Supplier Contact,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+574b4319-87da-4831-ab25-c20dd6de88b3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Sales Tax Percentage,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+5865a195-5e50-4d34-8d85-7ceee84452ad,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Domicile State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+5887469c-fe17-4378-9e65-882fc5595a0f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Product,CDM,Product,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+589ee9d4-913c-4213-8b7e-2f2f39cf0bc1,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Dividend,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+58f31526-0fff-4922-88fc-542202f02a8d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Drivers License,Compound ID,Drivers License Issuance Date,Freeform,Text,Multi,"Range, Relative",-,Yes,Active,false,false,0,0
+59331eb5-ca4b-4c7a-aafd-c3c7cfb5e9a4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[[Industry Classifications]],CDM,[[Industry]],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+59f886ae-1b6a-4544-a189-59651a8ffda1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Nominal Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+5a1a1b84-b64d-40cc-ae1e-91f2e0a1b551,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,IBAN,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+5a6bb3ac-f9e7-4993-84e0-d0c5405e1e25,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Account),(Customer Account),(Customer Account),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+5afc2344-2784-47db-86e9-3615a2ebb681,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Sum,Aggregation {Nested},Sum (Orders) (YTD),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+5b5bca55-b37c-4eb0-8c9b-f56519b644eb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Balance,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+5bfc2a67-7d36-4c8d-88b0-e4121fbd4623,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address State,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,2
+5d5cb036-4d3a-4507-a024-aec03729475a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result AVS Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+5d73e1db-aba2-4839-ad05-b3779505a04e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Delivery Method,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+5d98abe9-b798-4d89-8f46-2355ddc0f46c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Related Object],Complex,[Object Role],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+5d98e763-55df-47fa-a6ec-c4e985055115,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Website,Consolidated,Website,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+5da9eda1-7bbe-475e-91be-d0909e53c3da,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Order),(Order),(Customer Order #1),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+5de198df-9a50-4a59-a25a-a00e2aca4c6d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Email,Consolidated,Email #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+5e086d34-6192-4bc2-b90d-2aaeb4d28dca,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Beneficiary),(Customer Affiliate),(Customer Beneficiary #1 Allocation %),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+5e5e2fc0-8e2c-4ab0-b4d9-e029e32e4932,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Function],[Meme],[Function] [Clarifier],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+5e897f66-aa9f-40cc-aff6-65933407db6f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Fiscal Year,Period,Fiscal Year First Month,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+5ecaca1a-8a64-435b-b037-7b197e315764,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Quantity,Atomic,Quantity,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+6067f503-ab9a-47cd-9303-4ada5131dc35,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Location State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+610809db-d58d-4b12-93be-c19091be6065,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Rounding,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6147e89a-cd27-4807-8636-af4f6047f1a2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Median [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+618560cc-36b4-4d50-8bb4-9dcf4b5aac4e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+61eb67fa-8e9e-4f37-b23f-f6d753a9e052,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Beneficiary),(Customer Affiliate),(Customer Beneficiary #2),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6247a998-74fb-43a6-80fe-89aa1f6fa90f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Passport,Compound ID,Passport Expiration Date,Freeform,Text,Multi,"Range, Relative",-,Yes,Active,false,false,0,0
+6259822d-15e7-4740-b9b1-28b2efc4b65d,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Lifetime Floor,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+62cec648-9793-4c7b-9f48-93d1bc7373da,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return MTD,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+6305e4cc-52cf-4b5e-b425-740afc1a9558,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Issuer,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+631e7b23-a99a-4de1-9bb3-961dbc3bcb13,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Beneficiary),(Customer Affiliate),(Customer Beneficiary #2 Allocation %),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+632c632b-4d69-42b9-ad96-e98e109034db,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Next Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+63331be9-fc0f-4e5a-a621-6ed741386ba7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Tax Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+636541a5-fee3-42ed-ade5-8486860758e2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[As-Of],[Meme],[As-Of Date],Freeform,Text,Tight,,-,Yes,Active,true,false,0,0
+64cf1440-f455-41a8-ae85-8c512d15c7be,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 6Mo,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+659a42ea-c4d0-4dd7-9393-35d3117b88cb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+65c498f2-11ce-4de4-bfa4-93c0ae9008b2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+661f4234-58b4-40dc-a188-dbd82d2ad6c7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+66b78f31-b997-46d9-a918-954d8aa9acc5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Drivers License,Compound ID,Drivers License Country,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+676ba337-446a-4978-a3c1-75bae88c7271,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,Ticker,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+676bd897-a535-405c-854f-e36870f0195e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Period End Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+67c19ed3-b832-4903-a19f-54e150287bc4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Grace Period,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+68802924-9055-4648-b8ca-c46d54d6460e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Period],[Meme],[Period End Date],Freeform,Text,Tight,"Range, Relative",-,Yes,Active,true,false,0,0
+68cdd24d-42eb-4c59-93f8-894c22af20f1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Price Percentage,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+69746771-5aec-4b5a-a14e-484a5f1fad23,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Depository Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+69e7f341-7eab-4392-94c5-5d1580af4009,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,[Compound ID],[Meme],[Identifier Value],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+6a3d2846-d2e4-474d-890c-e1087d87b894,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Personnel,Atomic Tag,Duty,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6a9306ab-373c-4de9-a66d-2ae26e42e430,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Order),(Order),(Customer Order #2),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6aaf2964-2ab4-4b9e-9a61-94a7d3343e33,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Risk,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6aeeb796-3430-4f69-985b-feb53c6c4923,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,PPN ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+6b080564-fe3b-49ee-b4de-021601f72007,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Classified,Work Phone,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+6b1b7393-930d-4a67-a891-dbb1d351027b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,Euroclear ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+6c6bfe8a-1330-4bc7-92d2-73e806dca293,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Credit Watch,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6ddf3eca-ef40-4cb7-8617-202a93973b1e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Location City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+6df6dcce-c8d0-4f1b-a824-850e98893abd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address Notes,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+6f55e8e9-fd8e-4292-a6a2-55d930ec8f01,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,Is Key,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6f82d93f-cba4-42ac-b059-7f72aa18c69c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Passport,Compound ID,Passport Issuance Date,Freeform,Text,Multi,"Range, Relative",-,Yes,Active,false,false,0,0
+6f86b4c8-451b-43db-82a1-bf0d0a8ef9c0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,DTC ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+6fb4dc03-1c9e-42d4-9723-0723996263f6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Discount),(Customer Pricing),(Customer Discount),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+6ffb1652-d1c6-4ef7-97dc-fb66f29815e4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Input Expiration Month,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+700860ff-214c-49b4-a9f0-d12cedbadf55,"ALL, ALL, ALL, None",ALL,ALL,ALL,Unstructured,Text,CDM,Description,Freeform,Text,Loose,Length,-,Yes,Active,false,false,0,0
+708e2304-7472-4bc0-a1f8-88e452b5f4bc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return LTD,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+72982f03-9462-411f-8ea2-4ef13c44d105,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Sales Expense,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+7332de62-aafc-4152-8601-7a01e43957bc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Geography],Atomic Tag,[Geography Variable],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+73544bb4-6400-4a6c-9b13-a8c20d9af214,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 10Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+739ca67e-9eb6-4f1f-acae-75ba87d21e94,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Yield To Call,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+73a1dd1b-1403-4ac1-8620-327861d17890,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Security Code Match,Freeform,Text,T,Specific,-,Yes,Active,false,false,0,0
+74d04911-79cf-4d43-8ddc-9afc0eafda57,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Phasing,Vulqan,State,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+74fa4820-ab36-490d-b974-cbb971424676,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Maximum,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+76b25461-5b7c-42c0-9a86-0f41b3581ec4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Invoice),(Invoice),(Customer Invoice #1),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+76ef2f77-165f-4a72-8d16-62d5dfe0c7dc,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Adjusted Effective Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+77056529-1dc8-4a3c-9392-8dc06e569d9b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name DBA,Compound ID,DBA #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+77b8dfbc-cfd3-467d-a835-4d4a1e8f2073,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Invoice),(Invoice),(Customer Invoice #3),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+77d827f3-9a07-4bce-8650-05e212c5ce5d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education Degree,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+7817ee92-12ee-450e-865c-4981fe78a576,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Period Start Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+784a617e-9b9e-4d98-a313-1306f58965a6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[As-Of],[Meme],[As-Of Variable],Freeform,Text,Tight,,-,Yes,Active,true,false,0,0
+7956815f-1024-494d-bade-9cb93d0a99e2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Migration,Vulqan,Deactivation Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+795bbc77-09bd-41d7-b6a4-72083784c2e2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,[Atomic Tag],Skill,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+799a5935-d81f-44c9-b0ea-9024b41d5a9b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Accrual Days,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+79c1cd8f-644f-48c5-a21f-3c8d3f3d2262,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 1Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+7a50095f-5614-4eb6-bbb4-857b7467b3ac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Department,Complex,Assgined Department Relationship #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+7a87ecdf-7577-4e8c-bff9-a1180ed0a33f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Price,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+7b00f8ed-0356-4982-8c81-f493ae36cf4f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tiered Tag],[Meme],[Tag Level III],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+7b5d28b0-3afc-4dda-9430-f36592567905,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,MBS Pool ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+7c066bac-8506-45bb-af79-e90f87f46611,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Interview,CDM,Interview,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+7c24f364-bb7f-45d1-b268-7e462bc8b7d0,"ALL, Operations, ALL, None",ALL,Operations,ALL,Tag,Flag,Flag,FOB,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+7c44a092-850a-406e-8109-ab46d89b4bac,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,Exempt,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+7c6c1718-874e-4b25-8028-7a99da140952,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,GICS Sector,Tiered,GICS Sub Industry,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+7c941d4c-33f3-4e0c-a98a-f1d5b643101d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Attribute,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+7ccb4bb6-cc36-4bb2-b203-9494b624a318,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,Instagram Handle,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+7cf52732-1737-4c95-aff7-6ac2b6c7c864,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Merrill Lynch Asset Class,Tiered,Merrill Lynch Asset Class Level 1,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+7d10db85-0616-4be8-8d83-bdc76de0157a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Phasing,Vulqan,Mode,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+7d98e850-8819-4e74-be07-a0fc9122f023,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Proprietary ID,Atomic ID,Serial Number,Freeform,Text,Tight,Tailored,-,Yes,Active,false,false,0,0
+7f76e894-75b9-482f-b32b-342f19199e2d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,[Aggregation] [Variable] [Clarifier],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+7fccf37a-1302-4008-b9e6-42777e48dcc3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result AVS Street,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+80326077-22cf-453d-8577-5e8629014cec,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Mac Worst Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+822c2d08-8d5a-4ad5-ba0e-49b175ac4f67,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,LEI,ID,Public,Loose,Length <25,-,Yes,Active,false,false,0,0
+82b3f85c-5aed-402a-9446-a1a32f8a5728,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,OCC Symbol,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+8300823e-c426-48aa-9b20-bc88480c0366,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Work Authorization Expiry Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+83fedb8e-5e28-4db0-bbb7-6ad46ca80a12,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+845eb695-403b-434a-8fd4-2b7169eb1957,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name DBA,Compound ID,DBA State,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+849dcfe5-cdf1-41cd-be27-7e7c2f900014,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Ship Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+850cd161-2b85-4e8f-8ecc-828af443be29,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+85638aa1-9dab-4180-ba5b-0c091ac1ee59,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,[Atomic ID],[Meme],[Identifier],Freeform,Text,Loose,,-,Yes,Active,true,false,0,0
+85f04b12-f507-42ea-ae3c-e31ae295a75b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+865ca6ec-5588-4d75-8b4d-01e9cf09806f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Dated],[Meme],[As-of Date],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+86f9658a-b4dc-4622-9cb0-3876e7ac52f3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Expiration,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+87283aa7-a8e3-45e0-9330-513a6f2aac38,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Address,Freeform,Text,Multi,Length <40,-,Yes,Active,false,false,0,0
+87a3c52a-28e8-4c1f-95e2-88fd1ccd5aa7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment Employer,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+882d75d0-b4dd-4cc1-ad1e-4e3536d8a3d8,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Effective Convexity,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+883ab4d0-24e1-4873-8b86-7fa62c1046fd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Evaluation,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+8872d091-2c7b-4dc8-8eec-47cc91044257,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[Event],[Meme],[Event Date],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+8910c1dc-7e80-4319-aeb4-9f4dc63382a0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Start Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+8937f01d-acf0-4443-b695-47821da03477,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+89a5b22f-30f8-4264-8020-ac9112657b30,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+8a351d85-af00-4ed8-b0f6-3c38c9e7fc9a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Bloomberg Industry,Tiered,Bloomberg Industry Group,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+8a57f350-e1ac-4143-b5c5-ce15255c1e9a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,ISIN,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+8b73d748-3b2d-4136-a313-941c49463089,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Consolidated,Phone Type,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+8ba85ab8-cb9e-4b48-8843-8d4f17cce43d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Workflow,Vulqan,Approval #,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+8d023a21-1bb4-4b29-8fcd-998c6368ab60,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Milestone],[Meme],[Milestone Date],Freeform,Text,Loose,Range,-,Yes,Active,true,false,0,0
+8e631112-7b88-4387-bc4a-6f95d740e439,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,GL Account,CDM,GL Account,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+8ed7baea-3e01-4ec0-8122-94a1c0141720,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Decimal Places,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+8f4d0b6c-c573-4317-a9a1-8ffc86df284e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Credit Remaining,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+90e8ddda-bb18-49d8-b71b-4beb66362895,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Consolidated,Phone #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+919580d8-6080-48ea-81d1-b4b65f54a20f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Invoice),(Invoice),(Customer Invoice #2),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+921cdf8d-1746-4435-b3ff-55bbf5e2e926,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 7Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+928d382d-0ee0-4583-8ff4-cdfad186b147,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,SEDOL,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+92ab9487-f15b-48df-a9c0-6251b6654050,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Workflow,Vulqan,Rule #,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+92fbc769-0a8a-4070-b9eb-f18d4c6db2c9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Payment),(Payment),(Customer Payment #1),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+930eaebc-4e7a-40e1-b933-0eac017f66ca,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Group,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+9355250d-1b57-476b-87f8-9ffb5646b4e3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Days Taken,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+93e15073-c93f-4c14-bfb2-7d154b750ae0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tag Derivations],Atomic Tag,[Default Derivations],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+93e1bc92-eae5-4847-a3e9-79f5c9a3c2ef,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Rate],[Meme],[Rate Variable],Freeform,Text,Loose,Range,-,Yes,Active,true,false,0,0
+93e8e937-2887-4404-9782-02d98955cf7e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Full Market Value,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+942c1448-43ff-4f04-864d-2db2013745e3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Payment),(Payment),(Customer Payment #2),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+94445819-c540-4a0c-9cf9-aa63ce0e5743,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Payment),(Payment),(Customer Payment #3),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+9459aae9-87f8-4ed5-9948-fb606fca0e9e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Employee,Complex,Team Member #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+94aae508-c51d-4d8a-8b29-871c5b996cda,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Proprietary ID,Atomic ID,Reference Number,Freeform,Text,Tight,Tailored,-,Yes,Active,false,false,0,0
+958ce05a-cbb3-40df-ab5b-7ed7c6857296,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Domicile City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+95e36c2e-493c-4faf-a6ec-bebecbc92979,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Total Spread,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+95ea4c2e-52ba-4584-978a-83cfb943089b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Amount Due,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+95fed96d-5513-4b46-ad75-48be88990dcd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Birth,Event,Birth Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+963e14e2-807a-4eaf-8c5b-88d1cdecb8ab,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[[Event]],Event,[[Common Events],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+96794987-c415-41b1-88d6-a72101a694ef,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+96c89d02-83cb-4926-8c58-8ca9375131ee,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Item,CDM,Item,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+971e3d38-077e-43d9-a275-49b41026d113,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Objective,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+9771126e-252a-4ddd-a710-95fa321d7ff1,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,MTB Ratio,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+9894e06c-dfde-4002-a999-61ca5393784c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Vulqan ID,Vulqan,Caption,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+989cd720-498a-4ab5-931e-2e10c44844bd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name Individual,Compound ID,Name Suffix,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+98a395c8-1b6a-4df6-a302-b2d36bf285a7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return EOY,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+99e6d42b-b1cb-4823-9d23-c49be62bf6e0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Credit Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+9a0b1cc8-682c-4885-8295-c48cecaf161e,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,OAD Multiplier,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+9a12df77-293f-4e50-8090-a159ea4320b6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period Days,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+9a2a5967-3f2e-4140-bf50-f84e7fd530aa,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,LIN ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+9acc60b2-1b8b-41ce-b856-fa7963c49337,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Days Accrued,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+9bcf32d5-8e3e-498e-a9e9-3742a6b6afa9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Required Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+9bdb3541-c279-4d59-83ae-4d0ac89e171a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Payment ID,Atomic ID,Connected BIC,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,4,0
+9cbbc3a0-b014-4e18-8c92-14ac7739a0c6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,TIN,Freeform,Text,Loose,Length <25,-,Yes,Active,false,false,0,0
+9d43cf74-65bc-4530-921b-71a308924cb0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,1
+9dc7b56f-136e-4d90-88cb-22e61fbdc5ff,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Flag,Flag,Important,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+9e6f5479-f367-4ccf-91c0-9db0b1976edb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Barclays Sector,Tiered,Barclays Sector,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+9eddeb3d-fb6d-4928-bc07-05220b6c8203,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Security,CDM,Security,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+9fd35215-8646-4c08-a7ab-8c21d98eb54d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Sub-Total Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a0117634-c5c6-43c6-95ce-335ed8293456,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Versioning,Vulqan,Release ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+a02c59df-e320-4cd5-8c73-4422512425b6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+a113d952-b140-4f0c-9846-dea60d1588a7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Payment),(Payment),(Customer Payment #4),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+a1155499-60d1-4d47-ab8f-9a83c4b475fa,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Email,Classified,Personal Email,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+a125ec8e-e480-4e2e-823c-f37e48933ea7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Tax City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+a12c3872-cff5-4697-a814-1b90b2150001,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Flag],Atomic Tag,[Flag Variable],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+a16275ea-0a70-40d9-96e8-463bbb350a23,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Unique Count [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+a1821863-e6cc-4a4b-9a37-f8b2008e4dc6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Day Count,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+a1e878fb-fbd7-4f36-b306-81cb4ca7be0d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment Job Title,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+a1f7284b-507e-4a80-afa3-04714fd52568,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,WAV [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+a21088e4-2056-4c16-9b3d-6b0e659fd00a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Sum,Aggregation {Nested},Sum (Payments) (2025),Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+a286d685-5d42-4d73-a760-ca9d5426b5e3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Employee Beneficiary,CDM,Beneficiary,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+a2c67d9d-c550-4799-9831-903b8720bb9b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 3Mo,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+a2f92e92-d961-477e-b036-43d931fa9675,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Released Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a32fe308-5f5e-41cb-abc1-e3294f20e22b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,[Event],[Meme],[Event Date],Freeform,Text,Tight,,-,Yes,Active,true,false,0,0
+a33e24bc-af63-42d6-8cfb-92ee3fad1a96,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Lifetime Cap,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a36b3db3-94fe-45a0-9bfa-7d8fdbf90ba0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Target Bonus,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a3fbeb25-f076-4272-b213-24906c182b26,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Personnel,Atomic Tag,Job Status,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+a472b23b-6e29-476f-a7b4-b6312845c933,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Industry,Atomic Tag,Fitch Industry,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+a4cfd5f5-a84d-4a86-b81d-f39d326e56a2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Tenancy,Vulqan,Tenant ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+a51fcb30-4434-4a5c-8647-eed481396403,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Basis,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+a5b3e6aa-0cf1-46ee-918b-e4d4b609029e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Consolidated,Phone Number,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+a5cdda9d-4b02-4c6d-8c09-0578e85b5cee,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Converted],[Meme],Base Value [Variable],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+a63d028c-3c94-46e3-8a9b-6554faf848c1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Registration Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a65f0c73-2fe3-4b10-ac20-36e2611ca941,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Cost Basis,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+a68c0654-c05a-44f3-8080-9cb50f1cc197,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,Ambest ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+a722cecf-2ba9-46b8-b913-235941bae00b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,SIN,ID,Public,Loose,Character = Numeric,-,Yes,Active,false,false,0,0
+a808d217-7e55-4ed0-b7e7-92c19c043d3b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Fiscal Year,Period,Fiscal Year End Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+a86e1e0c-2894-46cc-a029-6c96fcbad383,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payroll Schedule,Period,Payroll Period End Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+a8f08597-5074-4391-878e-b861c070a879,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Dated],[Meme],[Number Variable],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+a921665d-adf7-4801-9f5b-a913fc8b7841,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,TikTok Handle,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+a990a4b0-94e3-4a8f-9cc6-f1fc16cc5958,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Birth,Event,Birth City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+aa0396c4-d115-4ae2-8504-2ad1c7eb69ec,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Convexity,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+aa464096-0a5e-4583-9185-b8bea79726b5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Unit of Measure,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ac86d996-f4f6-4ba6-8743-c6f5f40e52eb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address Full,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+accc24e9-a7db-4457-82b7-f81657d6f198,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,End Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+acfee607-38ab-4dda-9095-55379f81ec71,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Contract Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+ae2025f4-8e8f-4589-8897-4f15da960083,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],[Meme],[Aggregation] [Object] [Variable] [Clarifier] [Date],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+ae4899d9-d57c-46cf-bf38-0e9a3438ccfe,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Industry,Atomic Tag,Moody's Industry,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ae7bf13b-d0bc-4b94-98c6-36987029e9fa,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Applied Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+af8f2487-7c18-4748-ab1d-db35bb51fa8c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Responsibility,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+afc6e23a-735a-48ba-afd1-85fff3a95074,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,VAT,Freeform,Text,Loose,Character = Alphanumeric,-,Yes,Active,false,false,0,0
+afe085be-4e9e-4c91-ae76-251ca81a216f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Total Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+b05d90ed-2f65-4ff4-b788-c4489de93c6e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Thousand Separator,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b0f31392-1489-4d2c-ba13-3e792ae236f5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Function,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b11767ca-6b30-416c-9c07-550bb812b718,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Postal Code,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+b12baa43-7e98-46b0-a30b-b1df07f5264f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+b20675e2-fb8d-4604-a272-fc1d6d2ea862,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Periodic Cap,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+b23544bf-ce0a-425f-81a7-2e85fcced5ba,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Dissolution Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+b25569a1-2059-48e0-b79b-8b99020b84c5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tiered Tag],[Meme],[Tag Level I],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+b2885972-b333-4626-9097-c4d1311691df,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Scheme,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b2dd37f9-79d0-4d29-b191-be37c019baaf,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period End Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+b2ee18ce-fd4c-4830-bf2b-ca9cbda5976e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Authority,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b3027e7f-a32e-47b0-9b97-467b8cfae6f5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Commitment Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+b33d3210-5f5f-434f-8d30-800d2dec55b7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Daily Interest,Daily,Daily Interest Balance,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+b3c8d6b7-3bd2-49e9-9b34-3cbf13c25592,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,[Atomic Tag],Ethnicity,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b536a690-b09d-4ef9-ba90-de10716a4578,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payroll Schedule,Period,Payroll Period,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+b5635562-aed4-4aad-a644-5f8517eb26c5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Merrill Lynch Asset Class,Tiered,Merrill Lynch Asset Class Level 2,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+b57e48fe-9a7d-4ce1-b5c0-55816ebc2d70,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payroll Schedule,Period,Payroll Period Pay Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+b60248b1-dd05-498e-a588-eea3a2b47ff9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Industry,Atomic Tag,Vertical,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b62a692b-e503-4de9-9c4c-3df82922827c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education School,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+b6d593e2-ad24-4733-9a1d-41eab5796f90,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Exercise Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+b71b1319-f47a-4d7d-94db-ce967def933d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Input Commercial Card Code,Freeform,Text,Tight,Character is Specific,-,Yes,Active,false,false,0,0
+b78746d6-4e37-4248-858f-8881215d8159,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+baadaa76-a447-46ae-9ca1-7e4eef840f11,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education State,Freeform,Text,T,List,-,Yes,Active,false,false,0,0
+bb5955bf-0172-49c4-a3c3-6a647abdd080,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Merchant Account Number,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+bba21342-6d8c-4c42-bd5c-b6e000929e1f,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Bab Indicator,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+bbb1769c-4417-4278-8bb9-dd13022cff04,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,YouTube Channel,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+bbe2101a-82ac-43d1-840d-3541709b4233,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,YY,Y,X,Freeform,Text,,,,Y,Active,false,false,0,0
+bc50a12f-888d-433f-ad84-d5d009b99364,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education Start Date,Freeform,Text,T,,-,Yes,Active,false,false,0,0
+bc9e7971-db37-4b48-ae6e-b22146c5a4c3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Tax Year,Period,Tax Year,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+bcb76f23-4459-4119-9d0a-9e2deef6f58e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+bd5e8a83-4571-4159-911d-8f6adf7cc2b2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Parameter],[Meme],[Number Variable],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+bd7919b2-b8e1-47d2-905c-0730da139dcb,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Gamma,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+be45c48e-0469-4a23-878b-a38c8d53791f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Billing Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+be6018ce-d75d-4073-a579-0ae62b6ae33f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name Individual,Compound ID,Name Prefix,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+be7d6980-a1f0-4a94-870b-308a0d3738fc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Personnel,Atomic Tag,Title,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+bf8327b6-632b-496e-b547-bb971ac6b50b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Department,Complex,Assgined Department Relationship Type,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+bf93cb54-b17d-4b06-b6b1-44f68222a601,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Z Value Score,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+bfe874e6-236f-48e5-9380-a1a1099456dc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Holder,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+c00faa91-5c69-4a2b-8feb-92d28cf24539,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Code,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+c11524a5-2b09-4170-b8cf-4cc8de0510e6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Department,Complex,Assgined Department (Allocation %),Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+c1223899-c9d1-43c6-a957-c9fcc7a117db,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Category,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+c17de320-ae3f-41f7-8d30-24f39a2a203c,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Theta,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c18c361a-1882-425c-8c36-6fcefd0c60ad,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address Full,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+c1ebb9ae-7420-47b3-8906-b18ceef34bd8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Level,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+c2d834fb-3019-44bc-8490-e0e8ebdfe656,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 20Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+c34e1927-9a40-4760-bccf-9e9f68641103,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Legal Entity,Complex,Parent Entity Relationship #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+c37c403b-7c0d-4bcd-b81b-a31f74056220,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Vulqan ID,Vulqan,DB ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+c3974cde-eeca-4a7e-80dd-4aba0fdc9f54,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Property,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+c4051ce7-8eca-4001-bb2b-1ffaa87f559d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Currency,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+c439797b-7191-4f4d-9c26-857017f969fd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education Subject,Freeform,Text,T,,-,Yes,Active,false,false,0,0
+c47bc425-361c-4ce3-89b8-c07a6f28cdb2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Decimal Separator,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+c48502ca-7d6d-4a16-afe2-5b26ee64b0f9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address Full,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+c485c4c0-7d06-4f4d-9c9a-d3d7064cb013,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Function],[Meme],[Computation Date],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+c49110e0-95ad-4d95-8e53-4a693f3baf2e,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Delta,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c5f6fa23-60eb-4b17-a5ab-4b7e59d9ac87,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Number,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+c6c4dc23-a9d2-4599-944c-afda4a61d0bb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Adjustment Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c6d4d64b-25f0-4469-8c78-750084b0ea89,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Market Value,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c6ff8979-3de9-4bf4-8850-41041fd73a05,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tiered Tag],[Meme],[Tag Level IV],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+c7228a7f-35b9-4050-afa7-bf551be5b9b8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Classified,WhatsApp Number,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+c739a2b6-d540-4e21-a91e-84f54fccc41a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Coupon Rate,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c778381c-6d95-485e-a302-a515415c6381,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,Military ID,ID,Public,Loose,Character = Numeric,-,Yes,Active,false,false,0,0
+c7da88e2-4e7e-4ee5-9f95-aa5399bddeaa,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Z Score,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c83a3695-e22c-4588-b95f-280dc8daec58,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Barclays Sector,Tiered,Barclays Class 3,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+c8fa8bfa-d498-4d76-ad59-08d3f0a1c9f9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Tax Year,Period,Tax Year Filing Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+c91cf785-85d9-4d7d-b1ad-6450b7f6e40e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+c9466f0f-88d5-4d0a-a2d6-96c0ef56a97a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Shipping Address,Classified,Shipping Address Full,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+c9576c33-809c-41fd-9d1e-b42b4d5ae462,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Inventory Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+c96a422d-37d1-4ce3-ad03-0cc32945d735,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,X Handle,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+c9d03b0a-3308-4f70-a298-d6215a14481b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[TimeSeries],[Meme],[TimeSeries DateTime],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+ca37c4bc-d365-4da8-9f92-034908b9e10e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,LinkedIn Profile URL,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+cad7da68-25c7-4270-9f3a-c4fdcb35b823,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address Notes,Freeform,Text,Multi,Length,-,Yes,Active,false,false,0,0
+cb13cc9c-ac04-4bc7-bdf2-23592adc5aa2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,Formation,Event,Formation Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+cb32e2f6-9bae-4066-a14f-11d648f8751b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Sales Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+cb377a41-2045-4b12-abc1-88c7b998422d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Birth,Event,Birth State,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+cb3da19d-92cb-4342-837e-6a7bd4dcd80c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Consolidated,Social Media Provider,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+cbee662f-0ef1-4202-8ece-2f06f8232747,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Color,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+cc6fe1de-01c5-4cab-bb07-bede683bd48d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Maximum [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+cd72ee63-cf16-4d35-a109-aa88e51ea7b9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+cdc740e0-e23b-4fda-b71f-4cebb74e0149,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Quantity],[Meme],[Quantity Variable],Freeform,Text,Loose,Range,-,Yes,Active,true,false,0,0
+cdd792df-0769-45a8-b441-ac35b3285409,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Classified,Facebook Page,Freeform,Text,Tight,Length,-,Yes,Active,false,false,0,0
+cde8df4f-43d3-470e-a2ba-5bcebf95d10a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Standard Deviation [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+ce1b2aec-64b8-4c55-b828-d82afd727320,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Employee,Basic,Ultimate Manager,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+ce33a822-1626-4f25-9cc3-2e158a49147b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Interest Rates,CDM,Interest Rates,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+ce9f3fea-6cbf-4639-9855-07c9971b3565,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 1Mo,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+cefa6c99-7b90-4d31-8c10-a9b3c1614852,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Converted,Conversion,Conversion Date,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+cf5c6492-dcc9-4cf5-936d-ad99b97fecb9,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Personnel,Atomic Tag,Job Title,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+cfd026c8-2639-4f48-8967-5c85946c6d5f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Rate,Atomic,Discount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+cfdf9c6c-be2b-47d8-9b85-9df1c3441382,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,WAM [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,0
+cfe86abb-6812-4bab-9b0d-3c0be876bdd0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 2Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+d035e973-6981-472a-91a4-a4c6443fff40,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Total Balance,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d099b62a-5cbe-4965-ae42-1da0ff6a55a3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Total Value,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d100ae0d-49ba-4443-af97-e06d13a2c893,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card CVV,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+d1697bd6-cb05-4c70-aaae-abd2588f25f2,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Service Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d20bf9c0-aa4c-4687-b76e-ed1ccd650f94,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name,Atomic ID,Name,Freeform,Text,Loose,Length <40,-,Yes,Active,false,false,0,0
+d222c9ec-598d-4a21-af03-7328c51f9239,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Supplier,CDM,Supplier,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+d2a13f19-7042-4f50-bea7-5945904a290c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Expected Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d3ad0e71-0012-4fe3-ad00-76077742bc66,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Sub Level,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+d3e0303e-dcf9-4b45-8bea-eb0101990125,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+d3f44052-30ed-4960-bd4d-78ee2131f69a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period Average Balance,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+d41afe1f-850b-4b58-bd16-1fc7b959dc18,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Related],[Meme],[Number Variable],Freeform,Text,Tight,[[*]],-,Yes,Active,true,false,0,0
+d61ca17b-d1f6-430d-a3cb-813a039e6ecf,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Yield To Worst,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d6dd2e72-821c-489a-a1c0-b537cbd7061b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Security ID,Atomic ID,OPRA ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,1,0
+d740fdb4-f01c-41b1-82b3-5f7cd6b46c18,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Legal Entity,Complex,Parent Entity Ownership Percentage,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+d798fb69-00a5-4fd5-9dc0-7a449d3d8919,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Tax Year,Period,Tax Year Start Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+d7ed7010-415a-4c0b-8cb8-2fe926c776d1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+d83640ff-2499-4691-9f4e-772dcf8eed65,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+d88ef649-b18d-45c8-bd38-d718b3e68dff,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Credit Card,Compound ID,Credit Card Type,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+d91f73dc-04fe-42a2-9125-aee64e986065,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Empirical Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+d94c25ec-3991-481b-a011-303971e72a3e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,PAN,ID,Public,Loose,Character = Alphanumeric,-,Yes,Active,false,false,0,0
+d95dbc45-0621-46fb-b5dd-eaa5744bbfcb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name Individual,Compound ID,Middle Name,Freeform,Text,Tight,Length <20,-,Yes,Active,false,false,0,0
+d96646b3-10f0-4f54-b295-216fea2e55c9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Sales Tax Total,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+da5bc299-df8a-4a04-8f6a-77ff5e3cbcac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Bloomberg Industry,Tiered,Bloomberg Industry Sub Group,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+dac00b04-3aeb-4afb-b9e0-513497f2fbc8,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Flag,Flag,Active,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+dafe1eca-0057-47de-8edf-4e17b7ba767b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Converted,Conversion,Actual Currency,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+db31ade1-a35d-47ab-96db-1c7007f1337f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Legal Entity,Complex,Parent Legal Entity,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+db56ffcc-6839-4eba-859b-fa6383e9c258,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Legal Structure,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+db5fddb9-c08b-4e50-ad4b-57b39288dedb,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Versioning,Vulqan,Version ID,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+dc0e3fb8-c385-493a-919d-81ddf3654379,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Class,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+dc603ccc-d97a-43bc-9dcb-fcc6d68bfaba,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Bucket,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ddef68de-3b7d-4405-81a3-db1a65492ac3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[[Common Derivations]],Atomic Tag,[[Derivations]],Freeform,Text,Loose,List,-,Yes,Active,true,false,0,0
+ddf1f946-185c-4291-9426-a31fa75bc3ba,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,Formation,Event,Formation State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+de710f94-f9d8-4fe9-9f9f-27b6d4008b53,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Related Object],Complex,[Object] Relationship #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+dec86db7-3f52-4664-8e81-9927961978f7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Sales Tax Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+decaa3c3-10c4-463c-aa8e-f14f2bba0afd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Address,Consolidated,Address Zip,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,1
+ded949fd-bf05-4203-a52e-19c010248f2a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Payment Series,TimeSeries,Payment Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e09dbc74-67e1-4b87-859f-3c63fd10d473,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,EIN,ID,Public,Loose,Length =9,-,Yes,Active,false,false,10,0
+e0e5206e-4768-48f4-8fa9-f4a24b63fb98,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address State,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+e126a84b-8d70-4c85-9f3b-8c6d0e06d575,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Migration,Vulqan,Migration Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e15056d0-54bb-4105-9f03-ed470be3a17e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,Sales Tax ID,ID,Public,Tight,Character = Alphanumeric,-,Yes,Active,false,false,0,0
+e2c5942b-d11a-4237-a229-fabc81b24274,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Function],[Meme],[[Common Functions]],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+e318fc85-8516-447d-b533-14b6680db380,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Prepayment Risk,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e3628319-dc32-43d7-aec2-345f5f2e3043,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Bank Account,Compound ID,Bank Account Routing Number,Freeform,Text,Multi,Specific,-,Yes,Active,false,false,0,0
+e370b6ac-bca0-47e6-9f2a-a3f371acbb56,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tiered Tag],[Meme],[Tag Level II],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+e48762d0-1596-4d71-a7ed-bdffee598885,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Schedule,Period,Interest Period Start Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+e4d25bdc-0314-4874-9d4a-71574fe59d3d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Amount],[Meme],[Amount Variable],Freeform,Text,Loose,Range,-,Yes,Active,true,false,0,0
+e5adf3dd-b497-4eea-9fc6-8364b114bd15,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Effective Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e627f4dc-401b-41a4-a9b8-25ca3374466e,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Term Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+e6a29e89-d4b3-4078-89db-64f58e1120f3,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,CV01,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e71093da-7adf-4e3f-8a17-fe636f26a14b,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Defaulted,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+e774da16-a9cc-4d78-8f0e-601f99906820,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Quantity,Atomic,Minutes,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e7b407e6-9a6a-47e8-9fee-4805b0be1677,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Rho,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+e8543abd-fde7-47a2-93bf-7ddaf3bac35a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Period],[Meme],[Period Name],Freeform,Text,Tight,Length,-,Yes,Active,true,false,0,0
+e8b7f0c3-c6cf-4e16-9d1d-aa7c95470140,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Shipping Method,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+e93d4e48-db81-4395-bbb3-d9cf02936248,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Name Individual,Compound ID,First Name,Freeform,Text,Tight,Length <20,-,Yes,Active,false,false,0,0
+ea4783f5-cd05-4d4a-ab5e-27b8eb1ac9e4,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Default Value,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+ea5b3bd8-8b78-4803-81f2-bfd44305fb0d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Due Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+ea8db76c-9f75-49cb-822c-e22445258db9,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,TypoloJi,Atomic Tag,Job Type,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ea97f6b1-5d01-4349-b213-35ce1e79937d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Tax Year,Period,Tax Year End Date,Freeform,Text,Tight,"Range, Relative",-,Yes,Active,false,false,0,0
+eaf0c0e6-cbb9-42bb-a139-36538144f5f3,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Journal Entry,CDM,Journal Entry,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+eafee64a-c6f0-451d-aa09-dcc11a364a12,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Industry,Atomic Tag,S&P Industry,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+eb4d32e5-4527-4964-ad82-74d491b1868a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Workflow,Vulqan,Alert #,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+eb628611-6801-47ae-86cd-b3a42f16deaf,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Aggregation],Aggregation,Average [Variable] [Clarifier],Freeform,Text,Loose,[[*]],-,Yes,Active,false,false,0,1
+eb91bbdb-e19a-46f1-a128-b30618648fae,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Period,Event,Credit Card Input Transaction Type,Freeform,Text,T,List,-,Yes,Active,false,false,0,0
+ebc23dc6-8b07-489f-97cd-a34b8befcd83,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Priority,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ec59accf-0abe-41aa-bc1c-fd33a39ce0ac,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Credit Card Transaction,Event,Credit Card Result Message,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,0
+ec5c235e-9572-4c9b-b62a-9a52efcad9bd,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Passport,Compound ID,Passport #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+ecc9c468-1120-4bb4-99ab-a82c26e380c1,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return EOM,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+ecefd7ca-dd80-4d9e-849c-0de9f1df456a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,[Quantity],[Meme],[[Common Quantitiy Units]],Freeform,Text,Loose,[[*]],-,Yes,Active,true,false,0,0
+ee9a557f-5af8-4932-ad0f-b99155de2443,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,Employee,Complex,Team Member Name,Freeform,Text,Tight,[[*]],-,Yes,Active,false,false,0,0
+ee9eced0-3727-434c-b181-a4eaed68f114,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Work Address,Classified,Work Address Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,1
+eea1ec28-01ff-4d88-9c75-6324964a7ccc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Home Address,Classified,Home Address City,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+ef2a8200-3d5c-4968-9990-e4f1f644a10f,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,TypoloJi,Atomic Tag,Contract Class,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+ef958438-b507-4b18-90bb-03df3f3ba030,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Quantity,Atomic,Volume,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+efc29b3c-d5f1-4fa2-a899-4eb8f3c7f516,"ALL, ALL, ALL, None",ALL,ALL,ALL,Identifier,Public ID,Atomic ID,SSN,ID,Public,Loose,Character = Numeric,-,Yes,Active,false,false,0,0
+effd23c6-71f8-47f7-9161-8e3190a0048e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Thousand Separator Group,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f072ca9c-79b1-41a1-8d67-eded4c4d7298,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Open Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f0db2eba-5b31-4878-bcb1-ff839171971f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Phone,Classified,Home Phone,Freeform,Text,Loose,Specific,-,Yes,Active,false,false,0,0
+f11ce28b-7dd5-476d-a583-496364e715d5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Quantity,Atomic,Hours,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f150890f-618d-4ea5-b223-9063427a501f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Geography,Atomic Tag,Domicile Country,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+f1ae47db-7f58-42b1-8f82-91fd6b206e65,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Marker,Milestone,Purchase Date,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f1ea8cba-cf61-4296-b523-2efe03be2a46,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Employment,Event,Employment Start Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+f20cbf5c-fe19-454f-b2a9-0d8bb38ee4ee,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Industry,Atomic Tag,Industry,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f2441756-2dda-4c04-8802-011c4d499f98,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Payment Method,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f25e4d5d-d7bb-4438-b4b0-de4a23c6af5e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,(Account Rep),(Employee),(Customer Account Rep),Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f36a741d-87bb-4aaa-ae1b-e05529711909,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Parameter,Atomic,Multiplier,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f437b454-897d-4be0-b804-e9a5f0edbb86,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,DR,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f43af730-edbf-481d-a99a-71b64e9cfb2b,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Vega,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f4f9092f-07f8-44bc-8ebb-90a3ca5b87c9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Related Object],Basic,[Object Role] [Variable],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+f4fb83a5-a58b-4c3c-8452-37b5808990e6,"ALL, ALL, ALL, None",ALL,ALL,ALL,Unstructured,Text,CDM,Notes,Freeform,Text,Loose,Length,-,Yes,Active,false,false,0,0
+f50b584b-5383-4ff7-a6e1-7d4200b0e8c0,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Rating,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f580186c-8045-4aee-8c9b-97c75bfd5273,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Legal Address,Classified,Legal Address #,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+f5ac55b0-77c1-4937-86c7-cb7d1d291eaf,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Personnel,Atomic Tag,Payroll Class,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f663c1be-ef2b-460f-a675-3bd1ccb41856,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Converted,Conversion,Exchange Rate,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+f66545ec-600d-4971-8ae8-af618dc65ec9,"ALL, ALL, ALL, None",ALL,ALL,ALL,Context,Workflow,Vulqan,Action #,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f67431d8-eec6-4b57-8822-aba435e2dcbc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Relationship,[Related Object],Complex,[Object-Related Variable],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+f6b0d1b6-b980-4ece-a0cc-65fe3ea56c7a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Tax Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f6d81ab5-d7b1-4916-998c-a16980159b03,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Parameter,Atomic,Days To Settle,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f6f3d5c6-8253-4af4-9e42-a8015a692c6f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Rationale,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+f7295909-4e3f-4f02-81de-e85cc417c78d,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Birth,Event,Birth Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+f748ea3c-4263-4f6c-a034-6f8f5f822548,"Investment, ALL, ALL, None",Investment,ALL,ALL,Number,Function,Function,Mod Worst Duration,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f75d77a6-f71f-4537-b708-511133b1fb9c,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Shipping Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f7b2a8fd-dfc2-4c7c-aac6-4e3af84c5c06,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Billing Address,Classified,Billing Address Zip,Freeform,Text,Tight,Specific,-,Yes,Active,false,false,0,1
+f7fd87f2-0138-4d3c-aef9-d3c82aa16168,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Vacation Schedule,Period,Vacation Days Available,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+f87b5902-f8c6-438a-b7ee-dcc4e6154e44,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Education,Event,Education End Date,Freeform,Text,Tight,"Range > 1/1/1925, Range < 12/31/2050",-,Yes,Active,false,false,0,0
+f8c47a27-da9e-4790-9af4-1bf25ac28f98,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Threshold Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+f99e4147-321b-4edf-bc6b-9f0bc4bc1d37,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,Interest Period,Event,Credit Card Input Postal Code,Freeform,Text,T,Specific,-,Yes,Active,false,false,0,0
+fb0b0150-d787-4e60-bdd6-58c53bb717ef,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,TypoloJi,Atomic Tag,Salutation,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+fb82cae9-47ca-4e9a-9397-1e0a889a98bc,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Credit Limit,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+fb8b9813-4113-404f-b2b2-c8d503d2000f,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,Bloomberg Industry,Tiered,Bloomberg Industry Sector,Freeform,Text,Tight,List,-,Yes,Active,false,false,0,0
+fbcaa08d-39a7-47ab-ba91-c8863b833a8a,"ALL, ALL, ALL, None",ALL,ALL,ALL,Event,Bankruptcy,CDM,Bankruptcy End Date,Freeform,Text,Tight,,-,Yes,Active,false,false,0,0
+fc6fe2b7-4e65-418e-8f67-dce5f859f320,"ALL, ALL, ALL, None",ALL,ALL,ALL,Directory,Social Media,Consolidated,Social Media #,Freeform,Text,Multi,List,-,Yes,Active,false,false,0,0
+fcb91d17-51c1-47ed-94fe-cd5211a928d7,"ALL, ALL, ALL, None",ALL,ALL,ALL,Tag,[Tiered Tag],[Meme],[Tag Level V],Freeform,Text,Tight,List,-,Yes,Active,true,false,0,0
+fce2c395-3de4-4a62-90dd-786a8b543cbe,"ALL, ALL, ALL, None",ALL,ALL,ALL,Schedule,[Daily],[Meme],[Daily Date],Freeform,Text,Tight,Range,-,Yes,Active,true,false,0,0
+fdde6828-8cbb-42ba-af24-b8c6c14188c5,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return YTD,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0
+fe127c09-2f0c-42d9-a3b7-4e53b1de8add,"ALL, Human Resources, ALL, None",ALL,Human Resources,ALL,Tag,Flag,Flag,Part Time,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+fe65d0b2-03cb-4e58-be0d-ad615b75c242,"Investment, ALL, ALL, None",Investment,ALL,ALL,Tag,Flag,Flag,Callable,Freeform,Text,Loose,List,-,Yes,Active,false,false,0,0
+fe94da75-daea-4cc6-95b4-96ea306b338b,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Amount,Atomic,Book Amount,Freeform,Text,Loose,Range,-,Yes,Active,false,false,0,0
+fef0dfcf-2e65-452a-8c1b-761131ef543e,"ALL, ALL, ALL, None",ALL,ALL,ALL,Number,Function,Function,Return 5Yr,Freeform,Text,Tight,Range,-,Yes,Active,false,false,0,0

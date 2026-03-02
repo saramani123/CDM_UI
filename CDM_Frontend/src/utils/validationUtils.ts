@@ -1,6 +1,6 @@
 // Utility functions for parsing and formatting validation strings
 
-export type ValType = 'List' | 'Range' | 'Relative' | 'Length' | 'Character';
+export type ValType = 'List' | 'Range' | 'Relative' | 'Length' | 'Character' | 'Specific';
 export type Operator = '=' | '>' | '<' | '>=' | '<=' | 'is';
 
 /** For Range: greater-than side and less-than side (each has operator + value). */
@@ -42,6 +42,11 @@ export function parseValidation(validationString: string): ValidationComponents 
     return { valType: 'List', operator: '', value: 'List' };
   }
 
+  // Check for "Specific"
+  if (trimmed === 'Specific') {
+    return { valType: 'Specific', operator: '', value: 'Specific' };
+  }
+
   // Range format: "> 12/5/2025, <= 3/8/2026" (two parts: "op value, op value")
   const rangeTwoPartPattern = /^(>|>=)\s+(.+?)\s*,\s*(<|<=)\s+(.+)$/;
   const rangeTwoMatch = trimmed.match(rangeTwoPartPattern);
@@ -72,13 +77,17 @@ export function parseValidation(validationString: string): ValidationComponents 
     // Otherwise legacy Range single bound - fall through
   }
 
-  // Check for Val Type prefix: "Range < x", "Relative = Is Open", "Length >4", "Character is ABC123"
-  const valTypePrefixPattern = /^(Range|Relative|Length|Character)\s+(.+)$/;
+  // Check for Val Type prefix: "Range < x", "Relative = Is Open", "Length >4", "Character is ABC123", "Specific" (no suffix)
+  const valTypePrefixPattern = /^(Range|Relative|Length|Character|Specific)\s+(.+)$/;
   const valTypeMatch = trimmed.match(valTypePrefixPattern);
 
   if (valTypeMatch) {
     const valType = valTypeMatch[1] as ValType;
     const rest = valTypeMatch[2].trim();
+
+    if (valType === 'Specific') {
+      return { valType: 'Specific', operator: '', value: 'Specific' };
+    }
 
     if (valType === 'Length') {
       const lengthMatch = rest.match(/^(>=|<=|=|>|<)(\d+)$/);
@@ -185,6 +194,9 @@ export function buildValidationString(components: ValidationComponents, _variabl
     case 'List':
       return 'List';
 
+    case 'Specific':
+      return 'Specific';
+
     case 'Range': {
       const hasGreater = (greaterThanOperator === '>' || greaterThanOperator === '>=') && (greaterThanValue ?? '').trim();
       const hasLess = (lessThanOperator === '<' || lessThanOperator === '<=') && (lessThanValue ?? '').trim();
@@ -222,6 +234,10 @@ export function buildValidationString(components: ValidationComponents, _variabl
  */
 export function validateValidationInput(valType: ValType, value: string, formatI?: string, formatII?: string): { isValid: boolean; error?: string } {
   switch (valType) {
+    case 'List':
+    case 'Specific':
+      return { isValid: true };
+
     case 'Length':
       if (!/^\d+$/.test(value)) {
         return { isValid: false, error: 'Length must be a positive integer' };
@@ -363,7 +379,7 @@ function validateNumberFormat(value: string, formatII: string): { isValid: boole
  * Get available operators for a valType (used for single Operator field: Relative, Length)
  */
 export function getOperatorsForValType(valType: ValType): Operator[] {
-  if (valType === 'List') {
+  if (valType === 'List' || valType === 'Specific') {
     return [];
   }
   if (valType === 'Character') {

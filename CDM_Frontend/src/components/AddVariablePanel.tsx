@@ -1438,6 +1438,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                     const newValType = e.target.value as ValType | '';
                     const newComponents: ValidationComponents = { valType: newValType, operator: newValType === 'Character' ? 'is' : '', value: '' };
                     if (newValType === 'List') newComponents.value = 'List';
+                    else if (newValType === 'Specific') newComponents.value = 'Specific';
                     else if (newValType === 'Range') {
                       newComponents.greaterThanOperator = '';
                       newComponents.greaterThanValue = '';
@@ -1456,9 +1457,10 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                   <option value="Relative">Relative</option>
                   <option value="Length">Length</option>
                   <option value="Character">Character</option>
+                  <option value="Specific">Specific</option>
                 </select>
               </div>
-              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && getOperatorsForValType(validationComponents.valType).length > 0 && (
+              {validationComponents.valType && validationComponents.valType !== 'Character' && validationComponents.valType !== 'Range' && validationComponents.valType !== 'Specific' && getOperatorsForValType(validationComponents.valType).length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">Operator</label>
                   <select
@@ -1510,7 +1512,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
               {validationComponents.valType && validationComponents.valType !== 'Range' && (
                 <div>
                   <label className="block text-sm font-medium text-ag-dark-text mb-2">Value</label>
-                  {validationComponents.valType === 'List' ? (
+                  {validationComponents.valType === 'List' || validationComponents.valType === 'Specific' ? (
                     <input type="text" value={validationComponents.value} disabled className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-50 cursor-not-allowed" />
                   ) : validationComponents.valType === 'Relative' ? (
                     <select value={validationComponents.value} onChange={(e) => { setValidationComponentsList(prev => prev.map((comp, i) => i === index ? { ...comp, value: e.target.value } : comp)); setValidationError(''); }} className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent appearance-none" style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 12px center', backgroundRepeat: 'no-repeat', backgroundSize: '16px' }}>

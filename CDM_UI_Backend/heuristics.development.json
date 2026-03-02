@@ -30,16 +30,6 @@
     "best": ""
   },
   {
-    "id": "4",
-    "sector": "All",
-    "domain": "All",
-    "country": "All",
-    "agent": "Format Converter",
-    "procedure": "Translate Format-S into Format-V-I",
-    "rules": "",
-    "best": ""
-  },
-  {
     "id": "5",
     "sector": "All",
     "domain": "All",
@@ -67,16 +57,6 @@
     "country": "All",
     "agent": "Table Organizer",
     "procedure": "Identify and Classify Apparent tables within Files",
-    "rules": "",
-    "best": ""
-  },
-  {
-    "id": "8",
-    "sector": "All",
-    "domain": "All",
-    "country": "All",
-    "agent": "Object Modeler",
-    "procedure": "Estabish Logical Object Model (LOM) and map from Source Anchors",
     "rules": "",
     "best": ""
   },
@@ -229,5 +209,18 @@
     "procedure": "Task",
     "rules": "",
     "best": ""
+  },
+  {
+    "id": "1771274239574-lp9fqnw4h",
+    "sector": "Construction",
+    "domain": "ALL",
+    "country": "France",
+    "agent": "Test",
+    "procedure": "Testing non post processor",
+    "rules": "",
+    "best": "",
+    "is_hero": false,
+    "documentation": "f\n\n\nff\n\n\n\n\n\n\n\n\nf\n\n\n\n\n\n\n\n\n\n\n\nf\n\n\n\n\nf\nf",
+    "detailData": null
   }
 ]
