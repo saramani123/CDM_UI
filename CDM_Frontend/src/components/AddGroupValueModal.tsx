@@ -4,9 +4,11 @@ import { X, Save } from 'lucide-react';
 interface AddGroupValueModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (part: string, groupValue: string) => Promise<void>;
+  onSave: (part: string, section: string, groupValue: string) => Promise<void>;
   availableParts: string[];
-  defaultPart?: string; // Optional: Part value to pre-fill
+  availableSections: string[];
+  defaultPart?: string;
+  defaultSection?: string;
 }
 
 export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
@@ -14,26 +16,33 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
   onClose,
   onSave,
   availableParts,
-  defaultPart = ''
+  availableSections,
+  defaultPart = '',
+  defaultSection = '',
 }) => {
   const [selectedPart, setSelectedPart] = useState('');
+  const [selectedSection, setSelectedSection] = useState('');
   const [groupValue, setGroupValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Update selectedPart when defaultPart changes or modal opens
   React.useEffect(() => {
     if (isOpen && defaultPart) {
       setSelectedPart(defaultPart);
     } else if (isOpen && !defaultPart) {
       setSelectedPart('');
     }
-  }, [isOpen, defaultPart]);
+    if (isOpen && defaultSection) {
+      setSelectedSection(defaultSection);
+    } else if (isOpen && !defaultSection) {
+      setSelectedSection('');
+    }
+  }, [isOpen, defaultPart, defaultSection]);
 
-  // Reset form when modal closes
   React.useEffect(() => {
     if (!isOpen) {
       setSelectedPart('');
+      setSelectedSection('');
       setGroupValue('');
       setError(null);
     }
@@ -46,6 +55,10 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
       setError('Please select a Part');
       return;
     }
+    if (!selectedSection.trim()) {
+      setError('Please select a Section');
+      return;
+    }
     if (!groupValue.trim()) {
       setError('Please enter a Group value');
       return;
@@ -55,8 +68,9 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
     setError(null);
 
     try {
-      await onSave(selectedPart.trim(), groupValue.trim());
+      await onSave(selectedPart.trim(), selectedSection.trim(), groupValue.trim());
       setSelectedPart('');
+      setSelectedSection('');
       setGroupValue('');
       onClose();
     } catch (err) {
@@ -66,11 +80,8 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !isSaving && selectedPart && groupValue.trim()) {
-      handleSave();
-    }
-  };
+  const selectClass =
+    "w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none";
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
@@ -80,6 +91,7 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
             Add Group Value
           </h3>
           <button
+            type="button"
             onClick={onClose}
             className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
             disabled={isSaving}
@@ -99,12 +111,12 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
                 setSelectedPart(e.target.value);
                 setError(null);
               }}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              className={selectClass}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                 backgroundPosition: 'right 12px center',
                 backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
+                backgroundSize: '16px',
               }}
               disabled={isSaving}
             >
@@ -112,6 +124,34 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
               {availableParts.map((part) => (
                 <option key={part} value={part}>
                   {part}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Section <span className="text-ag-dark-error">*</span>
+            </label>
+            <select
+              value={selectedSection}
+              onChange={(e) => {
+                setSelectedSection(e.target.value);
+                setError(null);
+              }}
+              className={selectClass}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px',
+              }}
+              disabled={isSaving || availableSections.length === 0}
+            >
+              <option value="">Select Section</option>
+              {availableSections.map((sec) => (
+                <option key={sec} value={sec}>
+                  {sec}
                 </option>
               ))}
             </select>
@@ -128,7 +168,6 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
                 setGroupValue(e.target.value);
                 setError(null);
               }}
-              onKeyPress={handleKeyPress}
               placeholder="Enter Group value..."
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
               disabled={isSaving}
@@ -142,6 +181,7 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
 
         <div className="flex justify-end gap-3 mt-6">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
             disabled={isSaving}
@@ -149,8 +189,14 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSave}
-            disabled={isSaving || !selectedPart.trim() || !groupValue.trim()}
+            disabled={
+              isSaving ||
+              !selectedPart.trim() ||
+              !selectedSection.trim() ||
+              !groupValue.trim()
+            }
             className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-opacity-90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <Save className="w-4 h-4" />
@@ -161,4 +207,3 @@ export const AddGroupValueModal: React.FC<AddGroupValueModalProps> = ({
     </div>
   );
 };
-

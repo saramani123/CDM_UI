@@ -27,6 +27,16 @@ def create_constraints_and_indexes():
     
     with driver.session() as session:
         try:
+            # Drop legacy constraints replaced by ontology refactor
+            for drop_stmt in [
+                "DROP CONSTRAINT group_name_unique IF EXISTS",
+            ]:
+                try:
+                    session.run(drop_stmt)
+                    print(f"✅ Executed: {drop_stmt}")
+                except Exception as e:
+                    print(f"⚠️  {drop_stmt}: {e}")
+
             # Create constraints for unique IDs and driver names
             constraints = [
                 "CREATE CONSTRAINT object_id_unique IF NOT EXISTS FOR (o:Object) REQUIRE o.id IS UNIQUE",
@@ -46,7 +56,12 @@ def create_constraints_and_indexes():
                 "CREATE CONSTRAINT object_name_unique IF NOT EXISTS FOR (o:Object) REQUIRE o.name IS UNIQUE",
                 # Variables taxonomy constraints
                 "CREATE CONSTRAINT part_name_unique IF NOT EXISTS FOR (p:Part) REQUIRE p.name IS UNIQUE",
-                "CREATE CONSTRAINT group_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.name IS UNIQUE",
+                "CREATE CONSTRAINT part_id_unique IF NOT EXISTS FOR (p:Part) REQUIRE p.id IS UNIQUE",
+                # Group.name is NOT globally unique — scoped by Part/Section via composite properties
+                "CREATE CONSTRAINT section_part_name_unique IF NOT EXISTS FOR (s:Section) REQUIRE (s.part_name, s.name) IS UNIQUE",
+                "CREATE CONSTRAINT section_id_unique IF NOT EXISTS FOR (s:Section) REQUIRE s.id IS UNIQUE",
+                "CREATE CONSTRAINT group_scoped_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE (g.part_name, g.section_name, g.name) IS UNIQUE",
+                "CREATE CONSTRAINT group_id_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.id IS UNIQUE",
                 # Relationship and Variant constraints
                 "CREATE CONSTRAINT relationship_id_unique IF NOT EXISTS FOR (r:Relationship) REQUIRE r.id IS UNIQUE",
                 "CREATE CONSTRAINT variant_id_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.id IS UNIQUE",
@@ -545,6 +560,18 @@ class VariableSectionRequest(BaseModel):
     """Schema for adding a new section value for a part"""
     part: str = Field(..., description="Part name")
     section: str = Field(..., description="New section value to add")
+
+
+class VariablePartCreateRequest(BaseModel):
+    """Create a new Part node (name must be globally unique)."""
+    name: str = Field(..., description="Part name")
+
+
+class VariableGroupCreateRequest(BaseModel):
+    """Create a Group under a Part → Section (names scoped per Section)."""
+    part: str = Field(..., description="Part name")
+    section: str = Field(..., description="Section name")
+    group: str = Field(..., description="Group name")
 
 class VariableFieldOptionRequest(BaseModel):
     """Schema for adding a new field option"""

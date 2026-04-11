@@ -61,15 +61,15 @@ RETURN s, r1, g, r2, l`,
 OPTIONAL MATCH (v:Variable)-[r3:HAS_LIST]->(l)
 RETURN s, r1, g, r2, l, r3, v`
   } : graphType === 'variables' ? {
-    taxonomy: `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
+    taxonomy: `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
 OPTIONAL MATCH (v)-[r3:HAS_VARIATION]->(var:Variation)
-RETURN p, r1, g, r2, v, r3, var
+RETURN p, r0, s, r1, g, r2, v, r3, var
 LIMIT 1000`,
     model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
 MATCH (a)-[r2:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[r3:HAS_SPECIFIC_VARIABLE]->(v:Variable)
-OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(g:Group)<-[r5:HAS_GROUP]-(p:Part)
-RETURN b, r1, a, r2, o, r3, v, r4, g, r5, p
+OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(g:Group)<-[r5:HAS_GROUP]-(s:Section)<-[r6:HAS_SECTION]-(p:Part)
+RETURN b, r1, a, r2, o, r3, v, r4, g, r5, s, r6, p
 LIMIT 1000`
   } : {
     taxonomy: `MATCH (b:Being)-[ha:HAS_AVATAR]->(a:Avatar)-[ho:HAS_OBJECT]->(o:Object)
@@ -150,6 +150,7 @@ RETURN b, ha, a, ho, o, hv, v, r, o2`
         Variable: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } }
       } : graphType === 'variables' ? {
         Part: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+        Section: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } },
         Group: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
         Variable: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
         Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } },

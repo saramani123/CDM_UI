@@ -130,6 +130,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const prevSelectedObjectId = useRef<string | null>(null);
   const isUserTyping = useRef(false);
   const typingTimeout = useRef<NodeJS.Timeout | null>(null);
+  const lastLoadedIdentifiersSignatureRef = useRef<string>('');
   
   // Loading state for metadata panel
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
@@ -524,6 +525,16 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
   // Load identifier relationships when selectedObject changes
   React.useEffect(() => {
+    const identifierSignature = selectedObject?.id
+      ? `${selectedObject.id}|${selectedObject._isCloned ? '1' : '0'}|${selectedObject._isSaved ? '1' : '0'}`
+      : '';
+
+    // Avoid reloading identifier form state repeatedly for the same selected object.
+    if (identifierSignature && identifierSignature === lastLoadedIdentifiersSignatureRef.current) {
+      return;
+    }
+    lastLoadedIdentifiersSignatureRef.current = identifierSignature;
+
     if (selectedObject?.id) {
       // If this is a cloned unsaved object, use the identifier data from the cloned object
       if (selectedObject._isCloned && !selectedObject._isSaved && selectedObject.identifier) {
@@ -817,6 +828,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       
       loadIdentifiers();
     } else {
+      lastLoadedIdentifiersSignatureRef.current = '';
       setUniqueIdEntries([{ id: 'unique-1', part: '', group: '', variableId: '' }]);
       setCompositeIdBlocks([{
         blockNumber: 1,
@@ -829,7 +841,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         ]
       }]);
     }
-  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, selectedObject?.identifier]);
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved]);
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
     if (being === 'ALL' || avatar === 'ALL') return ['ALL'];

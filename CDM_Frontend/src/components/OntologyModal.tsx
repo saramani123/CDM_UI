@@ -97,6 +97,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         case 'ontology':
           return {
             Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } },
+            Section: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
             Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
             Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } } // Gold for focal node
           };
@@ -109,6 +110,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
             Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
             Object: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
             Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
+            Section: { background: '#6366F1', border: '#4F46E5', highlight: { background: '#818CF8', border: '#6366F1' } },
             Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } }
           };
         case 'variations':
@@ -141,6 +143,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         return {
           Object: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } },
           Variable: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
+          Section: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } },
           Group: { background: '#10B981', border: '#059669', highlight: { background: '#34D399', border: '#10B981' } },
           Part: { background: '#6B7280', border: '#4B5563', highlight: { background: '#9CA3AF', border: '#6B7280' } }
         };
@@ -767,8 +770,8 @@ RETURN s, r1, d, r2, c, r3, vc, r4, v`;
           case 'ontology':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
-OPTIONAL MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
-RETURN p, r1, g, r2, v`;
+OPTIONAL MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
+RETURN p, r0, s, r1, g, r2, v`;
           case 'metadata':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
@@ -781,8 +784,8 @@ OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
 WITH v, o, r1
 OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
 WITH v, o, r1, g, r2
-OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
-RETURN v, o, r1, g, r2, p, r3`;
+OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
+RETURN v, o, r1, g, r2, p, r3, s, r4`;
           case 'variations':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
@@ -809,8 +812,8 @@ WITH v, s, r1, d, r2, c, r3
 OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
 RETURN s, r1, d, r2, c, r3, vc, r4, v`;
           case 'ontology':
-            return `MATCH (p:Part)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable ${paramValue})
-RETURN p, r1, g, r2, v`;
+            return `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable ${paramValue})
+RETURN p, r0, s, r1, g, r2, v`;
           case 'metadata':
             return `MATCH (v:Variable ${paramValue})
 RETURN v`;
@@ -821,8 +824,8 @@ OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
 WITH v, o, r1
 OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
 WITH v, o, r1, g, r2
-OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(p:Part)
-RETURN v, o, r1, g, r2, p, r3`;
+OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
+RETURN v, o, r1, g, r2, p, r3, s, r4`;
           case 'variations':
             return `MATCH (v:Variable ${paramValue})
 OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
@@ -863,16 +866,16 @@ WHERE ${fieldName} IN ${paramValue}
 WITH o
 OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
 OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
-OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
-WITH o, v1, r1, g1, p1, r4a, r5a
+OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
+WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a
 OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
 OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
-OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
-WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
+WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b
 OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
 OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
-OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
-RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c`;
+OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
+RETURN o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b, v3, r3, g3, s3, p3, r4c, r5c, r6c`;
           case 'relationships':
             return `MATCH (o:Object)
 WHERE ${fieldName} IN ${paramValue}
@@ -911,16 +914,16 @@ RETURN b, r1, a, r2, o`;
 WITH o
 OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
 OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
-OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(p1:Part)
-WITH o, v1, r1, g1, p1, r4a, r5a
+OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
+WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a
 OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
 OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
-OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(p2:Part)
-WITH o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b
+OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
+WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b
 OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
 OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
-OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(p3:Part)
-RETURN o, v1, r1, g1, p1, r4a, r5a, v2, r2, g2, p2, r4b, r5b, v3, r3, g3, p3, r4c, r5c`;
+OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
+RETURN o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b, v3, r3, g3, s3, p3, r4c, r5c, r6c`;
           case 'relationships':
             return `MATCH (o:Object ${paramValue})-[r:RELATES_TO]->(o2:Object)
 RETURN o, r, o2`;

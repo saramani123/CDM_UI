@@ -318,7 +318,7 @@ async def get_object(object_id: str):
             # Support both HAS_UNIQUE_ID and HAS_DISCRETE_ID for backward compatibility
             discrete_id_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:HAS_DISCRETE_ID|HAS_UNIQUE_ID]->(v:Variable)
-                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
                 RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
             """, object_id=object_id)
             
@@ -337,7 +337,7 @@ async def get_object(object_id: str):
             for i in range(1, 6):
                 composite_result = session.run(f"""
                     MATCH (o:Object {{id: $object_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
-                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
                     RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
                 """, object_id=object_id)
                 
@@ -765,7 +765,7 @@ async def create_object(object_data: ObjectCreateRequest):
                             # Old format: assume Part = "Identifier" and Group = "Public ID"
                             if 'ALL' in variable_ids:
                                 all_vars_result = session.run("""
-                                    MATCH (p:Part {name: 'Identifier'})-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
+                                    MATCH (p:Part {name: 'Identifier'})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
                                     RETURN v.id as variableId
                                 """, object_id=new_id)
                                 variable_ids = [record['variableId'] for record in all_vars_result]
@@ -793,7 +793,7 @@ async def create_object(object_data: ObjectCreateRequest):
                                         # If "ANY" is selected for section, create relationships to ALL variables within the selected Part
                                         # (regardless of section/group) - Group and Variable are auto-set to ANY by frontend
                                         all_vars_result = session.run("""
-                                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                            MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                             RETURN DISTINCT v.id as variableId
                                         """, part=part)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -811,14 +811,13 @@ async def create_object(object_data: ObjectCreateRequest):
                                         if section:
                                             # Get all groups matching part and section, then all variables from those groups
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                                                WHERE v.section = $section
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part, section=section)
                                         else:
                                             # If no section, get all variables from all groups in the part
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -835,13 +834,13 @@ async def create_object(object_data: ObjectCreateRequest):
                                         # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
                                         if section:
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                                WHERE v.section = $section
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group {part_name: $part, section_name: $section, name: $group})-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN v.id as variableId
                                             """, part=part, group=group, section=section)
                                         else:
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE g.part_name = $part AND g.name = $group
                                                 RETURN v.id as variableId
                                             """, part=part, group=group)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -887,7 +886,7 @@ async def create_object(object_data: ObjectCreateRequest):
                                             # If "ANY" is selected for section, create relationships to ALL variables within the selected Part
                                             # (regardless of section/group) - Group and Variable are auto-set to ANY by frontend
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -905,14 +904,13 @@ async def create_object(object_data: ObjectCreateRequest):
                                             if section:
                                                 # Get all groups matching part and section, then all variables from those groups
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                                                    WHERE v.section = $section
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                     RETURN DISTINCT v.id as variableId
                                                 """, part=part, section=section)
                                             else:
                                                 # If no section, get all variables from all groups in the part
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                     RETURN DISTINCT v.id as variableId
                                                 """, part=part)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -928,7 +926,8 @@ async def create_object(object_data: ObjectCreateRequest):
                                         elif variable_id == 'ANY':
                                             # If "ANY" is selected for variable, create relationships to all variables in that Part/Group
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE g.part_name = $part AND g.name = $group
                                                 RETURN v.id as variableId
                                             """, part=part, group=group)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1544,7 +1543,7 @@ async def update_object(
                             # Old format: assume Part = "Identifier" and Group = "Public ID"
                             if 'ALL' in variable_ids:
                                 all_vars_result = session.run("""
-                                    MATCH (p:Part {name: 'Identifier'})-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
+                                    MATCH (p:Part {name: 'Identifier'})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group {name: 'Public ID'})-[:HAS_VARIABLE]->(v:Variable)
                                     RETURN v.id as variableId
                                 """, object_id=object_id)
                                 variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1572,7 +1571,7 @@ async def update_object(
                                         # If "ANY" is selected for section, create relationships to ALL variables within the selected Part
                                         # (regardless of section/group) - Group and Variable are auto-set to ANY by frontend
                                         all_vars_result = session.run("""
-                                            MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                            MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                             RETURN DISTINCT v.id as variableId
                                         """, part=part)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1590,14 +1589,13 @@ async def update_object(
                                         if section:
                                             # Get all groups matching part and section, then all variables from those groups
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                                                WHERE v.section = $section
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part, section=section)
                                         else:
                                             # If no section, get all variables from all groups in the part
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1614,13 +1612,13 @@ async def update_object(
                                         # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
                                         if section:
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                                WHERE v.section = $section
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group {part_name: $part, section_name: $section, name: $group})-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN v.id as variableId
                                             """, part=part, group=group, section=section)
                                         else:
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                WHERE g.part_name = $part AND g.name = $group
                                                 RETURN v.id as variableId
                                             """, part=part, group=group)
                                         variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1674,7 +1672,7 @@ async def update_object(
                                             # If "ANY" is selected for section, create relationships to ALL variables within the selected Part
                                             # (regardless of section/group) - Group and Variable are auto-set to ANY by frontend
                                             all_vars_result = session.run("""
-                                                MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                 RETURN DISTINCT v.id as variableId
                                             """, part=part)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1692,14 +1690,13 @@ async def update_object(
                                             if section:
                                                 # Get all groups matching part and section, then all variables from those groups
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                                                    WHERE v.section = $section
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                     RETURN DISTINCT v.id as variableId
                                                 """, part=part, section=section)
                                             else:
                                                 # If no section, get all variables from all groups in the part
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                                                     RETURN DISTINCT v.id as variableId
                                                 """, part=part)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -1716,13 +1713,13 @@ async def update_object(
                                             # If "ANY" is selected for variable, create relationships to all variables in that Part/Group with the selected section
                                             if section:
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
-                                                    WHERE v.section = $section
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})-[:HAS_GROUP]->(g:Group {part_name: $part, section_name: $section, name: $group})-[:HAS_VARIABLE]->(v:Variable)
                                                     RETURN v.id as variableId
                                                 """, part=part, group=group, section=section)
                                             else:
                                                 all_vars_result = session.run("""
-                                                    MATCH (p:Part {name: $part})-[:HAS_GROUP]->(g:Group {name: $group})-[:HAS_VARIABLE]->(v:Variable)
+                                                    MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                                                    WHERE g.part_name = $part AND g.name = $group
                                                     RETURN v.id as variableId
                                                 """, part=part, group=group)
                                             variable_ids = [record['variableId'] for record in all_vars_result]
@@ -3522,7 +3519,7 @@ async def clone_identifiers(target_object_id: str, source_object_id: str):
             for i in range(1, 6):
                 composite_result = session.run(f"""
                     MATCH (source:Object {{id: $source_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
-                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
                     RETURN v.id as variableId, p.name as part, g.name as group
                 """, source_id=source_object_id).data()
                 
@@ -3656,7 +3653,7 @@ async def bulk_clone_identifiers(source_object_id: str, target_object_ids: List[
             for i in range(1, 6):
                 composite_result = session.run(f"""
                     MATCH (source:Object {{id: $source_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
-                    MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
                     RETURN v.id as variableId, p.name as part, g.name as group
                 """, source_id=source_object_id).data()
                 

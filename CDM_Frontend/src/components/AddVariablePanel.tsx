@@ -6,6 +6,7 @@ import { CsvUploadModal } from './CsvUploadModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
+import { AddPartValueModal } from './AddPartValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { VariationsModal } from './VariationsModal';
 import { useObjects } from '../hooks/useObjects';
@@ -79,6 +80,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   // Modal state for add section/group values
   const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
+  const [isAddPartModalOpen, setIsAddPartModalOpen] = useState(false);
   
   // Modal state for add field value (Format I, Format II, G-Type, Default)
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
@@ -222,16 +224,18 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     loadSections();
   }, [formData.part]);
 
-  // Load groups when part changes (groups are filtered only by part, not by section)
+  // Load groups when Part and Section are selected (groups are scoped under Section)
   useEffect(() => {
     const loadGroups = async () => {
-      if (!formData.part) {
+      if (!formData.part || !formData.section) {
         setGroupsList([]);
         return;
       }
       setIsLoadingGroups(true);
       try {
-        const response = await apiService.getVariableGroups(formData.part) as { groups: string[] };
+        const response = await apiService.getVariableGroups(formData.part, formData.section) as {
+          groups: string[];
+        };
         setGroupsList(response.groups || []);
       } catch (error) {
         console.error('Error loading groups:', error);
@@ -241,7 +245,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       }
     };
     loadGroups();
-  }, [formData.part]);
+  }, [formData.part, formData.section]);
 
   // Get distinct parts from variables data - fallback
   const getDistinctParts = (): string[] => {
@@ -262,10 +266,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     return sectionsList;
   };
 
-  // Get groups for part - updated to use API data
+  // Groups for current Part + Section (from API)
   const getGroupsForPart = (part: string): string[] => {
-    // If we have groups from API (based on part only), use those
-    if (groupsList.length > 0 && formData.part === part) {
+    if (groupsList.length > 0 && formData.part === part && formData.section) {
       return groupsList;
     }
     // Otherwise fallback to local data
@@ -337,9 +340,12 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     }
   };
 
-  const handleAddGroupValue = async (part: string, groupValue: string) => {
+  const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
     if (!part || !part.trim()) {
       throw new Error('Please select a Part first');
+    }
+    if (!section || !section.trim()) {
+      throw new Error('Please select a Section first');
     }
     
     if (!groupValue || !groupValue.trim()) {
@@ -347,8 +353,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     }
     
     try {
-      // Call backend API to create group
-      await apiService.createVariableGroup(part.trim(), groupValue.trim());
+      await apiService.createVariableGroup(part.trim(), section.trim(), groupValue.trim());
       
       // Also save to localStorage for backward compatibility
       const associations = getPartGroupAssociations();
@@ -361,10 +366,11 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
       }
       
-      // Refresh groups for this part if it's currently selected
-      if (formData.part === part.trim()) {
+      if (formData.part === part.trim() && formData.section === section.trim()) {
         try {
-          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          const response = await apiService.getVariableGroups(part.trim(), section.trim()) as {
+            groups: string[];
+          };
           setGroupsList(response.groups || []);
           // Also update the form data to select the newly added group
           handleChange('group', groupValue.trim());
@@ -385,10 +391,19 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
       if (errorMessage.includes('already exists')) {
-        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+        throw new Error(
+          `Group '${groupValue}' already exists under Section '${section}' (Part '${part}').`,
+        );
       }
       throw error;
     }
+  };
+
+  const handleAddPart = async (name: string) => {
+    await apiService.createVariablePart(name);
+    const response = (await apiService.getVariableParts()) as { parts: string[] };
+    setPartsList(response.parts || []);
+    setFormData((prev) => ({ ...prev, part: name }));
   };
 
   const handleAddFieldValue = async (value: string) => {
@@ -1108,9 +1123,19 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         <div className="space-y-4">
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Part <span className="text-ag-dark-error">*</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Part <span className="text-ag-dark-error">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddPartModalOpen(true)}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                title="Add new Part"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
@@ -1193,9 +1218,13 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
                   onClick={() => {
                     setIsAddGroupValueModalOpen(true);
                   }}
-                  disabled={!formData.part}
+                  disabled={!formData.part || !formData.section}
                   className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Add new Group value"
+                  title={
+                    formData.part && formData.section
+                      ? 'Add new Group under this Section'
+                      : 'Select Part and Section first'
+                  }
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -1665,7 +1694,15 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         }}
         onSave={handleAddGroupValue}
         availableParts={getDistinctParts()}
+        availableSections={sectionsList}
         defaultPart={formData.part || ''}
+        defaultSection={formData.section || ''}
+      />
+
+      <AddPartValueModal
+        isOpen={isAddPartModalOpen}
+        onClose={() => setIsAddPartModalOpen(false)}
+        onSave={handleAddPart}
       />
 
       {/* Add Field Value Modal */}

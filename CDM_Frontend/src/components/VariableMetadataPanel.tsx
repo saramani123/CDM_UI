@@ -7,6 +7,7 @@ import { VariableObjectRelationshipModal } from './VariableObjectRelationshipMod
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
+import { AddPartValueModal } from './AddPartValueModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
@@ -97,6 +98,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   
   // State for add group value modal
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
+
+  const [isAddPartModalOpen, setIsAddPartModalOpen] = useState(false);
   
   // State for add section value modal
   const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
@@ -194,9 +197,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
   };
 
-  const handleAddGroupValue = async (part: string, groupValue: string) => {
+  const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
     if (!part || !part.trim()) {
       throw new Error('Please select a Part first');
+    }
+    if (!section || !section.trim()) {
+      throw new Error('Please select a Section first');
     }
     
     if (!groupValue || !groupValue.trim()) {
@@ -204,16 +210,16 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
     
     try {
-      // Call backend API to create group
-      await apiService.createVariableGroup(part.trim(), groupValue.trim());
+      await apiService.createVariableGroup(part.trim(), section.trim(), groupValue.trim());
       
       // Also save to localStorage for backward compatibility
       savePartGroupAssociation(part.trim(), groupValue.trim());
       
-      // Refresh groups for this part
-      if (formData.part === part.trim()) {
+      if (formData.part === part.trim() && formData.section === section.trim()) {
         try {
-          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          const response = await apiService.getVariableGroups(part.trim(), section.trim()) as {
+            groups: string[];
+          };
           setGroupsList(response.groups || []);
           // Also update the form data to select the newly added group
           handleChange('group', groupValue.trim());
@@ -234,7 +240,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
       if (errorMessage.includes('already exists')) {
-        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+        throw new Error(
+          `Group '${groupValue}' already exists under Section '${section}' (Part '${part}').`,
+        );
       }
       throw error;
     }
@@ -333,16 +341,17 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     loadSections();
   }, [formData.part]);
 
-  // Load groups when part changes (groups are filtered only by part, not by section)
   useEffect(() => {
     const loadGroups = async () => {
-      if (!formData.part) {
+      if (!formData.part || !formData.section) {
         setGroupsList([]);
         return;
       }
       setIsLoadingGroups(true);
       try {
-        const response = await apiService.getVariableGroups(formData.part) as { groups: string[] };
+        const response = await apiService.getVariableGroups(formData.part, formData.section) as {
+          groups: string[];
+        };
         setGroupsList(response.groups || []);
       } catch (error) {
         console.error('Error loading groups:', error);
@@ -352,7 +361,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       }
     };
     loadGroups();
-  }, [formData.part]);
+  }, [formData.part, formData.section]);
 
   // Get distinct sections filtered by selected Part
   const getDistinctSections = (): string[] => {
@@ -373,19 +382,19 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     return parts.length > 0 ? parts : dynamicFieldOptions.part;
   };
 
-  // Get groups for part - updated to use API data
   const getGroupsForPart = (part: string): string[] => {
-    // If we have groups from API (based on part only), use those
-    if (groupsList.length > 0 && formData.part === part) {
+    if (groupsList.length > 0 && formData.part === part && formData.section) {
       return groupsList;
     }
-    // Otherwise fallback to local data
-    if (!part) return [];
+    if (!part || !formData.section) return [];
     
     const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
     const groupsFromData = [...new Set(
       variablesData
-        .filter((item: any) => item.part === part && item.group)
+        .filter(
+          (item: any) =>
+            item.part === part && item.section === formData.section && item.group,
+        )
         .map((item: any) => item.group)
     )].filter(Boolean) as string[];
     
@@ -732,6 +741,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       return newData;
     });
   }, []);
+
+  const handleAddPart = async (name: string) => {
+    await apiService.createVariablePart(name);
+    const response = (await apiService.getVariableParts()) as { parts: string[] };
+    setPartsList(response.parts || []);
+    handleChange('part', name);
+  };
 
   const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
     if (field === 'variableClarifier') {
@@ -1327,9 +1343,20 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Part
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Part
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddPartModalOpen(true)}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Part"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.part}
               onChange={(e) => handleChange('part', e.target.value)}
@@ -1418,9 +1445,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                   onClick={() => {
                     setIsAddGroupValueModalOpen(true);
                   }}
-                  disabled={!isPanelEnabled || !formData.part}
+                  disabled={!isPanelEnabled || !formData.part || !formData.section}
                   className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Add new Group value"
+                  title={
+                    formData.part && formData.section
+                      ? 'Add new Group under this Section'
+                      : 'Select Part and Section first'
+                  }
                 >
                   <Plus className="w-4 h-4" />
                 </button>
@@ -1431,7 +1462,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => e.stopPropagation()}
                 onFocus={(e) => e.stopPropagation()}
-                disabled={!isPanelEnabled || !formData.part || isLoadingGroups}
+                disabled={!isPanelEnabled || !formData.part || !formData.section || isLoadingGroups}
                 className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
                   !isPanelEnabled || !formData.part || !formData.section || isLoadingGroups ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
@@ -2262,7 +2293,15 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         }}
         onSave={handleAddGroupValue}
         availableParts={getDistinctParts()}
+        availableSections={sectionsList}
         defaultPart={formData.part || ''}
+        defaultSection={formData.section || ''}
+      />
+
+      <AddPartValueModal
+        isOpen={isAddPartModalOpen}
+        onClose={() => setIsAddPartModalOpen(false)}
+        onSave={handleAddPart}
       />
 
       {/* Add Section Value Modal */}

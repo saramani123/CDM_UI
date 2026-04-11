@@ -274,16 +274,22 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     loadSections();
   }, [formData.part]);
 
-  // Load groups when part changes (groups are filtered only by part, not by section)
+  // Load groups when Part and Section are chosen (not "Keep Current")
   useEffect(() => {
     const loadGroups = async () => {
       if (!formData.part || formData.part === 'Keep Current Part') {
         setGroupsList([]);
         return;
       }
+      if (!formData.section || formData.section === 'Keep Current Section') {
+        setGroupsList([]);
+        return;
+      }
       setIsLoadingGroups(true);
       try {
-        const response = await apiService.getVariableGroups(formData.part) as { groups: string[] };
+        const response = await apiService.getVariableGroups(formData.part, formData.section) as {
+          groups: string[];
+        };
         setGroupsList(response.groups || []);
       } catch (error) {
         console.error('Error loading groups:', error);
@@ -293,7 +299,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       }
     };
     loadGroups();
-  }, [formData.part]);
+  }, [formData.part, formData.section]);
 
   // Get distinct parts and groups from variables data
   const getDistinctParts = () => {
@@ -315,12 +321,15 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     return {};
   };
 
-  // Get groups for a specific part
   const getGroupsForPart = (part: string): string[] => {
     if (!part || part === 'Keep Current Part') return [];
     
-    // If we have groups from API (based on part only), use those
-    if (groupsList.length > 0 && formData.part === part) {
+    if (
+      groupsList.length > 0 &&
+      formData.part === part &&
+      formData.section &&
+      formData.section !== 'Keep Current Section'
+    ) {
       return groupsList;
     }
     
@@ -384,9 +393,12 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     }
   };
 
-  const handleAddGroupValue = async (part: string, groupValue: string) => {
+  const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
     if (!part || !part.trim()) {
       throw new Error('Please select a Part first');
+    }
+    if (!section || !section.trim()) {
+      throw new Error('Please select a Section first');
     }
     
     if (!groupValue || !groupValue.trim()) {
@@ -394,26 +406,30 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     }
     
     try {
-      // Call backend API to create group
-      await apiService.createVariableGroup(part.trim(), groupValue.trim());
+      await apiService.createVariableGroup(part.trim(), section.trim(), groupValue.trim());
       
-      // Refresh groups for this part if it's currently selected
-      if (formData.part === part.trim() || (formData.part && formData.part !== 'Keep Current Part' && formData.part === part.trim())) {
+      if (
+        formData.part === part.trim() &&
+        formData.section === section.trim() &&
+        formData.section !== 'Keep Current Section'
+      ) {
         try {
-          const response = await apiService.getVariableGroups(part.trim()) as { groups: string[] };
+          const response = await apiService.getVariableGroups(part.trim(), section.trim()) as {
+            groups: string[];
+          };
           setGroupsList(response.groups || []);
-          // Also update the form data to select the newly added group
           handleChange('group', groupValue.trim());
         } catch (error) {
           console.error('Error reloading groups:', error);
-          // Still update the form data even if API call fails
           handleChange('group', groupValue.trim());
         }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to create group';
       if (errorMessage.includes('already exists')) {
-        throw new Error(`Group '${groupValue}' already exists for Part '${part}'. Please use a different name.`);
+        throw new Error(
+          `Group '${groupValue}' already exists under Section '${section}' (Part '${part}').`,
+        );
       }
       throw error;
     }
@@ -2114,7 +2130,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         }}
         onSave={handleAddGroupValue}
         availableParts={getDistinctParts().filter(p => p !== 'Keep Current Part')}
+        availableSections={sectionsList}
         defaultPart={formData.part && formData.part !== 'Keep Current Part' ? formData.part : ''}
+        defaultSection={
+          formData.section && formData.section !== 'Keep Current Section' ? formData.section : ''
+        }
       />
 
       {/* Add Field Value Modal */}

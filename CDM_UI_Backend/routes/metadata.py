@@ -547,12 +547,12 @@ async def get_group_values():
             # Group is a node, Section is a property on Variable nodes
             # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
             result = session.run("""
-                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                WHERE v.section IS NOT NULL AND v.section <> ''
-                  AND p.name IS NOT NULL AND p.name <> ''
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE p.name IS NOT NULL AND p.name <> ''
+                  AND s.name IS NOT NULL AND s.name <> ''
                   AND g.name IS NOT NULL AND g.name <> ''
-                RETURN DISTINCT p.name as part, v.section as section, g.name as group
-                ORDER BY p.name, v.section, g.name
+                RETURN DISTINCT p.name as part, s.name as section, g.name as group
+                ORDER BY p.name, s.name, g.name
             """)
             
             group_triplets = []
@@ -600,11 +600,11 @@ async def get_section_values():
             # Section is a property on Variable nodes
             # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
             result = session.run("""
-                MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                WHERE v.section IS NOT NULL AND v.section <> ''
-                  AND p.name IS NOT NULL AND p.name <> ''
-                RETURN DISTINCT p.name as part, v.section as section
-                ORDER BY p.name, v.section
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)
+                WHERE p.name IS NOT NULL AND p.name <> ''
+                  AND s.name IS NOT NULL AND s.name <> ''
+                RETURN DISTINCT p.name as part, s.name as section
+                ORDER BY p.name, s.name
             """)
             
             section_pairs = []

@@ -1025,13 +1025,8 @@ class ApiService {
     return this.request(`/variables/sections?${params.toString()}`, { method: 'GET' });
   }
 
-  async getVariableGroups(part: string, section?: string) {
-    // Groups are filtered only by part, not by section
-    // Section parameter is kept for backward compatibility but not used
-    const params = new URLSearchParams({ part });
-    if (section) {
-      params.append('section', section);
-    }
+  async getVariableGroups(part: string, section: string) {
+    const params = new URLSearchParams({ part, section });
     return this.request(`/variables/groups?${params.toString()}`, { method: 'GET' });
   }
 
@@ -1042,10 +1037,17 @@ class ApiService {
     });
   }
 
-  async createVariableGroup(part: string, group: string) {
+  async createVariablePart(name: string) {
+    return this.request('/variables/parts', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async createVariableGroup(part: string, section: string, group: string) {
     return this.request('/variables/groups', {
       method: 'POST',
-      body: JSON.stringify({ part, group }),
+      body: JSON.stringify({ part, section, group }),
     });
   }
 
