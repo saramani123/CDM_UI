@@ -95,8 +95,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     return {
       sector: [],
       domain: [],
-      country: [],
-      objectClarifier: ''
+      country: []
     };
   });
 
@@ -153,8 +152,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       setDriverSelections({
         sector: [],
         domain: [],
-        country: [],
-        objectClarifier: ''
+        country: []
       });
       
       prevSelectedObjectId.current = currentObjectId;
@@ -183,16 +181,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               : parsed.domain,
             country: parsed.country.includes('ALL') && driversData.countries.length > 0 
               ? ['ALL', ...driversData.countries] 
-              : parsed.country,
-            objectClarifier: parsed.objectClarifier
+              : parsed.country
           };
           setDriverSelections(expanded);
         } else {
           setDriverSelections({
             sector: [],
             domain: [],
-            country: [],
-            objectClarifier: ''
+            country: []
           });
         }
         
@@ -215,8 +211,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             : parsed.domain,
           country: parsed.country.includes('ALL') && driversData.countries.length > 0 
             ? ['ALL', ...driversData.countries] 
-            : parsed.country,
-          objectClarifier: parsed.objectClarifier
+            : parsed.country
         };
         setDriverSelections(expanded);
       }
@@ -1352,7 +1347,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       if (parts[0] === '-') deleted.push('sectors');
       if (parts[1] === '-') deleted.push('domains');
       if (parts[2] === '-') deleted.push('countries');
-      if (parts[3] === '-') deleted.push('objectClarifiers');
     }
     return deleted;
   };
@@ -1361,7 +1355,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   const isSectorDeleted = deletedDrivers.includes('sectors') || (isSelectedObjectAffected && deletedDriverType === 'sectors');
   const isDomainDeleted = deletedDrivers.includes('domains') || (isSelectedObjectAffected && deletedDriverType === 'domains');
   const isCountryDeleted = deletedDrivers.includes('countries') || (isSelectedObjectAffected && deletedDriverType === 'countries');
-  const isObjectClarifierDeleted = deletedDrivers.includes('objectClarifiers') || (isSelectedObjectAffected && deletedDriverType === 'objectClarifiers');
 
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
@@ -1417,12 +1410,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }));
   };
 
-  const handleObjectClarifierChange = (value: string) => {
-    setDriverSelections(prev => ({
-      ...prev,
-      objectClarifier: value
-    }));
-  };
   const handleCompositeKeyChange = (id: string, field: 'part' | 'group', value: string) => {
     setCompositeKeys(prev => prev.map(key => {
       if (key.id === id) {
@@ -1664,8 +1651,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     const driverString = concatenateDrivers(
       driverSelections.sector,
       driverSelections.domain,
-      driverSelections.country,
-      driverSelections.objectClarifier
+      driverSelections.country
     );
     
     console.log('🔴 Generated driverString:', driverString);
@@ -2126,41 +2112,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               onChange={(values) => handleDriverSelectionChange('country', values)}
               disabled={!isPanelEnabled}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Clarifier
-              {isObjectClarifierDeleted && (
-                <span className="text-red-500 ml-1">*</span>
-              )}
-            </label>
-            {isObjectClarifierDeleted && (
-              <div className="text-red-400 text-sm mb-2">
-                Please reselect object clarifier
-              </div>
-            )}
-            <select
-              value={isObjectClarifierDeleted ? "" : driverSelections.objectClarifier}
-              onChange={(e) => handleObjectClarifierChange(e.target.value)}
-              disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">None</option>
-              {driversData.objectClarifiers.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
       </CollapsibleSection>

@@ -5,7 +5,7 @@ Creates nodes and relationships for Objects, Variables, Lists, and Drivers
 
 from db import get_driver
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 # ObjectRelationshipCreateRequest class definition
 class ObjectRelationshipCreateRequest(BaseModel):
@@ -534,13 +534,13 @@ class VariableResponse(BaseModel):
     variationsList: List[dict] = []
     is_meme: Optional[bool] = False
     is_group_key: Optional[bool] = False
+    group_key: Optional[str] = ""
 
 class VariableCSVRowData(BaseModel):
     """Schema for a single CSV row for variable upload"""
     Sector: str = Field(..., description="Sector name or 'ALL'")
     Domain: str = Field(..., description="Domain name or 'ALL'")
     Country: str = Field(..., description="Country name or 'ALL'")
-    VariableClarifier: Optional[str] = Field(None, alias="Variable Clarifier", description="Variable clarifier or None")
     Part: str = Field(..., description="Part type")
     Group: str = Field(..., description="Group name")
     Section: str = Field(..., description="Section name")
@@ -548,9 +548,9 @@ class VariableCSVRowData(BaseModel):
     FormatI: str = Field(..., alias="Format I", description="Format I")
     FormatII: str = Field(..., alias="Format II", description="Format II")
     GType: Optional[str] = Field("", alias="G-Type", description="G-Type")
-    Validation: Optional[str] = Field("", description="Validation rules")
+    Type: Optional[str] = Field("", description="Type (Meme/Variant)")
     Default: Optional[str] = Field("", description="Default value")
-    Graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
+    Graph: Optional[str] = Field("Yes", description="Graph inclusion (Yes/No)")
     
     class Config:
         allow_population_by_field_name = True
@@ -577,6 +577,7 @@ class VariableFieldOptionRequest(BaseModel):
     """Schema for adding a new field option"""
     field_name: str = Field(..., description="Field name (formatI, formatII, gType, validation, default)")
     value: str = Field(..., description="New value to add")
+    parent_value: Optional[str] = Field(None, description="Optional parent value for scoped fields (e.g. formatII under formatI)")
 
 class VariableFieldOptionsResponse(BaseModel):
     """Schema for variable field options response"""
@@ -585,6 +586,7 @@ class VariableFieldOptionsResponse(BaseModel):
     gType: List[str]
     validation: List[str]
     default: List[str]
+    formatIIByFormatI: Optional[Dict[str, List[str]]] = Field(default_factory=dict)
 
 class CSVUploadRequest(BaseModel):
     """Schema for CSV upload validation"""

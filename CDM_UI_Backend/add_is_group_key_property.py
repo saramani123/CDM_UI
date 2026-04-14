@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
 Migration script to add is_group_key property to all existing Variables in Neo4j.
-This script safely adds is_group_key = False to all Variable nodes that don't already have this property.
+This script safely adds Group Key defaults to all Variable nodes:
+- `Is Group Key` = false (and sync legacy `is_group_key`)
+- `Group Key` = ''
 
 Usage:
     python add_is_group_key_property.py
 
 This script:
 1. Connects to Neo4j using environment variables from .env.dev (dev) or Render env vars (prod)
-2. Finds all Variable nodes without is_group_key property
-3. Sets is_group_key = False for all such nodes
+2. Finds all Variable nodes without Group Key properties
+3. Sets defaults for Group Key properties
 4. Reports the number of nodes updated
 """
 
@@ -63,7 +65,7 @@ def get_driver():
     return driver
 
 def add_is_group_key_property():
-    """Add is_group_key = False to all Variables that don't have it"""
+    """Add Group Key defaults to all Variables that don't have them."""
     driver = get_driver()
     
     try:
@@ -72,15 +74,15 @@ def add_is_group_key_property():
             print("Adding is_group_key property to Variables")
             print("="*60 + "\n")
             
-            # Count Variables without is_group_key
+            # Count Variables without Group Key defaults
             variables_count_result = session.run("""
                 MATCH (v:Variable)
-                WHERE v.is_group_key IS NULL
+                WHERE v.`Is Group Key` IS NULL OR v.`Group Key` IS NULL OR v.is_group_key IS NULL
                 RETURN count(v) as count
             """).single()
             
             variables_count = variables_count_result["count"] if variables_count_result else 0
-            print(f"Found {variables_count} Variables without is_group_key property")
+            print(f"Found {variables_count} Variables without Group Key defaults")
             
             # Count total Variables
             total_variables_result = session.run("""
@@ -91,7 +93,7 @@ def add_is_group_key_property():
             print(f"Total Variables in database: {total_variables}")
             
             if variables_count == 0:
-                print("\n✅ All Variables already have is_group_key property!")
+                print("\n✅ All Variables already have Group Key defaults!")
                 return
             
             # Update Variables
@@ -99,23 +101,25 @@ def add_is_group_key_property():
                 print(f"\nUpdating {variables_count} Variables...")
                 variables_result = session.run("""
                     MATCH (v:Variable)
-                    WHERE v.is_group_key IS NULL
-                    SET v.is_group_key = false
+                    WHERE v.`Is Group Key` IS NULL OR v.`Group Key` IS NULL OR v.is_group_key IS NULL
+                    SET v.`Is Group Key` = coalesce(v.`Is Group Key`, coalesce(v.is_group_key, false)),
+                        v.`Group Key` = coalesce(v.`Group Key`, ''),
+                        v.is_group_key = coalesce(v.`Is Group Key`, v.is_group_key, false)
                     RETURN count(v) as updated
                 """).single()
                 
                 variables_updated = variables_result["updated"] if variables_result else 0
-                print(f"✅ Updated {variables_updated} Variables with is_group_key = false")
+                print(f"✅ Updated {variables_updated} Variables with Group Key defaults")
             
             # Verify the updates
             print("\n" + "-"*60)
             print("Verification:")
             print("-"*60)
             
-            # Count Variables with is_group_key
+            # Count Variables with Group Key defaults
             variables_with_key = session.run("""
                 MATCH (v:Variable)
-                WHERE v.is_group_key IS NOT NULL
+                WHERE v.`Is Group Key` IS NOT NULL AND v.`Group Key` IS NOT NULL
                 RETURN count(v) as count
             """).single()
             
@@ -124,16 +128,16 @@ def add_is_group_key_property():
                 RETURN count(v) as count
             """).single()
             
-            print(f"Variables: {variables_with_key['count'] if variables_with_key else 0} / {variables_total['count'] if variables_total else 0} have is_group_key property")
+            print(f"Variables: {variables_with_key['count'] if variables_with_key else 0} / {variables_total['count'] if variables_total else 0} have Group Key defaults")
             
-            # Count Variables with is_group_key = true
+            # Count Variables with Is Group Key = true
             variables_with_key_true = session.run("""
                 MATCH (v:Variable)
-                WHERE v.is_group_key = true
+                WHERE coalesce(v.`Is Group Key`, v.is_group_key, false) = true
                 RETURN count(v) as count
             """).single()
             
-            print(f"Variables with is_group_key = true: {variables_with_key_true['count'] if variables_with_key_true else 0}")
+            print(f"Variables with `Is Group Key` = true: {variables_with_key_true['count'] if variables_with_key_true else 0}")
             
             print("\n" + "="*60)
             print("✅ Migration completed successfully!")
@@ -150,7 +154,7 @@ def add_is_group_key_property():
 
 if __name__ == "__main__":
     print("🚀 Starting is_group_key property migration...")
-    print("⚠️  This will add is_group_key = False to all Variables")
+    print("⚠️  This will add Group Key defaults (`Is Group Key`/`Group Key`) to all Variables")
     print("⚠️  This is safe and will not modify existing data\n")
     
     add_is_group_key_property()

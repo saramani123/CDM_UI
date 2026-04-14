@@ -48,10 +48,177 @@ class BulkVariableObjectRelationshipCreateRequest(BaseModel):
 
 class BulkUploadVariablesChunkRequest(BaseModel):
     """JSON body for chunked variable upload (avoids long request timeouts on Render)."""
-    rows: List[Dict[str, Any]] = Field(..., description="Array of row objects with keys: Sector, Domain, Country, Part, Section, Group, Variable, and optional Format I, Format II, G-Type, etc.")
+    rows: List[Dict[str, Any]] = Field(
+        ...,
+        description=(
+            "Array of row objects with keys: Sector, Domain, Country, Part, Section, Group, Variable, "
+            "and optional Format I, Format II, G-Type, Type, Default, Graph."
+        ),
+    )
     start_row_index: int = Field(2, description="1-based row index of first row (for error messages)")
 
 router = APIRouter()
+
+IS_GROUP_KEY_PROP = "`Is Group Key`"
+GROUP_KEY_PROP = "`Group Key`"
+
+CSV_FORMAT_II_BY_FORMAT_I: Dict[str, List[str]] = {
+    "ID": ["Public", "Private", "Vulqan"],
+    "Time": ["Date", "DateTime"],
+    "List": ["Static", "Specific", "Flag"],
+    "Number": ["Integer", "Decimal", "Currency", "Percent"],
+    "Directory": ["Phone", "Email", "URL", "Zip"],
+    "Freeform": ["Text", "Binary", "JSON", "CSV", "XLS", "PDF"],
+}
+CSV_ALLOWED_GTYPE = {"Loose", "Tight"}
+CSV_ALLOWED_TYPE = {"Meme", "Variant"}
+CSV_ALLOWED_GRAPH = {"Yes", "No"}
+
+
+def _coalesced_is_group_key_expr(alias: str = "v") -> str:
+    return f"coalesce({alias}.{IS_GROUP_KEY_PROP}, {alias}.is_group_key, false)"
+
+
+def _normalize_allowed_value(value: str, allowed_values: List[str] | set[str]) -> str:
+    """Case-insensitive value normalization against an allowed set."""
+    allowed = list(allowed_values)
+    for candidate in allowed:
+        if value.lower() == candidate.lower():
+            return candidate
+    return ""
+
+
+def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: List[str]) -> Optional[Dict[str, Any]]:
+    def push_error(message: str) -> None:
+        errors.append(message)
+        print(f"❌ CSV validation error: {message}")
+
+    """
+    Validate and normalize optional variable CSV metadata columns.
+    Returns normalized dict or None if row is invalid.
+    """
+    format_i_raw = (row.get("Format I") or "").strip()
+    format_ii_raw = (row.get("Format II") or "").strip()
+    g_type_raw = (row.get("G-Type") or "").strip()
+    type_raw = (row.get("Type") or "").strip()
+    default_raw = (row.get("Default") or "").strip()
+    graph_raw = (row.get("Graph") or "Yes").strip() or "Yes"
+
+    format_i = ""
+    format_ii = ""
+    g_type = ""
+    graph = ""
+    var_type = "Variant"
+
+    if format_i_raw:
+        format_i = _normalize_allowed_value(format_i_raw, list(CSV_FORMAT_II_BY_FORMAT_I.keys()))
+        if not format_i:
+            push_error(
+                f"Row {row_num}: Invalid Format I '{format_i_raw}'. "
+                f"Allowed values: {', '.join(CSV_FORMAT_II_BY_FORMAT_I.keys())}."
+            )
+            return None
+
+    if format_ii_raw:
+        if not format_i:
+            push_error(
+                f"Row {row_num}: Format II '{format_ii_raw}' requires Format I to be provided."
+            )
+            return None
+        format_ii = _normalize_allowed_value(format_ii_raw, CSV_FORMAT_II_BY_FORMAT_I[format_i])
+        if not format_ii:
+            push_error(
+                f"Row {row_num}: Invalid Format II '{format_ii_raw}' for Format I '{format_i}'. "
+                f"Allowed values: {', '.join(CSV_FORMAT_II_BY_FORMAT_I[format_i])}."
+            )
+            return None
+    elif format_i:
+        push_error(
+            f"Row {row_num}: Format II is required when Format I '{format_i}' is provided."
+        )
+        return None
+
+    if g_type_raw:
+        g_type = _normalize_allowed_value(g_type_raw, CSV_ALLOWED_GTYPE)
+        if not g_type:
+            push_error(
+                f"Row {row_num}: Invalid G-Type '{g_type_raw}'. Allowed values: Loose, Tight."
+            )
+            return None
+
+    if type_raw:
+        normalized_type = _normalize_allowed_value(type_raw, CSV_ALLOWED_TYPE)
+        if not normalized_type:
+            push_error(
+                f"Row {row_num}: Invalid Type '{type_raw}'. Allowed values: Meme, Variant."
+            )
+            return None
+        var_type = normalized_type
+
+    graph = _normalize_allowed_value(graph_raw, CSV_ALLOWED_GRAPH)
+    if not graph:
+        push_error(
+            f"Row {row_num}: Invalid Graph '{graph_raw}'. Allowed values: Yes, No."
+        )
+        return None
+
+    return {
+        "formatI": format_i,
+        "formatII": format_ii,
+        "gType": g_type,
+        "default": default_raw,
+        "graph": graph,
+        "is_meme": var_type == "Meme",
+    }
+
+
+def _ensure_group_key_defaults(session) -> None:
+    """Backfill literal Group Key properties for existing Variables."""
+    session.run(f"""
+        MATCH (v:Variable)
+        WHERE v.{IS_GROUP_KEY_PROP} IS NULL OR v.{GROUP_KEY_PROP} IS NULL OR v.is_group_key IS NULL
+        SET v.{IS_GROUP_KEY_PROP} = coalesce(v.{IS_GROUP_KEY_PROP}, coalesce(v.is_group_key, false)),
+            v.{GROUP_KEY_PROP} = coalesce(v.{GROUP_KEY_PROP}, ''),
+            v.is_group_key = coalesce(v.{IS_GROUP_KEY_PROP}, v.is_group_key, false)
+    """)
+
+
+def _apply_group_key_selection_by_group_name(session, variable_id: str, is_selected: bool) -> None:
+    """
+    Apply Group Key rules globally by Group *name* (not Group node ID):
+    - selected=True: all Variables under any Group with same name get Group Key=<variable_id>;
+      only selected variable has Is Group Key=true.
+    - selected=False: all Variables under that group-name bucket get Is Group Key=false and Group Key=''.
+    """
+    group_rec = session.run("""
+        MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $variable_id})
+        RETURN g.name AS group_name
+        LIMIT 1
+    """, {"variable_id": variable_id}).single()
+
+    if not group_rec or not group_rec.get("group_name"):
+        raise HTTPException(status_code=400, detail=f"Could not resolve Group for variable {variable_id}.")
+
+    group_name = str(group_rec["group_name"]).strip()
+    if not group_name:
+        raise HTTPException(status_code=400, detail=f"Variable {variable_id} has an empty Group name.")
+
+    if is_selected:
+        session.run(f"""
+            MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable)
+            WHERE toLower(g.name) = toLower($group_name)
+            SET v.{GROUP_KEY_PROP} = $group_key_id,
+                v.{IS_GROUP_KEY_PROP} = CASE WHEN v.id = $group_key_id THEN true ELSE false END,
+                v.is_group_key = CASE WHEN v.id = $group_key_id THEN true ELSE false END
+        """, {"group_name": group_name, "group_key_id": variable_id})
+    else:
+        session.run(f"""
+            MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable)
+            WHERE toLower(g.name) = toLower($group_name)
+            SET v.{GROUP_KEY_PROP} = '',
+                v.{IS_GROUP_KEY_PROP} = false,
+                v.is_group_key = false
+        """, {"group_name": group_name})
 
 def _scoped_taxonomy_conflict_messages(runner, part: str, section: str, group: str) -> List[str]:
     """
@@ -135,7 +302,7 @@ def _scoped_taxonomy_conflict_messages(runner, part: str, section: str, group: s
 async def create_driver_relationships(session, variable_id: str, driver_string: str):
     """
     Create driver relationships for a variable based on the driver string.
-    Driver string format: "Sector, Domain, Country, VariableClarifier" (or 3-part: "Sector, Domain, VariableClarifier")
+    Driver string format: "Sector, Domain, Country, None"
     Creates IS_RELEVANT_TO relationships from driver nodes to the variable.
     
     This function is idempotent - it deletes existing relationships first, then creates new ones.
@@ -168,25 +335,51 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         """, variable_id=variable_id)
         print(f"Deleted existing driver relationships for variable {variable_id}")
         
-        # Parse driver string
-        parts = [part.strip() for part in driver_string.split(',')]
-        
-        # Handle both 3-part (old format: Sector, Domain, Clarifier) and 4-part (new format: Sector, Domain, Country, Clarifier)
-        if len(parts) == 3:
-            # Old format: Sector, Domain, Clarifier (missing Country)
-            sector_str, domain_str, variable_clarifier = parts
-            country_str = "ALL"  # Default to ALL if country is missing
-            print(f"Parsed 3-part driver string (missing Country, defaulting to ALL): {driver_string}")
-        elif len(parts) == 4:
-            # New format: Sector, Domain, Country, Clarifier
-            sector_str, domain_str, country_str, variable_clarifier = parts
-            print(f"Parsed 4-part driver string: {driver_string}")
+        # Parse driver string with category-aware splitting.
+        tokens = [part.strip() for part in driver_string.split(",") if part.strip()]
+        if tokens and tokens[-1].lower() == "none":
+            tokens = tokens[:-1]
+
+        sector_names = {r["name"] for r in session.run("MATCH (s:Sector) RETURN s.name as name") if r.get("name")}
+        domain_names = {r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name as name") if r.get("name")}
+        country_names = {r["name"] for r in session.run("MATCH (c:Country) RETURN c.name as name") if r.get("name")}
+
+        def valid(bucket: List[str], allowed: set) -> bool:
+            if not bucket:
+                return False
+            if len(bucket) == 1 and bucket[0] == "ALL":
+                return True
+            if "ALL" in bucket:
+                return False
+            return all(item in allowed for item in bucket)
+
+        parsed = None
+        if len(tokens) >= 3:
+            for i in range(1, len(tokens) - 1):
+                for j in range(i + 1, len(tokens)):
+                    sec = tokens[:i]
+                    dom = tokens[i:j]
+                    cou = tokens[j:]
+                    if valid(sec, sector_names) and valid(dom, domain_names) and valid(cou, country_names):
+                        parsed = (sec, dom, cou)
+                        break
+                if parsed:
+                    break
+
+        if parsed:
+            sector_values, domain_values, country_values = parsed
         else:
-            print(f"Invalid driver string format (expected 3 or 4 parts, got {len(parts)}): {driver_string}")
-            return
+            print(f"Warning: could not fully parse driver string '{driver_string}', applying fallback")
+            sector_values = [tokens[0]] if len(tokens) > 0 else ["ALL"]
+            domain_values = [tokens[1]] if len(tokens) > 1 else ["ALL"]
+            country_values = [tokens[2]] if len(tokens) > 2 else ["ALL"]
+
+        print(
+            f"Parsed driver buckets for variable {variable_id}: sectors={sector_values}, domains={domain_values}, countries={country_values}"
+        )
         
         # Handle Sector relationships
-        if sector_str == "ALL":
+        if len(sector_values) == 1 and sector_values[0] == "ALL":
             # Create relationships to ALL existing sectors
             result = session.run("""
                 MATCH (s:Sector)
@@ -200,8 +393,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             print(f"Created {count} Sector relationships (ALL)")
         else:
             # Create relationships to individual sectors
-            sectors = [s.strip() for s in sector_str.split(',')]
-            for sector in sectors:
+            for sector in sector_values:
                 if sector and sector != "None":  # Skip empty or None sectors
                     result = session.run("""
                         MERGE (s:Sector {name: $sector})
@@ -217,7 +409,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
                         print(f"⚠️  Failed to create relationship for Sector({sector}) -> Variable({variable_id})")
         
         # Handle Domain relationships
-        if domain_str == "ALL":
+        if len(domain_values) == 1 and domain_values[0] == "ALL":
             # Create relationships to ALL existing domains
             result = session.run("""
                 MATCH (d:Domain)
@@ -230,8 +422,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             count = record["count"] if record else 0
             print(f"Created {count} Domain relationships (ALL)")
         else:
-            domains = [d.strip() for d in domain_str.split(',')]
-            for domain in domains:
+            for domain in domain_values:
                 if domain and domain != "None":  # Skip empty or None domains
                     result = session.run("""
                         MERGE (d:Domain {name: $domain})
@@ -247,7 +438,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
                         print(f"⚠️  Failed to create relationship for Domain({domain}) -> Variable({variable_id})")
         
         # Handle Country relationships
-        if country_str == "ALL":
+        if len(country_values) == 1 and country_values[0] == "ALL":
             # Create relationships to ALL existing countries
             result = session.run("""
                 MATCH (c:Country)
@@ -260,8 +451,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             count = record["count"] if record else 0
             print(f"Created {count} Country relationships (ALL)")
         else:
-            countries = [c.strip() for c in country_str.split(',')]
-            for country in countries:
+            for country in country_values:
                 if country and country != "None":  # Skip empty or None countries
                     result = session.run("""
                         MERGE (c:Country {name: $country})
@@ -276,24 +466,6 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
                     else:
                         print(f"⚠️  Failed to create relationship for Country({country}) -> Variable({variable_id})")
         
-        # Handle Variable Clarifier relationship (single select)
-        # Skip if "None" or empty
-        if variable_clarifier and variable_clarifier != "None" and variable_clarifier != "":
-            result = session.run("""
-                MERGE (vc:VariableClarifier {name: $clarifier})
-                WITH vc
-                MATCH (v:Variable {id: $variable_id})
-                MERGE (vc)-[:IS_RELEVANT_TO]->(v)
-                RETURN vc.name as clarifier
-            """, clarifier=variable_clarifier, variable_id=variable_id)
-            record = result.single()
-            if record:
-                print(f"Created IS_RELEVANT_TO relationship: VariableClarifier({record['clarifier']}) -> Variable({variable_id})")
-            else:
-                print(f"⚠️  Failed to create relationship for VariableClarifier({variable_clarifier}) -> Variable({variable_id})")
-        else:
-            print(f"Skipping VariableClarifier relationship (value: '{variable_clarifier}')")
-            
         print(f"✅ Successfully created driver relationships for variable {variable_id}")
             
     except Exception as e:
@@ -589,6 +761,8 @@ async def get_variables():
 
     try:
         with driver.session() as session:
+            _ensure_group_key_defaults(session)
+
             # First, get all possible driver values to check if "ALL" should be used
             all_sectors_result = session.run("MATCH (s:Sector) WHERE s.name <> 'ALL' RETURN s.name as name")
             all_sectors = {record["name"] for record in all_sectors_result}
@@ -621,7 +795,8 @@ async def get_variables():
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
                        v.status as status, COALESCE(v.is_meme, false) as is_meme,
-                       COALESCE(v.is_group_key, false) as is_group_key,
+                       coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
+                       coalesce(v.`Group Key`, '') as group_key,
                        p.name as part, g.name as group,
                        objectRelationships, variations, sectors, domains, countries, variableClarifiers,
                        properties(v) as allProps
@@ -639,7 +814,6 @@ async def get_variables():
                 sectors = record["sectors"] or []
                 domains = record["domains"] or []
                 countries = record["countries"] or []
-                variable_clarifiers = record["variableClarifiers"] or []
                 
                 # Normalize driver strings: if all values are present, use "ALL"
                 # Filter out "ALL" from the lists (it's not a real node, just a UI convenience)
@@ -661,9 +835,7 @@ async def get_variables():
                 sector_str = "ALL" if ("ALL" in sectors or sector_all_selected) else (", ".join(sectors_filtered) if sectors_filtered else "ALL")
                 domain_str = "ALL" if ("ALL" in domains or domain_all_selected) else (", ".join(domains_filtered) if domains_filtered else "ALL")
                 country_str = "ALL" if ("ALL" in countries or country_all_selected) else (", ".join(countries_filtered) if countries_filtered else "ALL")
-                clarifier_str = variable_clarifiers[0] if variable_clarifiers else "None"
-                
-                driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+                driver_string = f"{sector_str}, {domain_str}, {country_str}, None"
                 
                 # Collect all validation properties and combine into comma-separated string
                 all_props = record.get("allProps", {})
@@ -699,6 +871,7 @@ async def get_variables():
                     "status": str(record["status"]) if record["status"] else "Active",
                     "is_meme": record.get("is_meme", False),
                     "is_group_key": record.get("is_group_key", False),
+                    "group_key": str(record.get("group_key") or ""),
                     "objectRelationships": int(record["objectRelationships"]) if record["objectRelationships"] is not None else 0,
                     "objectRelationshipsList": [],
                     "variations": int(record["variations"]) if record["variations"] is not None else 0
@@ -753,14 +926,17 @@ async def create_variable(variable_data: VariableCreateRequest):
                     status: $status,
                     driver: $driver,
                     is_meme: $is_meme,
-                    is_group_key: $is_group_key
+                    is_group_key: $is_group_key,
+                    `Is Group Key`: $is_group_key,
+                    `Group Key`: CASE WHEN $is_group_key THEN $id ELSE '' END
                 })
                 MERGE (g)-[:HAS_VARIABLE]->(v)
                 RETURN v.id AS id, v.name AS variable,
                        v.formatI AS formatI, v.formatII AS formatII, v.gType AS gType,
                        v.validation AS validation, v.default AS default, v.graph AS graph,
                        v.status AS status, COALESCE(v.is_meme, false) AS is_meme,
-                       COALESCE(v.is_group_key, false) AS is_group_key,
+                       coalesce(v.`Is Group Key`, v.is_group_key, false) AS is_group_key,
+                       coalesce(v.`Group Key`, '') AS group_key,
                        $section AS section, $part AS part, $group AS group
                 """,
                 {
@@ -786,6 +962,16 @@ async def create_variable(variable_data: VariableCreateRequest):
             record = result.single()
             if not record:
                 raise HTTPException(status_code=500, detail="Failed to create variable")
+
+            if bool(getattr(variable_data, "isGroupKey", False) or False):
+                _apply_group_key_selection_by_group_name(session, variable_id, True)
+                refreshed = session.run("""
+                    MATCH (v:Variable {id: $id})
+                    RETURN coalesce(v.`Is Group Key`, v.is_group_key, false) AS is_group_key,
+                           coalesce(v.`Group Key`, '') AS group_key
+                """, {"id": variable_id}).single()
+                if refreshed:
+                    record = {**record, "is_group_key": refreshed.get("is_group_key", False), "group_key": refreshed.get("group_key", "")}
 
             # Create driver relationships
             print(f"About to create driver relationships for variable {variable_id}")
@@ -866,6 +1052,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 status=record["status"],
                 is_meme=record.get("is_meme", False),
                 is_group_key=record.get("is_group_key", False),
+                group_key=record.get("group_key", ""),
                 objectRelationships=0,
                 objectRelationshipsList=[],
                 variations=variations_count,
@@ -1286,9 +1473,16 @@ async def update_variable(variable_id: str, request: Request):
             current_group = current_record["group"] if current_record["group"] else ""
             # Get driver from current variable node
             current_driver = current_variable.get("driver", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'driver', "")
-            # Get is_meme and is_group_key from node properties
+            # Get is_meme and group key flags from node properties
             current_is_meme = current_variable.get("is_meme", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_meme', False)
-            current_is_group_key = current_variable.get("is_group_key", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_group_key', False)
+            current_is_group_key = (
+                current_variable.get("Is Group Key", None) if hasattr(current_variable, 'get') else getattr(current_variable, "Is Group Key", None)
+            )
+            if current_is_group_key is None:
+                current_is_group_key = current_variable.get("is_group_key", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_group_key', False)
+            current_group_key = (
+                current_variable.get("Group Key", "") if hasattr(current_variable, 'get') else getattr(current_variable, "Group Key", "")
+            )
             
             import sys
             sys.stdout.flush()
@@ -1374,8 +1568,7 @@ async def update_variable(variable_id: str, request: Request):
                 params["is_meme"] = is_meme_value
                 print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for variable {variable_id}")
             
-            # Handle isGroupKey with validation - only one per group
-            # Check both camelCase and snake_case (similar to isMeme handling)
+            # Track isGroupKey (processed after ontology moves using Group *name* scope).
             is_group_key_provided = False
             is_group_key_value = None
             
@@ -1401,44 +1594,7 @@ async def update_variable(variable_id: str, request: Request):
                 print(f"DEBUG: 🔑 WARNING: isGroupKey not found or is None in variable_data")
             
             if is_group_key_provided:
-                print(f"DEBUG: 🔑 Processing is_group_key update: {is_group_key_value} for variable {variable_id}")
-                
-                # If setting to true, first uncheck all other variables in the same group
-                if is_group_key_value:
-                    # Get the current group for this variable
-                    group_result = session.run("""
-                        MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $id})
-                        RETURN g.id AS gid, g.name AS group_name
-                    """, {"id": variable_id})
-                    
-                    group_record = group_result.single()
-                    if group_record and group_record.get("gid"):
-                        group_name = group_record.get("group_name") or ""
-                        gid = group_record["gid"]
-                        print(f"DEBUG: 🔑 Found group '{group_name}' for variable {variable_id}")
-                        
-                        # Uncheck all other variables in the same group
-                        uncheck_result = session.run("""
-                            MATCH (g:Group {id: $gid})-[:HAS_VARIABLE]->(v:Variable)
-                            WHERE v.id <> $variable_id AND v.is_group_key = true
-                            SET v.is_group_key = false
-                            RETURN count(v) as unchecked_count
-                        """, {"gid": gid, "variable_id": variable_id})
-                        
-                        unchecked_record = uncheck_result.single()
-                        if unchecked_record:
-                            unchecked_count = unchecked_record["unchecked_count"]
-                            if unchecked_count > 0:
-                                print(f"DEBUG: 🔑 Unchecked {unchecked_count} other variables in group '{group_name}'")
-                            else:
-                                print(f"DEBUG: 🔑 No other variables in group '{group_name}' had is_group_key = true")
-                    else:
-                        print(f"DEBUG: 🔑 WARNING: Could not find group for variable {variable_id}, but will still set is_group_key")
-                
-                # Now set this variable's is_group_key
-                set_clauses.append("v.is_group_key = $is_group_key")
-                params["is_group_key"] = is_group_key_value
-                print(f"DEBUG: 🔑 Added is_group_key = {is_group_key_value} to update query for variable {variable_id}")
+                print(f"DEBUG: 🔑 Queued is_group_key update: {is_group_key_value} for variable {variable_id}")
 
             # Ontology moves (must run before property SET so duplicate-name checks use final group)
             part_provided = variable_data.part is not None and str(variable_data.part).strip() != ""
@@ -1503,7 +1659,8 @@ async def update_variable(variable_id: str, request: Request):
                            v.validation as validation, v.default as default, v.graph as graph,
                            v.status as status, COALESCE(v.driver, '') as driver,
                            COALESCE(v.is_meme, false) as is_meme,
-                           COALESCE(v.is_group_key, false) as is_group_key
+                           coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
+                           coalesce(v.`Group Key`, '') as group_key
                 """
                 
                 print(f"DEBUG: 🎭 Executing variable update query with is_meme: {params.get('is_meme', 'NOT_SET')}, is_group_key: {params.get('is_group_key', 'NOT_SET')}")
@@ -1525,26 +1682,32 @@ async def update_variable(variable_id: str, request: Request):
                     "graph": current_variable.get("graph", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'graph', ""),
                     "status": current_variable.get("status", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'status', ""),
                     "is_meme": current_is_meme,
-                    "is_group_key": current_is_group_key
+                    "is_group_key": current_is_group_key,
+                    "group_key": current_group_key or ""
                 }
 
-            # Update driver relationships ONLY if driver field is provided AND it actually changed
-            if variable_data.driver is not None:
-                # Get current driver from the variable node
-                current_driver_result = session.run("""
+            if is_group_key_provided:
+                _apply_group_key_selection_by_group_name(session, variable_id, bool(is_group_key_value))
+                refreshed_group_key = session.run("""
                     MATCH (v:Variable {id: $id})
-                    RETURN v.driver as driver
-                """, {"id": variable_id})
-                current_driver_record = current_driver_result.single()
-                current_driver = current_driver_record["driver"] if current_driver_record and current_driver_record["driver"] else ""
+                    RETURN coalesce(v.`Is Group Key`, v.is_group_key, false) AS is_group_key,
+                           coalesce(v.`Group Key`, '') AS group_key
+                """, {"id": variable_id}).single()
+                if refreshed_group_key:
+                    record = {**record, "is_group_key": refreshed_group_key.get("is_group_key", False), "group_key": refreshed_group_key.get("group_key", "")}
+
+            # Update driver relationships ONLY if driver field is provided AND it actually changed.
+            # Compare against the pre-update value we loaded at the start of this request.
+            if variable_data.driver is not None:
                 new_driver = variable_data.driver.strip() if variable_data.driver else ""
+                previous_driver = current_driver.strip() if current_driver else ""
                 
                 # Only update driver relationships if the driver actually changed
-                if new_driver != current_driver:
-                    print(f"DEBUG: Driver changed from '{current_driver}' to '{new_driver}', updating relationships")
+                if new_driver != previous_driver:
+                    print(f"DEBUG: Driver changed from '{previous_driver}' to '{new_driver}', updating relationships")
                     await create_driver_relationships(session, variable_id, variable_data.driver)
                 else:
-                    print(f"DEBUG: Driver unchanged ('{current_driver}'), skipping driver relationship update")
+                    print(f"DEBUG: Driver unchanged ('{previous_driver}'), skipping driver relationship update")
 
             # Handle variationsList if provided
             has_variations_list = variable_data.variationsList is not None and len(variable_data.variationsList) > 0
@@ -1684,6 +1847,7 @@ async def update_variable(variable_id: str, request: Request):
                 status=record["status"],
                 is_meme=record.get("is_meme", False),
                 is_group_key=record.get("is_group_key", False),
+                group_key=record.get("group_key", ""),
                 objectRelationships=relationships_count,
                 objectRelationshipsList=[],
                 variations=variations_count,
@@ -2275,7 +2439,11 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                                 id: $id, name: $variable,
                                 formatI: $formatI, formatII: $formatII, gType: $gType,
                                 validation: $validation, default: $default, graph: $graph,
-                                status: $status, driver: $driver
+                                status: $status, driver: $driver,
+                                is_meme: coalesce($is_meme, false),
+                                is_group_key: false,
+                                `Is Group Key`: false,
+                                `Group Key`: ''
                             })
                             MERGE (g)-[:HAS_VARIABLE]->(v)
                             RETURN v.id as id
@@ -2353,7 +2521,11 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         if missing_columns:
             raise HTTPException(
                 status_code=400,
-                detail=f"CSV must contain these exact column headers (required): {', '.join(required_columns)}. Missing: {', '.join(missing_columns)}. Optional: Variable Clarifier, Format I, Format II, G-Type, Validation, Default, Graph."
+                detail=(
+                    f"CSV must contain these exact column headers (required): {', '.join(required_columns)}. "
+                    f"Missing: {', '.join(missing_columns)}. "
+                    "Optional: Format I, Format II, G-Type, Type, Default, Graph."
+                )
             )
         
         # Parse data rows using csv module to properly handle quoted fields with commas
@@ -2423,17 +2595,20 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 continue
             seen_taxonomy_keys.add(dup_key)
 
-            # Parse driver selections (Variable Clarifier is optional; default to 'None' if missing or empty)
-            sector = ['ALL'] if row['Sector'].strip() == 'ALL' else [s.strip() for s in row['Sector'].split(',')]
-            domain = ['ALL'] if row['Domain'].strip() == 'ALL' else [d.strip() for d in row['Domain'].split(',')]
-            country = ['ALL'] if row['Country'].strip() == 'ALL' else [c.strip() for c in row['Country'].split(',')]
-            variable_clarifier = (row.get('Variable Clarifier') or '').strip() or 'None'
+            metadata = _extract_variable_csv_metadata(row, row_num, errors)
+            if metadata is None:
+                continue
+
+            # Parse driver selections
+            sector = ['ALL'] if row['Sector'].strip() == 'ALL' else [s.strip() for s in row['Sector'].split(',') if s.strip()]
+            domain = ['ALL'] if row['Domain'].strip() == 'ALL' else [d.strip() for d in row['Domain'].split(',') if d.strip()]
+            country = ['ALL'] if row['Country'].strip() == 'ALL' else [c.strip() for c in row['Country'].split(',') if c.strip()]
             
             # Create driver string
             sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
             domain_str = 'ALL' if 'ALL' in domain else ', '.join(domain)
             country_str = 'ALL' if 'ALL' in country else ', '.join(country)
-            driver_string = f"{sector_str}, {domain_str}, {country_str}, {variable_clarifier}"
+            driver_string = f"{sector_str}, {domain_str}, {country_str}, None"
 
             # Create variable data with proper handling of optional fields
             variable_data = {
@@ -2443,12 +2618,13 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 "section": s,
                 "group": g,
                 "variable": v,
-                "formatI": row.get('Format I', '').strip() or '',
-                "formatII": row.get('Format II', '').strip() or '',
-                "gType": row.get('G-Type', '').strip() or '',
-                "validation": row.get('Validation', '').strip() or '',
-                "default": row.get('Default', '').strip() or '',
-                "graph": row.get('Graph', 'Yes').strip() or 'Yes',
+                "formatI": metadata["formatI"],
+                "formatII": metadata["formatII"],
+                "gType": metadata["gType"],
+                "validation": "",
+                "default": metadata["default"],
+                "graph": metadata["graph"],
+                "is_meme": metadata["is_meme"],
                 "status": "Active"
             }
             
@@ -2459,6 +2635,12 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             continue
 
     created_count = await _process_variables_to_db(driver, variables, errors)
+    if errors:
+        print(f"⚠️ Variable CSV upload completed with {len(errors)} error(s)")
+        for err in errors[:20]:
+            print(f"   - {err}")
+        if len(errors) > 20:
+            print(f"   - ... and {len(errors) - 20} more")
 
     return CSVUploadResponse(
         success=True,
@@ -2508,14 +2690,17 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
             )
             continue
         seen_chunk.add(dup_key)
-        sector = ['ALL'] if (row.get('Sector') or '').strip() == 'ALL' else [s.strip() for s in (row.get('Sector') or '').split(',')]
-        domain = ['ALL'] if (row.get('Domain') or '').strip() == 'ALL' else [d.strip() for d in (row.get('Domain') or '').split(',')]
-        country = ['ALL'] if (row.get('Country') or '').strip() == 'ALL' else [c.strip() for c in (row.get('Country') or '').split(',')]
-        variable_clarifier = (row.get('Variable Clarifier') or '').strip() or 'None'
+        metadata = _extract_variable_csv_metadata(row, row_num, errors)
+        if metadata is None:
+            continue
+
+        sector = ['ALL'] if (row.get('Sector') or '').strip() == 'ALL' else [s.strip() for s in (row.get('Sector') or '').split(',') if s.strip()]
+        domain = ['ALL'] if (row.get('Domain') or '').strip() == 'ALL' else [d.strip() for d in (row.get('Domain') or '').split(',') if d.strip()]
+        country = ['ALL'] if (row.get('Country') or '').strip() == 'ALL' else [c.strip() for c in (row.get('Country') or '').split(',') if c.strip()]
         sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
         domain_str = 'ALL' if 'ALL' in domain else ', '.join(domain)
         country_str = 'ALL' if 'ALL' in country else ', '.join(country)
-        driver_string = f"{sector_str}, {domain_str}, {country_str}, {variable_clarifier}"
+        driver_string = f"{sector_str}, {domain_str}, {country_str}, None"
         variable_data = {
             "id": str(uuid.uuid4()),
             "driver": driver_string,
@@ -2523,17 +2708,24 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
             "section": s,
             "group": g,
             "variable": v,
-            "formatI": (row.get('Format I') or '').strip() or '',
-            "formatII": (row.get('Format II') or '').strip() or '',
-            "gType": (row.get('G-Type') or '').strip() or '',
-            "validation": (row.get('Validation') or '').strip() or '',
-            "default": (row.get('Default') or '').strip() or '',
-            "graph": (row.get('Graph') or 'Yes').strip() or 'Yes',
+            "formatI": metadata["formatI"],
+            "formatII": metadata["formatII"],
+            "gType": metadata["gType"],
+            "validation": "",
+            "default": metadata["default"],
+            "graph": metadata["graph"],
+            "is_meme": metadata["is_meme"],
             "status": "Active",
         }
         variables.append(variable_data)
 
     created_count = await _process_variables_to_db(driver, variables, errors)
+    if errors:
+        print(f"⚠️ Variable CSV chunk upload completed with {len(errors)} error(s)")
+        for err in errors[:20]:
+            print(f"   - {err}")
+        if len(errors) > 20:
+            print(f"   - ... and {len(errors) - 20} more")
     return CSVUploadResponse(
         success=True,
         message=f"Chunk: created {created_count} variables",
@@ -2772,7 +2964,8 @@ async def add_variable_field_option(option_data: VariableFieldOptionRequest):
             # First, get current values
             get_result = session.run("""
                 MATCH (vfo:VariableFieldOptions {id: 'variable_field_options'})
-                RETURN vfo[$field_name] AS current_values
+                RETURN vfo[$field_name] AS current_values,
+                       vfo.formatIIByFormatIJson AS formatIIByFormatIJson
             """, {
                 "field_name": option_data.field_name
             })
@@ -2787,38 +2980,66 @@ async def add_variable_field_option(option_data: VariableFieldOptionRequest):
                 elif isinstance(values, str):
                     current_values = [v.strip() for v in values.split(',') if v.strip()]
 
+            scoped_map: Dict[str, List[str]] = {}
+            if record and record.get("formatIIByFormatIJson"):
+                raw_map = record.get("formatIIByFormatIJson")
+                try:
+                    parsed = json.loads(raw_map) if isinstance(raw_map, str) else {}
+                    if isinstance(parsed, dict):
+                        for k, vals in parsed.items():
+                            key = str(k).strip()
+                            if not key:
+                                continue
+                            if isinstance(vals, list):
+                                cleaned = sorted({str(v).strip() for v in vals if str(v).strip()})
+                                scoped_map[key] = cleaned
+                except Exception:
+                    scoped_map = {}
+
             # Add new value if not already present
             new_value = option_data.value.strip()
+            parent_value = (option_data.parent_value or "").strip()
+            existed_in_flat = new_value in current_values
             if new_value not in current_values:
                 current_values.append(new_value)
                 current_values.sort()  # Keep sorted
 
-                # Update the node - create it if it doesn't exist
-                session.run("""
-                    MERGE (vfo:VariableFieldOptions {id: 'variable_field_options'})
-                    ON CREATE SET vfo.formatI = $default_array, vfo.formatII = $default_array, 
-                                 vfo.gType = $default_array, vfo.validation = $default_array, 
-                                 vfo.default = $default_array
-                    SET vfo[$field_name] = $values
-                """, {
-                    "field_name": option_data.field_name,
-                    "values": current_values,
-                    "default_array": []
-                })
+            if option_data.field_name == "formatII":
+                if not parent_value:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="parent_value (Format I) is required when adding a Format II option."
+                    )
+                existing_scoped = scoped_map.get(parent_value, [])
+                if new_value not in existing_scoped:
+                    existing_scoped.append(new_value)
+                    existing_scoped.sort()
+                scoped_map[parent_value] = existing_scoped
 
-                return {
-                    "success": True,
-                    "field_name": option_data.field_name,
-                    "value": new_value,
-                    "message": f"Successfully added '{new_value}' to {option_data.field_name} options"
-                }
-            else:
-                return {
-                    "success": True,
-                    "field_name": option_data.field_name,
-                    "value": new_value,
-                    "message": f"'{new_value}' already exists in {option_data.field_name} options"
-                }
+            # Update the node - create it if it doesn't exist
+            session.run("""
+                MERGE (vfo:VariableFieldOptions {id: 'variable_field_options'})
+                ON CREATE SET vfo.formatI = $default_array, vfo.formatII = $default_array, 
+                             vfo.gType = $default_array, vfo.validation = $default_array, 
+                             vfo.default = $default_array, vfo.formatIIByFormatIJson = '{}'
+                SET vfo[$field_name] = $values,
+                    vfo.formatIIByFormatIJson = $formatIIByFormatIJson
+            """, {
+                "field_name": option_data.field_name,
+                "values": current_values,
+                "default_array": [],
+                "formatIIByFormatIJson": json.dumps(scoped_map),
+            })
+
+            action_msg = "already exists in" if existed_in_flat and option_data.field_name != "formatII" else "added to"
+            scoped_msg = f" under Format I '{parent_value}'" if option_data.field_name == "formatII" else ""
+            return {
+                "success": True,
+                "field_name": option_data.field_name,
+                "value": new_value,
+                "parent_value": parent_value if option_data.field_name == "formatII" else None,
+                "message": f"'{new_value}' {action_msg} {option_data.field_name} options{scoped_msg}"
+            }
 
     except Exception as e:
         print(f"Error adding field option: {e}")
@@ -2842,7 +3063,8 @@ async def get_variable_field_options():
             result = session.run("""
                 MATCH (vfo:VariableFieldOptions {id: 'variable_field_options'})
                 RETURN vfo.formatI AS formatI, vfo.formatII AS formatII, vfo.gType AS gType, 
-                       vfo.validation AS validation, vfo.default AS default
+                       vfo.validation AS validation, vfo.default AS default,
+                       vfo.formatIIByFormatIJson AS formatIIByFormatIJson
             """)
 
             record = result.single()
@@ -2862,6 +3084,23 @@ async def get_variable_field_options():
                             custom_options[field] = [v for v in values if v]
                         elif isinstance(values, str):
                             custom_options[field] = [v.strip() for v in values.split(',') if v.strip()]
+
+            custom_format_ii_by_format_i: Dict[str, List[str]] = {}
+            if record and record.get("formatIIByFormatIJson"):
+                raw_map = record.get("formatIIByFormatIJson")
+                try:
+                    parsed = json.loads(raw_map) if isinstance(raw_map, str) else {}
+                    if isinstance(parsed, dict):
+                        for key, values in parsed.items():
+                            k = str(key).strip()
+                            if not k:
+                                continue
+                            if isinstance(values, list):
+                                custom_format_ii_by_format_i[k] = sorted(
+                                    {str(v).strip() for v in values if str(v).strip()}
+                                )
+                except Exception:
+                    custom_format_ii_by_format_i = {}
 
             # Get options from existing variables
             existing_options = {
@@ -2889,6 +3128,28 @@ async def get_variable_field_options():
             for field in ["formatI", "formatII", "gType", "validation", "default"]:
                 merged = set(custom_options[field]) | existing_options[field]
                 merged_options[field] = sorted(list(merged))
+
+            existing_format_ii_by_format_i: Dict[str, set] = {}
+            result_pairs = session.run("""
+                MATCH (v:Variable)
+                WHERE v.formatI IS NOT NULL AND trim(v.formatI) <> ''
+                  AND v.formatII IS NOT NULL AND trim(v.formatII) <> ''
+                RETURN DISTINCT trim(v.formatI) AS formatI, trim(v.formatII) AS formatII
+            """)
+            for rec in result_pairs:
+                fi = rec.get("formatI")
+                fii = rec.get("formatII")
+                if not fi or not fii:
+                    continue
+                existing_format_ii_by_format_i.setdefault(fi, set()).add(fii)
+
+            merged_format_ii_by_format_i: Dict[str, List[str]] = {}
+            all_keys = set(custom_format_ii_by_format_i.keys()) | set(existing_format_ii_by_format_i.keys())
+            for key in all_keys:
+                merged_set = set(custom_format_ii_by_format_i.get(key, [])) | set(existing_format_ii_by_format_i.get(key, set()))
+                merged_format_ii_by_format_i[key] = sorted(list(merged_set))
+
+            merged_options["formatIIByFormatI"] = merged_format_ii_by_format_i
 
             return VariableFieldOptionsResponse(**merged_options)
 

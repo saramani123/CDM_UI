@@ -1001,12 +1001,13 @@ class ApiService {
   }
 
   // Variable field options
-  async addVariableFieldOption(fieldName: string, value: string) {
+  async addVariableFieldOption(fieldName: string, value: string, parentValue?: string) {
     return this.request('/variables/field-options', {
       method: 'POST',
       body: JSON.stringify({
         field_name: fieldName,
-        value: value
+        value: value,
+        ...(parentValue ? { parent_value: parentValue } : {}),
       }),
     });
   }

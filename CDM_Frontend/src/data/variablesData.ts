@@ -31,6 +31,7 @@ export interface VariableData {
   status?: string;
   isMeme?: boolean; // Meme flag
   isGroupKey?: boolean; // Group Key flag
+  groupKey?: string; // ID of selected group key variable for this group-name bucket
 }
 
 export interface ObjectRelationship {
@@ -99,13 +100,12 @@ export const variableFieldOptions = {
 };
 
 // Helper function to concatenate variable driver selections
-export const concatenateVariableDrivers = (sector: string[], domain: string[], country: string[], variableClarifier: string) => {
+export const concatenateVariableDrivers = (sector: string[], domain: string[], country: string[]) => {
   const sectorStr = sector.includes('ALL') || sector.length === 0 ? 'ALL' : sector.join(', ');
   const domainStr = domain.includes('ALL') || domain.length === 0 ? 'ALL' : domain.join(', ');
   const countryStr = country.includes('ALL') || country.length === 0 ? 'ALL' : country.join(', ');
-  const clarifierStr = variableClarifier || 'None';
   
-  return `${sectorStr}, ${domainStr}, ${countryStr}, ${clarifierStr}`;
+  return `${sectorStr}, ${domainStr}, ${countryStr}, None`;
 };
 
 // Helper function to parse variable driver string back to selections
@@ -116,8 +116,7 @@ export const parseVariableDriverString = (driverString: string) => {
     return {
       sector: [],
       domain: [],
-      country: [],
-      variableClarifier: ''
+      country: []
     };
   }
   
@@ -212,27 +211,20 @@ export const parseVariableDriverString = (driverString: string) => {
   // Extract country values (next field would be clarifier, indicated by "None")
   const countryResult = extractFieldValues(allParts, domainIndex, driversData.countries, [], 'country');
   const countryValues = countryResult.values;
-  const countryIndex = countryResult.nextIndex;
   
-  // The remaining part should be VariableClarifier (could be multiple parts if clarifier has commas, but typically just one)
-  const clarifier = countryIndex < allParts.length ? allParts[countryIndex] : '';
-  
-  // Process each field to check if all values are selected, then format for multi-select
+  // Process each field for multi-select display.
+  // IMPORTANT: only show/select ALL when it is explicitly present in stored driver string.
+  // Do not infer ALL just because selected values happen to equal all current options.
   const processField = (values: string[], allValues: string[]): string[] => {
     if (values.length === 0) return [];
     
     // Filter out "ALL" from values (it's not a real node, just a UI convenience)
     const filteredValues = values.filter(v => v !== 'ALL');
     
-    // If "ALL" was in the original values, or if all possible values are selected, return ALL + all values
+    // If "ALL" was explicitly in the source driver string, expand for checkbox UI.
     const hasAll = values.includes('ALL');
-    const allSelected = filteredValues.length > 0 && 
-                       allValues.length > 0 && 
-                       filteredValues.length === allValues.length &&
-                       new Set(filteredValues).size === new Set(allValues).size &&
-                       filteredValues.every(v => allValues.includes(v));
     
-    if (hasAll || allSelected) {
+    if (hasAll) {
       return ['ALL', ...allValues];
     }
     
@@ -243,8 +235,7 @@ export const parseVariableDriverString = (driverString: string) => {
   return {
     sector: processField(sectorValues, driversData.sectors),
     domain: processField(domainValues, driversData.domains),
-    country: processField(countryValues, driversData.countries),
-    variableClarifier: clarifier === 'None' || !clarifier ? '' : clarifier
+    country: processField(countryValues, driversData.countries)
   };
 };
 

@@ -6,6 +6,7 @@ import { VariableObjectRelationshipModal } from './VariableObjectRelationshipMod
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
+import { AddFormatIIValueModal } from './AddFormatIIValueModal';
 import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
@@ -54,8 +55,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const [driverSelections, setDriverSelections] = useState({
     sector: [] as string[],
     domain: [] as string[],
-    country: [] as string[],
-    variableClarifier: ''
+    country: [] as string[]
   });
 
   // Metadata fields
@@ -95,6 +95,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   // Modal state for add field value (Format I, Format II, G-Type, Default)
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
+  const [isAddFormatIIValueModalOpen, setIsAddFormatIIValueModalOpen] = useState(false);
   
   // Confirmation dialog state
   const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
@@ -457,11 +458,13 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     formatII: string[];
     gType: string[];
     default: string[];
+    formatIIByFormatI: Record<string, string[]>;
   }>({
     formatI: [],
     formatII: [],
     gType: [],
-    default: []
+    default: [],
+    formatIIByFormatI: {}
   });
 
   // Fetch field options from API on mount
@@ -474,12 +477,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           gType: string[];
           validation: string[];
           default: string[];
+          formatIIByFormatI?: Record<string, string[]>;
         };
         setFieldOptions({
           formatI: apiOptions.formatI || [],
           formatII: apiOptions.formatII || [],
           gType: apiOptions.gType || [],
-          default: apiOptions.default || []
+          default: apiOptions.default || [],
+          formatIIByFormatI: apiOptions.formatIIByFormatI || {}
         });
       } catch (error) {
         console.error('Error fetching field options:', error);
@@ -502,7 +507,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
   const getDistinctFormatI = () => {
     // Use the predefined Format V-I values from the mapping
-    return ['Keep Current Format I', ...getAllFormatIValues()];
+    const allFormatI = [...new Set([...(getAllFormatIValues() || []), ...(fieldOptions.formatI || [])])].sort();
+    return ['Keep Current Format I', ...allFormatI];
   };
 
   const getDistinctFormatII = () => {
@@ -510,7 +516,14 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     if (!metadata.formatI || metadata.formatI === 'Keep Current Format I') {
       return ['Keep Current Format II'];
     }
-    return ['Keep Current Format II', ...getFormatIIValuesForFormatI(metadata.formatI)];
+    const mapped = fieldOptions.formatIIByFormatI[metadata.formatI] || [];
+    const fallback = getFormatIIValuesForFormatI(metadata.formatI) || [];
+    const fromData = (allData || [])
+      .filter((item: any) => item?.formatI === metadata.formatI && item?.formatII)
+      .map((item: any) => String(item.formatII).trim())
+      .filter(Boolean);
+    const allFormatII = [...new Set([...fallback, ...mapped, ...fromData])].sort();
+    return ['Keep Current Format II', ...allFormatII];
   };
 
   const handleAddFieldValue = async (value: string) => {
@@ -526,6 +539,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         gType: string[];
         validation: string[];
         default: string[];
+        formatIIByFormatI?: Record<string, string[]>;
       };
       
       // Update field options state to include the new value
@@ -533,7 +547,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         formatI: apiOptions.formatI || prev.formatI,
         formatII: apiOptions.formatII || prev.formatII,
         gType: apiOptions.gType || prev.gType,
-        default: apiOptions.default || prev.default
+        default: apiOptions.default || prev.default,
+        formatIIByFormatI: apiOptions.formatIIByFormatI || prev.formatIIByFormatI
       }));
       
       // Update the metadata state to include the new value in the dropdown
@@ -549,6 +564,28 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       }
     } catch (error) {
       throw error;
+    }
+  };
+
+  const handleAddFormatIIValue = async (formatI: string, formatIIValue: string) => {
+    await apiService.addVariableFieldOption('formatII', formatIIValue, formatI);
+    const apiOptions = await apiService.getVariableFieldOptions() as {
+      formatI: string[];
+      formatII: string[];
+      gType: string[];
+      validation: string[];
+      default: string[];
+      formatIIByFormatI?: Record<string, string[]>;
+    };
+    setFieldOptions(prev => ({
+      formatI: apiOptions.formatI || prev.formatI,
+      formatII: apiOptions.formatII || prev.formatII,
+      gType: apiOptions.gType || prev.gType,
+      default: apiOptions.default || prev.default,
+      formatIIByFormatI: apiOptions.formatIIByFormatI || prev.formatIIByFormatI
+    }));
+    if (metadata.formatI === formatI) {
+      handleMetadataChange('formatII', formatIIValue);
     }
   };
   
@@ -603,12 +640,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     }));
   };
 
-  const handleVariableClarifierChange = (value: string) => {
-    setDriverSelections(prev => ({
-      ...prev,
-      variableClarifier: value
-    }));
-  };
 
   const handleObjectRelationshipChange = (id: string, field: keyof ObjectRelationship, value: string) => {
     setObjectRelationships(prev => prev.map(rel => {
@@ -780,14 +811,12 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 
                                driverSelections.domain.length > 0 || 
-                               driverSelections.country.length > 0 || 
-                               driverSelections.variableClarifier;
+                               driverSelections.country.length > 0;
     
     const driverString = hasDriverSelections ? concatenateDrivers(
       driverSelections.sector,
       driverSelections.domain,
-      driverSelections.country,
-      driverSelections.variableClarifier
+      driverSelections.country
     ) : '';
     
     // Convert selected object IDs to relationship format
@@ -1283,31 +1312,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               onChange={(values) => handleDriverSelectionChange('country', values)}
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Variable Clarifier
-            </label>
-            <select
-              value={driverSelections.variableClarifier}
-              onChange={(e) => handleVariableClarifierChange(e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Keep Current Variable Clarifier</option>
-              <option value="">None</option>
-              {driversData.variableClarifiers.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </CollapsibleSection>
 
@@ -1510,9 +1514,19 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                Format II
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-ag-dark-text">
+                  Format II
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsAddFormatIIValueModalOpen(true)}
+                  className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
+                  title="Add new Format II value"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+              </div>
               <select
                 value={metadata.formatII}
                 onChange={(e) => handleMetadataChange('formatII', e.target.value)}
@@ -2147,6 +2161,16 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         onSave={handleAddFieldValue}
         fieldName={selectedFieldForAdd?.name || ''}
         fieldLabel={selectedFieldForAdd?.label || ''}
+      />
+
+      <AddFormatIIValueModal
+        isOpen={isAddFormatIIValueModalOpen}
+        onClose={() => setIsAddFormatIIValueModalOpen(false)}
+        formatIOptions={getDistinctFormatI().filter((option) => option !== 'Keep Current Format I')}
+        defaultFormatI={
+          metadata.formatI && metadata.formatI !== 'Keep Current Format I' ? metadata.formatI : ''
+        }
+        onSave={handleAddFormatIIValue}
       />
 
       {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && hasSelectedVariables && (

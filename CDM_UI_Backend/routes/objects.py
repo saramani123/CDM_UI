@@ -35,6 +35,41 @@ class BulkRelationshipCreateRequest(BaseModel):
 
 router = APIRouter()
 
+def _parse_driver_string_by_scope(session, driver_string: str) -> Dict[str, List[str]]:
+    """Parse driver string into Sector/Domain/Country token buckets."""
+    tokens = [t.strip() for t in (driver_string or "").split(",") if t.strip()]
+    if tokens and tokens[-1].lower() == "none":
+        tokens = tokens[:-1]
+
+    sector_names = {r["name"] for r in session.run("MATCH (s:Sector) RETURN s.name as name") if r.get("name")}
+    domain_names = {r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name as name") if r.get("name")}
+    country_names = {r["name"] for r in session.run("MATCH (c:Country) RETURN c.name as name") if r.get("name")}
+
+    def valid(bucket: List[str], allowed: set) -> bool:
+        if not bucket:
+            return False
+        if len(bucket) == 1 and bucket[0] == "ALL":
+            return True
+        if "ALL" in bucket:
+            return False
+        return all(item in allowed for item in bucket)
+
+    if len(tokens) >= 3:
+        for i in range(1, len(tokens) - 1):
+            for j in range(i + 1, len(tokens)):
+                sec = tokens[:i]
+                dom = tokens[i:j]
+                cou = tokens[j:]
+                if valid(sec, sector_names) and valid(dom, domain_names) and valid(cou, country_names):
+                    return {"sector": sec, "domain": dom, "country": cou}
+
+    # Backward fallback if input is malformed
+    return {
+        "sector": [tokens[0]] if len(tokens) > 0 else ["ALL"],
+        "domain": [tokens[1]] if len(tokens) > 1 else ["ALL"],
+        "country": [tokens[2]] if len(tokens) > 2 else ["ALL"],
+    }
+
 def create_default_relationships_for_object(session, source_object_id: str, source_object_name: str):
     """
     Create default relationships for a new object.
@@ -396,11 +431,6 @@ async def create_object(object_data: ObjectCreateRequest):
                 if not value:
                     raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
             
-            # Handle optional fields
-            objectClarifier = getattr(object_data, 'objectClarifier', None)
-            if objectClarifier is not None and not objectClarifier:
-                objectClarifier = None
-            
             # Generate unique ID
             new_id = str(uuid.uuid4())
             
@@ -408,7 +438,7 @@ async def create_object(object_data: ObjectCreateRequest):
             sector_str = "ALL" if "ALL" in object_data.sector else ", ".join(object_data.sector)
             domain_str = "ALL" if "ALL" in object_data.domain else ", ".join(object_data.domain)
             country_str = "ALL" if "ALL" in object_data.country else ", ".join(object_data.country)
-            clarifier_str = objectClarifier or "None"
+            clarifier_str = "None"
             driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
             
             # Check for duplicate objects (same being, avatar, object, AND driver combination)
@@ -576,15 +606,6 @@ async def create_object(object_data: ObjectCreateRequest):
                         WITH c, o
                         CREATE (c)-[:RELEVANT_TO]->(o)
                     """, country=country, object_id=new_id)
-            
-            # Object Clarifier relationship
-            if objectClarifier and objectClarifier != "None":
-                session.run("""
-                    MATCH (oc:ObjectClarifier {name: $clarifier})
-                    MATCH (o:Object {id: $object_id})
-                    WITH oc, o
-                    CREATE (oc)-[:RELEVANT_TO]->(o)
-                """, clarifier=objectClarifier, object_id=new_id)
             
             # Create variants if provided
             variants = getattr(object_data, 'variants', [])
@@ -1016,41 +1037,21 @@ async def update_object(
                 # Clear existing driver relationships
                 session.run("""
                     MATCH (o:Object {id: $object_id})<-[r:RELEVANT_TO]-(d)
-                    WHERE d:Sector OR d:Domain OR d:Country OR d:ObjectClarifier
+                    WHERE d:Sector OR d:Domain OR d:Country
                     DELETE r
                 """, object_id=object_id)
                 
-                # Parse driver string to recreate relationships
-                parts = driver_string.split(', ')
-                print(f"DEBUG: Driver string parts: {parts} (length: {len(parts)})")
-                
-                if len(parts) >= 4:
-                    # Handle cases where we have more than 4 parts (multiple sectors/domains)
-                    if len(parts) == 4:
-                        # Normal case: exactly 4 parts
-                        sector_str = parts[0].strip()
-                        domain_str = parts[1].strip()
-                        country_str = parts[2].strip()
-                        clarifier_str = parts[3].strip()
-                    else:
-                        # Complex case: one of the first parts contains commas
-                        # The last part is always the object clarifier
-                        clarifier_str = parts[-1].strip()
-                        
-                        # The second to last part is always the country
-                        country_str = parts[-2].strip()
-                        
-                        # The third to last part is always the domain
-                        domain_str = parts[-3].strip()
-                        
-                        # Everything before that is the sector
-                        sector_str = ', '.join(parts[:-3]).strip()
-                    
-                    print(f"DEBUG: Parsed - Sector: '{sector_str}', Domain: '{domain_str}', Country: '{country_str}', Clarifier: '{clarifier_str}'")
+                parsed_driver = _parse_driver_string_by_scope(session, driver_string)
+                sectors = parsed_driver["sector"]
+                domains = parsed_driver["domain"]
+                countries = parsed_driver["country"]
+                print(
+                    f"DEBUG: Parsed driver buckets - Sector={sectors}, Domain={domains}, Country={countries}"
+                )
                     
                     # Create new driver relationships
                     # Sector relationships
-                    if sector_str == "ALL":
+                if len(sectors) == 1 and sectors[0] == "ALL":
                         # Create relationships to ALL existing sectors
                         session.run("""
                             MATCH (s:Sector)
@@ -1058,9 +1059,8 @@ async def update_object(
                             WITH s, o
                             CREATE (s)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
-                    else:
+                else:
                         # Create relationships to selected sectors only
-                        sectors = [s.strip() for s in sector_str.split(',')]
                         print(f"DEBUG: Creating relationships to sectors: {sectors}")
                         for sector in sectors:
                             if sector:  # Skip empty strings
@@ -1074,8 +1074,8 @@ async def update_object(
                                 created = result.single()
                                 print(f"DEBUG: Created relationship to sector: {created['name'] if created else 'NOT FOUND'}")
                     
-                    # Domain relationships
-                    if domain_str == "ALL":
+                # Domain relationships
+                if len(domains) == 1 and domains[0] == "ALL":
                         # Create relationships to ALL existing domains
                         session.run("""
                             MATCH (d:Domain)
@@ -1083,9 +1083,8 @@ async def update_object(
                             WITH d, o
                             CREATE (d)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
-                    else:
+                else:
                         # Create relationships to selected domains only
-                        domains = [d.strip() for d in domain_str.split(',')]
                         print(f"DEBUG: Creating relationships to domains: {domains}")
                         for domain in domains:
                             if domain:  # Skip empty strings
@@ -1099,8 +1098,8 @@ async def update_object(
                                 created = result.single()
                                 print(f"DEBUG: Created relationship to domain: {created['name'] if created else 'NOT FOUND'}")
                     
-                    # Country relationships
-                    if country_str == "ALL":
+                # Country relationships
+                if len(countries) == 1 and countries[0] == "ALL":
                         # Create relationships to ALL existing countries
                         session.run("""
                             MATCH (c:Country)
@@ -1108,9 +1107,8 @@ async def update_object(
                             WITH c, o
                             CREATE (c)-[:RELEVANT_TO]->(o)
                         """, object_id=object_id)
-                    else:
+                else:
                         # Create relationships to selected countries only
-                        countries = [c.strip() for c in country_str.split(',')]
                         for country in countries:
                             session.run("""
                                 MATCH (c:Country {name: $country})
@@ -1119,15 +1117,6 @@ async def update_object(
                                 CREATE (c)-[:RELEVANT_TO]->(o)
                             """, country=country, object_id=object_id)
                     
-                    # Object Clarifier relationship
-                    if clarifier_str and clarifier_str != "None":
-                        session.run("""
-                            MATCH (oc:ObjectClarifier {name: $clarifier})
-                            MATCH (o:Object {id: $object_id})
-                            WITH oc, o
-                            CREATE (oc)-[:RELEVANT_TO]->(o)
-                        """, clarifier=clarifier_str, object_id=object_id)
-                
                 # Don't return here - continue to process basic field updates
 
             # Handle basic field updates (being, avatar, object, etc.)
@@ -1936,7 +1925,8 @@ async def delete_object(object_id: str):
 async def upload_objects_csv(file: UploadFile = File(...)):
     """
     Upload objects from CSV file.
-    CSV must have columns: Sector, Domain, Country, Object Clarifier, Being, Avatar, Object
+    CSV must have columns: Sector, Domain, Country, Being, Avatar, Object
+    Optional column: Object Clarifier (ignored), Variants
     """
     print(f"DEBUG: CSV upload request received. File: {file.filename}, Content-Type: {file.content_type}")
 
@@ -1951,7 +1941,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
         csv_reader = csv.DictReader(io.StringIO(csv_content))
 
         # Validate required columns - support both formats
-        required_columns = ['Sector', 'Domain', 'Country', 'Object Clarifier', 'Being', 'Avatar', 'Object']
+        required_columns = ['Sector', 'Domain', 'Country', 'Being', 'Avatar', 'Object']
         optional_columns = ['Variants']
         print(f"DEBUG: CSV fieldnames: {csv_reader.fieldnames}")
 
@@ -1989,7 +1979,8 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     sector = [s.strip() for s in csv_row.Sector.split(',') if s.strip()]
                     domain = [d.strip() for d in csv_row.Domain.split(',') if d.strip()]
                     country = [c.strip() for c in csv_row.Country.split(',') if c.strip()]
-                    object_clarifier = csv_row.ObjectClarifier.strip() if csv_row.ObjectClarifier and csv_row.ObjectClarifier.strip() else None
+                    # Object Clarifier is no longer part of the model; tolerate legacy files silently.
+                    legacy_object_clarifier = (row.get('Object Clarifier') or '').strip()
 
                     # Validate driver values exist in database
                     for sector_name in sector:
@@ -2013,18 +2004,12 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 errors.append(f"Row {row_num}: Country '{country_name}' not found in drivers")
                                 continue
 
-                    if object_clarifier and object_clarifier != "None":
-                        exists = session.run("MATCH (oc:ObjectClarifier {name: $name}) RETURN oc", name=object_clarifier).single()
-                        if not exists:
-                            errors.append(f"Row {row_num}: Object Clarifier '{object_clarifier}' not found in drivers")
-                            continue
-
                     # Check for duplicate objects (full combination check)
                     # First, get the driver string to check for exact duplicates
                     sector_str = "ALL" if "ALL" in sector else ", ".join(sector)
                     domain_str = "ALL" if "ALL" in domain else ", ".join(domain)
                     country_str = "ALL" if "ALL" in country else ", ".join(country)
-                    clarifier_str = object_clarifier or "None"
+                    clarifier_str = "None"
                     driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
                     
                     existing = session.run("""
@@ -2183,13 +2168,8 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 CREATE (c)-[:RELEVANT_TO]->(o)
                             """, country=country_name, object_id=new_id)
 
-                    if object_clarifier and object_clarifier != "None":
-                        session.run("""
-                            MATCH (oc:ObjectClarifier {name: $clarifier})
-                            MATCH (o:Object {id: $object_id})
-                            WITH oc, o
-                            CREATE (oc)-[:RELEVANT_TO]->(o)
-                        """, clarifier=object_clarifier, object_id=new_id)
+                    if legacy_object_clarifier and legacy_object_clarifier.lower() != "none":
+                        print(f"INFO: Ignoring legacy Object Clarifier value '{legacy_object_clarifier}' on row {row_num}")
 
                     # Create variants if provided in CSV
                     variants_list = []

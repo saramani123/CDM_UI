@@ -127,16 +127,12 @@ export const CsvUploadModal: React.FC<CsvUploadModalProps> = ({
             });
           }
         } else if (type === 'variable-object-relationships') {
-          if (values.length >= 7) {
+          if (values.length >= 3) {
             parsedData.push({
               id: Date.now().toString() + index,
-              Sector: values[0] || '',
-              Domain: values[1] || '',
-              Country: values[2] || '',
-              'Object Clarifier': values[3] || '',
-              Being: values[4] || '',
-              Avatar: values[5] || '',
-              Object: values[6] || ''
+              Being: values[0] || '',
+              Avatar: values[1] || '',
+              Object: values[2] || ''
             });
           }
         }

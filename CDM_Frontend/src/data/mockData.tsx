@@ -81,6 +81,65 @@ export const objectColumns = [
 ];
 
 // Helper function to parse driver field into metadata components
+const parseDriverSelections = (driver: string): { sectorValues: string[]; domainValues: string[]; countryValues: string[] } => {
+  if (!driver || !driver.trim()) {
+    return { sectorValues: [], domainValues: [], countryValues: [] };
+  }
+
+  const { sectors, domains, countries } = getDriversData();
+  const sectorSet = new Set(sectors);
+  const domainSet = new Set(domains);
+  const countrySet = new Set(countries);
+
+  const tokens = driver
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  // Driver string format is "Sector, Domain, Country, None"
+  // Keep backward compatibility with trailing clarifier-like segment.
+  const coreTokens =
+    tokens.length > 0 && tokens[tokens.length - 1].toLowerCase() === 'none'
+      ? tokens.slice(0, -1)
+      : tokens;
+
+  const isValidField = (fieldTokens: string[], allowed: Set<string>): boolean => {
+    if (fieldTokens.length === 0) return false;
+    if (fieldTokens.length === 1 && fieldTokens[0] === 'ALL') return true;
+    if (fieldTokens.includes('ALL')) return false;
+    return fieldTokens.every((t) => allowed.has(t));
+  };
+
+  if (coreTokens.length >= 3) {
+    for (let i = 1; i <= coreTokens.length - 2; i++) {
+      for (let j = i + 1; j <= coreTokens.length - 1; j++) {
+        const sectorTokens = coreTokens.slice(0, i);
+        const domainTokens = coreTokens.slice(i, j);
+        const countryTokens = coreTokens.slice(j);
+
+        if (
+          isValidField(sectorTokens, sectorSet) &&
+          isValidField(domainTokens, domainSet) &&
+          isValidField(countryTokens, countrySet)
+        ) {
+          return {
+            sectorValues: sectorTokens,
+            domainValues: domainTokens,
+            countryValues: countryTokens
+          };
+        }
+      }
+    }
+  }
+
+  // Fallback for legacy/invalid strings.
+  return {
+    sectorValues: coreTokens.length > 0 ? [coreTokens[0]] : [],
+    domainValues: coreTokens.length > 1 ? [coreTokens[1]] : [],
+    countryValues: coreTokens.length > 2 ? [coreTokens[2]] : []
+  };
+};
+
 export const parseDriverField = (driver: string) => {
   if (!driver) {
     return {
@@ -90,13 +149,13 @@ export const parseDriverField = (driver: string) => {
       classifier: ''
     };
   }
-  
-  const parts = driver.split(',').map(part => part.trim());
+
+  const { sectorValues, domainValues, countryValues } = parseDriverSelections(driver);
   return {
-    sector: parts[0] || '',
-    domain: parts[1] || '',
-    country: parts[2] || '',
-    classifier: parts[3] || ''
+    sector: sectorValues.join(', '),
+    domain: domainValues.join(', '),
+    country: countryValues.join(', '),
+    classifier: ''
   };
 };
 
@@ -169,13 +228,12 @@ export const getDriversData = (): { sectors: string[]; domains: string[]; countr
 };
 
 // Helper function to concatenate driver selections
-export const concatenateDrivers = (sector: string[], domain: string[], country: string[], objectClarifier: string) => {
+export const concatenateDrivers = (sector: string[], domain: string[], country: string[]) => {
   const sectorStr = sector.includes('ALL') || sector.length === 0 ? 'ALL' : sector.join(', ');
   const domainStr = domain.includes('ALL') || domain.length === 0 ? 'ALL' : domain.join(', ');
   const countryStr = country.includes('ALL') || country.length === 0 ? 'ALL' : country.join(', ');
-  const clarifierStr = objectClarifier || 'None';
   
-  return `${sectorStr}, ${domainStr}, ${countryStr}, ${clarifierStr}`;
+  return `${sectorStr}, ${domainStr}, ${countryStr}, None`;
 };
 
 // Helper function to parse driver string into components
@@ -184,17 +242,15 @@ export const parseDriverString = (driverString: string) => {
     return {
       sector: [],
       domain: [],
-      country: [],
-      objectClarifier: ''
+      country: []
     };
   }
-  
-  const parts = driverString.split(',').map(part => part.trim());
+
+  const { sectorValues, domainValues, countryValues } = parseDriverSelections(driverString);
   return {
-    sector: parts[0] && parts[0] !== '-' ? [parts[0]] : [],
-    domain: parts[1] && parts[1] !== '-' ? [parts[1]] : [],
-    country: parts[2] && parts[2] !== '-' ? [parts[2]] : [],
-    objectClarifier: parts[3] || ''
+    sector: sectorValues.filter((v) => v && v !== '-'),
+    domain: domainValues.filter((v) => v && v !== '-'),
+    country: countryValues.filter((v) => v && v !== '-')
   };
 };
 

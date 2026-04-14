@@ -6,6 +6,7 @@ import { apiService } from '../services/api';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
+import { AddFormatIIValueModal } from './AddFormatIIValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddPartValueModal } from './AddPartValueModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
@@ -76,8 +77,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     return {
       sector: [],
       domain: [],
-      country: [],
-      variableClarifier: ''
+      country: []
     };
   });
 
@@ -95,6 +95,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // State for add field value modal
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
+  const [isAddFormatIIValueModalOpen, setIsAddFormatIIValueModalOpen] = useState(false);
+  const [formatIIByFormatIMap, setFormatIIByFormatIMap] = useState<Record<string, string[]>>({});
   
   // State for add group value modal
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
@@ -117,6 +119,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           gType: string[];
           validation: string[];
           default: string[];
+          formatIIByFormatI?: Record<string, string[]>;
         };
         
         // Merge API options with existing variable options
@@ -129,10 +132,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
           default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
         });
+        setFormatIIByFormatIMap(apiOptions.formatIIByFormatI || {});
       } catch (error) {
         console.error('Error fetching field options:', error);
         // Fall back to existing options if API fails
         setDynamicFieldOptions(getVariableFieldOptions(allData));
+        setFormatIIByFormatIMap({});
       }
     };
 
@@ -181,6 +186,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         gType: string[];
         validation: string[];
         default: string[];
+        formatIIByFormatI?: Record<string, string[]>;
       };
       
       const existingOptions = getVariableFieldOptions(allData);
@@ -192,9 +198,41 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         validation: [...new Set([...existingOptions.validation, ...(apiOptions.validation || [])])].sort(),
         default: [...new Set([...existingOptions.default, ...(apiOptions.default || [])])].sort(),
       });
+      setFormatIIByFormatIMap(apiOptions.formatIIByFormatI || {});
     } catch (error) {
       throw error;
     }
+  };
+
+  const handleAddFormatIIValue = async (formatI: string, formatIIValue: string) => {
+    await apiService.addVariableFieldOption('formatII', formatIIValue, formatI);
+    const apiOptions = await apiService.getVariableFieldOptions() as {
+      formatI: string[];
+      formatII: string[];
+      gType: string[];
+      validation: string[];
+      default: string[];
+      formatIIByFormatI?: Record<string, string[]>;
+    };
+    setFormatIIByFormatIMap(apiOptions.formatIIByFormatI || {});
+    if (formData.formatI === formatI) {
+      handleChange('formatII', formatIIValue);
+    }
+  };
+
+  const getFormatIOptions = (): string[] => {
+    return [...new Set([...(getAllFormatIValues() || []), ...(dynamicFieldOptions.formatI || [])])].sort();
+  };
+
+  const getFormatIIOptionsForFormatI = (formatI: string): string[] => {
+    if (!formatI) return [];
+    const mapped = formatIIByFormatIMap[formatI] || [];
+    const fallback = getFormatIIValuesForFormatI(formatI) || [];
+    const fromData = (allData || [])
+      .filter((item: any) => item?.formatI === formatI && item?.formatII)
+      .map((item: any) => String(item.formatII).trim())
+      .filter(Boolean);
+    return [...new Set([...fallback, ...mapped, ...fromData])].sort();
   };
 
   const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
@@ -447,8 +485,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       setDriverSelections({
         sector: [],
         domain: [],
-        country: [],
-        variableClarifier: ''
+        country: []
       });
       setValidationComponentsList([{ valType: '', operator: '', value: '' }]);
       setValidationError('');
@@ -499,16 +536,14 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               : parsed.domain,
             country: parsed.country.includes('ALL') && driversData.countries.length > 0 
               ? ['ALL', ...driversData.countries] 
-              : parsed.country,
-            variableClarifier: parsed.variableClarifier
+              : parsed.country
           };
           setDriverSelections(expanded);
         } else {
           setDriverSelections({
             sector: [],
             domain: [],
-            country: [],
-            variableClarifier: ''
+            country: []
           });
         }
         
@@ -531,8 +566,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             : parsed.domain,
           country: parsed.country.includes('ALL') && driversData.countries.length > 0 
             ? ['ALL', ...driversData.countries] 
-            : parsed.country,
-          variableClarifier: parsed.variableClarifier
+            : parsed.country
         };
         setDriverSelections(expanded);
       }
@@ -552,8 +586,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           : parsed.domain,
         country: parsed.country.includes('ALL') && driversData.countries.length > 0 
           ? ['ALL', ...driversData.countries] 
-          : parsed.country,
-        variableClarifier: parsed.variableClarifier
+          : parsed.country
       };
       setDriverSelections(expanded);
     }
@@ -749,18 +782,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     handleChange('part', name);
   };
 
-  const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country' | 'variableClarifier', value: string[] | string) => {
-    if (field === 'variableClarifier') {
-      setDriverSelections(prev => ({
-        ...prev,
-        variableClarifier: value as string
-      }));
-    } else {
-      setDriverSelections(prev => ({
-        ...prev,
-        [field]: value as string[]
-      }));
-    }
+  const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country', value: string[]) => {
+    setDriverSelections(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
 
@@ -838,8 +864,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       const driverString = concatenateVariableDrivers(
         driverSelections.sector,
         driverSelections.domain,
-        driverSelections.country,
-        driverSelections.variableClarifier
+        driverSelections.country
       );
 
       // Convert multiline text to variations array
@@ -1309,33 +1334,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               disabled={!isPanelEnabled}
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Variable Clarifier
-            </label>
-            <select
-              value={driverSelections.variableClarifier}
-              onChange={(e) => handleDriverSelectionChange('variableClarifier', e.target.value)}
-              disabled={!isPanelEnabled}
-              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">None</option>
-              {driversData.variableClarifiers.map((clarifier) => (
-                <option key={clarifier} value={clarifier}>
-                  {clarifier}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
       </CollapsibleSection>
 
@@ -1557,7 +1555,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format I</option>
-              {getAllFormatIValues().map((option) => (
+              {getFormatIOptions().map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -1566,9 +1564,20 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format II
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-ag-dark-text">
+                Format II
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsAddFormatIIValueModalOpen(true)}
+                disabled={!isPanelEnabled}
+                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Add new Format II value"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
@@ -1584,7 +1593,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               }}
             >
               <option value="">Select Format II</option>
-              {formData.formatI ? getFormatIIValuesForFormatI(formData.formatI).map((option) => (
+              {formData.formatI ? getFormatIIOptionsForFormatI(formData.formatI).map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -2284,6 +2293,14 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           onSave={handleAddFieldValue}
         />
       )}
+
+      <AddFormatIIValueModal
+        isOpen={isAddFormatIIValueModalOpen}
+        onClose={() => setIsAddFormatIIValueModalOpen(false)}
+        formatIOptions={getFormatIOptions()}
+        defaultFormatI={formData.formatI || ''}
+        onSave={handleAddFormatIIValue}
+      />
 
       {/* Add Group Value Modal */}
       <AddGroupValueModal

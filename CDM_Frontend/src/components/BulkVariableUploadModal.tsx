@@ -31,7 +31,7 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
       { number: 8, name: 'Format I', required: false },
       { number: 9, name: 'Format II', required: false },
       { number: 10, name: 'G-Type', required: false },
-      { number: 11, name: 'Validation', required: false },
+      { number: 11, name: 'Type', required: false },
       { number: 12, name: 'Default', required: false },
       { number: 13, name: 'Graph', required: false }
     ]
@@ -186,7 +186,9 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required:</strong></p>
             <p>• CSV must have column headers named exactly: Sector, Domain, Country, Part, Section, Group, Variable (columns 1–7).</p>
-            <p>• Optional: Format I, Format II, G-Type, Validation, Default, Graph (columns 8–13) — may be omitted or left empty.</p>
+            <p>• Optional: Format I, Format II, G-Type, Type, Default, Graph (columns 8–13) — may be omitted or left empty.</p>
+            <p>• Type values: Meme or Variant. (Meme sets Is Meme = true.)</p>
+            <p>• Graph values: Yes or No.</p>
             <p><strong>After Upload:</strong></p>
             <p>• You can add object relationships through the Variable Metadata panel</p>
             <p>• Select any uploaded variable to edit its object relationships</p>

@@ -94,8 +94,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [driverSelections, setDriverSelections] = useState({
     sector: [] as string[],
     domain: [] as string[],
-    country: [] as string[],
-    objectClarifier: ''
+    country: [] as string[]
   });
 
   // Lists driver selections state (same structure as Objects)
@@ -727,12 +726,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     }
   };
 
-  const handleObjectClarifierChange = (value: string) => {
-    setDriverSelections(prev => ({
-      ...prev,
-      objectClarifier: value
-    }));
-  };
 
   const handleCompositeKeyChange = (id: string, field: 'part' | 'group', value: string) => {
     setCompositeKeys(prev => prev.map(key => {
@@ -1017,14 +1010,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 
                                driverSelections.domain.length > 0 || 
-                               driverSelections.country.length > 0 || 
-                               driverSelections.objectClarifier;
+                               driverSelections.country.length > 0;
     
     const driverString = hasDriverSelections ? concatenateDrivers(
       driverSelections.sector,
       driverSelections.domain,
-      driverSelections.country,
-      driverSelections.objectClarifier
+      driverSelections.country
     ) : '';
     
     // Remove duplicate relationships based on unique combination of properties
@@ -2171,31 +2162,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               values={driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Clarifier
-            </label>
-            <select
-              value={driverSelections.objectClarifier}
-              onChange={(e) => handleObjectClarifierChange(e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">Keep Current Object Clarifier</option>
-              <option value="">None</option>
-              {driversData.objectClarifiers.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
       </CollapsibleSection>

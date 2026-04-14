@@ -1716,11 +1716,11 @@ export const DataGrid: React.FC<DataGridProps> = ({
                             <div className="w-4 h-4 border-2 border-ag-dark-accent border-t-transparent rounded-full animate-spin"></div>
                           ) : (() => {
                             // Check if another variable in the same group has isGroupKey = true
-                            const currentGroup = (row as any).group;
+                            const currentGroup = String((row as any).group || '').trim().toLowerCase();
                             const isGroupKeyChecked = !!row.isGroupKey;
                             const anotherInGroupHasKey = data.some((otherRow: any) => 
                               otherRow.id !== row.id && 
-                              otherRow.group === currentGroup && 
+                              String(otherRow.group || '').trim().toLowerCase() === currentGroup && 
                               otherRow.isGroupKey === true
                             );
                             const isDisabled = anotherInGroupHasKey && !isGroupKeyChecked;

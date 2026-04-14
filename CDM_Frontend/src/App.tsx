@@ -717,9 +717,7 @@ function App() {
     if (apiDrivers) {
       return (apiDrivers.sectors?.length || 0) + 
              (apiDrivers.domains?.length || 0) + 
-             (apiDrivers.countries?.length || 0) + 
-             (apiDrivers.objectClarifiers?.length || 0) + 
-             (apiDrivers.variableClarifiers?.length || 0);
+             (apiDrivers.countries?.length || 0);
     }
     return 15; // fallback to mock data count
   }, [apiDrivers]);
@@ -906,9 +904,7 @@ function App() {
         (window as any).driversData = {
           sectors: orderedDrivers.sectors || [],
           domains: orderedDrivers.domains || [],
-          countries: orderedDrivers.countries || [],
-          objectClarifiers: orderedDrivers.objectClarifiers || [],
-          variableClarifiers: orderedDrivers.variableClarifiers || []
+          countries: orderedDrivers.countries || []
         };
         console.log('[App] Set window.driversData:', {
           sectors: (window as any).driversData.sectors.length,
@@ -2804,7 +2800,7 @@ function App() {
       return;
     }
     
-    const currentGroup = variableToUpdate.group;
+    const currentGroup = String(variableToUpdate.group || '').trim().toLowerCase();
     
     // Optimistically update UI immediately with loading state
     setVariableData(prev => {
@@ -2813,7 +2809,7 @@ function App() {
           return { ...v, isGroupKey: checked, _isGroupKeyLoading: true };
         }
         // If checking this one, uncheck others in the same group
-        if (checked && v.group === currentGroup && v.id !== rowId) {
+        if (checked && String(v.group || '').trim().toLowerCase() === currentGroup && v.id !== rowId) {
           return { ...v, isGroupKey: false, _isGroupKeyLoading: true };
         }
         return v;
@@ -2926,7 +2922,8 @@ function App() {
           name: '', // Also clear name field if it exists
           // Ensure all fields are preserved
           isMeme: row.isMeme ?? row.is_meme ?? false,
-          isGroupKey: row.isGroupKey ?? row.is_group_key ?? false,
+          isGroupKey: row.isGroupKey ?? row.is_group_key ?? row['Is Group Key'] ?? false,
+          groupKey: row.groupKey ?? row.group_key ?? row['Group Key'] ?? '',
           relevance: row.relevance || '',
           validation: row.validation || '',
           formatI: row.formatI || '',
@@ -3555,12 +3552,11 @@ function App() {
           }
           
           // Check for duplicate object name (case-insensitive)
-          // An object is unique by: sector, domain, country, objectClarifier, being, avatar, object
+          // An object is unique by: sector, domain, country, being, avatar, object
           const driverParts = updatedData.driver.split(', ').map(part => part.trim());
           const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
           const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
           const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
-          const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
           
           // Check if an object with the same combination already exists
           const duplicateObject = data.find(obj => {
@@ -3569,19 +3565,17 @@ function App() {
             const objSector = objDriverParts[0] === 'ALL' ? ['ALL'] : [objDriverParts[0]];
             const objDomain = objDriverParts[1] === 'ALL' ? ['ALL'] : [objDriverParts[1]];
             const objCountry = objDriverParts[2] === 'ALL' ? ['ALL'] : [objDriverParts[2]];
-            const objClarifier = objDriverParts[3] === 'None' ? 'None' : objDriverParts[3];
             
             return obj.being === updatedData.being &&
                    obj.avatar === updatedData.avatar &&
                    obj.object?.toLowerCase() === updatedData.object?.toLowerCase() &&
                    JSON.stringify(objSector) === JSON.stringify(sector) &&
                    JSON.stringify(objDomain) === JSON.stringify(domain) &&
-                   JSON.stringify(objCountry) === JSON.stringify(country) &&
-                   objClarifier === objectClarifier;
+                   JSON.stringify(objCountry) === JSON.stringify(country);
           });
           
           if (duplicateObject) {
-            alert(`Cannot save: An object with the same combination of Sector, Domain, Country, Object Clarifier, Being, Avatar, and Object name already exists. Please change the Object name or modify other fields to make it unique.`);
+            alert(`Cannot save: An object with the same combination of Sector, Domain, Country, Being, Avatar, and Object name already exists. Please change the Object name or modify other fields to make it unique.`);
             throw new Error('Duplicate object detected');
           }
           
@@ -3619,7 +3613,6 @@ function App() {
               sector: sector,
               domain: domain,
               country: country,
-              objectClarifier: objectClarifier,
               being: updatedData.being,
               avatar: updatedData.avatar,
               object: updatedData.object,
@@ -3755,12 +3748,11 @@ function App() {
           }
           
           // Check for duplicate variable name (case-insensitive)
-          // A variable is unique by: sector, domain, country, variableClarifier, part, group, variable
+          // A variable is unique by: sector, domain, country, part, group, variable
           const driverParts = (updatedData.driver || selectedRowForMetadata.driver || 'ALL, ALL, ALL, None').split(', ').map((p: string) => p.trim());
           const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
           const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
           const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
-          const variableClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
           
           // Check if a variable with the same combination already exists
           const duplicateVariable = variableData.find(v => {
@@ -3769,19 +3761,17 @@ function App() {
             const vSector = vDriverParts[0] === 'ALL' ? ['ALL'] : [vDriverParts[0]];
             const vDomain = vDriverParts[1] === 'ALL' ? ['ALL'] : [vDriverParts[1]];
             const vCountry = vDriverParts[2] === 'ALL' ? ['ALL'] : [vDriverParts[2]];
-            const vClarifier = vDriverParts[3] === 'None' ? 'None' : vDriverParts[3];
             
             return v.part === (updatedData.part || selectedRowForMetadata.part) &&
                    v.group === (updatedData.group || selectedRowForMetadata.group) &&
                    v.variable?.toLowerCase() === updatedData.variable?.toLowerCase() &&
                    JSON.stringify(vSector) === JSON.stringify(sector) &&
                    JSON.stringify(vDomain) === JSON.stringify(domain) &&
-                   JSON.stringify(vCountry) === JSON.stringify(country) &&
-                   vClarifier === variableClarifier;
+                   JSON.stringify(vCountry) === JSON.stringify(country);
           });
           
           if (duplicateVariable) {
-            alert(`Cannot save: A variable with the same combination of Sector, Domain, Country, Variable Clarifier, Part, Group, and Variable name already exists. Please change the Variable name or modify other fields to make it unique.`);
+            alert(`Cannot save: A variable with the same combination of Sector, Domain, Country, Part, Group, and Variable name already exists. Please change the Variable name or modify other fields to make it unique.`);
             throw new Error('Duplicate variable detected');
           }
           
@@ -4575,7 +4565,12 @@ function App() {
       // Show success message
       const successMsg = result.message || `Successfully uploaded ${result.created_count || 0} variables`;
       if (result.error_count > 0) {
-        alert(`${successMsg}. ${result.error_count} errors occurred. Check console for details.`);
+        const errorPreview = (result.errors || []).slice(0, 8);
+        const remaining = Math.max(0, (result.errors || []).length - errorPreview.length);
+        const detailText = errorPreview.length > 0
+          ? `\n\nUpload errors:\n- ${errorPreview.join('\n- ')}${remaining > 0 ? `\n- ...and ${remaining} more` : ''}`
+          : '';
+        alert(`${successMsg}. ${result.error_count} error(s) occurred.${detailText}`);
         console.log('Upload errors:', result.errors);
       } else {
         alert(successMsg);
@@ -5222,10 +5217,37 @@ function App() {
 
   const handleDriversSave = async (newValue: string) => {
     if (selectedColumn && selectedItem) {
+      // Abbreviation-only edits are frontend-only; avoid backend calls/reordering.
+      if (newValue === selectedItem) {
+        setDriversState(prev => ({ ...prev }));
+        return;
+      }
+
       try {
         await updateDriver(selectedColumn, selectedItem, newValue);
+        
+        // Keep custom order stable when an item is renamed.
+        const storageKey = `cdm_drivers_order_${selectedColumn}`;
+        const storedOrder = localStorage.getItem(storageKey);
+        const fallbackOrder = driversState[selectedColumn] || [];
+        const currentOrder = storedOrder ? JSON.parse(storedOrder) : fallbackOrder;
+        const updatedOrder = currentOrder.map((item: string) =>
+          item === selectedItem ? newValue : item
+        );
+        localStorage.setItem(storageKey, JSON.stringify(updatedOrder));
+        
+        // Immediate local update for responsive UI.
+        setDriversState(prev => ({
+          ...prev,
+          [selectedColumn]: prev[selectedColumn].map(item =>
+            item === selectedItem ? newValue : item
+          )
+        }));
+
         setSelectedItem(newValue);
-        // The API call will trigger a refresh, which will handle the ordering
+
+        // Driver names are embedded in Object/Variable driver strings; refresh dependent caches.
+        await Promise.allSettled([fetchObjects(), fetchVariables(), fetchLists()]);
       } catch (error) {
         console.error('Failed to update driver:', error);
         // Fallback to local state update
@@ -5252,7 +5274,15 @@ function App() {
     if (selectedColumn) {
       try {
         await createDriver(selectedColumn, newValue);
-        // The API call will trigger a refresh, which will handle the ordering
+        
+        // Keep deterministic "append to bottom" behavior in saved order.
+        const storageKey = `cdm_drivers_order_${selectedColumn}`;
+        const storedOrder = localStorage.getItem(storageKey);
+        const fallbackOrder = driversState[selectedColumn] || [];
+        const currentOrder = storedOrder ? JSON.parse(storedOrder) : fallbackOrder;
+        if (!currentOrder.includes(newValue)) {
+          localStorage.setItem(storageKey, JSON.stringify([...currentOrder, newValue]));
+        }
       } catch (error) {
         console.error('Failed to create driver:', error);
         // Fallback to local state update
@@ -6012,7 +6042,7 @@ function App() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
             {/* Drivers Columns */}
             <div className="lg:col-span-3 flex flex-col h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
                 <DriversColumn
                   title="Sector"
                   items={driversState.sectors}
@@ -6042,26 +6072,6 @@ function App() {
                   selectedItem={selectedColumn === 'countries' ? selectedItem : undefined}
                   canAddNew={true}
                   onDeleteItem={(item) => handleDriverDeleteClick(item, 'countries')}
-                />
-                <DriversColumn
-                  title=""
-                  items={driversState.objectClarifiers}
-                  onHeaderClick={() => handleColumnHeaderClick('objectClarifiers')}
-                  onItemClick={(item) => handleItemClick('objectClarifiers', item)}
-                  onReorder={(newOrder) => handleDriversReorder('objectClarifiers', newOrder)}
-                  selectedItem={selectedColumn === 'objectClarifiers' ? selectedItem : undefined}
-                  canAddNew={true}
-                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'objectClarifiers')}
-                />
-                <DriversColumn
-                  title=""
-                  items={driversState.variableClarifiers}
-                  onHeaderClick={() => handleColumnHeaderClick('variableClarifiers')}
-                  onItemClick={(item) => handleItemClick('variableClarifiers', item)}
-                  onReorder={(newOrder) => handleDriversReorder('variableClarifiers', newOrder)}
-                  selectedItem={selectedColumn === 'variableClarifiers' ? selectedItem : undefined}
-                  canAddNew={true}
-                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'variableClarifiers')}
                 />
               </div>
             </div>

@@ -63,8 +63,15 @@ async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
             if existing.single():
                 raise HTTPException(status_code=409, detail=f"{label} '{name}' already exists")
             
-            # Create new driver
-            session.run(f"CREATE (d:{label} {{name: $name}})", name=name)
+            # Create new driver at the bottom of current order.
+            session.run(
+                f"""
+                OPTIONAL MATCH (existing:{label})
+                WITH coalesce(max(existing.order), -1) + 1 as next_order
+                CREATE (d:{label} {{name: $name, order: next_order}})
+                """,
+                name=name
+            )
             return {"message": f"{label} '{name}' created successfully", "name": name}
             
     except HTTPException:
@@ -134,6 +141,79 @@ async def update_driver(driver_type: DriverType, old_name: str, driver_data: Dic
             # Update the driver name
             session.run(f"MATCH (d:{label} {{name: $old_name}}) SET d.name = $new_name", 
                        old_name=old_name, new_name=new_name)
+
+            # Keep denormalized driver strings in sync so S/D/C grids immediately reflect renames.
+            # Object driver string format: "Sector, Domain, Country, ObjectClarifier"
+            session.run(
+                """
+                MATCH (o:Object)
+                OPTIONAL MATCH (sec:Sector)-[:RELEVANT_TO]->(o)
+                WITH o, [name IN collect(DISTINCT sec.name) WHERE name IS NOT NULL] AS sectors
+                OPTIONAL MATCH (dom:Domain)-[:RELEVANT_TO]->(o)
+                WITH o, sectors, [name IN collect(DISTINCT dom.name) WHERE name IS NOT NULL] AS domains
+                OPTIONAL MATCH (cty:Country)-[:RELEVANT_TO]->(o)
+                WITH o, sectors, domains, [name IN collect(DISTINCT cty.name) WHERE name IS NOT NULL] AS countries
+                OPTIONAL MATCH (oc:ObjectClarifier)-[:RELEVANT_TO]->(o)
+                WITH
+                    o,
+                    sectors,
+                    domains,
+                    countries,
+                    coalesce(head([name IN collect(DISTINCT oc.name) WHERE name IS NOT NULL]), 'None') AS object_clarifier
+                WITH
+                    o,
+                    CASE WHEN size(sectors) = 0 OR 'ALL' IN sectors
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN sectors | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS sector_display,
+                    CASE WHEN size(domains) = 0 OR 'ALL' IN domains
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN domains | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS domain_display,
+                    CASE WHEN size(countries) = 0 OR 'ALL' IN countries
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN countries | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS country_display,
+                    object_clarifier
+                SET o.driver = sector_display + ', ' + domain_display + ', ' + country_display + ', ' + object_clarifier
+                """
+            )
+
+            # Variable driver string format: "Sector, Domain, Country, VariableClarifier"
+            session.run(
+                """
+                MATCH (v:Variable)
+                OPTIONAL MATCH (sec:Sector)-[:IS_RELEVANT_TO]->(v)
+                WITH v, [name IN collect(DISTINCT sec.name) WHERE name IS NOT NULL] AS sectors
+                OPTIONAL MATCH (dom:Domain)-[:IS_RELEVANT_TO]->(v)
+                WITH v, sectors, [name IN collect(DISTINCT dom.name) WHERE name IS NOT NULL] AS domains
+                OPTIONAL MATCH (cty:Country)-[:IS_RELEVANT_TO]->(v)
+                WITH v, sectors, domains, [name IN collect(DISTINCT cty.name) WHERE name IS NOT NULL] AS countries
+                OPTIONAL MATCH (vc:VariableClarifier)-[:IS_RELEVANT_TO]->(v)
+                WITH
+                    v,
+                    sectors,
+                    domains,
+                    countries,
+                    coalesce(head([name IN collect(DISTINCT vc.name) WHERE name IS NOT NULL]), 'None') AS variable_clarifier
+                WITH
+                    v,
+                    CASE WHEN size(sectors) = 0 OR 'ALL' IN sectors
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN sectors | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS sector_display,
+                    CASE WHEN size(domains) = 0 OR 'ALL' IN domains
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN domains | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS domain_display,
+                    CASE WHEN size(countries) = 0 OR 'ALL' IN countries
+                        THEN 'ALL'
+                        ELSE reduce(txt = '', name IN countries | txt + CASE WHEN txt = '' THEN '' ELSE ', ' END + name)
+                    END AS country_display,
+                    variable_clarifier
+                SET v.driver = sector_display + ', ' + domain_display + ', ' + country_display + ', ' + variable_clarifier
+                """
+            )
             
             return {"message": f"{label} renamed from '{old_name}' to '{new_name}'", "name": new_name}
             

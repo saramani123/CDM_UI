@@ -23,11 +23,10 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
       { number: 1, name: 'Sector', required: true },
       { number: 2, name: 'Domain', required: true },
       { number: 3, name: 'Country', required: true },
-      { number: 4, name: 'Object Clarifier', required: true },
-      { number: 5, name: 'Being', required: true },
-      { number: 6, name: 'Avatar', required: true },
-      { number: 7, name: 'Object', required: true },
-      { number: 8, name: 'Variants', required: false }
+      { number: 4, name: 'Being', required: true },
+      { number: 5, name: 'Avatar', required: true },
+      { number: 6, name: 'Object', required: true },
+      { number: 7, name: 'Variants', required: false }
     ]
   };
 
@@ -201,11 +200,10 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required Fields:</strong></p>
-            <p>• Columns 1-7 must have values</p>
-            <p>• Object Clarifier can be "None" if not applicable</p>
+            <p>• Columns 1-6 must have values</p>
             <p>• Use "ALL" for Sector/Domain/Country to apply to all values</p>
             <p><strong>Optional Fields:</strong></p>
-            <p>• Column 8 (Variants): Comma-separated list of variants (e.g., "Variant1, Variant2, Variant3")</p>
+            <p>• Column 7 (Variants): Comma-separated list of variants (e.g., "Variant1, Variant2, Variant3")</p>
             <p>• Variants will be automatically created and linked to the object</p>
             <p><strong>After Upload:</strong></p>
             <p>• IDs and relationships can be added after upload</p>

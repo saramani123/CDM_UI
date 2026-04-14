@@ -33,7 +33,8 @@ export const useVariables = () => {
       const mappedData = (data || []).map((v: any) => ({
         ...v,
         isMeme: v.is_meme ?? v.isMeme ?? false,
-        isGroupKey: v.is_group_key ?? v.isGroupKey ?? false,
+        isGroupKey: v.is_group_key ?? v.isGroupKey ?? v['Is Group Key'] ?? false,
+        groupKey: v.group_key ?? v.groupKey ?? v['Group Key'] ?? '',
         _isMemeLoading: false, // Clear loading state
         _isGroupKeyLoading: false // Clear loading state
       }));
@@ -68,7 +69,8 @@ export const useVariables = () => {
       const variableWithMeme: VariableData = {
         ...updatedVariable,
         isMeme: updatedVariable.is_meme ?? updatedVariable.isMeme ?? false,
-        isGroupKey: updatedVariable.is_group_key ?? updatedVariable.isGroupKey ?? false
+        isGroupKey: updatedVariable.is_group_key ?? updatedVariable.isGroupKey ?? updatedVariable['Is Group Key'] ?? false,
+        groupKey: updatedVariable.group_key ?? updatedVariable.groupKey ?? updatedVariable['Group Key'] ?? ''
       };
       setVariables(prev => prev.map(v => v.id === id ? variableWithMeme : v));
       return variableWithMeme;

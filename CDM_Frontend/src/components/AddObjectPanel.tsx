@@ -252,8 +252,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   const [driverSelections, setDriverSelections] = useState({
     sector: ['ALL'] as string[],
     domain: ['ALL'] as string[],
-    country: ['ALL'] as string[],
-    objectClarifier: ''
+    country: ['ALL'] as string[]
   });
 
   // Use only API drivers data
@@ -477,8 +476,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         setDriverSelections({
           sector: ['ALL'],
           domain: ['ALL'],
-          country: ['ALL'],
-          objectClarifier: ''
+          country: ['ALL']
         });
       }
     }
@@ -583,12 +581,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     }));
   };
 
-  const handleObjectClarifierChange = (value: string) => {
-    setDriverSelections(prev => ({
-      ...prev,
-      objectClarifier: value
-    }));
-  };
   const handleCompositeKeyChange = (id: string, field: 'part' | 'group', value: string) => {
     setCompositeKeys(prev => prev.map(key => {
       if (key.id === id) {
@@ -675,8 +667,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     const driverString = concatenateDrivers(
       driverSelections.sector,
       driverSelections.domain,
-      driverSelections.country,
-      driverSelections.objectClarifier
+      driverSelections.country
     );
 
     // Convert multiline text to variants array
@@ -737,8 +728,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     setDriverSelections({
       sector: ['ALL'],
       domain: ['ALL'],
-      country: ['ALL'],
-      objectClarifier: ''
+      country: ['ALL']
     });
     setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
     setCompositeKeys([
@@ -830,30 +820,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
               values={driverSelections.country}
               onChange={(values) => handleDriverSelectionChange('country', values)}
             />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Object Clarifier
-            </label>
-            <select
-              value={driverSelections.objectClarifier}
-              onChange={(e) => handleObjectClarifierChange(e.target.value)}
-              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                backgroundPosition: 'right 12px center',
-                backgroundRepeat: 'no-repeat',
-                backgroundSize: '16px'
-              }}
-            >
-              <option value="">None</option>
-              {driversData.objectClarifiers.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
       </CollapsibleSection>
@@ -1260,12 +1226,10 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
           sector: driverSelections.sector,
           domain: driverSelections.domain,
           country: driverSelections.country,
-          objectClarifier: driverSelections.objectClarifier,
           driver: concatenateDrivers(
             driverSelections.sector,
             driverSelections.domain,
-            driverSelections.country,
-            driverSelections.objectClarifier
+            driverSelections.country
           ),
           relationships: 0,
           variants: 0,
@@ -1301,8 +1265,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
           object: formData.objectName,
           sector: driverSelections.sector,
           domain: driverSelections.domain,
-          country: driverSelections.country,
-          objectClarifier: driverSelections.objectClarifier
+          country: driverSelections.country
         }}
         allObjects={allData || []}
         onSave={() => {

@@ -12,8 +12,8 @@ interface DriversMetadataPanelProps {
   title: string;
   selectedColumn?: ColumnType;
   selectedItem?: string;
-  onSave?: (newValue: string) => void;
-  onAddNew?: (newValue: string) => void;
+  onSave?: (newValue: string) => void | Promise<void>;
+  onAddNew?: (newValue: string) => void | Promise<void>;
   canAddNew: boolean;
 }
 
@@ -30,6 +30,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
   const [initialAbbreviationValue, setInitialAbbreviationValue] = useState('');
   const [isAddingNew, setIsAddingNew] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   // Check if abbreviation field should be shown (only for sectors, domains, countries)
   const showAbbreviationField = selectedColumn && ['sectors', 'domains', 'countries'].includes(selectedColumn);
@@ -38,6 +39,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
     setInputValue(selectedItem || '');
     setIsAddingNew(false);
     setErrorMessage('');
+    setSuccessMessage('');
     
     // Load abbreviation if editing an existing item
     if (selectedItem && selectedColumn && showAbbreviationField) {
@@ -52,8 +54,9 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItem, selectedColumn]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setErrorMessage('');
+    setSuccessMessage('');
     
     // Validation: If abbreviation is provided, name must be provided
     if (abbreviationValue.trim() && !inputValue.trim()) {
@@ -82,7 +85,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
         }
       }
       
-      onSave(newName);
+      await onSave(newName);
       
       // Update abbreviation value if it exists and sync initial value
       if (selectedColumn && showAbbreviationField) {
@@ -91,11 +94,18 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
         setAbbreviationValue(abbrevValue);
         setInitialAbbreviationValue(abbrevValue); // Sync initial value after save
       }
+
+      if (showAbbreviationField && abbreviationValue.trim()) {
+        setSuccessMessage('Abbreviation saved successfully.');
+      } else {
+        setSuccessMessage(`${columnLabels[selectedColumn]} saved successfully.`);
+      }
     }
   };
 
-  const handleAddNew = () => {
+  const handleAddNew = async () => {
     setErrorMessage('');
+    setSuccessMessage('');
     
     // Validation: If abbreviation is provided, name must be provided
     if (abbreviationValue.trim() && !inputValue.trim()) {
@@ -112,10 +122,11 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
         setDriverAbbreviation(selectedColumn, newName, abbreviationValue.trim());
       }
       
-      onAddNew(newName);
+      await onAddNew(newName);
       setInputValue('');
       setAbbreviationValue('');
       setIsAddingNew(false);
+      setSuccessMessage(`${columnLabels[selectedColumn]} added successfully.`);
     }
   };
 
@@ -156,6 +167,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
                   onChange={(e) => {
                     setInputValue(e.target.value);
                     setErrorMessage('');
+                    setSuccessMessage('');
                   }}
                   placeholder={`Enter new ${columnLabels[selectedColumn].toLowerCase()}...`}
                   className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
@@ -173,6 +185,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
                     onChange={(e) => {
                       setAbbreviationValue(e.target.value);
                       setErrorMessage('');
+                      setSuccessMessage('');
                     }}
                     placeholder={`Enter abbreviation (optional)...`}
                     className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
@@ -183,6 +196,11 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
               {errorMessage && (
                 <div className="text-sm text-red-400 bg-red-900 bg-opacity-20 border border-red-500 border-opacity-50 rounded p-2">
                   {errorMessage}
+                </div>
+              )}
+              {successMessage && (
+                <div className="text-sm text-green-300 bg-green-900 bg-opacity-20 border border-green-500 border-opacity-50 rounded p-2">
+                  {successMessage}
                 </div>
               )}
 
@@ -222,6 +240,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
               onChange={(e) => {
                 setInputValue(e.target.value);
                 setErrorMessage('');
+                setSuccessMessage('');
               }}
               placeholder={`Enter ${columnLabels[selectedColumn!].toLowerCase()} name...`}
               className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
@@ -239,6 +258,7 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
                 onChange={(e) => {
                   setAbbreviationValue(e.target.value);
                   setErrorMessage('');
+                  setSuccessMessage('');
                 }}
                 placeholder={`Enter abbreviation (optional)...`}
                 className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
@@ -249,6 +269,11 @@ export const DriversMetadataPanel: React.FC<DriversMetadataPanelProps> = ({
           {errorMessage && (
             <div className="text-sm text-red-400 bg-red-900 bg-opacity-20 border border-red-500 border-opacity-50 rounded p-2">
               {errorMessage}
+            </div>
+          )}
+          {successMessage && (
+            <div className="text-sm text-green-300 bg-green-900 bg-opacity-20 border border-green-500 border-opacity-50 rounded p-2">
+              {successMessage}
             </div>
           )}
 
