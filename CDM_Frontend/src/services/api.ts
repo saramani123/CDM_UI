@@ -453,6 +453,7 @@ class ApiService {
     relationshipType: string;
     roles: string[];
     frequency?: string;
+    targetObjectId?: string;
   }>) {
     return this.request('/objects/bulk-relationships', {
       method: 'POST',
@@ -464,9 +465,51 @@ class ApiService {
           target_object: rel.targetObject.object,
           relationship_type: rel.relationshipType,
           roles: rel.roles,
-          frequency: rel.frequency || 'Critical'
+          frequency: rel.frequency || 'Critical',
+          target_object_id: rel.targetObjectId || rel.targetObject?.id || null,
         }))
       }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  async syncObjectAdditionalRelationships(
+    objectId: string,
+    edges: Array<{
+      target_object_id: string;
+      role: string;
+      relationship_type: string;
+      frequency: string;
+    }>
+  ) {
+    return this.request(`/objects/${objectId}/relationships/sync-additional`, {
+      method: 'POST',
+      body: JSON.stringify({ edges }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  async deleteObjectRelationshipsByIds(objectId: string, relationshipIds: string[]) {
+    return this.request(`/objects/${objectId}/relationships/delete-non-default-ids`, {
+      method: 'POST',
+      body: JSON.stringify({ relationship_ids: relationshipIds }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  async deleteObjectAdditionalRelationshipsForTargets(
+    objectId: string,
+    items: Array<{ target_object_id: string; roles: string[] }>
+  ) {
+    return this.request(`/objects/${objectId}/relationships/delete-additional-for-targets`, {
+      method: 'POST',
+      body: JSON.stringify({ items }),
       headers: {
         'Content-Type': 'application/json',
       },

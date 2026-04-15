@@ -73,12 +73,6 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
     if (onDefaultOrderToggle) {
       onDefaultOrderToggle(enabled);
     }
-    // When enabling default order, remove any rules that use Being, Avatar, or Object
-    if (enabled) {
-      setSortRules(prev => prev.filter(rule => 
-        !rule.column || !['being', 'avatar', 'object'].includes(rule.column)
-      ));
-    }
   };
 
   const handleCancel = () => {
@@ -91,23 +85,15 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
     onClose();
   };
 
-  // Available columns: Being, Avatar, Object
-  // When default order is enabled: only Sector, Domain, Country
-  // When default order is disabled: Sector, Domain, Country, Being, Avatar, Object
-  const availableColumns = defaultOrderEnabled
-    ? [
-        { key: 'sector', title: 'Sector' },
-        { key: 'domain', title: 'Domain' },
-        { key: 'country', title: 'Country' }
-      ]
-    : [
-        { key: 'sector', title: 'Sector' },
-        { key: 'domain', title: 'Domain' },
-        { key: 'country', title: 'Country' },
-        { key: 'being', title: 'Being' },
-        { key: 'avatar', title: 'Avatar' },
-        { key: 'object', title: 'Object' }
-      ];
+  // Sector / Domain / Country plus Being / Avatar / Object — all available as sort keys in any mode
+  const availableColumns = [
+    { key: 'sector', title: 'Sector' },
+    { key: 'domain', title: 'Domain' },
+    { key: 'country', title: 'Country' },
+    { key: 'being', title: 'Being' },
+    { key: 'avatar', title: 'Avatar' },
+    { key: 'object', title: 'Object' }
+  ];
 
   if (!isOpen) return null;
 
@@ -138,8 +124,7 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
           </label>
           {defaultOrderEnabled && (
             <p className="text-xs text-ag-dark-text-secondary mt-2 ml-8">
-              When enabled, sorting will be: Sector, Domain, Country (custom sort), then Being, Avatar, Object (default order).
-              Being, Avatar, and Object columns are not available in custom sort when default order is enabled.
+              When enabled, rules you define below run first; remaining ties use Being, then Avatar, then Object (A→Z).
             </p>
           )}
         </div>
@@ -149,8 +134,8 @@ export const RelationshipCustomSortModal: React.FC<RelationshipCustomSortModalPr
           <p className="text-sm text-ag-dark-text-secondary">
             Define multi-column sorting rules. The first rule will be the primary sort, 
             the second will be the secondary sort, and so on.
-            {defaultOrderEnabled 
-              ? ' Available columns: Sector, Domain, Country. Default order (Being, Avatar, Object) will be applied after custom sort.'
+            {defaultOrderEnabled
+              ? ' Available columns: Sector, Domain, Country, Being, Avatar, and Object. After your rules, Being → Avatar → Object is used as a tiebreaker.'
               : ' Available columns: Sector, Domain, Country, Being, Avatar, Object.'
             }
           </p>

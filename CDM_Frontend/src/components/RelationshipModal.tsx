@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload, Plus } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns, parseDriverField } from '../data/mockData';
@@ -56,6 +56,8 @@ interface RelationshipGridRow {
   relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
   frequency: 'Critical' | 'Likely' | 'Possible';
   roles: string; // Comma-separated role words
+  /** Neo4j relationship ids loaded for this row (used for precise delete before next save) */
+  _loadedRelIds?: string[];
 }
 
 export const RelationshipModal: React.FC<RelationshipModalProps> = ({
@@ -96,22 +98,23 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   // NEW: Grid-based relationship rows (empty by default)
   const [relationshipRows, setRelationshipRows] = useState<RelationshipGridRow[]>([]);
   
-  // Get drivers data for dropdowns
+  // Get drivers data for dropdowns — S/D/C must match Drivers tab (sector / domain / country), not inferred from objects only
   const { drivers: driversData } = useDrivers();
-  
-  // Get distinct values for dropdowns from allObjects
-  const distinctSectors = Array.from(new Set(allObjects.map(obj => {
-    const parsed = parseDriverField(obj.driver || '');
-    return parsed.sector || 'ALL';
-  }))).sort();
-  const distinctDomains = Array.from(new Set(allObjects.map(obj => {
-    const parsed = parseDriverField(obj.driver || '');
-    return parsed.domain || 'ALL';
-  }))).sort();
-  const distinctCountries = Array.from(new Set(allObjects.map(obj => {
-    const parsed = parseDriverField(obj.driver || '');
-    return parsed.country || 'ALL';
-  }))).sort();
+
+  const distinctSectors = useMemo(() => {
+    const fromDrivers = (driversData.sectors || []).map(s => String(s).trim()).filter(Boolean);
+    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
+  }, [driversData.sectors]);
+
+  const distinctDomains = useMemo(() => {
+    const fromDrivers = (driversData.domains || []).map(d => String(d).trim()).filter(Boolean);
+    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
+  }, [driversData.domains]);
+
+  const distinctCountries = useMemo(() => {
+    const fromDrivers = (driversData.countries || []).map(c => String(c).trim()).filter(Boolean);
+    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
+  }, [driversData.countries]);
   const distinctBeings = Array.from(new Set(allObjects.map(obj => obj.being).filter(Boolean))).sort();
   
   // Helper function to get avatars for a specific being
@@ -245,6 +248,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         types: Set<string>;
         frequencies: Set<string>;
         roles: Set<string>;
+        relIds: string[];
       }>();
       
       for (const rel of allExistingRelationships) {
@@ -280,7 +284,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
             object: rel.toObject || 'ALL',
             types: new Set(),
             frequencies: new Set(),
-            roles: new Set()
+            roles: new Set(),
+            relIds: []
           });
         }
         
@@ -289,6 +294,9 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         if (rel.frequency) group.frequencies.add(rel.frequency);
         if (rel.role && rel.role.toLowerCase() !== sourceObjectName.toLowerCase()) {
           group.roles.add(rel.role.trim());
+        }
+        if (rel.id) {
+          group.relIds.push(String(rel.id));
         }
       }
       
@@ -317,7 +325,8 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           object: group.object,
           relationshipType: relationshipType,
           frequency: frequency,
-          roles: roles
+          roles: roles,
+          _loadedRelIds: group.relIds.length > 0 ? [...group.relIds] : undefined
         });
       }
       
@@ -449,9 +458,58 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     setRelationshipRows(prev => [...prev, newRow]);
   };
   
-  // Remove a row from the grid
-  const handleRemoveRow = (rowId: string) => {
-    setRelationshipRows(prev => prev.filter(row => row.id !== rowId));
+  // Remove a row from the grid (persisted objects: delete matching Neo4j edges first)
+  const handleRemoveRow = async (rowId: string) => {
+    const row = relationshipRows.find(r => r.id === rowId);
+    if (!row) return;
+
+    const isTemporaryObject = sourceObjects.length === 1 &&
+      (sourceObjects[0].id === 'temp-new-object' || sourceObjects[0].id.startsWith('temp-'));
+    const isClonedObject = sourceObjects.length === 1 &&
+      !!(sourceObjects[0] as any)._isCloned &&
+      !(sourceObjects[0] as any)._isSaved;
+    const savedPersistedSingle =
+      !isBulkMode &&
+      sourceObjects.length === 1 &&
+      !isTemporaryObject &&
+      !isClonedObject;
+
+    if (savedPersistedSingle) {
+      const objectId = sourceObjects[0].id;
+      try {
+        if (row._loadedRelIds && row._loadedRelIds.length > 0) {
+          await apiService.deleteObjectRelationshipsByIds(objectId, row._loadedRelIds);
+        } else if (row.being && row.avatar && row.object) {
+          const targets = findMatchingObjects(
+            row.sector, row.domain, row.country,
+            row.being, row.avatar, row.object
+          );
+          const roles = validateRoles(row.roles || '');
+          if (targets.length > 0) {
+            if (roles.length > 0) {
+              await apiService.deleteObjectAdditionalRelationshipsForTargets(
+                objectId,
+                targets.map(t => ({ target_object_id: t.id, roles }))
+              );
+            } else {
+              await apiService.deleteObjectAdditionalRelationshipsForTargets(
+                objectId,
+                targets.map(t => ({ target_object_id: t.id, roles: [] }))
+              );
+            }
+          }
+        }
+        if (onSave) {
+          await onSave();
+        }
+      } catch (error: any) {
+        console.error('Failed to delete relationships for row:', error);
+        alert(error?.message || 'Failed to delete relationships for this row.');
+        return;
+      }
+    }
+
+    setRelationshipRows(prev => prev.filter(r => r.id !== rowId));
   };
   
   // Update a row field
@@ -485,10 +543,13 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
         updatedRow.frequency = 'Critical';
       }
       
+      // Drop loaded Neo4j ids when row semantics change (so delete uses fresh criteria / next save syncs)
+      if (['sector', 'domain', 'country', 'being', 'avatar', 'object', 'roles'].includes(field)) {
+        delete (updatedRow as any)._loadedRelIds;
+      }
       // Validate for duplicates when key fields change (S, D, C, Being, Avatar, Object)
-      // Only check against OTHER rows in the grid (exclude current row)
-      const keyFields = ['sector', 'domain', 'country', 'being', 'avatar', 'object'];
-      if (keyFields.includes(field) && updatedRow.being && updatedRow.avatar && updatedRow.object) {
+      const duplicateCheckFields = ['sector', 'domain', 'country', 'being', 'avatar', 'object'];
+      if (duplicateCheckFields.includes(field) && updatedRow.being && updatedRow.avatar && updatedRow.object) {
         const isDuplicate = isRowDuplicate(
           updatedRow.sector,
           updatedRow.domain,
@@ -673,6 +734,39 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     return uniqueRoles;
   };
 
+  /** Desired non-default edges for one source object (used by sync-additional API). */
+  const buildAdditionalEdgesForSource = (sourceObject: ObjectData, rows: RelationshipGridRow[]) => {
+    const edges: Array<{
+      target_object_id: string;
+      role: string;
+      relationship_type: string;
+      frequency: string;
+    }> = [];
+    for (const row of rows) {
+      if (!row.being || !row.avatar || !row.object) continue;
+      const roleWords = validateRoles(row.roles || '');
+      if (roleWords.length === 0) continue;
+      const matchingObjects = findMatchingObjects(
+        row.sector, row.domain, row.country,
+        row.being, row.avatar, row.object
+      );
+      for (const targetObject of matchingObjects) {
+        const relationshipType =
+          targetObject.id === sourceObject.id ? 'Intra-Table' : row.relationshipType;
+        const frequency = relationshipType === 'Blood' ? 'Critical' : row.frequency;
+        for (const role of roleWords) {
+          edges.push({
+            target_object_id: targetObject.id,
+            role: role.trim(),
+            relationship_type: relationshipType,
+            frequency,
+          });
+        }
+      }
+    }
+    return edges;
+  };
+
   const handleSave = async () => {
     if (sourceObjects.length === 0) return;
 
@@ -731,9 +825,11 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
 
     setSaving(true);
     try {
-      // NEW GRID-BASED SAVE LOGIC
-      // Validate all rows (exclude each row when checking for duplicates)
+      // Validate every row the user started (ignore completely blank rows)
       for (const row of relationshipRows) {
+        const started =
+          !!(row.being || row.avatar || row.object || (row.roles && row.roles.trim()));
+        if (!started) continue;
         const validationError = validateRow(row, row.id);
         if (validationError) {
           alert(`Row validation error: ${validationError}`);
@@ -741,102 +837,18 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
           return;
         }
       }
-      
-      // Process relationships from grid rows
-      const relationshipsToCreate: Array<{
-        sourceObjectId: string;
-        targetObject: ObjectData;
-        relationshipType: string;
-        roles: string[];
-        frequency: 'Critical' | 'Likely' | 'Possible';
-      }> = [];
-      
-      // For each grid row, find matching target objects and create relationships
-      for (const row of relationshipRows) {
-        const matchingObjects = findMatchingObjects(row.sector, row.domain, row.country, row.being, row.avatar, row.object);
-        
-        if (matchingObjects.length === 0) {
-          console.warn(`No matching objects found for row: ${row.sector}, ${row.domain}, ${row.country}, ${row.being}, ${row.avatar}, ${row.object}`);
-          continue;
-        }
-        
-        // Parse role words from the row
-        const roleWords = validateRoles(row.roles || '');
-        
-        if (roleWords.length === 0) {
-          console.warn(`No role words specified for row: ${row.sector}, ${row.domain}, ${row.country}, ${row.being}, ${row.avatar}, ${row.object}`);
-          continue;
-        }
-        
-        // For each source object and each matching target object, create relationships for each role word
-        for (const sourceObject of sourceObjects) {
-          const sourceObjectName = sourceObject.object || '';
-          
-          // Determine relationship type
-          const isSelf = row.object === sourceObjectName;
-          const relationshipType = isSelf ? 'Intra-Table' : row.relationshipType;
-          
-          // Determine frequency
-          const frequency = relationshipType === 'Blood' ? 'Critical' : row.frequency;
-          
-          for (const targetObject of matchingObjects) {
-            relationshipsToCreate.push({
-              sourceObjectId: sourceObject.id,
-              targetObject,
-              relationshipType,
-              roles: roleWords, // Only additional role words (not default)
-              frequency
-            });
-          }
-        }
+
+      // Sync-additional replaces all non-default edges with the grid state (per source object)
+      for (const sourceObject of sourceObjects) {
+        const edges = buildAdditionalEdgesForSource(sourceObject, relationshipRows);
+        await apiService.syncObjectAdditionalRelationships(sourceObject.id, edges);
       }
-      
-      if (relationshipsToCreate.length === 0) {
-        alert('No additional relationships to create. The grid is empty.');
-        setSaving(false);
-        return;
-      }
-      
-      // Create relationships using bulk API or individual API calls
-      try {
-        await apiService.bulkCreateRelationships(relationshipsToCreate);
-      } catch (error: any) {
-        console.error('Bulk relationship creation error:', error);
-        // Fall back to individual creation
-        if (error.message?.includes('404') || error.message?.includes('not found')) {
-          for (const rel of relationshipsToCreate) {
-            for (const role of rel.roles) {
-              if (!role || role.trim() === '') continue;
-              
-              try {
-                await apiService.createRelationship(rel.sourceObjectId, {
-                  type: rel.relationshipType,
-                  role: role.trim(),
-                  frequency: rel.frequency || 'Possible',
-                  toBeing: rel.targetObject.being,
-                  toAvatar: rel.targetObject.avatar,
-                  toObject: rel.targetObject.object
-                });
-              } catch (err: any) {
-                if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
-                  console.warn(`Duplicate relationship skipped: ${rel.sourceObjectId} -> ${rel.targetObject.object} with role "${role}"`);
-                } else {
-                  throw err;
-                }
-              }
-            }
-          }
-        } else {
-          throw error;
-        }
-      }
-      
-      // Call the callback to refresh main data
+
       if (onSave) {
         await onSave();
       }
-      
-      alert('Additional relationships created successfully!');
+
+      alert('Relationships saved successfully.');
       onClose();
     } catch (error) {
       console.error('Failed to save relationships:', error);
@@ -871,29 +883,36 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     };
   });
 
-  // Apply custom sort if rules exist
-  if (customSortRules.length > 0) {
+  // Custom sort rules, then optional Being → Avatar → Object tiebreaker when "default order" is on
+  if (customSortRules.some(r => r.column) || isRelationshipOrderEnabled) {
     gridData = [...gridData].sort((a, b) => {
       for (const rule of customSortRules) {
         if (!rule.column) continue;
-        
+
         const aValue = String(a[rule.column] || '').toLowerCase();
         const bValue = String(b[rule.column] || '').toLowerCase();
-        
+
         let comparison = aValue.localeCompare(bValue);
-        
-        // Apply order (asc/desc)
+
         if (rule.order === 'desc') {
           comparison = -comparison;
         }
-        
-        // If this rule doesn't determine the order, continue to next rule
+
         if (comparison !== 0) {
           return comparison;
         }
       }
-      
-      return 0; // All rules are equal
+
+      if (isRelationshipOrderEnabled) {
+        for (const col of ['being', 'avatar', 'object'] as const) {
+          const c = String(a[col] || '')
+            .toLowerCase()
+            .localeCompare(String(b[col] || '').toLowerCase());
+          if (c !== 0) return c;
+        }
+      }
+
+      return 0;
     });
   }
 
@@ -1323,7 +1342,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                               {/* Actions */}
                               <td className="px-3 py-2">
                                 <button
-                                  onClick={() => handleRemoveRow(row.id)}
+                                  onClick={() => { void handleRemoveRow(row.id); }}
                                   className="p-1 text-red-400 hover:text-red-300 transition-colors"
                                   title="Remove row"
                                 >

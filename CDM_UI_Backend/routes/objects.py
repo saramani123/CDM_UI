@@ -29,9 +29,36 @@ class BulkRelationshipItem(BaseModel):
     relationship_type: str
     roles: List[str]
     frequency: Optional[str] = "Critical"
+    # When set, create only to this Object node (avoids fan-out when multiple objects share B/A/O)
+    target_object_id: Optional[str] = None
+
 
 class BulkRelationshipCreateRequest(BaseModel):
     relationships: List[BulkRelationshipItem]
+
+
+class SyncAdditionalEdge(BaseModel):
+    target_object_id: str
+    role: str
+    relationship_type: str = "Inter-Table"
+    frequency: Optional[str] = "Possible"
+
+
+class SyncAdditionalRelationshipsRequest(BaseModel):
+    edges: List[SyncAdditionalEdge]
+
+
+class DeleteNonDefaultRelationshipIdsRequest(BaseModel):
+    relationship_ids: List[str]
+
+
+class DeleteAdditionalForTargetItem(BaseModel):
+    target_object_id: str
+    roles: List[str]  # When empty, delete all non-default relationships to this target
+
+
+class DeleteAdditionalForTargetsRequest(BaseModel):
+    items: List[DeleteAdditionalForTargetItem]
 
 router = APIRouter()
 
@@ -154,6 +181,180 @@ def get_additional_relationship_count(session, object_id: str) -> int:
     return int(result["rel_count"]) if result and result["rel_count"] is not None else 0
 
 
+def get_total_relationship_count(session, object_id: str) -> int:
+    """Count every RELATES_TO edge from this object (defaults + additional)."""
+    result = session.run("""
+        MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(:Object)
+        RETURN count(r) as rel_count
+    """, object_id=object_id).single()
+    return int(result["rel_count"]) if result and result["rel_count"] is not None else 0
+
+
+def _is_default_object_relationship(
+    source_object_name: Optional[str],
+    role: Optional[str],
+    frequency: Optional[str],
+    rel_type: Optional[str],
+) -> bool:
+    """Matches UI/Neo4j convention for default object↔object links."""
+    if not source_object_name or not role:
+        return False
+    if str(role).strip().lower() != str(source_object_name).strip().lower():
+        return False
+    if (frequency or "") != "Possible":
+        return False
+    if rel_type not in ("Inter-Table", "Intra-Table"):
+        return False
+    return True
+
+
+def _normalize_relationship_frequency(relationship_type: str, frequency: Optional[str]) -> str:
+    if relationship_type == "Blood":
+        return "Critical"
+    return frequency or "Possible"
+
+
+def sync_additional_object_relationships(session, object_id: str, edges: List[SyncAdditionalEdge]) -> Dict[str, Any]:
+    """
+    Make non-default RELATES_TO edges match `edges` exactly (by target id + role).
+    Default edges (role = source object name, frequency Possible, Inter/Intra) are never touched.
+    """
+    orec = session.run(
+        "MATCH (o:Object {id: $id}) RETURN o.object as name",
+        id=object_id,
+    ).single()
+    if not orec:
+        raise ValueError("Object not found")
+    source_name = orec["name"] or ""
+
+    desired: Dict[tuple, SyncAdditionalEdge] = {}
+    for e in edges:
+        role_trim = (e.role or "").strip()
+        tid = (e.target_object_id or "").strip()
+        if not tid or not role_trim:
+            continue
+        rt = e.relationship_type or "Inter-Table"
+        if tid == object_id:
+            rt = "Intra-Table"
+        fr = _normalize_relationship_frequency(rt, e.frequency)
+        key = (tid, role_trim.lower())
+        desired[key] = SyncAdditionalEdge(
+            target_object_id=tid,
+            role=role_trim,
+            relationship_type=rt,
+            frequency=fr,
+        )
+
+    rows = session.run(
+        """
+        MATCH (o:Object {id: $oid})-[r:RELATES_TO]->(t:Object)
+        RETURN r.id as id, r.role as role, r.type as type, r.frequency as frequency,
+               t.id as target_id, o.object as source_name
+        """,
+        oid=object_id,
+    ).data()
+
+    current_nondefault: List[Dict[str, Any]] = []
+    for row in rows:
+        if _is_default_object_relationship(
+            row.get("source_name"),
+            row.get("role"),
+            row.get("frequency"),
+            row.get("type"),
+        ):
+            continue
+        current_nondefault.append(row)
+
+    current_by_key: Dict[tuple, Dict[str, Any]] = {}
+    for row in current_nondefault:
+        tid = row.get("target_id")
+        rrole = (row.get("role") or "").strip()
+        if not tid:
+            continue
+        current_by_key[(tid, rrole.lower())] = row
+
+    deleted = 0
+    for key, row in list(current_by_key.items()):
+        if key not in desired:
+            rid = row.get("id")
+            if rid:
+                session.run(
+                    """
+                    MATCH (:Object {id: $oid})-[r:RELATES_TO]->(:Object)
+                    WHERE r.id = $rid
+                    DELETE r
+                    """,
+                    oid=object_id,
+                    rid=rid,
+                )
+                deleted += 1
+
+    updated = 0
+    created = 0
+    for key, spec in desired.items():
+        if key in current_by_key:
+            row = current_by_key[key]
+            rid = row.get("id")
+            if not rid:
+                continue
+            if row.get("type") != spec.relationship_type or row.get("frequency") != (spec.frequency or "Possible"):
+                session.run(
+                    """
+                    MATCH (:Object {id: $oid})-[r:RELATES_TO]->(:Object)
+                    WHERE r.id = $rid
+                    SET r.type = $type, r.frequency = $frequency
+                    """,
+                    oid=object_id,
+                    rid=rid,
+                    type=spec.relationship_type,
+                    frequency=spec.frequency or "Possible",
+                )
+                updated += 1
+        else:
+            trec = session.run(
+                "MATCH (t:Object {id: $tid}) RETURN t.id as id, t.being as being, t.avatar as avatar, t.object as object",
+                tid=spec.target_object_id,
+            ).single()
+            if not trec:
+                continue
+            final_type = "Intra-Table" if object_id == spec.target_object_id else spec.relationship_type
+            fr = _normalize_relationship_frequency(final_type, spec.frequency)
+            relationship_id = str(uuid.uuid4())
+            session.run(
+                """
+                MATCH (source:Object {id: $source_id})
+                MATCH (target:Object {id: $target_id})
+                CREATE (source)-[:RELATES_TO {
+                    id: $relationship_id,
+                    type: $relationship_type,
+                    role: $role,
+                    frequency: $frequency,
+                    toBeing: $to_being,
+                    toAvatar: $to_avatar,
+                    toObject: $to_object
+                }]->(target)
+                """,
+                source_id=object_id,
+                target_id=spec.target_object_id,
+                relationship_id=relationship_id,
+                relationship_type=final_type,
+                role=spec.role,
+                frequency=fr,
+                to_being=trec.get("being"),
+                to_avatar=trec.get("avatar"),
+                to_object=trec.get("object"),
+            )
+            created += 1
+
+    total_count = get_total_relationship_count(session, object_id)
+    session.run(
+        "MATCH (o:Object {id: $object_id}) SET o.relationships = $rel_count",
+        object_id=object_id,
+        rel_count=total_count,
+    )
+    return {"deleted": deleted, "updated": updated, "created": created, "relationships": total_count}
+
+
 def link_object_to_all_variables(session, object_id: str) -> int:
     """
     Default relevance behavior:
@@ -211,12 +412,7 @@ async def get_objects():
                 CALL {
                     WITH o
                     OPTIONAL MATCH (o)-[r:RELATES_TO]->(:Object)
-                    RETURN count(
-                        CASE
-                            WHEN r IS NOT NULL AND (r.role <> o.object OR r.frequency <> 'Possible') THEN 1
-                            ELSE NULL
-                        END
-                    ) as additional_relationships_count
+                    RETURN count(r) as relationships_total
                 }
 
                 CALL {
@@ -235,7 +431,7 @@ async def get_objects():
                        relationships,
                        variant_names,
                        COALESCE(o.variables, 0) as variables_count,
-                       additional_relationships_count
+                       relationships_total
                 ORDER BY o.id
             """)
             
@@ -270,9 +466,8 @@ async def get_objects():
                 # Get variables count from the query result
                 variables_count = record.get("variables_count", 0) or 0
                 
-                # Relationships column shows only ADDITIONAL (non-default) relationship count
-                # Default = role = object name, frequency = Possible; those are not counted here
-                relationships_count = record.get("additional_relationships_count", 0) or 0
+                # Relationships column = total RELATES_TO edges (defaults + additional role words)
+                relationships_count = record.get("relationships_total", 0) or 0
                 if relationships_count is None:
                     relationships_count = 0
                 else:
@@ -284,7 +479,7 @@ async def get_objects():
                     "being": record["being"],
                     "avatar": record["avatar"],
                     "object": record["object"],
-                    "relationships": relationships_count,  # Additional relationships only (excludes defaults)
+                    "relationships": relationships_count,
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",
@@ -323,8 +518,8 @@ async def get_object(object_id: str):
             if not record:
                 raise HTTPException(status_code=404, detail="Object not found")
 
-            # Relationships column = additional (non-default) count only
-            additional_rel_count = get_additional_relationship_count(session, object_id)
+            # Relationships column = total RELATES_TO edges (defaults + additional)
+            additional_rel_count = get_total_relationship_count(session, object_id)
 
             # Get variant count
             var_count_result = session.run("""
@@ -734,7 +929,7 @@ async def create_object(object_data: ObjectCreateRequest):
             print(f"Created {default_rels_created} default relationships")
             
             # Store ADDITIONAL (non-default) relationship count only; new object has 0 additional
-            additional_count = get_additional_relationship_count(session, new_id)
+            additional_count = get_total_relationship_count(session, new_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
@@ -1137,6 +1332,35 @@ async def update_object(
                     set_clauses.append("o.is_meme = $is_meme")
                     params["is_meme"] = is_meme_value
                     print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for object {object_id}")
+
+                # Renaming the object: keep default RELATES_TO edges aligned (role = object name).
+                # Otherwise old edges still use the previous name as `role` while `o.object` is new,
+                # and any logic that re-materializes defaults by role can create duplicates → inflated counts.
+                new_object_name = None
+                if "object" in request_data and request_data["object"]:
+                    new_object_name = str(request_data["object"]).strip()
+                elif "objectName" in request_data and request_data["objectName"]:
+                    new_object_name = str(request_data["objectName"]).strip()
+                if new_object_name:
+                    prev_row = session.run(
+                        "MATCH (o:Object {id: $object_id}) RETURN o.object as object_name",
+                        object_id=object_id,
+                    ).single()
+                    old_object_name = (prev_row or {}).get("object_name")
+                    old_object_name = str(old_object_name).strip() if old_object_name is not None else ""
+                    if old_object_name and old_object_name.lower() != new_object_name.lower():
+                        session.run(
+                            """
+                            MATCH (o:Object {id: $object_id})-[r:RELATES_TO]->(:Object)
+                            WHERE toLower(trim(coalesce(r.role,''))) = toLower(trim($old_name))
+                              AND coalesce(r.frequency,'') = 'Possible'
+                              AND coalesce(r.type,'') IN ['Inter-Table','Intra-Table']
+                            SET r.role = $new_name
+                            """,
+                            object_id=object_id,
+                            old_name=old_object_name,
+                            new_name=new_object_name,
+                        )
                 
                 # Update basic fields if any
                 if set_clauses:
@@ -1709,8 +1933,8 @@ async def update_object(
                                                 MERGE (o)-[:HAS_COMPOSITE_ID_{block_number}]->(v)
                                             """, object_id=object_id, var_id=variable_id)
 
-                # Update counts: relationships = additional (non-default) count only
-                additional_count = get_additional_relationship_count(session, object_id)
+                # Update counts: relationships = total RELATES_TO edges
+                additional_count = get_total_relationship_count(session, object_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count,
@@ -2233,7 +2457,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     )
                     print(f"Created {default_rels_created} default relationships")
                     # New object has 0 additional relationships; set stored count
-                    additional_count = get_additional_relationship_count(session, new_id)
+                    additional_count = get_total_relationship_count(session, new_id)
                     session.run("""
                         MATCH (o:Object {id: $object_id})
                         SET o.relationships = $rel_count
@@ -2684,7 +2908,7 @@ async def create_relationship(
                     print(f"DEBUG: Error creating relationship to {target_result['object']}: {e}")
             
             # Update stored count to additional (non-default) relationships only
-            additional_count = get_additional_relationship_count(session, object_id)
+            additional_count = get_total_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
@@ -2719,7 +2943,7 @@ async def delete_relationship(object_id: str, relationship_id: str):
             """, object_id=object_id, relationship_id=relationship_id)
             
             # Update stored count to additional (non-default) relationships only
-            additional_count = get_additional_relationship_count(session, object_id)
+            additional_count = get_total_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
@@ -2788,7 +3012,7 @@ async def update_relationships_to_target(
             updated_count = result["updated_count"] if result else 0
             
             # Update stored count to additional (non-default) relationships only
-            additional_count = get_additional_relationship_count(session, object_id)
+            additional_count = get_total_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
@@ -2802,6 +3026,203 @@ async def update_relationships_to_target(
         print(f"Error updating relationships to target: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update relationships: {e}")
 
+
+def _targets_for_bulk_relationship_item(session, rel: BulkRelationshipItem) -> List[Dict[str, Any]]:
+    """Resolve target Object rows for a bulk relationship item (single id or B/A/O filter)."""
+    if rel.target_object_id:
+        row = session.run(
+            """
+            MATCH (t:Object {id: $tid})
+            RETURN t.id as target_id, t.being as being, t.avatar as avatar, t.object as object
+            """,
+            tid=rel.target_object_id,
+        ).single()
+        if not row:
+            return []
+        if rel.target_being not in (None, "", "ALL") and row.get("being") != rel.target_being:
+            return []
+        if rel.target_avatar not in (None, "", "ALL") and row.get("avatar") != rel.target_avatar:
+            return []
+        if rel.target_object not in (None, "", "ALL") and row.get("object") != rel.target_object:
+            return []
+        return [dict(row)]
+    where_conditions: List[str] = []
+    params: Dict[str, Any] = {}
+    if rel.target_being != "ALL":
+        where_conditions.append("target.being = $to_being")
+        params["to_being"] = rel.target_being
+    if rel.target_avatar != "ALL":
+        where_conditions.append("target.avatar = $to_avatar")
+        params["to_avatar"] = rel.target_avatar
+    if rel.target_object != "ALL":
+        where_conditions.append("target.object = $to_object")
+        params["to_object"] = rel.target_object
+    where_clause = " AND ".join(where_conditions) if where_conditions else "true"
+    query = f"""
+        MATCH (target:Object)
+        WHERE {where_clause}
+        RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
+    """
+    return session.run(query, **params).data()
+
+
+@router.post("/objects/{object_id}/relationships/sync-additional", response_model=Dict[str, Any])
+async def sync_additional_relationships_endpoint(object_id: str, request: SyncAdditionalRelationshipsRequest = Body(...)):
+    """Replace all non-default RELATES_TO edges with the given set (matched by target id + role)."""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    try:
+        with driver.session() as session:
+            exists = session.run(
+                "MATCH (o:Object {id: $id}) RETURN o.id as id",
+                id=object_id,
+            ).single()
+            if not exists:
+                raise HTTPException(status_code=404, detail="Object not found")
+            summary = sync_additional_object_relationships(session, object_id, request.edges)
+            return {"message": "Additional relationships synchronized", **summary}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error syncing additional relationships: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync relationships: {e}")
+
+
+@router.post("/objects/{object_id}/relationships/delete-non-default-ids", response_model=Dict[str, Any])
+async def delete_non_default_relationship_ids(object_id: str, request: DeleteNonDefaultRelationshipIdsRequest = Body(...)):
+    """Delete specific non-default RELATES_TO edges by relationship id (never removes defaults)."""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    try:
+        with driver.session() as session:
+            orec = session.run(
+                "MATCH (o:Object {id: $id}) RETURN o.object as name",
+                id=object_id,
+            ).single()
+            if not orec:
+                raise HTTPException(status_code=404, detail="Object not found")
+            source_name = orec["name"] or ""
+            deleted = 0
+            for rid in request.relationship_ids:
+                if not rid:
+                    continue
+                row = session.run(
+                    """
+                    MATCH (o:Object {id: $oid})-[r:RELATES_TO]->(t:Object)
+                    WHERE r.id = $rid
+                    RETURN r.role as role, r.frequency as frequency, r.type as type
+                    """,
+                    oid=object_id,
+                    rid=rid,
+                ).single()
+                if not row:
+                    continue
+                if _is_default_object_relationship(
+                    source_name,
+                    row.get("role"),
+                    row.get("frequency"),
+                    row.get("type"),
+                ):
+                    continue
+                session.run(
+                    """
+                    MATCH (:Object {id: $oid})-[r:RELATES_TO]->(:Object)
+                    WHERE r.id = $rid
+                    DELETE r
+                    """,
+                    oid=object_id,
+                    rid=rid,
+                )
+                deleted += 1
+            total_count = get_total_relationship_count(session, object_id)
+            session.run(
+                "MATCH (o:Object {id: $object_id}) SET o.relationships = $rel_count",
+                object_id=object_id,
+                rel_count=total_count,
+            )
+            return {"message": f"Deleted {deleted} relationship(s)", "deleted": deleted, "relationships": total_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting relationships by id: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete relationships: {e}")
+
+
+@router.post("/objects/{object_id}/relationships/delete-additional-for-targets", response_model=Dict[str, Any])
+async def delete_additional_for_targets(object_id: str, request: DeleteAdditionalForTargetsRequest = Body(...)):
+    """Delete non-default RELATES_TO edges from source to given targets (per role, or all non-default if roles empty)."""
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j.")
+    try:
+        with driver.session() as session:
+            orec = session.run(
+                "MATCH (o:Object {id: $id}) RETURN o.object as name",
+                id=object_id,
+            ).single()
+            if not orec:
+                raise HTTPException(status_code=404, detail="Object not found")
+            deleted = 0
+            for it in request.items:
+                tid = (it.target_object_id or "").strip()
+                if not tid:
+                    continue
+                roles = [r.strip() for r in (it.roles or []) if r and str(r).strip()]
+                if roles:
+                    for role in roles:
+                        result = session.run(
+                            """
+                            MATCH (o:Object {id: $oid})-[r:RELATES_TO]->(t:Object {id: $tid})
+                            WHERE r.role = $role
+                              AND NOT (
+                                toLower(trim(coalesce(r.role,''))) = toLower(trim(coalesce(o.object,'')))
+                                AND coalesce(r.frequency,'') = 'Possible'
+                                AND coalesce(r.type,'') IN ['Inter-Table','Intra-Table']
+                              )
+                            WITH collect(r) AS rels
+                            FOREACH (x IN rels | DELETE x)
+                            RETURN size(rels) AS c
+                            """,
+                            oid=object_id,
+                            tid=tid,
+                            role=role,
+                        ).single()
+                        deleted += int(result["c"] or 0) if result else 0
+                else:
+                    result = session.run(
+                        """
+                        MATCH (o:Object {id: $oid})-[r:RELATES_TO]->(t:Object {id: $tid})
+                        WHERE NOT (
+                            toLower(trim(coalesce(r.role,''))) = toLower(trim(coalesce(o.object,'')))
+                            AND coalesce(r.frequency,'') = 'Possible'
+                            AND coalesce(r.type,'') IN ['Inter-Table','Intra-Table']
+                        )
+                        WITH collect(r) AS rels
+                        FOREACH (x IN rels | DELETE x)
+                        RETURN size(rels) AS c
+                        """,
+                        oid=object_id,
+                        tid=tid,
+                    ).single()
+                    deleted += int(result["c"] or 0) if result else 0
+            total_count = get_total_relationship_count(session, object_id)
+            session.run(
+                "MATCH (o:Object {id: $object_id}) SET o.relationships = $rel_count",
+                object_id=object_id,
+                rel_count=total_count,
+            )
+            return {"message": f"Deleted {deleted} relationship(s)", "deleted": deleted, "relationships": total_count}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting additional relationships for targets: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete relationships: {e}")
+
+
 @router.post("/objects/bulk-relationships", response_model=Dict[str, Any])
 async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Body(...)):
     """Create multiple relationships for multiple source objects in bulk"""
@@ -2814,7 +3235,6 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
             # First, validate all relationships and check for duplicates
             duplicates = []
             source_object_ids = set()
-            relationships_to_create = []
             
             # Collect all source object IDs
             for rel in request.relationships:
@@ -2824,46 +3244,32 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
             # Duplicate = same (source object + target object + role word) combination
             # Multiple role words to the same target are allowed (each role word = separate relationship)
             for rel in request.relationships:
-                # Find target objects matching the criteria
-                where_conditions = []
-                params = {}
-                
-                if rel.target_being != "ALL":
-                    where_conditions.append("target.being = $to_being")
-                    params["to_being"] = rel.target_being
-                
-                if rel.target_avatar != "ALL":
-                    where_conditions.append("target.avatar = $to_avatar")
-                    params["to_avatar"] = rel.target_avatar
-                
-                if rel.target_object != "ALL":
-                    where_conditions.append("target.object = $to_object")
-                    params["to_object"] = rel.target_object
-                
-                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
-                
-                # Check for existing relationships with the SAME role words
-                # We need to check each role word individually
+                target_results = _targets_for_bulk_relationship_item(session, rel)
                 for role in rel.roles:
                     if not role or not role.strip():
                         continue
-                    
-                    check_query = f"""
-                        MATCH (source:Object {{id: $source_id}})-[r:RELATES_TO]->(target:Object)
-                        WHERE {where_clause} AND r.role = $role
-                        RETURN source.id as source_id, target.object as target_object, target.being as target_being, 
-                               target.avatar as target_avatar, r.role as existing_role
-                        LIMIT 1
-                    """
-                    params_check = {**params, "source_id": rel.source_object_id, "role": role.strip()}
-                    existing = session.run(check_query, **params_check).single()
-                    
-                    if existing:
-                        duplicates.append({
-                            "source_object_id": rel.source_object_id,
-                            "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}",
-                            "duplicate_role": existing.get("existing_role", role)
-                        })
+                    for tr in target_results:
+                        tid = tr.get("target_id")
+                        if not tid:
+                            continue
+                        existing = session.run(
+                            """
+                            MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object {id: $target_id})
+                            WHERE r.role = $role
+                            RETURN source.id as source_id, target.object as target_object, target.being as target_being,
+                                   target.avatar as target_avatar, r.role as existing_role
+                            LIMIT 1
+                            """,
+                            source_id=rel.source_object_id,
+                            target_id=tid,
+                            role=role.strip(),
+                        ).single()
+                        if existing:
+                            duplicates.append({
+                                "source_object_id": rel.source_object_id,
+                                "target_object": f"{existing.get('target_being', '')} - {existing.get('target_avatar', '')} - {existing.get('target_object', 'Unknown')}",
+                                "duplicate_role": existing.get("existing_role", role),
+                            })
             
             # If duplicates found, return error with full list
             if duplicates:
@@ -2879,32 +3285,8 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
             # Validate that all target objects exist
             missing_objects = []
             for rel in request.relationships:
-                where_conditions = []
-                params = {}
-                
-                if rel.target_being != "ALL":
-                    where_conditions.append("target.being = $to_being")
-                    params["to_being"] = rel.target_being
-                
-                if rel.target_avatar != "ALL":
-                    where_conditions.append("target.avatar = $to_avatar")
-                    params["to_avatar"] = rel.target_avatar
-                
-                if rel.target_object != "ALL":
-                    where_conditions.append("target.object = $to_object")
-                    params["to_object"] = rel.target_object
-                
-                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
-                
-                check_query = f"""
-                    MATCH (target:Object)
-                    WHERE {where_clause}
-                    RETURN count(target) as count
-                """
-                result = session.run(check_query, **params).single()
-                count = result["count"] if result else 0
-                
-                if count == 0:
+                target_results = _targets_for_bulk_relationship_item(session, rel)
+                if not target_results:
                     missing_objects.append(f"{rel.target_being} - {rel.target_avatar} - {rel.target_object}")
             
             if missing_objects:
@@ -2916,43 +3298,13 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
             # Create all relationships in a single transaction
             created_count = 0
             for rel in request.relationships:
-                # Find target objects matching the criteria
-                where_conditions = []
-                params = {}
-                
-                if rel.target_being != "ALL":
-                    where_conditions.append("target.being = $to_being")
-                    params["to_being"] = rel.target_being
-                
-                if rel.target_avatar != "ALL":
-                    where_conditions.append("target.avatar = $to_avatar")
-                    params["to_avatar"] = rel.target_avatar
-                
-                if rel.target_object != "ALL":
-                    where_conditions.append("target.object = $to_object")
-                    params["to_object"] = rel.target_object
-                
-                where_clause = " AND ".join(where_conditions) if where_conditions else "true"
-                
-                query = f"""
-                    MATCH (target:Object)
-                    WHERE {where_clause}
-                    RETURN target.id as target_id, target.being as being, target.avatar as avatar, target.object as object
-                """
-                
-                target_results = session.run(query, **params).data()
-                
-                # Create relationships for each target and each role
+                target_results = _targets_for_bulk_relationship_item(session, rel)
                 for target_result in target_results:
                     target_id = target_result["target_id"]
-                    
-                    # Determine relationship type based on Intra-Table logic
-                    # If source and target are the same, use Intra-Table
-                    # Otherwise use the specified type (default to Inter-Table if empty)
                     final_type = rel.relationship_type if rel.relationship_type else "Inter-Table"
                     if rel.source_object_id == target_id:
                         final_type = "Intra-Table"
-                    
+                    freq = _normalize_relationship_frequency(final_type, rel.frequency)
                     for role in rel.roles:
                         relationship_id = str(uuid.uuid4())
                         try:
@@ -2969,15 +3321,17 @@ async def bulk_create_relationships(request: BulkRelationshipCreateRequest = Bod
                                     toObject: $to_object
                                 }]->(target)
                             """, source_id=rel.source_object_id, target_id=target_id, relationship_id=relationship_id,
-                                relationship_type=final_type, role=role, frequency=rel.frequency or "Critical",
-                                to_being=rel.target_being, to_avatar=rel.target_avatar, to_object=rel.target_object)
+                                relationship_type=final_type, role=role, frequency=freq,
+                                to_being=target_result.get("being"),
+                                to_avatar=target_result.get("avatar"),
+                                to_object=target_result.get("object"))
                             created_count += 1
                         except Exception as e:
                             print(f"DEBUG: Error creating relationship: {e}")
             
-            # Update stored relationship count (additional only) for all affected source objects
+            # Update stored relationship count (total RELATES_TO) for all affected source objects
             for source_id in source_object_ids:
-                additional_count = get_additional_relationship_count(session, source_id)
+                additional_count = get_total_relationship_count(session, source_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count
@@ -3175,7 +3529,7 @@ async def clone_relationships(target_object_id: str, source_object_id: str):
                         traceback.print_exc()
             
             # Update stored count to additional (non-default) relationships only for target
-            additional_count = get_additional_relationship_count(session, target_object_id)
+            additional_count = get_total_relationship_count(session, target_object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
@@ -3386,7 +3740,7 @@ async def bulk_clone_relationships(source_object_id: str, target_object_ids: Lis
                             print(f"DEBUG: Error cloning relationship for {target_name}: {e}")
                 
                 # Update stored count to additional (non-default) relationships only for this target
-                additional_count = get_additional_relationship_count(session, target_object_id)
+                additional_count = get_total_relationship_count(session, target_object_id)
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count
@@ -4274,7 +4628,7 @@ async def bulk_upload_relationships(object_id: str, file: UploadFile = File(...)
                     continue
             
             # Update stored count to additional (non-default) relationships only for source object
-            additional_count = get_additional_relationship_count(session, object_id)
+            additional_count = get_total_relationship_count(session, object_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
                 SET o.relationships = $rel_count
