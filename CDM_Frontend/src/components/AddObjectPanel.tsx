@@ -36,8 +36,32 @@ interface Relationship {
 interface AddObjectPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (objectData: any) => void;
+  onAdd: (objectData: any) => void | Promise<void>;
   allData?: any[];
+}
+
+/** Same identity as backend duplicate rule: driver string + being + avatar + object name (name case-insensitive). */
+function isDuplicateObjectIdentity(
+  incomingDriver: string,
+  being: string,
+  avatar: string,
+  objectName: string,
+  allData: any[]
+): boolean {
+  const nameNorm = objectName.trim().toLowerCase();
+  const driverNorm = incomingDriver.trim();
+  for (const obj of allData) {
+    if (obj?._isCloned && !obj?._isSaved) continue;
+    const sameDriver = (obj?.driver || '').trim() === driverNorm;
+    const sameBeing = (obj?.being || '') === being;
+    const sameAvatar = (obj?.avatar || '') === avatar;
+    const sameObject =
+      (obj?.object || '').trim().toLowerCase() === nameNorm;
+    if (sameDriver && sameBeing && sameAvatar && sameObject) {
+      return true;
+    }
+  }
+  return false;
 }
 
 interface CollapsibleSectionProps {
@@ -630,7 +654,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
            formData.objectName;
   };
 
-  const handleAddObject = () => {
+  const handleAddObject = async () => {
     if (!isFormValid()) {
       alert('Please fill in all required fields (Sector, Domain, Country, Being, Avatar, Object Name)');
       return;
@@ -669,6 +693,21 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       driverSelections.domain,
       driverSelections.country
     );
+
+    if (
+      isDuplicateObjectIdentity(
+        driverString,
+        formData.being,
+        formData.avatar,
+        formData.objectName,
+        allData
+      )
+    ) {
+      alert(
+        'An object with the same Sector, Domain, Country, Being, Avatar, and Object name already exists. Change one or more fields to create a distinct object.'
+      );
+      return;
+    }
 
     // Convert multiline text to variants array
     const variantsList = variantsText
@@ -721,9 +760,15 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       }
     };
 
-    onAdd(newObject);
-    
-    // Reset form
+    try {
+      await onAdd(newObject);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Failed to create object.';
+      alert(msg);
+      return;
+    }
+
+    // Reset form only after successful create
     setFormData({ being: '', avatar: '', objectName: '' });
     setDriverSelections({
       sector: ['ALL'],

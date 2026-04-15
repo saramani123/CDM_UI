@@ -474,6 +474,93 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
         traceback.print_exc()
         raise e
 
+
+def _normalize_object_id_list(object_ids: Optional[List[str]]) -> List[str]:
+    """Normalize and dedupe object IDs while preserving input order."""
+    if not object_ids:
+        return []
+    normalized: List[str] = []
+    seen = set()
+    for object_id in object_ids:
+        oid = str(object_id or "").strip()
+        if not oid or oid in seen:
+            continue
+        seen.add(oid)
+        normalized.append(oid)
+    return normalized
+
+
+def _sync_group_key_field_for_new_variable(session, variable_id: str, group_name: str) -> None:
+    """
+    If another variable in the same Group (by name) is the designated group key,
+    set this variable's Group Key to that variable's id without making this one the key.
+    """
+    group_name = (group_name or "").strip()
+    if not group_name:
+        return
+    rec = session.run(
+        f"""
+        MATCH (g:Group)-[:HAS_VARIABLE]->(gk:Variable)
+        WHERE toLower(g.name) = toLower($group_name)
+        AND {_coalesced_is_group_key_expr("gk")} = true
+        RETURN gk.id AS id
+        LIMIT 1
+        """,
+        group_name=group_name,
+    ).single()
+    if rec and rec.get("id"):
+        session.run(
+            f"""
+            MATCH (v:Variable {{id: $vid}})
+            SET v.{GROUP_KEY_PROP} = $gk,
+                v.{IS_GROUP_KEY_PROP} = false,
+                v.is_group_key = false
+            """,
+            vid=variable_id,
+            gk=rec["id"],
+        )
+
+
+def _sync_variable_relevance_to_objects(
+    session,
+    variable_id: str,
+    selected_object_ids: Optional[List[str]] = None
+) -> int:
+    """
+    Create default HAS_SPECIFIC_VARIABLE relationships for a variable.
+
+    - selected_object_ids is None: link to ALL objects (default behavior).
+    - selected_object_ids is provided: link only those selected object IDs.
+    """
+    object_ids = _normalize_object_id_list(selected_object_ids)
+
+    if selected_object_ids is None:
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            MATCH (o:Object)
+            MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
+        """, variable_id=variable_id)
+    elif object_ids:
+        session.run("""
+            MATCH (v:Variable {id: $variable_id})
+            UNWIND $object_ids AS object_id
+            MATCH (o:Object {id: object_id})
+            MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
+        """, variable_id=variable_id, object_ids=object_ids)
+
+    count_result = session.run("""
+        MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v:Variable {id: $variable_id})
+        RETURN count(o) AS rel_count
+    """, variable_id=variable_id).single()
+    rel_count = int(count_result["rel_count"]) if count_result and count_result.get("rel_count") is not None else 0
+
+    session.run("""
+        MATCH (v:Variable {id: $variable_id})
+        SET v.objectRelationships = $rel_count
+    """, variable_id=variable_id, rel_count=rel_count)
+
+    return rel_count
+
 # Cascading dropdown routes - must be defined BEFORE /variables to ensure proper route matching
 @router.get("/variables/parts")
 async def get_variable_parts():
@@ -761,36 +848,20 @@ async def get_variables():
 
     try:
         with driver.session() as session:
-            _ensure_group_key_defaults(session)
-
-            # First, get all possible driver values to check if "ALL" should be used
-            all_sectors_result = session.run("MATCH (s:Sector) WHERE s.name <> 'ALL' RETURN s.name as name")
-            all_sectors = {record["name"] for record in all_sectors_result}
-            
-            all_domains_result = session.run("MATCH (d:Domain) WHERE d.name <> 'ALL' RETURN d.name as name")
-            all_domains = {record["name"] for record in all_domains_result}
-            
-            all_countries_result = session.run("MATCH (c:Country) WHERE c.name <> 'ALL' RETURN c.name as name")
-            all_countries = {record["name"] for record in all_countries_result}
-            
             # Get all variables with their taxonomy and relationships
             # Filter out PLACEHOLDER variables and groups
             result = session.run("""
                 MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
                 AND NOT v.name STARTS WITH '__PLACEHOLDER_'
-                OPTIONAL MATCH (o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v)
-                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(sec:Sector)
-                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(d:Domain)
-                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(c:Country)
-                OPTIONAL MATCH (v)<-[:IS_RELEVANT_TO]-(vc:VariableClarifier)
-                OPTIONAL MATCH (v)-[:HAS_VARIATION]->(var:Variation)
-                WITH v, p, g, s, count(DISTINCT o) as objectRelationships,
-                     count(DISTINCT var) as variations,
-                     collect(DISTINCT sec.name) as sectors,
-                     collect(DISTINCT d.name) as domains,
-                     collect(DISTINCT c.name) as countries,
-                     collect(DISTINCT vc.name) as variableClarifiers
+                WITH DISTINCT v, p, s, g
+
+                CALL {
+                    WITH v
+                    OPTIONAL MATCH (v)-[:HAS_VARIATION]->(var:Variation)
+                    RETURN count(DISTINCT var) as variations
+                }
+
                 RETURN v.id as id, v.name as variable, s.name as section,
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
@@ -798,7 +869,8 @@ async def get_variables():
                        coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
                        coalesce(v.`Group Key`, '') as group_key,
                        p.name as part, g.name as group,
-                       objectRelationships, variations, sectors, domains, countries, variableClarifiers,
+                       COALESCE(v.objectRelationships, 0) as objectRelationships,
+                       variations, coalesce(v.driver, '') as driverRaw,
                        properties(v) as allProps
                 ORDER BY v.id
             """)
@@ -810,32 +882,16 @@ async def get_variables():
                     print(f"⚠️  Skipping variable with missing required fields: id={record.get('id')}, part={record.get('part')}, group={record.get('group')}, variable={record.get('variable')}")
                     continue
                 
-                # Get driver data from the query results
-                sectors = record["sectors"] or []
-                domains = record["domains"] or []
-                countries = record["countries"] or []
-                
-                # Normalize driver strings: if all values are present, use "ALL"
-                # Filter out "ALL" from the lists (it's not a real node, just a UI convenience)
-                sectors_filtered = [s for s in sectors if s != "ALL"]
-                domains_filtered = [d for d in domains if d != "ALL"]
-                countries_filtered = [c for c in countries if c != "ALL"]
-                
-                # Check if all possible values are selected
-                sectors_set = set(sectors_filtered)
-                domains_set = set(domains_filtered)
-                countries_set = set(countries_filtered)
-                
-                # Use "ALL" if all values are present, or if "ALL" was explicitly in the list
-                # Check if sets match (all values selected)
-                sector_all_selected = len(all_sectors) > 0 and len(sectors_set) > 0 and sectors_set == all_sectors
-                domain_all_selected = len(all_domains) > 0 and len(domains_set) > 0 and domains_set == all_domains
-                country_all_selected = len(all_countries) > 0 and len(countries_set) > 0 and countries_set == all_countries
-                
-                sector_str = "ALL" if ("ALL" in sectors or sector_all_selected) else (", ".join(sectors_filtered) if sectors_filtered else "ALL")
-                domain_str = "ALL" if ("ALL" in domains or domain_all_selected) else (", ".join(domains_filtered) if domains_filtered else "ALL")
-                country_str = "ALL" if ("ALL" in countries or country_all_selected) else (", ".join(countries_filtered) if countries_filtered else "ALL")
-                driver_string = f"{sector_str}, {domain_str}, {country_str}, None"
+                # Read and normalize driver from stored property to avoid costly per-request relationship expansion.
+                driver_raw = str(record.get("driverRaw") or "").strip()
+                driver_tokens = [token.strip() for token in driver_raw.split(",")]
+                while len(driver_tokens) < 4:
+                    driver_tokens.append("ALL" if len(driver_tokens) < 3 else "None")
+                sector_str = driver_tokens[0] or "ALL"
+                domain_str = driver_tokens[1] or "ALL"
+                country_str = driver_tokens[2] or "ALL"
+                clarifier_str = driver_tokens[3] or "None"
+                driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
                 
                 # Collect all validation properties and combine into comma-separated string
                 all_props = record.get("allProps", {})
@@ -885,11 +941,25 @@ async def get_variables():
         raise HTTPException(status_code=500, detail=f"Failed to fetch variables: {str(e)}")
 
 @router.post("/variables", response_model=VariableResponse)
-async def create_variable(variable_data: VariableCreateRequest):
+async def create_variable(request: Request):
     """
     Create a new variable in the CDM with proper taxonomy structure.
     Also handles variationsList for variations management.
+    Reads raw JSON so extra fields (e.g. Validation #2) are persisted like update_variable.
     """
+    raw_data = await request.json()
+    field_names = set(VariableCreateRequest.model_fields.keys())
+    payload = {k: v for k, v in raw_data.items() if k in field_names}
+    try:
+        variable_data = VariableCreateRequest(**payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid variable payload: {str(e)}")
+
+    force_new_variation_nodes = bool(
+        raw_data.get("forceNewVariationNodes")
+        or getattr(variable_data, "forceNewVariationNodes", False)
+    )
+
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
@@ -963,6 +1033,27 @@ async def create_variable(variable_data: VariableCreateRequest):
             if not record:
                 raise HTTPException(status_code=500, detail="Failed to create variable")
 
+            # Additional validation properties (Validation #2, #3, …) from raw body
+            validation_props_to_add = {
+                k: v
+                for k, v in raw_data.items()
+                if k.startswith("Validation #") and v is not None
+            }
+            if validation_props_to_add:
+                set_parts = []
+                vparams: Dict[str, Any] = {"id": variable_id}
+                for key, value in validation_props_to_add.items():
+                    param_key = key.replace(" ", "_").replace("#", "num").replace("`", "")
+                    set_parts.append(f"v.`{key}` = ${param_key}")
+                    vparams[param_key] = value
+                session.run(
+                    f"""
+                    MATCH (v:Variable {{id: $id}})
+                    SET {", ".join(set_parts)}
+                    """,
+                    vparams,
+                )
+
             if bool(getattr(variable_data, "isGroupKey", False) or False):
                 _apply_group_key_selection_by_group_name(session, variable_id, True)
                 refreshed = session.run("""
@@ -972,54 +1063,87 @@ async def create_variable(variable_data: VariableCreateRequest):
                 """, {"id": variable_id}).single()
                 if refreshed:
                     record = {**record, "is_group_key": refreshed.get("is_group_key", False), "group_key": refreshed.get("group_key", "")}
+            else:
+                _sync_group_key_field_for_new_variable(session, variable_id, variable_data.group or "")
+                gk_refreshed = session.run("""
+                    MATCH (v:Variable {id: $id})
+                    RETURN coalesce(v.`Is Group Key`, v.is_group_key, false) AS is_group_key,
+                           coalesce(v.`Group Key`, '') AS group_key
+                """, {"id": variable_id}).single()
+                if gk_refreshed:
+                    record = {**record, "is_group_key": gk_refreshed.get("is_group_key", False), "group_key": gk_refreshed.get("group_key", "")}
 
             # Create driver relationships
             print(f"About to create driver relationships for variable {variable_id}")
             await create_driver_relationships(session, variable_id, variable_data.driver)
             print(f"Driver relationships creation completed for variable {variable_id}")
 
+            # Default relevance behavior:
+            # - If selectedObjectIds is provided from add-flow, honor that subset.
+            # - Otherwise, link to all objects by default.
+            selected_object_ids = getattr(variable_data, "selectedObjectIds", None)
+            object_relationships_count = _sync_variable_relevance_to_objects(
+                session,
+                variable_id,
+                selected_object_ids=selected_object_ids,
+            )
+
             # Handle variationsList if provided
             has_variations_list = variable_data.variationsList is not None and len(variable_data.variationsList) > 0
             if has_variations_list:
                 parsed_variations_list = variable_data.variationsList
-                print(f"DEBUG: Processing {len(parsed_variations_list)} variations for new variable")
-                
+                print(f"DEBUG: Processing {len(parsed_variations_list)} variations for new variable (force_new={force_new_variation_nodes})")
+
                 for var in parsed_variations_list:
-                    variation_name = var.get("name", "").strip()
+                    variation_name = (var.get("name") or "").strip()
                     if not variation_name:
                         continue
-                    
-                    print(f"DEBUG: Processing variation: {variation_name}")
-                    
-                    # Check if variation exists globally (case-insensitive)
+
+                    if force_new_variation_nodes:
+                        variation_nid = str(uuid.uuid4())
+                        session.run(
+                            """
+                            CREATE (var:Variation {
+                                id: $variation_id,
+                                name: $variation_name
+                            })
+                            """,
+                            variation_id=variation_nid,
+                            variation_name=variation_name,
+                        )
+                        session.run(
+                            """
+                            MATCH (v:Variable {id: $variable_id})
+                            MATCH (var:Variation {id: $variation_id})
+                            CREATE (v)-[:HAS_VARIATION]->(var)
+                            """,
+                            variable_id=variable_id,
+                            variation_id=variation_nid,
+                        )
+                        continue
+
                     existing_variation = session.run("""
                         MATCH (var:Variation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, variation_name=variation_name).single()
-                    
+
                     if existing_variation:
-                        # Variation exists globally, connect it to this variable
                         variation_id = existing_variation["id"]
-                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
-                        
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
                             MATCH (var:Variation {id: $variation_id})
                             CREATE (v)-[:HAS_VARIATION]->(var)
                         """, variable_id=variable_id, variation_id=variation_id)
                     else:
-                        # Create new variation
                         variation_id = str(uuid.uuid4())
-                        print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
-                        
                         session.run("""
                             CREATE (var:Variation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
                         """, variation_id=variation_id, variation_name=variation_name)
-                        
+
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
                             MATCH (var:Variation {id: $variation_id})
@@ -1053,7 +1177,7 @@ async def create_variable(variable_data: VariableCreateRequest):
                 is_meme=record.get("is_meme", False),
                 is_group_key=record.get("is_group_key", False),
                 group_key=record.get("group_key", ""),
-                objectRelationships=0,
+                objectRelationships=object_relationships_count,
                 objectRelationshipsList=[],
                 variations=variations_count,
                 variationsList=variations_list
@@ -1709,64 +1833,104 @@ async def update_variable(variable_id: str, request: Request):
                 else:
                     print(f"DEBUG: Driver unchanged ('{previous_driver}'), skipping driver relationship update")
 
-            # Handle variationsList if provided
-            has_variations_list = variable_data.variationsList is not None and len(variable_data.variationsList) > 0
-            if has_variations_list:
-                parsed_variations_list = variable_data.variationsList
-                print(f"DEBUG: Processing {len(parsed_variations_list)} variations")
-                
-                for var in parsed_variations_list:
-                    variation_name = var.get("name", "").strip()
+            # Handle variationsList if provided.
+            # For single-variable save, treat this list as the source of truth:
+            # remove stale HAS_VARIATION links, then add any missing links.
+            if variable_data.variationsList is not None:
+                raw_variations_list = variable_data.variationsList or []
+                print(f"DEBUG: Syncing variations for variable {variable_id}; payload count={len(raw_variations_list)}")
+
+                # Normalize and de-duplicate requested variation names (case-insensitive).
+                requested_by_lower: Dict[str, str] = {}
+                for var in raw_variations_list:
+                    variation_name = ""
+                    if isinstance(var, dict):
+                        variation_name = str(var.get("name", "")).strip()
+                    elif isinstance(var, str):
+                        variation_name = var.strip()
                     if not variation_name:
                         continue
-                    
-                    print(f"DEBUG: Processing variation: {variation_name}")
-                    
-                    # Check if variation already exists for this variable (case-insensitive)
-                    existing_variation_for_variable = session.run("""
-                        MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
-                        WHERE toLower(var.name) = toLower($variation_name)
-                        RETURN var.id as id, var.name as name
-                    """, variable_id=variable_id, variation_name=variation_name).single()
-                    
-                    if existing_variation_for_variable:
-                        print(f"DEBUG: Variation '{variation_name}' already exists for variable {variable_id}, skipping")
+                    lower_name = variation_name.lower()
+                    if lower_name not in requested_by_lower:
+                        requested_by_lower[lower_name] = variation_name
+
+                # Remove duplicate relationships first (safety against historical CREATE duplicates).
+                session.run("""
+                    MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:Variation)
+                    WITH var, collect(r) AS rels
+                    WHERE size(rels) > 1
+                    FOREACH (rel IN rels[1..] | DELETE rel)
+                """, variable_id=variable_id)
+
+                existing_variations_result = session.run("""
+                    MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                    RETURN var.id AS id, var.name AS name, toLower(var.name) AS lower_name
+                """, variable_id=variable_id)
+                existing_by_lower: Dict[str, List[Dict[str, str]]] = {}
+                for existing in existing_variations_result:
+                    lower_name = existing["lower_name"]
+                    if not lower_name:
                         continue
-                    
-                    # Check if variation exists globally (case-insensitive)
-                    existing_variation = session.run("""
+                    existing_by_lower.setdefault(lower_name, []).append({
+                        "id": existing["id"],
+                        "name": existing["name"],
+                    })
+
+                requested_lowers = set(requested_by_lower.keys())
+
+                # Delete links for variations no longer requested.
+                stale_variation_ids: List[str] = []
+                for lower_name, linked_variations in existing_by_lower.items():
+                    if lower_name not in requested_lowers:
+                        stale_variation_ids.extend(v["id"] for v in linked_variations if v.get("id"))
+
+                if stale_variation_ids:
+                    print(f"DEBUG: Removing {len(stale_variation_ids)} stale variation relationship(s)")
+                    session.run("""
+                        MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:Variation)
+                        WHERE var.id IN $variation_ids
+                        DELETE r
+                    """, variable_id=variable_id, variation_ids=stale_variation_ids)
+
+                    # Delete orphan variation nodes that are no longer linked to anything.
+                    session.run("""
                         MATCH (var:Variation)
-                        WHERE toLower(var.name) = toLower($variation_name)
-                        RETURN var.id as id, var.name as name
-                    """, variation_name=variation_name).single()
-                    
-                    if existing_variation:
-                        # Variation exists globally, connect it to this variable
-                        variation_id = existing_variation["id"]
-                        print(f"DEBUG: Connecting existing global variation '{variation_name}' to variable {variable_id}")
-                        
-                        session.run("""
-                            MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
-                            CREATE (v)-[:HAS_VARIATION]->(var)
-                        """, variable_id=variable_id, variation_id=variation_id)
+                        WHERE var.id IN $variation_ids
+                          AND NOT ()-[:HAS_VARIATION]->(var)
+                        DELETE var
+                    """, variation_ids=stale_variation_ids)
+
+                # Add requested variations that are not currently linked.
+                for lower_name, variation_name in requested_by_lower.items():
+                    already_linked = lower_name in existing_by_lower and len(existing_by_lower[lower_name]) > 0
+                    if already_linked:
+                        continue
+
+                    existing_global = session.run("""
+                        MATCH (var:Variation)
+                        WHERE toLower(var.name) = $lower_name
+                        RETURN var.id AS id
+                        LIMIT 1
+                    """, lower_name=lower_name).single()
+
+                    if existing_global and existing_global.get("id"):
+                        variation_id = existing_global["id"]
+                        print(f"DEBUG: Linking existing variation '{variation_name}' to variable {variable_id}")
                     else:
-                        # Create new variation
                         variation_id = str(uuid.uuid4())
                         print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
-                        
                         session.run("""
                             CREATE (var:Variation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
                         """, variation_id=variation_id, variation_name=variation_name)
-                        
-                        session.run("""
-                            MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
-                            CREATE (v)-[:HAS_VARIATION]->(var)
-                        """, variable_id=variable_id, variation_id=variation_id)
+
+                    session.run("""
+                        MATCH (v:Variable {id: $variable_id})
+                        MATCH (var:Variation {id: $variation_id})
+                        MERGE (v)-[:HAS_VARIATION]->(var)
+                    """, variable_id=variable_id, variation_id=variation_id)
 
             # Get object relationships count
             relationships_result = session.run("""
@@ -2470,6 +2634,22 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                             await create_driver_relationships(session, var_data['id'], var_data['driver'])
                         except Exception as e:
                             errors.append(f"Variable {var_data['variable']} created but driver relationships failed: {str(e)}")
+
+                # Default relevance for uploads: every newly created variable links to all objects.
+                created_variable_ids = [var_data.get("id") for var_data in created_vars if var_data.get("id")]
+                if created_variable_ids:
+                    session.run("""
+                        UNWIND $variable_ids AS variable_id
+                        MATCH (v:Variable {id: variable_id})
+                        MATCH (o:Object)
+                        MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
+                    """, variable_ids=created_variable_ids)
+
+                    session.run("""
+                        UNWIND $variable_ids AS variable_id
+                        MATCH (v:Variable {id: variable_id})
+                        SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+                    """, variable_ids=created_variable_ids)
                 print(f"✅ Batch {batch_num}/{total_batches} completed: {len(created_vars)} variables created")
             except Exception as e:
                 print(f"❌ Batch {batch_num}/{total_batches} failed: {str(e)}")
@@ -2941,6 +3121,79 @@ async def backfill_driver_relationships():
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to backfill driver relationships: {str(e)}")
+
+@router.post("/variables/backfill/object-relevance", response_model=Dict[str, Any])
+async def backfill_object_relevance():
+    """
+    ONE-TIME backfill endpoint to create HAS_SPECIFIC_VARIABLE relationships
+    between ALL existing objects and ALL existing variables.
+
+    This endpoint is idempotent (uses MERGE), so it is safe to run multiple times.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            counts_before = session.run("""
+                MATCH (v:Variable)
+                OPTIONAL MATCH (o:Object)-[r:HAS_SPECIFIC_VARIABLE]->(v)
+                RETURN count(DISTINCT v) AS variable_count,
+                       count(DISTINCT o) AS covered_variables
+            """).single()
+
+            object_count_result = session.run("""
+                MATCH (o:Object)
+                RETURN count(o) AS object_count
+            """).single()
+            object_count = object_count_result["object_count"] if object_count_result else 0
+
+            # Create default relevance links for all existing Object/Variable pairs.
+            session.run("""
+                MATCH (o:Object)
+                MATCH (v:Variable)
+                MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
+            """)
+
+            # Refresh cached counts used by UI.
+            session.run("""
+                MATCH (v:Variable)
+                SET v.objectRelationships = size([(o:Object)-[:HAS_SPECIFIC_VARIABLE]->(v) | o])
+            """)
+            session.run("""
+                MATCH (o:Object)
+                SET o.variables = size([(o)-[:HAS_SPECIFIC_VARIABLE]->(:Variable) | 1])
+            """)
+
+            coverage_result = session.run("""
+                MATCH (v:Variable)
+                RETURN count(v) AS variable_count,
+                       min(v.objectRelationships) AS min_relationships,
+                       max(v.objectRelationships) AS max_relationships
+            """).single()
+
+            not_full_result = session.run("""
+                MATCH (v:Variable)
+                WHERE coalesce(v.objectRelationships, 0) <> $object_count
+                RETURN count(v) AS not_full_count
+            """, {"object_count": object_count}).single()
+
+            return {
+                "success": True,
+                "message": "Backfilled object relevance relationships",
+                "objects": object_count,
+                "variables": coverage_result["variable_count"] if coverage_result else 0,
+                "min_relationships_per_variable": coverage_result["min_relationships"] if coverage_result else 0,
+                "max_relationships_per_variable": coverage_result["max_relationships"] if coverage_result else 0,
+                "variables_not_fully_linked": not_full_result["not_full_count"] if not_full_result else 0,
+                "variables_with_existing_links_before": counts_before["covered_variables"] if counts_before else 0
+            }
+    except Exception as e:
+        print(f"Error in object relevance backfill: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to backfill object relevance: {str(e)}")
 
 @router.post("/variables/field-options", response_model=Dict[str, Any])
 async def add_variable_field_option(option_data: VariableFieldOptionRequest):

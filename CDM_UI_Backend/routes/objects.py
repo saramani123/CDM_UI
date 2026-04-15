@@ -154,6 +154,31 @@ def get_additional_relationship_count(session, object_id: str) -> int:
     return int(result["rel_count"]) if result and result["rel_count"] is not None else 0
 
 
+def link_object_to_all_variables(session, object_id: str) -> int:
+    """
+    Default relevance behavior:
+    every object should have HAS_SPECIFIC_VARIABLE to every variable.
+    """
+    session.run("""
+        MATCH (o:Object {id: $object_id})
+        MATCH (v:Variable)
+        MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
+    """, object_id=object_id)
+
+    count_result = session.run("""
+        MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(v:Variable)
+        RETURN count(DISTINCT v) as variables_count
+    """, object_id=object_id).single()
+    variables_count = int(count_result["variables_count"]) if count_result and count_result["variables_count"] is not None else 0
+
+    session.run("""
+        MATCH (o:Object {id: $object_id})
+        SET o.variables = $variables_count
+    """, object_id=object_id, variables_count=variables_count)
+
+    return variables_count
+
+
 @router.get("/objects", response_model=List[Dict[str, Any]])
 async def get_objects():
     """
@@ -166,26 +191,40 @@ async def get_objects():
 
     try:
         with driver.session() as session:
-            # Optimized single query to get all objects with relationships, variants, and variables
-            # This avoids N+1 query problem by fetching everything in one query
+            # Avoid row explosion by aggregating each relationship family in isolated subqueries.
             result = session.run("""
                 MATCH (o:Object)
-                OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
-                OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
-                OPTIONAL MATCH (o)-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
-                WITH o,
-                     collect(DISTINCT {
-                         id: r.id,
-                         type: r.type,
-                         role: r.role,
-                         toBeing: other.being,
-                         toAvatar: other.avatar,
-                         toObject: other.object
-                     }) as relationships,
-                     collect(DISTINCT v.name) as variant_names,
-                     count(DISTINCT var) as variables_count,
-                     count(r) as relationships_count,
-                     sum(CASE WHEN r IS NOT NULL AND (r.role <> o.object OR r.frequency <> 'Possible') THEN 1 ELSE 0 END) as additional_relationships_count
+
+                CALL {
+                    WITH o
+                    OPTIONAL MATCH (o)-[r:RELATES_TO]->(other:Object)
+                    RETURN collect(DISTINCT {
+                        id: r.id,
+                        type: r.type,
+                        role: r.role,
+                        toBeing: other.being,
+                        toAvatar: other.avatar,
+                        toObject: other.object
+                    }) as relationships
+                }
+
+                CALL {
+                    WITH o
+                    OPTIONAL MATCH (o)-[r:RELATES_TO]->(:Object)
+                    RETURN count(
+                        CASE
+                            WHEN r IS NOT NULL AND (r.role <> o.object OR r.frequency <> 'Possible') THEN 1
+                            ELSE NULL
+                        END
+                    ) as additional_relationships_count
+                }
+
+                CALL {
+                    WITH o
+                    OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                    RETURN collect(DISTINCT v.name) as variant_names
+                }
+
                 RETURN o.id as id,
                        o.driver as driver,
                        o.being as being,
@@ -195,7 +234,7 @@ async def get_objects():
                        COALESCE(o.is_meme, false) as is_meme,
                        relationships,
                        variant_names,
-                       variables_count,
+                       COALESCE(o.variables, 0) as variables_count,
                        additional_relationships_count
                 ORDER BY o.id
             """)
@@ -701,68 +740,9 @@ async def create_object(object_data: ObjectCreateRequest):
                 SET o.relationships = $rel_count
             """, object_id=new_id, rel_count=additional_count)
             
-            # Clone HAS_SPECIFIC_VARIABLE relationships if variableIds are provided
-            # Try multiple ways to access variableIds
-            variable_ids = None
-            if hasattr(object_data, 'variableIds'):
-                variable_ids = object_data.variableIds
-            elif hasattr(object_data, 'variable_ids'):
-                variable_ids = object_data.variable_ids
-            else:
-                variable_ids = getattr(object_data, 'variableIds', None) or getattr(object_data, 'variable_ids', None)
-            
-            print(f"🔵 Variable IDs check:")
-            print(f"  - hasattr variableIds: {hasattr(object_data, 'variableIds')}")
-            print(f"  - hasattr variable_ids: {hasattr(object_data, 'variable_ids')}")
-            print(f"  - variable_ids value: {variable_ids}")
-            print(f"  - type: {type(variable_ids)}")
-            if hasattr(object_data, 'model_dump'):
-                dumped = object_data.model_dump()
-                print(f"  - model_dump keys: {list(dumped.keys())}")
-                print(f"  - model_dump variableIds: {dumped.get('variableIds')}")
-            
-            if variable_ids and isinstance(variable_ids, list) and len(variable_ids) > 0:
-                print(f"🔵 Cloning {len(variable_ids)} variable relationships for new object {new_id}")
-                variables_created = 0
-                for variable_id in variable_ids:
-                    if variable_id:
-                        try:
-                            # Use MERGE without properties in pattern, then SET property if created
-                            result = session.run("""
-                                MATCH (o:Object {id: $object_id})
-                                MATCH (v:Variable {id: $variable_id})
-                                MERGE (o)-[r:HAS_SPECIFIC_VARIABLE]->(v)
-                                ON CREATE SET r.createdBy = "clone"
-                                RETURN r, CASE WHEN r.createdBy = "clone" THEN true ELSE false END as was_created
-                            """, object_id=new_id, variable_id=variable_id)
-                            record = result.single()
-                            if record:
-                                variables_created += 1
-                                print(f"✅ Created HAS_SPECIFIC_VARIABLE relationship: Object {new_id} -> Variable {variable_id}")
-                            else:
-                                print(f"⚠️ Failed to create relationship: Object {new_id} -> Variable {variable_id}")
-                        except Exception as e:
-                            print(f"❌ Error creating variable relationship for {variable_id}: {e}")
-                            import traceback
-                            traceback.print_exc()
-                print(f"✅ Successfully created {variables_created} out of {len(variable_ids)} variable relationships")
-            else:
-                print(f"⚠️ No variableIds provided or empty list. variable_ids={variable_ids}")
-            
-            # Update variables count after cloning - verify relationships were created
-            variables_count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(var:Variable)
-                RETURN count(DISTINCT var) as variables_count
-            """, object_id=new_id).single()
-            
-            variables_count = variables_count_result["variables_count"] if variables_count_result else 0
-            
-            # Log verification
-            if variable_ids and len(variable_ids) > 0:
-                if variables_count != len(variable_ids):
-                    print(f"⚠️ WARNING: Expected {len(variable_ids)} variable relationships, but found {variables_count}")
-                else:
-                    print(f"✅ Verified: {variables_count} variable relationships created successfully")
+            # Default relevance behavior: new objects are linked to all existing variables.
+            variables_count = link_object_to_all_variables(session, new_id)
+            print(f"✅ Linked object {new_id} to {variables_count} variable(s) by default relevance rule")
             
             # Handle identifier relationships (discrete and composite IDs)
             # Note: object_data is a Pydantic model, so we access attributes directly
@@ -2259,6 +2239,9 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         SET o.relationships = $rel_count
                     """, object_id=new_id, rel_count=additional_count)
 
+                    # Default relevance behavior: new object links to all existing variables.
+                    variables_count = link_object_to_all_variables(session, new_id)
+
                     print(f"DEBUG: Successfully created object {new_id}")
                     # Get relationships for the newly created object
                     relationships_result = session.run("""
@@ -2323,7 +2306,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         "status": "Active",
                         "relationships": len(relationships),
                         "variants": var_count,
-                        "variables": 0,
+                        "variables": variables_count,
                         "relationshipsList": relationships,
                         "variantsList": variants
                     })

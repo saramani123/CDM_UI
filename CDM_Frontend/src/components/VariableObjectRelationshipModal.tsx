@@ -19,6 +19,7 @@ interface VariableObjectRelationshipModalProps {
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
   previewMode?: boolean; // If true, don't create relationships - just store selections via onSelectionChange
   onSelectionChange?: (selectedObjectIds: string[]) => void; // Callback to store selected object IDs (for preview mode)
+  initialSelectedObjectIds?: string[]; // Optional preselected object IDs (used by add-variable preview mode)
   objectsOrderSortOrder?: {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
@@ -45,6 +46,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   isBulkMode = false,
   previewMode = false,
   onSelectionChange,
+  initialSelectedObjectIds,
   objectsOrderSortOrder,
   isObjectsOrderEnabled = false
 }) => {
@@ -90,7 +92,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       setCustomSortRules([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, sourceVariables.length, allObjects.length]);
+  }, [isOpen, sourceVariables.length, allObjects.length, initialSelectedObjectIds]);
 
   // Force refresh when modal opens (to catch bulk relationship updates)
   // This ensures that when you open an individual variable's modal after bulk operations,
@@ -114,15 +116,20 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     try {
       // In preview mode, don't load relationships from API (variable doesn't exist yet)
       if (previewMode) {
-        // Initialize with empty selection - user will select objects
+        // Add-variable preview defaults to ALL objects selected unless explicit selections are provided.
+        const hasExplicitSelection = initialSelectedObjectIds !== undefined;
+        const selectedSet = hasExplicitSelection
+          ? new Set(initialSelectedObjectIds || [])
+          : new Set(allObjects.map(obj => obj.id));
         const initialData: Record<string, SelectedObjectData> = {};
         for (const obj of allObjects) {
           initialData[obj.id] = {
             objectId: obj.id,
-            isSelected: false
+            isSelected: selectedSet.has(obj.id)
           };
         }
         setSelectedObjects(initialData);
+        setIsAllSelected(allObjects.length > 0 && allObjects.every(obj => selectedSet.has(obj.id)));
         setLoading(false);
         return;
       }
@@ -213,7 +220,8 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       console.log('🔄 Initialized', Object.values(initialData).filter(d => d.isSelected).length, 'selected objects');
 
       setSelectedObjects(initialData);
-      setIsAllSelected(hasAllRelationship);
+      const allSpecificSelected = allObjects.length > 0 && allObjects.every(obj => initialData[obj.id]?.isSelected);
+      setIsAllSelected(hasAllRelationship || allSpecificSelected);
     } catch (error) {
       console.error('Failed to load existing relationships:', error);
       // Initialize with empty data
@@ -520,31 +528,11 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       const relationshipsList = existingRelationships.relationships || [];
       console.log('💾 Existing relationships:', relationshipsList.length);
 
-      if (isAllSelected) {
-        // Create HAS_VARIABLE relationship for all objects
-        // First, delete all existing HAS_SPECIFIC_VARIABLE relationships
-        for (const rel of relationshipsList) {
-          if (rel.relationshipType === 'HAS_SPECIFIC_VARIABLE') {
-            try {
-              await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
-                toSector: rel.toSector,
-                toDomain: rel.toDomain,
-                toCountry: rel.toCountry,
-                toObjectClarifier: rel.toObjectClarifier,
-                toBeing: rel.toBeing,
-                toAvatar: rel.toAvatar,
-                toObject: rel.toObject
-              });
-            } catch (error) {
-              console.error(`Failed to delete relationship:`, error);
-            }
-          }
-        }
-
-        // Create HAS_VARIABLE relationship (one relationship that applies to all objects)
-        // This should be handled by the backend - creating a single relationship with special flag
+      // Remove legacy HAS_VARIABLE relationship if present; relevance is explicitly managed per object.
+      const hasVariableRel = relationshipsList.find((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
+      if (hasVariableRel) {
         try {
-          await apiService.createVariableObjectRelationship(selectedVariable.id, {
+          await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
             relationshipType: 'HAS_VARIABLE',
             toSector: 'ALL',
             toDomain: 'ALL',
@@ -555,114 +543,96 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
             toObject: 'ALL'
           });
         } catch (error) {
-          console.error('Failed to create HAS_VARIABLE relationship:', error);
+          console.error('Failed to delete legacy HAS_VARIABLE relationship:', error);
         }
-      } else {
-        // Delete HAS_VARIABLE relationship if it exists
-        const hasVariableRel = relationshipsList.find((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
-        if (hasVariableRel) {
+      }
+
+      // Track which objects should have relationships (by being/avatar/object combo)
+      const selectedObjectKeys = new Set(
+        Object.entries(selectedObjects)
+          .filter(([_, objData]) => objData.isSelected)
+          .map(([objectId, _]) => {
+            const obj = allObjects.find(o => o.id === objectId);
+            return obj ? `${obj.being}::${obj.avatar}::${obj.object}` : null;
+          })
+          .filter(Boolean) as string[]
+      );
+      
+      console.log('💾 Selected object keys:', Array.from(selectedObjectKeys));
+
+      // Get all objects that currently have relationships (by being/avatar/object combo)
+      const objectsWithRelationships = new Map<string, any>(); // key -> relationship data
+      for (const rel of relationshipsList) {
+        if (rel.relationshipType === 'HAS_SPECIFIC_VARIABLE') {
+          const key = `${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`;
+          // Find matching object by being, avatar, object
+          const matchingObj = allObjects.find(o => 
+            o.being === rel.toBeing &&
+            o.avatar === rel.toAvatar &&
+            o.object === rel.toObject
+          );
+          if (matchingObj) {
+            objectsWithRelationships.set(key, { rel, obj: matchingObj });
+          }
+        }
+      }
+
+      console.log('💾 Objects with existing relationships:', objectsWithRelationships.size);
+
+      // Delete relationships for objects that should no longer be selected
+      for (const [key, { obj }] of objectsWithRelationships.entries()) {
+        if (!selectedObjectKeys.has(key)) {
+          console.log(`🗑️ Deleting relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
           try {
             await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
-              toSector: 'ALL',
-              toDomain: 'ALL',
-              toCountry: 'ALL',
-              toObjectClarifier: '',
-              toBeing: 'ALL',
-              toAvatar: 'ALL',
-              toObject: 'ALL'
+              relationshipType: 'HAS_SPECIFIC_VARIABLE',
+              toSector: obj.sector || '',
+              toDomain: obj.domain || '',
+              toCountry: obj.country || '',
+              toObjectClarifier: obj.classifier || '',
+              toBeing: obj.being,
+              toAvatar: obj.avatar,
+              toObject: obj.object
             });
           } catch (error) {
-            console.error('Failed to delete HAS_VARIABLE relationship:', error);
+            console.error(`❌ Failed to delete relationship for ${obj.object}:`, error);
           }
         }
+      }
 
-        // Track which objects should have relationships (by being/avatar/object combo)
-        const selectedObjectKeys = new Set(
-          Object.entries(selectedObjects)
-            .filter(([_, objData]) => objData.isSelected)
-            .map(([objectId, _]) => {
-              const obj = allObjects.find(o => o.id === objectId);
-              return obj ? `${obj.being}::${obj.avatar}::${obj.object}` : null;
-            })
-            .filter(Boolean) as string[]
-        );
+      // Create relationships for newly selected objects
+      for (const [objectId, objData] of Object.entries(selectedObjects)) {
+        if (!objData.isSelected) continue;
         
-        console.log('💾 Selected object keys:', Array.from(selectedObjectKeys));
-
-        // Get all objects that currently have relationships (by being/avatar/object combo)
-        const objectsWithRelationships = new Map<string, any>(); // key -> relationship data
-        for (const rel of relationshipsList) {
-          if (rel.relationshipType === 'HAS_SPECIFIC_VARIABLE') {
-            const key = `${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`;
-            // Find matching object by being, avatar, object
-            const matchingObj = allObjects.find(o => 
-              o.being === rel.toBeing &&
-              o.avatar === rel.toAvatar &&
-              o.object === rel.toObject
-            );
-            if (matchingObj) {
-              objectsWithRelationships.set(key, { rel, obj: matchingObj });
-            }
-          }
+        const obj = allObjects.find(o => o.id === objectId);
+        if (!obj) {
+          console.warn(`⚠️ Object not found for ID: ${objectId}`);
+          continue;
         }
 
-        console.log('💾 Objects with existing relationships:', objectsWithRelationships.size);
-
-        // Delete relationships for objects that should no longer be selected
-        for (const [key, { rel, obj }] of objectsWithRelationships.entries()) {
-          if (!selectedObjectKeys.has(key)) {
-            console.log(`🗑️ Deleting relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-            try {
-              await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
-                relationshipType: 'HAS_SPECIFIC_VARIABLE',
-                toSector: obj.sector || '',
-                toDomain: obj.domain || '',
-                toCountry: obj.country || '',
-                toObjectClarifier: obj.classifier || '',
-                toBeing: obj.being,
-                toAvatar: obj.avatar,
-                toObject: obj.object
-              });
-            } catch (error) {
-              console.error(`❌ Failed to delete relationship for ${obj.object}:`, error);
-            }
+        const key = `${obj.being}::${obj.avatar}::${obj.object}`;
+        
+        // Check if relationship already exists
+        if (!objectsWithRelationships.has(key)) {
+          console.log(`➕ Creating relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
+          try {
+            await apiService.createVariableObjectRelationship(selectedVariable.id, {
+              relationshipType: 'HAS_SPECIFIC_VARIABLE',
+              toSector: obj.sector || '',
+              toDomain: obj.domain || '',
+              toCountry: obj.country || '',
+              toObjectClarifier: obj.classifier || '',
+              toBeing: obj.being,
+              toAvatar: obj.avatar,
+              toObject: obj.object
+            });
+          } catch (error: any) {
+            console.error(`❌ Failed to create relationship for ${obj.object}:`, error);
+            const errorMessage = error?.message || error?.toString() || 'Unknown error';
+            alert(`Failed to create relationship for ${obj.object}: ${errorMessage}`);
           }
-        }
-
-        // Create relationships for newly selected objects
-        for (const [objectId, objData] of Object.entries(selectedObjects)) {
-          if (!objData.isSelected) continue;
-          
-          const obj = allObjects.find(o => o.id === objectId);
-          if (!obj) {
-            console.warn(`⚠️ Object not found for ID: ${objectId}`);
-            continue;
-          }
-
-          const key = `${obj.being}::${obj.avatar}::${obj.object}`;
-          
-          // Check if relationship already exists
-          if (!objectsWithRelationships.has(key)) {
-            console.log(`➕ Creating relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-            try {
-              await apiService.createVariableObjectRelationship(selectedVariable.id, {
-                relationshipType: 'HAS_SPECIFIC_VARIABLE',
-                toSector: obj.sector || '',
-                toDomain: obj.domain || '',
-                toCountry: obj.country || '',
-                toObjectClarifier: obj.classifier || '',
-                toBeing: obj.being,
-                toAvatar: obj.avatar,
-                toObject: obj.object
-              });
-            } catch (error: any) {
-              console.error(`❌ Failed to create relationship for ${obj.object}:`, error);
-              const errorMessage = error?.message || error?.toString() || 'Unknown error';
-              alert(`Failed to create relationship for ${obj.object}: ${errorMessage}`);
-            }
-          } else {
-            console.log(`✓ Relationship already exists for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-          }
+        } else {
+          console.log(`✓ Relationship already exists for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
         }
       }
 

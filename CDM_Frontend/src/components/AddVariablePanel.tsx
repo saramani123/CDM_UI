@@ -11,17 +11,9 @@ import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddFormatIIValueModal } from './AddFormatIIValueModal';
 import { VariationsModal } from './VariationsModal';
 import { useObjects } from '../hooks/useObjects';
-import { parseDriverField } from '../data/mockData';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
-
-interface ObjectRelationship {
-  id: string;
-  toBeing: string;
-  toAvatar: string;
-  toObject: string;
-}
 
 interface AddVariablePanelProps {
   isOpen: boolean;
@@ -71,6 +63,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
 
   // Object relationships - store selected object IDs from modal
   const [selectedObjectRelationships, setSelectedObjectRelationships] = useState<string[]>([]);
+  const hasInitializedDefaultRelevanceRef = useRef(false);
   
   // Modal state for object relationships
   const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
@@ -91,6 +84,24 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   // Get objects data - use hook if not provided as prop
   const { objects: objectsFromHook } = useObjects();
   const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
+
+  // Default relevance for add flow: all objects are selected unless user deselects.
+  useEffect(() => {
+    if (!isOpen) {
+      hasInitializedDefaultRelevanceRef.current = false;
+      setSelectedObjectRelationships([]);
+      return;
+    }
+    if (hasInitializedDefaultRelevanceRef.current) {
+      return;
+    }
+    if (allObjects.length === 0) {
+      return;
+    }
+
+    setSelectedObjectRelationships(allObjects.map(obj => obj.id));
+    hasInitializedDefaultRelevanceRef.current = true;
+  }, [isOpen, allObjects]);
 
   // Variations - using string for multiline input
   const [variationsText, setVariationsText] = useState('');
@@ -701,37 +712,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       driverSelections.country
     );
 
-    // Convert selected object IDs to relationship format
-    const objectRelationshipsList = selectedObjectRelationships.map(objectId => {
-      const obj = allObjects.find(o => o.id === objectId);
-      if (!obj) return null;
-      
-      // Parse sector, domain, country from driver string
-      let sector = '';
-      let domain = '';
-      let country = '';
-      if (obj.driver && obj.driver.trim()) {
-        try {
-          const parsed = parseDriverField(obj.driver);
-          sector = parsed.sector || '';
-          domain = parsed.domain || '';
-          country = parsed.country || '';
-        } catch (error) {
-          console.error(`Error parsing driver for object ${objectId}:`, error);
-        }
-      }
-      
-      return {
-        id: objectId,
-        toBeing: obj.being || '',
-        toAvatar: obj.avatar || '',
-        toObject: obj.object || '',
-        toSector: sector,
-        toDomain: domain,
-        toCountry: country
-      };
-    }).filter(Boolean) as ObjectRelationship[];
-
     // Convert multiline text to variations array
     const variationsList = variationsText
       .split('\n')
@@ -835,10 +815,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       ...formData,
       ...validationData,
       driver: driverString,
-      objectRelationships: objectRelationshipsList.length,
+      objectRelationships: selectedObjectRelationships.length,
       status: 'Active',
-      objectRelationshipsList: objectRelationshipsList,
-      selectedObjectIds: selectedObjectRelationships, // Store IDs for reference
+      selectedObjectIds: selectedObjectRelationships,
       variationsList: variationsList
     };
 
@@ -1669,6 +1648,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         }}
         allObjects={allObjects}
         previewMode={true}
+        initialSelectedObjectIds={selectedObjectRelationships}
         onSelectionChange={(selectedObjectIds: string[]) => {
           setSelectedObjectRelationships(selectedObjectIds);
         }}

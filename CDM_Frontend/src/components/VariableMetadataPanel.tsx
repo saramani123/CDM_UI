@@ -106,8 +106,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // State for add section value modal
   const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
   
-  // Storage key for part-group associations
-  const PART_GROUP_STORAGE_KEY = 'cdm_variable_part_group_associations';
 
   // Fetch field options from API on mount and when allData changes
   useEffect(() => {
@@ -143,35 +141,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
     fetchFieldOptions();
   }, [allData]);
-
-  // Helper functions for part-group associations
-  const getPartGroupAssociations = (): Record<string, string[]> => {
-    try {
-      const stored = localStorage.getItem(PART_GROUP_STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (error) {
-      console.error('Error loading part-group associations:', error);
-    }
-    return {};
-  };
-
-  const savePartGroupAssociation = (part: string, group: string) => {
-    try {
-      const associations = getPartGroupAssociations();
-      if (!associations[part]) {
-        associations[part] = [];
-      }
-      if (!associations[part].includes(group)) {
-        associations[part].push(group);
-        associations[part].sort();
-        localStorage.setItem(PART_GROUP_STORAGE_KEY, JSON.stringify(associations));
-      }
-    } catch (error) {
-      console.error('Error saving part-group association:', error);
-    }
-  };
 
   const handleAddFieldValue = async (value: string) => {
     if (!selectedFieldForAdd) return;
@@ -250,9 +219,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     try {
       await apiService.createVariableGroup(part.trim(), section.trim(), groupValue.trim());
       
-      // Also save to localStorage for backward compatibility
-      savePartGroupAssociation(part.trim(), groupValue.trim());
-      
       if (formData.part === part.trim() && formData.section === section.trim()) {
         try {
           const response = await apiService.getVariableGroups(part.trim(), section.trim()) as {
@@ -288,7 +254,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
 
   const handleAddSectionValue = async (part: string, sectionValue: string) => {
     try {
-      // Call API to add the section (creates placeholder variable in Neo4j)
+      // Call API to add the section node under the selected part
       await apiService.addVariableSection(part, sectionValue);
       
       // Update dynamic field options to include the new section
@@ -325,6 +291,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   const [isLoadingParts, setIsLoadingParts] = useState(false);
   const [isLoadingSections, setIsLoadingSections] = useState(false);
   const [isLoadingGroups, setIsLoadingGroups] = useState(false);
+  const sectionsRequestIdRef = useRef(0);
+  const groupsRequestIdRef = useRef(0);
 
   // Load parts from API on mount
   useEffect(() => {
@@ -350,22 +318,34 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   useEffect(() => {
     const loadSections = async () => {
       if (!formData.part) {
+        sectionsRequestIdRef.current += 1;
         setSectionsList([]);
+        setIsLoadingSections(false);
         // Reset section when part is cleared
         if (formData.section) {
           handleChange('section', '');
         }
         return;
       }
+      // Clear stale child options immediately when parent changes.
+      setSectionsList([]);
       setIsLoadingSections(true);
+      const requestId = ++sectionsRequestIdRef.current;
+      const partForRequest = formData.part;
       try {
-        const response = await apiService.getVariableSections(formData.part) as { sections: string[] };
+        const response = await apiService.getVariableSections(partForRequest) as { sections: string[] };
+        if (requestId !== sectionsRequestIdRef.current) {
+          return;
+        }
         setSectionsList(response.sections || []);
         // Reset section if current section is not in the new list
         if (formData.section && !response.sections.includes(formData.section)) {
           handleChange('section', '');
         }
       } catch (error) {
+        if (requestId !== sectionsRequestIdRef.current) {
+          return;
+        }
         console.error('Error loading sections:', error);
         setSectionsList([]);
         // Reset section on error
@@ -373,7 +353,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           handleChange('section', '');
         }
       } finally {
-        setIsLoadingSections(false);
+        if (requestId === sectionsRequestIdRef.current) {
+          setIsLoadingSections(false);
+        }
       }
     };
     loadSections();
@@ -382,20 +364,38 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   useEffect(() => {
     const loadGroups = async () => {
       if (!formData.part || !formData.section) {
+        groupsRequestIdRef.current += 1;
         setGroupsList([]);
+        setIsLoadingGroups(false);
         return;
       }
+      // Clear stale group options immediately when Part/Section changes.
+      setGroupsList([]);
       setIsLoadingGroups(true);
+      const requestId = ++groupsRequestIdRef.current;
+      const partForRequest = formData.part;
+      const sectionForRequest = formData.section;
       try {
-        const response = await apiService.getVariableGroups(formData.part, formData.section) as {
+        const response = await apiService.getVariableGroups(partForRequest, sectionForRequest) as {
           groups: string[];
         };
+        if (requestId !== groupsRequestIdRef.current) {
+          return;
+        }
         setGroupsList(response.groups || []);
+        if (formData.group && !response.groups.includes(formData.group)) {
+          handleChange('group', '');
+        }
       } catch (error) {
+        if (requestId !== groupsRequestIdRef.current) {
+          return;
+        }
         console.error('Error loading groups:', error);
         setGroupsList([]);
       } finally {
-        setIsLoadingGroups(false);
+        if (requestId === groupsRequestIdRef.current) {
+          setIsLoadingGroups(false);
+        }
       }
     };
     loadGroups();
@@ -421,26 +421,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   };
 
   const getGroupsForPart = (part: string): string[] => {
-    if (groupsList.length > 0 && formData.part === part && formData.section) {
-      return groupsList;
-    }
     if (!part || !formData.section) return [];
-    
-    const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
-    const groupsFromData = [...new Set(
-      variablesData
-        .filter(
-          (item: any) =>
-            item.part === part && item.section === formData.section && item.group,
-        )
-        .map((item: any) => item.group)
-    )].filter(Boolean) as string[];
-    
-    const associations = getPartGroupAssociations();
-    const groupsFromStorage = associations[part] || [];
-    
-    const allGroups = [...new Set([...groupsFromData, ...groupsFromStorage])].sort();
-    return allGroups;
+    return groupsList;
   };
 
   // Collapsible sections state

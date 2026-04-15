@@ -45,6 +45,34 @@ import { RelationshipModal } from './components/RelationshipModal';
 import { Neo4jGraphModal } from './components/Neo4jGraphModal';
 import LoadingModal from './components/LoadingModal';
 
+/** Map relevance entries to Object IDs for createVariable(selectedObjectIds). Undefined = link all objects (default). */
+function resolveSelectedObjectIdsForVariableCreate(
+  relationships: any[] | undefined,
+  objects: ObjectData[]
+): string[] | undefined {
+  if (!relationships || relationships.length === 0) return undefined;
+  const treatsAsAll = relationships.some(
+    (r) =>
+      r.relationshipType === 'HAS_VARIABLE' ||
+      (String(r.toBeing || '').toUpperCase() === 'ALL' &&
+        String(r.toAvatar || '').toUpperCase() === 'ALL' &&
+        String(r.toObject || '').toUpperCase() === 'ALL')
+  );
+  if (treatsAsAll) return undefined;
+  const ids: string[] = [];
+  for (const rel of relationships) {
+    const o = objects.find(
+      (obj) =>
+        (obj.being || '') === (rel.toBeing || '') &&
+        (obj.avatar || '') === (rel.toAvatar || '') &&
+        (obj.object || '') === (rel.toObject || '')
+    );
+    if (o?.id) ids.push(o.id);
+  }
+  if (ids.length === 0) return undefined;
+  return [...new Set(ids)];
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('objects');
   const [selectedRows, setSelectedRows] = useState<ObjectData[]>([]);
@@ -930,26 +958,21 @@ function App() {
     }
   }, [activeTab, apiDrivers, driversLoading]);
 
-  // Handle variables loading - show loading immediately when switching to variables tab
+  // Handle variables loading - mirror objects tab: respect manual loading (clone/save) to avoid flicker
   React.useEffect(() => {
     if (activeTab === 'variables') {
-      if (variablesLoading) {
-        setIsLoading(true);
-        setLoadingType('variables');
-      } else if (variableData.length === 0 && !variablesError && apiVariables === undefined) {
-        // If no data and no error yet and API hasn't returned, still show loading (initial load)
-        setIsLoading(true);
-        setLoadingType('variables');
-      } else {
-        setIsLoading(false);
+      if (!isManuallyManagingLoadingRef.current) {
+        if (variablesLoading) {
+          setIsLoading(true);
+          setLoadingType('variables');
+        } else {
+          setIsLoading(false);
+        }
       }
-    } else {
-      // When switching away from variables tab, ensure loading is cleared
-      if (loadingType === 'variables') {
-        setIsLoading(false);
-      }
+    } else if (loadingType === 'variables') {
+      setIsLoading(false);
     }
-  }, [variablesLoading, activeTab, variableData.length, variablesError, apiVariables, loadingType]);
+  }, [variablesLoading, activeTab, loadingType]);
 
   // Auto-open bulk edit panel when 2+ objects are selected
   useEffect(() => {
@@ -2912,18 +2935,26 @@ function App() {
           console.error('Failed to fetch variable relationships:', error);
           // Continue without relationships - user can add them later
         }
+
+        let variationsList: any[] = Array.isArray(row.variationsList) ? row.variationsList : [];
+        try {
+          const vRes = (await apiService.getVariableVariations(row.id)) as any;
+          if (vRes?.variationsList?.length) {
+            variationsList = vRes.variationsList;
+          }
+        } catch (e) {
+          console.warn('Could not fetch variations for clone; using row data:', e);
+        }
         
-        // Create cloned variable with all data except name
-        // Use row data directly since backend doesn't have GET /variables/{id}
+        // Create cloned variable with all data except name; do not copy meme/group key (defaults on save)
         const clonedVariable: any = {
           ...row,
           id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
           variable: '', // Clear variable name - user must provide new name
           name: '', // Also clear name field if it exists
-          // Ensure all fields are preserved
-          isMeme: row.isMeme ?? row.is_meme ?? false,
-          isGroupKey: row.isGroupKey ?? row.is_group_key ?? row['Is Group Key'] ?? false,
-          groupKey: row.groupKey ?? row.group_key ?? row['Group Key'] ?? '',
+          isMeme: false,
+          isGroupKey: false,
+          groupKey: '',
           relevance: row.relevance || '',
           validation: row.validation || '',
           formatI: row.formatI || '',
@@ -2932,8 +2963,8 @@ function App() {
           default: row.default || '',
           graph: row.graph || 'Y',
           status: row.status || 'Active',
-          objectRelationshipsList: objectRelationshipsList, // Include relationships
-          variationsList: row.variationsList || [],
+          objectRelationshipsList: objectRelationshipsList,
+          variationsList,
           _isCloned: true,
           _isSaved: false,
           _sourceId: row.id // Keep reference to source for tracking
@@ -2976,56 +3007,45 @@ function App() {
   };
 
   const handleAddObject = async (newObjectData: ObjectData) => {
-    try {
-      // Convert the UI format to API format
-      const driverParts = newObjectData.driver.split(', ').map(part => part.trim());
-      const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
-      const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
-      const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
-      const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
-      
-      const apiObjectData: any = {
-        sector: sector,
-        domain: domain,
-        country: country,
-        objectClarifier: objectClarifier,
-        being: newObjectData.being,
-        avatar: newObjectData.avatar,
-        object: newObjectData.object,
-        status: newObjectData.status || 'Active',
-        // Include relationships and variants if they exist
-        relationships: newObjectData.relationshipsList || [],
-        variants: (newObjectData.variantsList || []).map(v => v.name)
-      };
-      
-      // Include identifier data if present
-      if (newObjectData.identifier) {
-        apiObjectData.identifier = newObjectData.identifier;
-        console.log('Including identifier data in create:', newObjectData.identifier);
-      }
-      
-      await createObject(apiObjectData);
-      // Append to order after successful creation
-      if (newObjectData.being && newObjectData.avatar && newObjectData.object) {
-        appendToObjectsOrder(newObjectData.being, newObjectData.avatar, newObjectData.object);
-      }
-      setIsAddObjectOpen(false);
-    } catch (error) {
-      console.error('Failed to create object:', error);
-      // Fallback to local state update
-      setData(prev => [...prev, newObjectData]);
-      // Still append to order even if API fails
-      if (newObjectData.being && newObjectData.avatar && newObjectData.object) {
-        appendToObjectsOrder(newObjectData.being, newObjectData.avatar, newObjectData.object);
-      }
-      setIsAddObjectOpen(false);
+    // Convert the UI format to API format
+    const driverParts = newObjectData.driver.split(', ').map(part => part.trim());
+    const sector = driverParts[0] === 'ALL' ? ['ALL'] : [driverParts[0]];
+    const domain = driverParts[1] === 'ALL' ? ['ALL'] : [driverParts[1]];
+    const country = driverParts[2] === 'ALL' ? ['ALL'] : [driverParts[2]];
+    const objectClarifier = driverParts[3] === 'None' ? 'None' : driverParts[3];
+    
+    const apiObjectData: any = {
+      sector: sector,
+      domain: domain,
+      country: country,
+      objectClarifier: objectClarifier,
+      being: newObjectData.being,
+      avatar: newObjectData.avatar,
+      object: newObjectData.object,
+      status: newObjectData.status || 'Active',
+      // Include relationships and variants if they exist
+      relationships: newObjectData.relationshipsList || [],
+      variants: (newObjectData.variantsList || []).map(v => v.name)
+    };
+    
+    // Include identifier data if present
+    if (newObjectData.identifier) {
+      apiObjectData.identifier = newObjectData.identifier;
+      console.log('Including identifier data in create:', newObjectData.identifier);
     }
+    
+    await createObject(apiObjectData);
+    // Append to order after successful creation
+    if (newObjectData.being && newObjectData.avatar && newObjectData.object) {
+      appendToObjectsOrder(newObjectData.being, newObjectData.avatar, newObjectData.object);
+    }
+    // Add panel closes itself after successful onAdd; do not add optimistic rows on failure
   };
 
   const handleAddVariable = async (newVariableData: VariableData) => {
     try {
       // Create variable via API with variationsList
-      const createdVariable = await createVariable({
+      await createVariable({
         driver: newVariableData.driver,
         part: newVariableData.part,
         group: newVariableData.group,
@@ -3038,27 +3058,9 @@ function App() {
         default: newVariableData.default || '',
         graph: newVariableData.graph || 'Y',
         status: newVariableData.status || 'Active',
+        selectedObjectIds: (newVariableData as any).selectedObjectIds || [],
         variationsList: newVariableData.variationsList || []
-      });
-      
-      // Create object relationships if any
-      if (newVariableData.objectRelationshipsList && newVariableData.objectRelationshipsList.length > 0) {
-        for (const relationship of newVariableData.objectRelationshipsList) {
-          // Use the API service directly to pass all required fields
-          await apiService.createVariableObjectRelationship(createdVariable.id, {
-            relationshipType: 'HAS_SPECIFIC_VARIABLE',
-            toBeing: relationship.toBeing,
-            toAvatar: relationship.toAvatar,
-            toObject: relationship.toObject,
-            toSector: relationship.toSector || '',
-            toDomain: relationship.toDomain || '',
-            toCountry: relationship.toCountry || '',
-            toObjectClarifier: relationship.toObjectClarifier || ''
-          });
-        }
-        // Refresh variables after creating relationships
-        await fetchVariables();
-      }
+      } as any);
       
       // Append to order after successful creation
       if (newVariableData.part && newVariableData.section && newVariableData.group && newVariableData.variable) {
@@ -3763,6 +3765,7 @@ function App() {
             const vCountry = vDriverParts[2] === 'ALL' ? ['ALL'] : [vDriverParts[2]];
             
             return v.part === (updatedData.part || selectedRowForMetadata.part) &&
+                   v.section === (updatedData.section || selectedRowForMetadata.section) &&
                    v.group === (updatedData.group || selectedRowForMetadata.group) &&
                    v.variable?.toLowerCase() === updatedData.variable?.toLowerCase() &&
                    JSON.stringify(vSector) === JSON.stringify(sector) &&
@@ -3771,22 +3774,25 @@ function App() {
           });
           
           if (duplicateVariable) {
-            alert(`Cannot save: A variable with the same combination of Sector, Domain, Country, Part, Group, and Variable name already exists. Please change the Variable name or modify other fields to make it unique.`);
+            alert(`Cannot save: A variable with the same combination of Sector, Domain, Country, Part, Section, Group, and Variable name already exists. Please change the Variable name or modify other fields to make it unique.`);
             throw new Error('Duplicate variable detected');
           }
           
           try {
-            console.log('🧬 Creating cloned variable with data:', {
-              driver: updatedData.driver,
-              part: updatedData.part,
-              group: updatedData.group,
-              section: updatedData.section,
-              variable: updatedData.variable
-            });
-            
-            // Create new variable via API
-            // Use formData values if available, otherwise fall back to selectedRowForMetadata
-            const variableToCreate = {
+            isManuallyManagingLoadingRef.current = true;
+            setIsLoading(true);
+            setLoadingType('variables');
+
+            const relationshipsToUse = updatedData.objectRelationshipsList || selectedRowForMetadata.objectRelationshipsList || [];
+            const selectedObjectIds = resolveSelectedObjectIdsForVariableCreate(relationshipsToUse, data);
+
+            const variationSource =
+              updatedData.variationsList ?? selectedRowForMetadata.variationsList ?? [];
+            const variationNames = (Array.isArray(variationSource) ? variationSource : [])
+              .map((x: any) => (typeof x === 'string' ? x : x?.name))
+              .filter((n: any) => n && String(n).trim());
+
+            const variableToCreate: Record<string, any> = {
               driver: updatedData.driver || selectedRowForMetadata.driver || 'ALL, ALL, ALL, None',
               part: updatedData.part || selectedRowForMetadata.part || '',
               group: updatedData.group || selectedRowForMetadata.group || '',
@@ -3797,131 +3803,54 @@ function App() {
               gType: updatedData.gType || selectedRowForMetadata.gType || '',
               validation: updatedData.validation || selectedRowForMetadata.validation || '',
               default: updatedData.default || selectedRowForMetadata.default || '',
-              graph: updatedData.graph || selectedRowForMetadata.graph || 'Y',
+              graph: updatedData.graph || selectedRowForMetadata.graph || 'Yes',
               status: updatedData.status || selectedRowForMetadata.status || 'Active',
-              // Include is_meme and is_group_key if present
-              is_meme: updatedData.isMeme ?? selectedRowForMetadata.isMeme ?? false,
-              is_group_key: updatedData.isGroupKey ?? selectedRowForMetadata.isGroupKey ?? false
+              isMeme: false,
+              isGroupKey: false,
+              forceNewVariationNodes: true,
             };
-            
-            console.log('🧬 Variable data to create:', variableToCreate);
-            
-            const createdVariable = await createVariable(variableToCreate);
-            
-            console.log('🧬 Variable created successfully:', createdVariable);
-            
-            // Use relationships from updatedData (which includes user edits from metadata panel)
-            // If not provided, fall back to cloned data
-            const relationshipsToUse = updatedData.objectRelationshipsList || selectedRowForMetadata.objectRelationshipsList || [];
-            
-            console.log('🧬 Cloning relationships:', relationshipsToUse.length);
-            
-            // Clone object relationships if any
-            if (relationshipsToUse.length > 0) {
-              for (const relationship of relationshipsToUse) {
-                try {
-                  await createObjectRelationship(createdVariable.id, {
-                    toBeing: relationship.toBeing,
-                    toAvatar: relationship.toAvatar,
-                    toObject: relationship.toObject
-                  });
-                  console.log('🧬 Relationship created:', relationship);
-                } catch (relError) {
-                  console.error('🧬 Failed to create relationship:', relError);
-                  // Continue with other relationships even if one fails
-                }
+
+            if (variationNames.length > 0) {
+              variableToCreate.variationsList = variationNames.map((name: string) => ({
+                name: String(name).trim(),
+              }));
+            }
+
+            if (selectedObjectIds !== undefined && selectedObjectIds.length > 0) {
+              variableToCreate.selectedObjectIds = selectedObjectIds;
+            }
+
+            for (const key of Object.keys(updatedData)) {
+              if (key.startsWith('Validation #')) {
+                variableToCreate[key] = updatedData[key];
               }
             }
-            
-            // Remove the cloned row from local state BEFORE refreshing (to prevent duplicates)
-            setVariableData(prev => prev.filter(item => item.id !== selectedRowForMetadata.id));
-            
-            // Clear loading state before refresh
-            setIsLoading(false);
-            isManuallyManagingLoadingRef.current = false;
-            
-            console.log('🧬 Refreshing variables...');
-            // Refresh variables to get updated data (this will include the newly created variable)
+
+            const createdVariable: any = await createVariable(variableToCreate as any);
+
+            setVariableData((prev) => prev.filter((item) => item.id !== selectedRowForMetadata.id));
+
             await fetchVariables();
-            
-            // Wait for variablesLoading to complete
-            let loadingAttempts = 0;
-            while (variablesLoading && loadingAttempts < 50) { // 5 seconds max wait
-              await new Promise(resolve => setTimeout(resolve, 100));
-              loadingAttempts++;
-            }
-            
-            // Now find the variable in apiVariables (which should be updated)
-            let freshVariableData = null;
-            let attempts = 0;
-            const maxAttempts = 20; // 2 seconds total (20 * 100ms)
-            
-            while (!freshVariableData && attempts < maxAttempts) {
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              // Check apiVariables first (from hook, updated immediately after fetchVariables)
-              if (apiVariables && Array.isArray(apiVariables)) {
-                freshVariableData = apiVariables.find((v: any) => v.id === createdVariable.id);
-                if (freshVariableData) {
-                  console.log('🧬 Found in apiVariables:', freshVariableData);
-                  break;
-                }
-              }
-              
-              attempts++;
-            }
-            
-            // If still not found, wait a bit more for useEffect to sync to variableData
-            if (!freshVariableData) {
-              await new Promise(resolve => setTimeout(resolve, 300));
-              // Check variableData one more time
-              const currentData = variableData;
-              freshVariableData = currentData.find((v: any) => v.id === createdVariable.id);
-              if (freshVariableData) {
-                console.log('🧬 Found in variableData after sync:', freshVariableData);
-              }
-            }
-            
-            if (freshVariableData) {
-              console.log('🧬 Found fresh variable data:', freshVariableData);
-              // Explicitly remove clone flags to ensure clean state
-              const cleanVariableData = {
-                ...freshVariableData,
-                _isCloned: undefined,
-                _isSaved: undefined,
-                _sourceId: undefined
-              };
-              // Update selected row with fresh data (remove clone flags)
-              setSelectedRowForMetadata(cleanVariableData);
-              setSelectedRows([cleanVariableData]);
-            } else {
-              console.warn('🧬 Could not find fresh variable data after refresh, using created variable:', createdVariable);
-              // Fallback: use the created variable data directly and add it to the grid
-              // This ensures the variable appears even if the refresh didn't work
-              const fallbackVariable = {
-                ...createdVariable,
-                objectRelationships: 0,
-                objectRelationshipsList: relationshipsToUse,
-                _isCloned: undefined,
-                _isSaved: undefined,
-                _sourceId: undefined
-              };
-              setVariableData(prev => {
-                // Check if it's already there to avoid duplicates
-                const exists = prev.find(v => v.id === createdVariable.id);
-                if (!exists) {
-                  return [...prev, fallbackVariable];
-                }
-                return prev;
-              });
-              setSelectedRowForMetadata(fallbackVariable);
-              setSelectedRows([fallbackVariable]);
-            }
+
+            isManuallyManagingLoadingRef.current = false;
+            setIsLoading(false);
+
+            const cv = createdVariable as any;
+            const cleanVariableData: any = {
+              ...cv,
+              isMeme: cv.is_meme ?? cv.isMeme ?? false,
+              isGroupKey: cv.is_group_key ?? cv.isGroupKey ?? false,
+              groupKey: cv.group_key ?? cv.groupKey ?? '',
+              _isCloned: undefined,
+              _isSaved: undefined,
+              _sourceId: undefined,
+            };
+            setSelectedRowForMetadata(cleanVariableData);
+            setSelectedRows([cleanVariableData]);
           } catch (error: any) {
             console.error('🧬 Error saving cloned variable:', error);
-            // Clear loading state on error
-            setIsLoading(false);
             isManuallyManagingLoadingRef.current = false;
+            setIsLoading(false);
             const errorMessage = error?.message || 'Failed to save clone. Please try again.';
             if (errorMessage.includes('Duplicate') || errorMessage.includes('already exists')) {
               alert(`Duplicate detected: ${errorMessage}`);

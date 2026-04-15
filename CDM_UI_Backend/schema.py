@@ -462,8 +462,11 @@ class VariableCreateRequest(BaseModel):
     graph: Optional[str] = Field("Y", description="Graph inclusion (Y/N)")
     status: Optional[str] = Field("Active", description="Status")
     variationsList: Optional[List[dict]] = None  # List of variations to create for the variable
+    selectedObjectIds: Optional[List[str]] = None  # Explicit object IDs for relevance selection in add flow
     isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
     isGroupKey: Optional[bool] = Field(default=False, description="Is Group Key flag")
+    # When true, each variation name creates a NEW Variation node (clone flow); do not reuse global by name
+    forceNewVariationNodes: Optional[bool] = Field(default=False, description="Always create distinct Variation nodes")
 
 class VariableUpdateRequest(BaseModel):
     """Schema for updating a variable - all fields optional for partial updates"""

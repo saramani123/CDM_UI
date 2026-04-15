@@ -1,26 +1,16 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, Copy, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
-import { getDriversData, concatenateDrivers, parseDriverField } from '../data/mockData';
+import React, { useState, useRef, useEffect } from 'react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
+import { getDriversData, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
-import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddFormatIIValueModal } from './AddFormatIIValueModal';
-import { useObjects } from '../hooks/useObjects';
 import { OntologyModal } from './OntologyModal';
-import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { VariationsModal } from './VariationsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
-
-interface ObjectRelationship {
-  id: string;
-  to_being: string;
-  to_avatar: string;
-  to_object: string;
-}
 
 interface BulkEditVariablesPanelProps {
   isOpen: boolean;
@@ -39,7 +29,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   onSave,
   selectedCount,
   allData = [],
-  objectsData = [],
+  objectsData: _objectsData = [],
   selectedVariableIds,
   selectedVariableNames
 }) => {
@@ -78,13 +68,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
   const driversData = getDriversData();
 
-  // Object relationships - store selected object IDs from modal
-  const [selectedObjectRelationships, setSelectedObjectRelationships] = useState<string[]>([]);
-  
-  // Modal state for object relationships
-  const [isVariableObjectRelationshipModalOpen, setIsVariableObjectRelationshipModalOpen] = useState(false);
-  const [pendingCsvData, setPendingCsvData] = useState<any[] | null>(null);
-  const [isCloneVariableRelationshipsModalOpen, setIsCloneVariableRelationshipsModalOpen] = useState(false);
   
   // Modal state for add section value
   const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
@@ -97,10 +80,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
   const [isAddFormatIIValueModalOpen, setIsAddFormatIIValueModalOpen] = useState(false);
   
-  // Confirmation dialog state
-  const [showOverrideConfirmation, setShowOverrideConfirmation] = useState(false);
-  const [pendingSaveData, setPendingSaveData] = useState<any>(null);
-
   // Refs for Range validation inputs (one per validation in the list)
   const rangeValidationInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
   const isRangeValidationInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
@@ -141,29 +120,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
   const hasSelectedVariables = selectedCount > 0 && (getSelectedVariableIds() || getSelectedVariableNames());
   
-  // Get selected variables for clone modal
-  const selectedVariables = useMemo(() => {
-    if (!selectedVariableIds || selectedVariableIds.length === 0) return [];
-    return allData.filter(v => selectedVariableIds.includes(v.id));
-  }, [selectedVariableIds, allData]);
-
-  // Check if all selected variables have no object relationships
-  const hasExistingRelationships = useMemo(() => {
-    if (selectedVariables.length === 0) return false;
-    return selectedVariables.some(v => (v.objectRelationships || 0) > 0);
-  }, [selectedVariables]);
-
-  // Get list of variables with relationships for error message
-  const variablesWithRelationships = useMemo(() => {
-    return selectedVariables
-      .filter(v => (v.objectRelationships || 0) > 0)
-      .map(v => v.variable)
-      .filter(Boolean);
-  }, [selectedVariables]);
-  
-  // Get objects data - use hook if not provided as prop
-  const { objects: objectsFromHook } = useObjects();
-  const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
+  // `objectsData` remains in props for API compatibility but relevance is disabled in bulk edit.
   
   // Variations - using string for multiline input
   const [variationsText, setVariationsText] = useState('');
@@ -194,26 +151,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   });
 
   if (!isOpen) return null;
-
-  // Get distinct values from data for relationships
-  const getDistinctBeings = () => {
-    const beings = [...new Set(objectsData.map(item => item.being))];
-    return ['ALL', ...beings];
-  };
-
-  const getDistinctAvatarsForBeing = (being: string) => {
-    if (being === 'ALL') return ['ALL'];
-    const avatars = [...new Set(objectsData.filter(item => item.being === being).map(item => item.avatar))];
-    return ['ALL', ...avatars];
-  };
-
-  const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
-    if (being === 'ALL' || avatar === 'ALL') return ['ALL'];
-    const objects = [...new Set(objectsData.filter(item => 
-      item.being === being && item.avatar === avatar
-    ).map(item => item.object))];
-    return ['ALL', ...objects];
-  };
 
   // State for cascading dropdowns
   const [partsList, setPartsList] = useState<string[]>([]);
@@ -639,51 +576,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       [type]: values
     }));
   };
-
-
-  const handleObjectRelationshipChange = (id: string, field: keyof ObjectRelationship, value: string) => {
-    setObjectRelationships(prev => prev.map(rel => {
-      if (rel.id === id) {
-        const updated = { ...rel, [field]: value };
-        
-        // Handle cascading updates
-        if (field === 'to_being' && value === 'ALL') {
-          updated.to_avatar = 'ALL';
-          updated.to_object = 'ALL';
-        } else if (field === 'to_avatar' && value === 'ALL') {
-          updated.to_object = 'ALL';
-        } else if (field === 'to_being' && value !== 'ALL') {
-          updated.to_avatar = '';
-          updated.to_object = '';
-        } else if (field === 'to_avatar' && value !== 'ALL') {
-          updated.to_object = '';
-        }
-        
-        return updated;
-      }
-      return rel;
-    }));
-  };
-
-  const addObjectRelationship = () => {
-    const newRelationship: ObjectRelationship = {
-      id: Date.now().toString(),
-      to_being: '',
-      to_avatar: '',
-      to_object: ''
-    };
-    setObjectRelationships(prev => [...prev, newRelationship]);
-  };
-
-  const deleteObjectRelationship = (id: string) => {
-    setObjectRelationships(prev => prev.filter(rel => rel.id !== id));
-  };
-
-  // Handler for when relationships are saved in the modal
-  const handleRelationshipSave = (selectedObjectIds: string[]) => {
-    setSelectedObjectRelationships(selectedObjectIds);
-  };
-
   const handleSortVariations = (direction: 'asc' | 'desc') => {
     const lines = variationsText.split('\n').filter(line => line.trim() !== '');
     const sortedLines = [...lines].sort((a, b) => {
@@ -819,37 +711,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       driverSelections.country
     ) : '';
     
-    // Convert selected object IDs to relationship format
-    const objectRelationshipsList = selectedObjectRelationships.map(objectId => {
-      const obj = allObjects.find(o => o.id === objectId);
-      if (!obj) return null;
-      
-      // Parse sector, domain, country from driver string
-      let sector = '';
-      let domain = '';
-      let country = '';
-      if (obj.driver && obj.driver.trim()) {
-        try {
-          const parsed = parseDriverField(obj.driver);
-          sector = parsed.sector || '';
-          domain = parsed.domain || '';
-          country = parsed.country || '';
-        } catch (error) {
-          console.error(`Error parsing driver for object ${objectId}:`, error);
-        }
-      }
-      
-      return {
-        id: objectId,
-        to_being: obj.being || '',
-        to_avatar: obj.avatar || '',
-        to_object: obj.object || '',
-        to_sector: sector,
-        to_domain: domain,
-        to_country: country
-      };
-    }).filter(Boolean) as any[];
-
     // Convert multiline text to variations array
     const variationsList = variationsText
       .split('\n')
@@ -1006,9 +867,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       })()),
       ...(metadata.default && metadata.default.trim() !== '' && metadata.default !== 'Keep Current Default' && { default: metadata.default }),
       ...(metadata.graph && metadata.graph.trim() !== '' && metadata.graph !== 'Keep Current Graph' && { graph: metadata.graph }),
-      // Object relationships
-      ...(objectRelationshipsList.length > 0 && { objectRelationshipsList: objectRelationshipsList }),
-      ...(objectRelationshipsList.length > 0 && { shouldOverrideRelationships: true }), // Flag to indicate we should delete existing relationships
       // Variations
       ...(variationsList.length > 0 && { variationsList: variationsList })
     };
@@ -1026,30 +884,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       return;
     }
     
-    // If relationships are being changed, show confirmation
-    if (selectedObjectRelationships.length > 0) {
-      setPendingSaveData(saveData);
-      setShowOverrideConfirmation(true);
-    } else {
-      // No relationships to change, save directly
-      console.log('🔵 BulkEditVariablesPanel - Calling onSave with:', saveData);
-      onSave(saveData);
-      onClose();
-    }
-  };
-
-  const handleConfirmOverride = () => {
-    setShowOverrideConfirmation(false);
-    if (pendingSaveData) {
-      onSave(pendingSaveData);
-      onClose();
-    }
-    setPendingSaveData(null);
-  };
-
-  const handleCancelOverride = () => {
-    setShowOverrideConfirmation(false);
-    setPendingSaveData(null);
+    console.log('🔵 BulkEditVariablesPanel - Calling onSave with:', saveData);
+    onSave(saveData);
+    onClose();
   };
 
   // Multi-select component
@@ -1924,44 +1761,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         title="Relevance" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
-        ontologyViewType="objectRelationships"
-        actions={
-          <div className="flex items-center gap-2">
-            {/* Clone Relationships Button */}
-            <button
-              onClick={() => setIsCloneVariableRelationshipsModalOpen(true)}
-              disabled={selectedCount === 0 || hasExistingRelationships}
-              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                selectedCount === 0 || hasExistingRelationships ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
-              }`}
-              title={
-                selectedCount === 0 
-                  ? "Select variables to clone relationships" 
-                  : hasExistingRelationships 
-                    ? `Please delete existing relationships for: ${variablesWithRelationships.join(', ')}` 
-                    : "Clone object relationships from another variable"
-              }
-            >
-              <Copy className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setIsVariableObjectRelationshipModalOpen(true)}
-              disabled={selectedCount === 0}
-              className={`px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors ${
-                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title={selectedCount === 0 ? "Select variables to view relationships" : "View and manage relationships"}
-            >
-              View Relationships
-            </button>
-          </div>
-        }
       >
         <div className="py-4">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Bulk relationship management:</span> Create relationships from all selected variables to target objects. 
-              Relationships will be appended to existing ones.
+              <span className="font-medium">Relevance is disabled in bulk edit:</span> reconciling per-variable relevance with bulk selections can produce ambiguous results. Configure relevance one variable at a time in Edit Metadata.
             </div>
           </div>
         </div>
@@ -2018,44 +1822,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </button>
       </div>
 
-      {/* Clone Variable Relationships Modal */}
-      <CloneVariableRelationshipsModal
-        isOpen={isCloneVariableRelationshipsModalOpen}
-        onClose={() => setIsCloneVariableRelationshipsModalOpen(false)}
-        targetVariables={selectedVariables}
-        allVariables={allData}
-        onCloneSuccess={async () => {
-          // Refresh data after cloning relationships
-          if (onSave) {
-            await onSave({ _refreshRelationships: true });
-          }
-          // Open the relationship modal to show the cloned relationships
-          setIsVariableObjectRelationshipModalOpen(true);
-        }}
-      />
-
-      {/* Variable-Object Relationship Modal */}
-      <VariableObjectRelationshipModal
-        isOpen={isVariableObjectRelationshipModalOpen}
-        onClose={() => {
-          setIsVariableObjectRelationshipModalOpen(false);
-          setPendingCsvData(null); // Clear pending CSV data when modal closes
-        }}
-        selectedVariable={null}
-        selectedVariables={selectedVariableIds && selectedVariableIds.length > 0 
-          ? allData.filter(v => selectedVariableIds.includes(v.id))
-          : allData.slice(0, selectedCount)}
-        allObjects={allObjects}
-        onSave={() => {
-          // Refresh data after saving relationships
-          if (onSave) {
-            onSave({});
-          }
-        }}
-        initialCsvData={pendingCsvData}
-        isBulkMode={true}
-      />
-
       {/* Variations Modal */}
       {selectedVariableIds && selectedVariableIds.length > 0 && (
         <VariationsModal
@@ -2093,36 +1859,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         mode="variable"
         isBulkMode={true}
       />
-
-      {/* Confirmation Dialog */}
-      {showOverrideConfirmation && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-          <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-ag-dark-text mb-4">
-              Override Existing Relationships?
-            </h3>
-            <p className="text-ag-dark-text-secondary mb-6">
-              This will delete all existing object relationships for the {selectedCount} selected variable{selectedCount !== 1 ? 's' : ''} and replace them with the new relationship{selectedObjectRelationships.length !== 1 ? 's' : ''} you've selected.
-              <br /><br />
-              This action cannot be undone. Are you sure?
-            </p>
-            <div className="flex items-center justify-end gap-3">
-              <button
-                onClick={handleCancelOverride}
-                className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmOverride}
-                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors"
-              >
-                Yes, Override
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Ontology Modal */}
       {/* Add Section Value Modal */}
