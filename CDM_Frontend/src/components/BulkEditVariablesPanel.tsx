@@ -832,7 +832,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       ...(formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part' && { part: formData.part }),
       ...(formData.section && formData.section.trim() !== '' && formData.section !== 'Keep Current Section' && { section: formData.section }),
       ...(formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group' && { group: formData.group }),
-      ...(formData.variable && formData.variable.trim() !== '' && formData.variable !== 'Keep current variable' && { variable: formData.variable }),
       // Only include driver if it has a value
       ...(driverString && driverString.trim() !== '' && { driver: driverString }),
       // Only include metadata fields that have values
@@ -1091,24 +1090,26 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </div>
       </div>
 
-      {/* Variable Name Field - Outside collapsible sections */}
-      <div className="mb-6">
-        <label className="block text-sm font-medium text-ag-dark-text mb-2">
+      {/* Variable label — not editable in bulk (prevents duplicate variable names) */}
+      <div className="mb-6 opacity-60">
+        <label className="block text-sm font-medium text-ag-dark-text-secondary mb-2">
           Variable
         </label>
         <input
           type="text"
-          value={formData.variable}
-          onChange={(e) => {
-            e.stopPropagation();
-            handleChange('variable', e.target.value);
-          }}
+          value=""
+          readOnly
+          disabled
+          title="Variable names cannot be changed in bulk edit."
+          placeholder="Names are unchanged in bulk edit"
           onKeyDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
-          placeholder="Keep current variable"
-          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+          className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-ag-dark-text-secondary cursor-not-allowed"
         />
+        <p className="mt-1.5 text-xs text-ag-dark-text-secondary">
+          Bulk edit does not rename variables, to avoid duplicate names across your selection.
+        </p>
       </div>
 
       {/* Drivers Section */}

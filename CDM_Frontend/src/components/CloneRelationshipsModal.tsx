@@ -186,6 +186,7 @@ export const CloneRelationshipsModal: React.FC<CloneRelationshipsModalProps> = (
               relationshipData={relationshipData}
               onRelationshipRowClick={handleRowClick}
               selectionMode="row"
+              persistState={false}
             />
           </div>
         </div>

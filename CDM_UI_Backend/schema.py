@@ -5,7 +5,7 @@ Creates nodes and relationships for Objects, Variables, Lists, and Drivers
 
 from db import get_driver
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 # ObjectRelationshipCreateRequest class definition
 class ObjectRelationshipCreateRequest(BaseModel):
@@ -417,6 +417,14 @@ class ObjectCreateRequest(BaseModel):
     status: Optional[str] = Field(default="Active", description="Object status")
     isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
     variableIds: Optional[List[str]] = Field(default=[], description="List of variable IDs to clone HAS_SPECIFIC_VARIABLE relationships")
+    identifier: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Unique/composite identifier payload (discreteId.entries + compositeIds) for create",
+    )
+    cloneSourceObjectName: Optional[str] = Field(
+        default=None,
+        description="When row-cloning an object, the source object's display name; used to omit copied default RELATES_TO rows from relationships[] before defaults are recreated for the new name.",
+    )
 
 class ObjectResponse(BaseModel):
     id: str

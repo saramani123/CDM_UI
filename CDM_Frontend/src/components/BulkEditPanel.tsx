@@ -1,4 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  ObjectIdentifiersBulkSection,
+  type ObjectIdentifiersBulkRef,
+  type IdentifierSavePayload,
+} from './ObjectIdentifiersBulkSection';
 import { Settings, Save, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Network, FileText, List, Eye, Copy, Grid3x3 } from 'lucide-react';
 import { concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -19,13 +24,6 @@ import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
-
-interface CompositeKey {
-  id: string;
-  part: string;
-  group: string;
-  variables: string[];
-}
 
 interface Variant {
   id: string;
@@ -107,6 +105,12 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Use only API drivers data
   const { drivers: apiDrivers } = useDrivers();
   const { variables: variablesData } = useVariables();
+  const identifiersBulkRef = useRef<ObjectIdentifiersBulkRef>(null);
+  /** Latest identifier builder from child (avoids ref timing where imperative handle lags one frame behind state). */
+  const identifierPrepareFnRef = useRef<(() => IdentifierSavePayload) | null>(null);
+  const registerIdentifierPrepare = useCallback((fn: (() => IdentifierSavePayload) | null) => {
+    identifierPrepareFnRef.current = fn;
+  }, []);
   const driversData = apiDrivers || {
     sectors: [],
     domains: [],
@@ -114,20 +118,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     objectClarifiers: [],
     variableClarifiers: []
   };
-
-  // Identifier data - changed to support multiple unique IDs
-  interface UniqueIdEntry {
-    id: string;
-    variableId: string;
-  }
-  const [uniqueIdEntries, setUniqueIdEntries] = useState<UniqueIdEntry[]>([{ id: 'unique-1', variableId: '' }]);
-  const [compositeKeys, setCompositeKeys] = useState<CompositeKey[]>([
-    { id: '1', part: '', group: '', variables: [] },
-    { id: '2', part: '', group: '', variables: [] },
-    { id: '3', part: '', group: '', variables: [] },
-    { id: '4', part: '', group: '', variables: [] },
-    { id: '5', part: '', group: '', variables: [] }
-  ]);
 
   // Relationships and variants - using string for multiline input
   const [relationships, setRelationships] = useState<Relationship[]>([]);
@@ -331,9 +321,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   // Note: hasExistingRelationships check removed - clone now works for all objects
   // (preserves default relationships and only replaces non-default ones)
   
-  // Check if any selected objects have identifiers
+  // Check if any selected objects have identifiers (GET /objects/:id → discreteIds / compositeIds)
   const [hasExistingIdentifiers, setHasExistingIdentifiers] = useState(false);
   const [objectsWithIdentifiers, setObjectsWithIdentifiers] = useState<string[]>([]);
+  /** False until per-object identifier probe finishes (avoid showing editable IDs before we know). */
+  const [identifiersSelectionReady, setIdentifiersSelectionReady] = useState(false);
   
   // Lists relationships state
   const [selectedVariables, setSelectedVariables] = useState<any[]>([]);
@@ -369,7 +361,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     drivers: false,
     ontology: false,
-    identifiers: false,
+    identifiers: true,
     relationships: false,
     variants: false,
     metadata: false,
@@ -549,51 +541,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     return ['ALL', ...objects];
   };
 
-  // Helper functions to get filtered data from variables
-  const getAllParts = () => {
-    const parts = [...new Set(variablesData.map(v => v.part))].filter(Boolean).sort();
-    return parts;
-  };
-
-  const getGroupsForPart = (part: string) => {
-    if (!part) return [];
-    const groups = [...new Set(
-      variablesData.filter(v => v.part === part).map(v => v.group)
-    )].filter(Boolean).sort();
-    return groups;
-  };
-
-  const getVariablesForPartAndGroup = (part: string, group: string) => {
-    if (!part || !group) return [];
-    return variablesData
-      .filter(v => v.part === part && v.group === group)
-      .map(v => ({ id: v.id, name: v.variable }));
-  };
-
-  const getUniqueIdVariables = () => {
-    return variablesData
-      .filter(v => v.part === 'Identifier' && v.group === 'Public ID')
-      .map(v => ({ id: v.id, name: v.variable }));
-  };
-  
-  // Add a new unique ID entry
-  const handleAddUniqueIdEntry = () => {
-    const newId = `unique-${Date.now()}`;
-    setUniqueIdEntries(prev => [...prev, { id: newId, variableId: '' }]);
-  };
-  
-  // Remove a unique ID entry
-  const handleRemoveUniqueIdEntry = (entryId: string) => {
-    setUniqueIdEntries(prev => prev.filter(entry => entry.id !== entryId));
-  };
-  
-  // Update variable selection for a specific unique ID entry
-  const handleUniqueIdVariableChange = (entryId: string, variableId: string) => {
-    setUniqueIdEntries(prev => prev.map(entry => 
-      entry.id === entryId ? { ...entry, variableId } : entry
-    ));
-  };
-  
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -726,34 +673,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     }
   };
 
-
-  const handleCompositeKeyChange = (id: string, field: 'part' | 'group', value: string) => {
-    setCompositeKeys(prev => prev.map(key => {
-      if (key.id === id) {
-        const updated = { ...key, [field]: value };
-        if (field === 'part') {
-          updated.group = '';
-          updated.variables = [];
-        } else if (field === 'group') {
-          updated.variables = [];
-        }
-        return updated;
-      }
-      return key;
-    }));
-  };
-
-  const handleCompositeKeyVariablesChange = (id: string, variables: string[]) => {
-    setCompositeKeys(prev => prev.map(key => 
-      key.id === id ? { ...key, variables } : key
-    ));
-  };
-
-  const handleDeleteCompositeKey = (id: string) => {
-    setCompositeKeys(prev => prev.map(key => 
-      key.id === id ? { id: key.id, part: '', group: '', variables: [] } : key
-    ));
-  };
 
   const handleRelationshipChange = (id: string, field: keyof Relationship, value: string) => {
     setRelationships(prev => prev.map(rel => {
@@ -897,10 +816,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       // Handle Lists bulk edit
       const saveData: Record<string, any> = {};
       
-      // Add list name if changed
-      if (listFormData.list.trim() !== '') {
-        saveData.list = listFormData.list;
-      }
+      // List names cannot be bulk-edited (avoids duplicate-name collisions)
       
       // Add driver selections if any are selected
       // Convert "ALL" to all individual values before saving (filter out "ALL" itself)
@@ -1058,54 +974,29 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       return;
     }
 
-    // Validate unique IDs - check for duplicates
-    const uniqueIdVariableIds = uniqueIdEntries
-      .map(entry => entry.variableId)
-      .filter(Boolean);
-    const duplicateVariableIds = uniqueIdVariableIds.filter((id, index) => 
-      uniqueIdVariableIds.indexOf(id) !== index
-    );
-    
-    if (duplicateVariableIds.length > 0) {
-      const duplicateNames = duplicateVariableIds.map(id => {
-        const varData = getUniqueIdVariables().find(v => v.id === id);
-        return varData?.name || id;
-      });
-      alert(`Cannot save: You have added duplicate unique IDs. Duplicate variables: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+    let idResult: IdentifierSavePayload = {};
+    if (identifiersSelectionReady && !hasExistingIdentifiers) {
+      if (identifierPrepareFnRef.current) {
+        idResult = identifierPrepareFnRef.current();
+      } else if (identifiersBulkRef.current) {
+        idResult = identifiersBulkRef.current.prepareIdentifierForSave();
+      }
+    }
+    if (idResult?.error) {
+      alert(idResult.error);
       return;
     }
-    
-    // Extract unique ID variable IDs list
-    const uniqueIdVariableIdsList = uniqueIdEntries
-      .map(entry => entry.variableId)
-      .filter(Boolean);
-    
-    const hasIdentifiers = uniqueIdVariableIdsList.length > 0 || compositeKeys.some(key => key.part && key.group);
-    const identifierData = hasIdentifiers ? {
-      discreteId: {
-        variables: uniqueIdVariableIdsList
-      },
-      compositeIds: compositeKeys.reduce((acc, key) => {
-        if (key.part && key.group) {
-          acc[key.id] = {
-            part: key.part,
-            group: key.group,
-            variables: key.variables
-          };
-        }
-        return acc;
-      }, {} as Record<string, { part: string; group: string; variables: string[] }>)
-    } : undefined;
 
-    const saveData = {
+    const saveData: Record<string, any> = {
       ...(formData.being && formData.being.trim() !== '' && { being: formData.being }),
       ...(formData.avatar && formData.avatar.trim() !== '' && { avatar: formData.avatar }),
-      ...(formData.objectName && formData.objectName.trim() !== '' && { objectName: formData.objectName }),
       ...(driverString && { driver: driverString }),
-      ...(identifierData && { identifier: identifierData }),
-      relationshipsList: uniqueRelationships,
-      variantsList: variantsList
+      ...(uniqueRelationships.length > 0 && { relationshipsList: uniqueRelationships }),
+      ...(variantsList.length > 0 && { variantsList: variantsList }),
     };
+    if (idResult?.identifier) {
+      saveData.identifier = idResult.identifier;
+    }
     
     console.log('🔄 BulkEditPanel - saveData:', saveData);
     console.log('🔄 BulkEditPanel - variants array:', variantsList);
@@ -1121,36 +1012,46 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
 
     // Check if any selected objects have existing identifiers
     useEffect(() => {
+      let cancelled = false;
+
       const checkIdentifiers = async () => {
         if (activeTab !== 'objects' || selectedObjects.length === 0) {
           setHasExistingIdentifiers(false);
           setObjectsWithIdentifiers([]);
+          setIdentifiersSelectionReady(true);
           return;
         }
 
+        setIdentifiersSelectionReady(false);
         const objectsWithIds: string[] = [];
         for (const obj of selectedObjects) {
-          // Check if object has identifiers by loading its data
+          if (cancelled) return;
           try {
-            const objectData = await apiService.getObject(obj.id) as any;
+            const objectData = (await apiService.getObject(obj.id)) as any;
             const hasUniqueIds = (objectData?.discreteIds || []).length > 0;
-            const hasCompositeIds = Object.values(objectData?.compositeIds || {}).some((compIds: any) => 
-              Array.isArray(compIds) && compIds.length > 0
+            const hasCompositeIds = Object.values(objectData?.compositeIds || {}).some(
+              (compIds: any) => Array.isArray(compIds) && compIds.length > 0
             );
-            
+
             if (hasUniqueIds || hasCompositeIds) {
-              objectsWithIds.push(obj.object || obj.id);
+              objectsWithIds.push(obj.object || obj.name || obj.id);
             }
           } catch (error) {
             console.error(`Error checking identifiers for object ${obj.id}:`, error);
           }
         }
 
-        setHasExistingIdentifiers(objectsWithIds.length > 0);
-        setObjectsWithIdentifiers(objectsWithIds);
+        if (!cancelled) {
+          setHasExistingIdentifiers(objectsWithIds.length > 0);
+          setObjectsWithIdentifiers(objectsWithIds);
+          setIdentifiersSelectionReady(true);
+        }
       };
 
-      checkIdentifiers();
+      void checkIdentifiers();
+      return () => {
+        cancelled = true;
+      };
     }, [selectedObjects, activeTab]);
 
   // Multi-select component
@@ -1289,13 +1190,28 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     ontologyViewType?: 'drivers' | 'ontology' | 'identifiers' | 'relationships' | 'variants' | 'metadata';
     listsOntologyViewType?: 'drivers' | 'ontology' | 'metadata' | 'variations';
     showRelationshipsGraph?: boolean;
-  }> = ({ title, sectionKey, icon, actions, children, ontologyViewType, listsOntologyViewType, showRelationshipsGraph }) => {
+    /** Applied to the outer section wrapper (e.g. muted bulk-edit state) */
+    wrapperClassName?: string;
+    /** When true, children stay mounted while collapsed (hidden) so refs/state used on save still work */
+    keepMountedWhenCollapsed?: boolean;
+  }> = ({
+    title,
+    sectionKey,
+    icon,
+    actions,
+    children,
+    ontologyViewType,
+    listsOntologyViewType,
+    showRelationshipsGraph,
+    wrapperClassName,
+    keepMountedWhenCollapsed = false,
+  }) => {
     const isExpanded = expandedSections[sectionKey];
     const hasSelectedObjects = selectedObjects && selectedObjects.length > 0;
     const isListsMode = activeTab === 'lists';
     
     return (
-      <div className="border-t border-ag-dark-border pt-8">
+      <div className={`border-t border-ag-dark-border pt-8 ${wrapperClassName ?? ''}`}>
         <div 
           className="flex items-center justify-between cursor-pointer hover:bg-ag-dark-bg rounded p-3 -m-3 transition-colors mb-4"
           onClick={() => toggleSection(sectionKey)}
@@ -1371,10 +1287,16 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           </div>
         </div>
         
-        {isExpanded && (
-          <div className="mt-6 ml-6 pb-6">
+        {keepMountedWhenCollapsed ? (
+          <div className={`mt-6 ml-6 pb-6 ${isExpanded ? '' : 'hidden'}`} aria-hidden={!isExpanded}>
             {children}
           </div>
+        ) : (
+          isExpanded && (
+            <div className="mt-6 ml-6 pb-6">
+              {children}
+            </div>
+          )
         )}
       </div>
     );
@@ -1401,19 +1323,24 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       {/* Conditional rendering based on activeTab */}
       {activeTab === 'lists' ? (
         <>
-          {/* List Name Field */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          {/* List Name — not editable in bulk (prevents duplicate list names) */}
+          <div className="mb-6 opacity-60">
+            <label className="block text-sm font-medium text-ag-dark-text-secondary mb-2">
               List Name
             </label>
             <input
               type="text"
-              value={listFormData.list}
-              onChange={(e) => handleChange('list', e.target.value)}
-              placeholder="Keep current list names"
+              value=""
+              readOnly
+              disabled
+              title="List names cannot be changed in bulk edit."
+              placeholder="Names are unchanged in bulk edit"
               onClick={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+              className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-ag-dark-text-secondary cursor-not-allowed"
             />
+            <p className="mt-1.5 text-xs text-ag-dark-text-secondary">
+              Bulk edit does not rename lists, to avoid duplicate names across your selection.
+            </p>
           </div>
 
           {/* Drivers Section - Lists */}
@@ -2110,19 +2037,24 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         </>
       ) : (
         <>
-          {/* Object Name Field - Moved out of collapsible section */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+          {/* Object Name — not editable in bulk (prevents duplicate object names) */}
+          <div className="mb-6 opacity-60">
+            <label className="block text-sm font-medium text-ag-dark-text-secondary mb-2">
               Object Name
             </label>
             <input
               type="text"
-              value={formData.objectName}
-              onChange={(e) => handleChange('objectName', e.target.value)}
-              placeholder="Keep current object names"
+              value=""
+              readOnly
+              disabled
+              title="Object names cannot be changed in bulk edit."
+              placeholder="Names are unchanged in bulk edit"
               onClick={(e) => e.stopPropagation()}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+              className="w-full px-3 py-2 bg-ag-dark-surface border border-ag-dark-border rounded text-ag-dark-text-secondary cursor-not-allowed"
             />
+            <p className="mt-1.5 text-xs text-ag-dark-text-secondary">
+              Bulk edit does not rename objects, to avoid duplicate names across your selection.
+            </p>
           </div>
 
       {/* Drivers Section */}
@@ -2254,21 +2186,33 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         sectionKey="identifiers" 
         icon={<Key className="w-4 h-4 text-ag-dark-text-secondary" />} 
         ontologyViewType="identifiers"
+        keepMountedWhenCollapsed
+        wrapperClassName={
+          hasExistingIdentifiers || !identifiersSelectionReady ? 'opacity-55' : undefined
+        }
         actions={
           <div className="flex items-center gap-2">
             {/* Clone Identifiers Button */}
             <button
               onClick={() => setIsCloneIdentifiersModalOpen(true)}
-              disabled={selectedObjects.length === 0 || hasExistingIdentifiers}
+              disabled={
+                selectedObjects.length === 0 ||
+                hasExistingIdentifiers ||
+                !identifiersSelectionReady
+              }
               className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                selectedObjects.length === 0 || hasExistingIdentifiers ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                selectedObjects.length === 0 || hasExistingIdentifiers || !identifiersSelectionReady
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:bg-ag-dark-bg'
               }`}
               title={
-                selectedObjects.length === 0 
-                  ? "Select objects to clone identifiers" 
-                  : hasExistingIdentifiers 
-                    ? `Please delete existing identifiers for: ${objectsWithIdentifiers.join(', ')}` 
-                    : "Clone identifiers from another object"
+                selectedObjects.length === 0
+                  ? 'Select objects to clone identifiers'
+                  : !identifiersSelectionReady
+                    ? 'Checking existing identifiers…'
+                    : hasExistingIdentifiers
+                      ? `Please delete existing identifiers for: ${objectsWithIdentifiers.join(', ')}`
+                      : 'Clone identifiers from another object'
               }
             >
               <Copy className="w-5 h-5" />
@@ -2277,167 +2221,26 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         }
       >
         <div className="space-y-6">
-          {/* Unique ID - Multiple entries support */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="text-sm font-medium text-ag-dark-text">Unique ID</h5>
-              <button
-                onClick={handleAddUniqueIdEntry}
-                className="flex items-center justify-center text-ag-dark-accent hover:text-ag-dark-accent-hover transition-colors"
-                title="Add Unique ID"
-              >
-                <Plus className="w-5 h-5" />
-              </button>
+          {!identifiersSelectionReady ? (
+            <div className="rounded-lg border border-ag-dark-border bg-ag-dark-bg/80 p-4 text-sm text-ag-dark-text-secondary">
+              Checking which objects already have identifiers…
             </div>
-            <div className="border border-ag-dark-border rounded">
-              {/* Table Header */}
-              <div className="grid grid-cols-[0.7fr_0.7fr_1.6fr] gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
-              </div>
-              {/* Table Rows - Multiple entries */}
-              <div className="divide-y divide-ag-dark-border">
-                {uniqueIdEntries.map((entry, index) => (
-                  <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[0.7fr_0.7fr_1.6fr_auto]' : 'grid-cols-[0.7fr_0.7fr_1.6fr]'}`}>
-                    <input
-                      type="text"
-                      value="Identifier"
-                      disabled
-                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                    />
-                    <input
-                      type="text"
-                      value="Public ID"
-                      disabled
-                      className="w-full px-2 py-1.5 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text-secondary opacity-50 cursor-not-allowed"
-                    />
-                    <select
-                      value={entry.variableId}
-                      onChange={(e) => handleUniqueIdVariableChange(entry.id, e.target.value)}
-                      className="w-full pl-2 pr-8 py-1.5 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                      style={{
-                        backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                        backgroundPosition: 'right 8px center',
-                        backgroundRepeat: 'no-repeat',
-                        backgroundSize: '16px'
-                      }}
-                    >
-                      <option value="">Select Variable</option>
-                      {getUniqueIdVariables().map(v => (
-                        <option key={v.id} value={v.id}>{v.name}</option>
-                      ))}
-                    </select>
-                    {index > 0 && (
-                      <button
-                        onClick={() => handleRemoveUniqueIdEntry(entry.id)}
-                        className="flex items-center justify-center w-6 h-6 rounded text-ag-dark-error hover:bg-red-900/20 transition-colors"
-                        title="Remove Unique ID"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
+          ) : hasExistingIdentifiers ? (
+            <div className="rounded-lg border border-ag-dark-border bg-ag-dark-bg/80 p-4 text-sm text-ag-dark-text-secondary">
+              <p className="mb-0 text-ag-dark-text">
+                {
+                  "Identifiers can only be configured in bulk edit if all select Objects don't already have Identifiers configured. If 1 or more Object has Identifiers configured then bulk editing Identifiers may lead to duplicates."
+                }
+              </p>
             </div>
-          </div>
-
-          {/* Composite IDs - Matrix Layout */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h5 className="text-sm font-medium text-ag-dark-text">Composite IDs</h5>
-            </div>
-            <div className="border border-ag-dark-border rounded">
-              {/* Table Header */}
-              <div className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
-                <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
-                <div className="text-xs font-medium text-ag-dark-text-secondary">Variable</div>
-              </div>
-              {/* Table Rows */}
-              <div className="divide-y divide-ag-dark-border">
-                {compositeKeys.map((compositeKey) => {
-                  const variableOptions = compositeKey.part && compositeKey.group
-                    ? getVariablesForPartAndGroup(compositeKey.part, compositeKey.group)
-                    : [];
-                  
-                  return (
-                    <div key={compositeKey.id} className="grid grid-cols-[25px_0.7fr_0.7fr_1.6fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
-                      {/* Row Label */}
-                      <div className="flex items-center">
-                        <span className="text-[10px] font-medium text-ag-dark-text">{compositeKey.id}</span>
-                      </div>
-                      
-                      {/* Part Dropdown */}
-                      <select
-                        value={compositeKey.part}
-                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'part', e.target.value)}
-                        className="w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select Part</option>
-                        {getAllParts().map((part) => (
-                          <option key={part} value={part}>
-                            {part}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Group Dropdown */}
-                      <select
-                        value={compositeKey.group}
-                        onChange={(e) => handleCompositeKeyChange(compositeKey.id, 'group', e.target.value)}
-                        disabled={!compositeKey.part}
-                        className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                          !compositeKey.part ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                        style={{
-                          backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
-                          backgroundPosition: 'right 8px center',
-                          backgroundRepeat: 'no-repeat',
-                          backgroundSize: '12px'
-                        }}
-                      >
-                        <option value="">Select Group</option>
-                        {getGroupsForPart(compositeKey.part).map((group) => (
-                          <option key={group} value={group}>
-                            {group}
-                          </option>
-                        ))}
-                      </select>
-
-                      {/* Variable Multi-select */}
-                      <MultiSelect
-                        label="Variable"
-                        options={['ALL', ...variableOptions.map(v => v.name)]}
-                        values={compositeKey.variables.map(id => {
-                          const varData = variableOptions.find(v => v.id === id);
-                          return varData?.name || id;
-                        })}
-                        onChange={(values) => {
-                          const ids = values.map(val => {
-                            if (val === 'ALL') return 'ALL';
-                            const varData = variableOptions.find(v => v.name === val);
-                            return varData?.id || val;
-                          });
-                          handleCompositeKeyVariablesChange(compositeKey.id, ids);
-                        }}
-                        disabled={!compositeKey.part || !compositeKey.group}
-                        compact={true}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          ) : (
+            <ObjectIdentifiersBulkSection
+              key={selectedObjects.map((o: any) => o.id).join('-')}
+              ref={identifiersBulkRef}
+              readOnly={false}
+              onRegisterPrepareIdentifier={registerIdentifierPrepare}
+            />
+          )}
         </div>
       </CollapsibleSection>
 

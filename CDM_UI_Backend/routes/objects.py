@@ -584,11 +584,13 @@ async def get_object(object_id: str):
             obj["variantsList"] = variants
 
             # Get unique ID relationships (HAS_DISCRETE_ID)
-            # Support both HAS_UNIQUE_ID and HAS_DISCRETE_ID for backward compatibility
+            # Support both HAS_UNIQUE_ID and HAS_DISCRETE_ID for backward compatibility.
+            # Taxonomy path is OPTIONAL so we still return a row when the variable exists but is
+            # not linked to Part/Section/Group (bulk-edit and UI checks rely on non-empty discreteIds).
             discrete_id_result = session.run("""
                 MATCH (o:Object {id: $object_id})-[:HAS_DISCRETE_ID|HAS_UNIQUE_ID]->(v:Variable)
-                MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
+                OPTIONAL MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                RETURN v.id as variableId, v.name as variableName, p.name as part, s.name as section, g.name as group
             """, object_id=object_id)
             
             discrete_ids = []
@@ -597,6 +599,7 @@ async def get_object(object_id: str):
                     "variableId": record["variableId"],
                     "variableName": record["variableName"],
                     "part": record["part"],
+                    "section": record["section"],
                     "group": record["group"]
                 })
             obj["discreteIds"] = discrete_ids
@@ -606,8 +609,8 @@ async def get_object(object_id: str):
             for i in range(1, 6):
                 composite_result = session.run(f"""
                     MATCH (o:Object {{id: $object_id}})-[:HAS_COMPOSITE_ID_{i}]->(v:Variable)
-                    MATCH (p:Part)-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                    RETURN v.id as variableId, v.name as variableName, p.name as part, g.name as group
+                    OPTIONAL MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                    RETURN v.id as variableId, v.name as variableName, p.name as part, s.name as section, g.name as group
                 """, object_id=object_id)
                 
                 for record in composite_result:
@@ -615,6 +618,7 @@ async def get_object(object_id: str):
                         "variableId": record["variableId"],
                         "variableName": record["variableName"],
                         "part": record["part"],
+                        "section": record["section"],
                         "group": record["group"]
                     })
             obj["compositeIds"] = composite_ids
@@ -853,10 +857,32 @@ async def create_object(object_data: ObjectCreateRequest):
                         CREATE (o)-[:HAS_VARIANT]->(v)
                     """, variant_id=variant_id, name=variant_name, object_id=new_id)
             
-            # Create relationships if provided
-            relationships = getattr(object_data, 'relationships', [])
+            # Create relationships if provided (exclude default-shaped edges — those are created below)
+            relationships = getattr(object_data, 'relationships', []) or []
+            clone_source_name = getattr(object_data, 'cloneSourceObjectName', None)
+            if clone_source_name:
+                clone_source_name = str(clone_source_name).strip() or None
+            new_object_name = (object_data.object or "").strip()
             if relationships:
                 for rel in relationships:
+                    if not isinstance(rel, dict):
+                        continue
+                    # Skip defaults for the new name (create_default_relationships_for_object adds them)
+                    if _is_default_object_relationship(
+                        new_object_name,
+                        rel.get("role"),
+                        rel.get("frequency"),
+                        rel.get("type"),
+                    ):
+                        continue
+                    # Skip defaults copied from the clone source (role still = old object name)
+                    if clone_source_name and _is_default_object_relationship(
+                        clone_source_name,
+                        rel.get("role"),
+                        rel.get("frequency"),
+                        rel.get("type"),
+                    ):
+                        continue
                     # Find ALL target objects that match the criteria
                     to_being = rel.get("toBeing", "ALL")
                     to_avatar = rel.get("toAvatar", "ALL")

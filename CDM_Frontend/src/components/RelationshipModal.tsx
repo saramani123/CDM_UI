@@ -60,6 +60,27 @@ interface RelationshipGridRow {
   _loadedRelIds?: string[];
 }
 
+/** Role on default RELATES_TO edges in API/clone payload (unsaved clone rows still use the source name). */
+function getDefaultRoleWordForLoadedRelationships(sourceObj: Record<string, any> | undefined): string {
+  if (!sourceObj) return '';
+  if (sourceObj._isCloned && !sourceObj._isSaved) {
+    const s = String(sourceObj._sourceObjectName || '').trim();
+    if (s) return s;
+  }
+  return String(sourceObj.object || '').trim();
+}
+
+/** Object label for UI when a clone row has an empty name until the user fills it in */
+function getSourceObjectDisplayName(sourceObj: Record<string, any> | undefined): string {
+  if (!sourceObj) return '';
+  const named = String(sourceObj.object || '').trim();
+  if (named) return named;
+  if (sourceObj._isCloned && !sourceObj._isSaved) {
+    return String(sourceObj._sourceObjectName || '').trim();
+  }
+  return '';
+}
+
 export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   isOpen,
   onClose,
@@ -234,7 +255,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       
       // NEW BEHAVIOR: Load only ADDITIONAL relationships (non-default ones)
       // Default relationships have: role = source object name, type = Inter-Table (others) or Intra-Table (self), frequency = Possible
-      const sourceObjectName = sourceObjects[0]?.object || '';
+      const sourceObjectName = getDefaultRoleWordForLoadedRelationships(sourceObjects[0] as Record<string, any>);
       const additionalRelationships: RelationshipGridRow[] = [];
       
       // Group relationships by target object (S, D, C, Being, Avatar, Object combination)
@@ -532,7 +553,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
       
       // Preset: If same object as source → Intra-Table (auto, not editable)
       if (field === 'object' && value) {
-        const sourceObjectName = sourceObjects[0]?.object || '';
+        const sourceObjectName = getSourceObjectDisplayName(sourceObjects[0] as Record<string, any>);
         if (value === sourceObjectName) {
           updatedRow.relationshipType = 'Intra-Table';
         }
@@ -668,7 +689,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
     // Update relationship data for all selected objects
     setRelationshipData(prev => {
       const updated = { ...prev };
-      const sourceObjectName = sourceObjects[0]?.object || '';
+      const sourceObjectName = getSourceObjectDisplayName(sourceObjects[0] as Record<string, any>);
       
       for (const objectId of selectedRowIds) {
         const isSourceObject = sourceObjects.some(so => so.id === objectId);
@@ -1190,7 +1211,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                         </tr>
                       ) : (
                         relationshipRows.map((row) => {
-                          const sourceObjectName = sourceObjects[0]?.object || '';
+                          const sourceObjectName = getSourceObjectDisplayName(sourceObjects[0] as Record<string, any>);
                           const isSelf = row.object === sourceObjectName;
                           const isBlood = row.relationshipType === 'Blood';
                           

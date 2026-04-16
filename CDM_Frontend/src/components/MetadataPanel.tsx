@@ -53,6 +53,8 @@ interface MetadataPanelProps {
   deletedDriverType?: string | null;
   onEnterRelationshipView?: () => void;
   onObjectsRefresh?: () => void | Promise<void>; // Callback to refresh objects data
+  /** Bumps when objects are refreshed from the API so identifier UI reloads for the same selected id */
+  objectsRemoteEpoch?: number;
 }
 
 export const MetadataPanel: React.FC<MetadataPanelProps> = ({
@@ -65,7 +67,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   affectedObjectIds = new Set(),
   deletedDriverType = null,
   onEnterRelationshipView,
-  onObjectsRefresh
+  onObjectsRefresh,
+  objectsRemoteEpoch = 0
 }) => {
   const [formData, setFormData] = useState<Record<string, any>>(() => {
     // Initialize form data from selected object if available
@@ -521,7 +524,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Load identifier relationships when selectedObject changes
   React.useEffect(() => {
     const identifierSignature = selectedObject?.id
-      ? `${selectedObject.id}|${selectedObject._isCloned ? '1' : '0'}|${selectedObject._isSaved ? '1' : '0'}`
+      ? `${selectedObject.id}|${selectedObject._isCloned ? '1' : '0'}|${selectedObject._isSaved ? '1' : '0'}|${objectsRemoteEpoch}`
       : '';
 
     // Avoid reloading identifier form state repeatedly for the same selected object.
@@ -532,10 +535,27 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
     if (selectedObject?.id) {
       // If this is a cloned unsaved object, use the identifier data from the cloned object
-      if (selectedObject._isCloned && !selectedObject._isSaved && selectedObject.identifier) {
-        console.log('MetadataPanel: Using identifier data from cloned object:', selectedObject.identifier);
+      if (selectedObject._isCloned && !selectedObject._isSaved) {
+        const hasTopLevelDiscrete =
+          Array.isArray(selectedObject.discreteIds) && selectedObject.discreteIds.length > 0;
+        const topComp = selectedObject.compositeIds;
+        const hasTopLevelComposite =
+          topComp &&
+          typeof topComp === 'object' &&
+          Object.values(topComp).some((v: unknown) => Array.isArray(v) && (v as unknown[]).length > 0);
+        const identifierData =
+          selectedObject.identifier ||
+          (hasTopLevelDiscrete || hasTopLevelComposite
+            ? {
+                discreteIds: selectedObject.discreteIds || [],
+                compositeIds: (topComp && typeof topComp === 'object' ? topComp : {}) as Record<string, unknown[]>
+              }
+            : null);
+        if (!identifierData) {
+          // No local identifier payload; fall through to API load (will fail for temp clone id — keep empty)
+        } else {
+        console.log('MetadataPanel: Using identifier data from cloned object:', identifierData);
         try {
-          const identifierData = selectedObject.identifier;
           
           // Load unique IDs (previously discrete IDs)
           const discreteIds = identifierData?.discreteIds || [];
@@ -671,7 +691,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             ]
           }]);
         }
-        return;
+          return;
+        }
       }
       
       const loadIdentifiers = async () => {
@@ -836,7 +857,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         ]
       }]);
     }
-  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved]);
+  }, [selectedObject?.id, selectedObject?._isCloned, selectedObject?._isSaved, objectsRemoteEpoch]);
 
   const getDistinctObjectsForBeingAndAvatar = (being: string, avatar: string) => {
     if (being === 'ALL' || avatar === 'ALL') return ['ALL'];
@@ -1327,7 +1348,11 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Helper to convert variable IDs to names for display
   const getVariableNameFromId = (id: string) => {
     const variable = variablesData.find(v => v.id === id);
-    return variable?.variable || id;
+    if (variable?.variable) return variable.variable;
+    const cachedVariable = Object.values(variablesCache)
+      .flat()
+      .find(v => v.id === id);
+    return cachedVariable?.name || id;
   };
 
   // Check if panel should be enabled (exactly 1 object selected)
@@ -2857,68 +2882,102 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             if (selectedObject?.id) {
               try {
                 const objectData = await apiService.getObject(selectedObject.id) as any;
-                
-                // Load unique IDs
+                // Load unique IDs (same parsing logic as regular identifier loader)
                 const discreteIds = objectData?.discreteIds || [];
-                const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => ({
-                  id: `unique-${index + 1}`,
-                  variableId: di.variableId || ''
-                }));
+                const uniqueIdEntriesList = discreteIds.map((di: any, index: number) => {
+                  let section = di.section || '';
+                  if (!section && di.variableId && variablesData) {
+                    const variable = variablesData.find(v => v.id === di.variableId);
+                    section = variable?.section || '';
+                  }
+                  return {
+                    id: `unique-${index + 1}`,
+                    part: di.part || '',
+                    section: section,
+                    group: di.group || '',
+                    variableId: di.variableId || ''
+                  };
+                });
                 if (uniqueIdEntriesList.length === 0) {
-                  setUniqueIdEntries([{ id: 'unique-1', variableId: '' }]);
+                  setUniqueIdEntries([{ id: 'unique-1', part: '', section: '', group: '', variableId: '' }]);
                 } else {
                   setUniqueIdEntries(uniqueIdEntriesList);
                 }
-                
-                // Load composite IDs - convert to block structure
+
+                // Load composite IDs - group and collapse to ANY where appropriate (same as regular loader)
                 const compositeIds = objectData?.compositeIds || {};
                 const blocks: CompositeIdBlock[] = [];
-                
-                // Sort keys numerically to maintain order
                 const sortedKeys = Object.keys(compositeIds).sort((a, b) => parseInt(a) - parseInt(b));
-                
+
                 sortedKeys.forEach((key, index) => {
                   const compositeIdData = compositeIds[key];
                   if (compositeIdData && Array.isArray(compositeIdData) && compositeIdData.length > 0) {
                     const blockNumber = index + 1;
-                    const rows: CompositeIdRow[] = compositeIdData.map((ci: any, rowIndex: number) => ({
-                      id: `block${blockNumber}-row${rowIndex + 1}`,
-                      part: ci.part || '',
-                      group: ci.group || '',
-                      variableId: ci.variableId || ''
-                    }));
-                    
-                    // Ensure we have exactly 5 rows
+                    const groupedEntries = new Map<string, any[]>();
+                    compositeIdData.forEach((ci: any) => {
+                      let section = ci.section || '';
+                      if (!section && ci.variableId && variablesData) {
+                        const variable = variablesData.find(v => v.id === ci.variableId);
+                        section = variable?.section || '';
+                      }
+                      const part = ci.part || '';
+                      const group = ci.group || '';
+                      const groupKey = `${part}|${section}|${group}`;
+                      if (!groupedEntries.has(groupKey)) {
+                        groupedEntries.set(groupKey, []);
+                      }
+                      groupedEntries.get(groupKey)!.push({
+                        ...ci,
+                        section: section
+                      });
+                    });
+
+                    const rows: CompositeIdRow[] = [];
+                    groupedEntries.forEach((entries) => {
+                      const firstEntry = entries[0];
+                      const part = firstEntry.part || '';
+                      const section = firstEntry.section || '';
+                      const group = firstEntry.group || '';
+                      const variableId = entries.length > 1 ? 'ANY' : (firstEntry.variableId || '');
+                      rows.push({
+                        id: `block${blockNumber}-row${rows.length + 1}`,
+                        part: part,
+                        section: section,
+                        group: group,
+                        variableId: variableId
+                      });
+                    });
+
                     while (rows.length < 5) {
                       rows.push({
                         id: `block${blockNumber}-row${rows.length + 1}`,
                         part: '',
+                        section: '',
                         group: '',
                         variableId: ''
                       });
                     }
-                    
+
                     blocks.push({
                       blockNumber,
                       rows: rows.slice(0, 5)
                     });
                   }
                 });
-                
-                // If no blocks loaded, create one default block
+
                 if (blocks.length === 0) {
                   blocks.push({
                     blockNumber: 1,
                     rows: [
-                      { id: 'block1-row1', part: '', group: '', variableId: '' },
-                      { id: 'block1-row2', part: '', group: '', variableId: '' },
-                      { id: 'block1-row3', part: '', group: '', variableId: '' },
-                      { id: 'block1-row4', part: '', group: '', variableId: '' },
-                      { id: 'block1-row5', part: '', group: '', variableId: '' }
+                      { id: 'block1-row1', part: '', section: '', group: '', variableId: '' },
+                      { id: 'block1-row2', part: '', section: '', group: '', variableId: '' },
+                      { id: 'block1-row3', part: '', section: '', group: '', variableId: '' },
+                      { id: 'block1-row4', part: '', section: '', group: '', variableId: '' },
+                      { id: 'block1-row5', part: '', section: '', group: '', variableId: '' }
                     ]
                   });
                 }
-                
+
                 setCompositeIdBlocks(blocks);
                 
                 // Refresh objects data

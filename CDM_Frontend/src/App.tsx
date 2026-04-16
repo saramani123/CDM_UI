@@ -78,6 +78,8 @@ function App() {
   const [selectedRows, setSelectedRows] = useState<ObjectData[]>([]);
   const [selectedRowForMetadata, setSelectedRowForMetadata] = useState<ObjectData | VariableData | ListData | null>(null);
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  /** Bumped after object list/detail refresh so MetadataPanel reloads identifiers for the same object id */
+  const [objectsRemoteEpoch, setObjectsRemoteEpoch] = useState(0);
   
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
@@ -2884,13 +2886,16 @@ function App() {
           // Preserve relationships and variants lists
           relationshipsList: fullObjectData.relationshipsList || fullObjectData.relationships || [],
           variantsList: fullObjectData.variantsList || (fullObjectData.variants || []).map((v: any) => typeof v === 'string' ? { name: v } : v),
-          // Preserve identifier data (structure it properly if needed)
-          identifier: fullObjectData.identifier || (fullObjectData.discreteIds || fullObjectData.compositeIds ? {
-            discreteId: fullObjectData.discreteIds || {},
-            compositeIds: fullObjectData.compositeIds || {}
-          } : undefined),
+          // Always attach identifier in GET-object shape so MetadataPanel clone branch runs (it expects
+          // discreteIds/compositeIds on .identifier, not only top-level fields after spread).
+          identifier: {
+            discreteIds: fullObjectData.discreteIds ?? [],
+            compositeIds: fullObjectData.compositeIds ?? {}
+          },
           // Store source object ID for cloning variable relationships
           _sourceObjectId: row.id,
+          // Original object display name — default RELATES_TO edges in relationshipsList still use this as role
+          _sourceObjectName: fullObjectData.object || row.object || '',
           _isCloned: true,
           _isSaved: false,
           _sourceId: row.id // Keep reference to source for tracking
@@ -3375,6 +3380,7 @@ function App() {
         const currentDeletedDriverType = deletedDriverType;
         
         await fetchObjects();
+        setObjectsRemoteEpoch(e => e + 1);
         
         // Restore affected state after refresh
         setAffectedObjectIds(currentAffectedObjects);
@@ -3385,6 +3391,9 @@ function App() {
         setIsBulkEditOpen(false);
         setSelectedRows([]);
         setSelectedRowForMetadata(null);
+        if (updatedData.identifier) {
+          alert(`Identifiers were saved for ${updatedCount} object(s). Re-open an object’s Identifiers graph to confirm.`);
+        }
         return;
       } catch (error) {
         console.error('❌ Failed to bulk update objects:', error);
@@ -3588,13 +3597,20 @@ function App() {
             const relationshipsToUse = updatedData.relationshipsList || selectedRowForMetadata.relationshipsList || [];
             const variantsToUse = updatedData.variantsList || selectedRowForMetadata.variantsList || [];
             
+            const priorObjectName = String(
+              (selectedRowForMetadata as any)._sourceObjectName || selectedRowForMetadata.object || ''
+            ).trim();
+            const currentRowObjectName = String(selectedRowForMetadata.object || '').trim();
+
             // Process relationships - update intra-table relationships to point to new cloned object
             const processedRelationships = relationshipsToUse.map((rel: any) => {
-              // Check if this is an intra-table relationship (points to the original object)
-              const isIntraTable = rel.toBeing === selectedRowForMetadata.being &&
-                                   rel.toAvatar === selectedRowForMetadata.avatar &&
-                                   rel.toObject === selectedRowForMetadata.object;
-              
+              // Intra-table on source: clone row may still have empty `object` until user names it
+              const isIntraTable =
+                rel.toBeing === selectedRowForMetadata.being &&
+                rel.toAvatar === selectedRowForMetadata.avatar &&
+                (rel.toObject === currentRowObjectName ||
+                  (!!priorObjectName && rel.toObject === priorObjectName));
+
               if (isIntraTable) {
                 // Update to point to the new cloned object
                 return {
@@ -3607,6 +3623,19 @@ function App() {
               // For inter-table relationships, keep as-is
               return rel;
             });
+
+            const isSourceDefaultRel = (rel: any) => {
+              const src = String((selectedRowForMetadata as any)._sourceObjectName || '').trim();
+              if (!src) return false;
+              const r = String(rel.role || '')
+                .trim()
+                .toLowerCase();
+              if (r !== src.toLowerCase()) return false;
+              if (rel.frequency !== 'Possible') return false;
+              const t = rel.type;
+              return t === 'Inter-Table' || t === 'Intra-Table';
+            };
+            const relationshipsForCreate = processedRelationships.filter((rel: any) => !isSourceDefaultRel(rel));
             
             // Process variants - convert to array of names if needed
             const processedVariants = variantsToUse.map((v: any) => typeof v === 'string' ? v : (v.name || v));
@@ -3619,15 +3648,39 @@ function App() {
               avatar: updatedData.avatar,
               object: updatedData.object,
               status: updatedData.status || 'Active',
-              // Include processed relationships (with intra-table relationships updated)
-              relationships: processedRelationships,
+              // Omit copied default edges; backend recreates defaults with role = new object name
+              relationships: relationshipsForCreate,
               variants: processedVariants
             };
-            
-            // Include identifier data if present
-            if (selectedRowForMetadata.identifier) {
-              apiObjectData.identifier = selectedRowForMetadata.identifier;
+            const cloneSrc = String((selectedRowForMetadata as any)._sourceObjectName || '').trim();
+            if (cloneSrc) {
+              apiObjectData.cloneSourceObjectName = cloneSrc;
             }
+            
+            // Include identifier data: panel sends discreteId.entries; clone row may only have discreteIds
+            const coerceIdentifierForCreate = (src: any): any | undefined => {
+              if (!src || typeof src !== 'object') return undefined;
+              if (src.discreteId && typeof src.discreteId === 'object') return src;
+              const rawList = src.discreteIds;
+              const entries = Array.isArray(rawList)
+                ? rawList.map((e: any) => ({
+                    part: e.part,
+                    section: e.section ?? '',
+                    group: e.group,
+                    variableId: e.variableId
+                  }))
+                : [];
+              const compositeIds =
+                src.compositeIds && typeof src.compositeIds === 'object' ? src.compositeIds : {};
+              const hasComposite = Object.values(compositeIds).some(
+                (v: unknown) => Array.isArray(v) && (v as unknown[]).length > 0
+              );
+              if (entries.length === 0 && !hasComposite) return undefined;
+              return { discreteId: { entries }, compositeIds };
+            };
+            const rawIdent = updatedData.identifier || selectedRowForMetadata.identifier;
+            const apiIdent = rawIdent?.discreteId ? rawIdent : coerceIdentifierForCreate(rawIdent);
+            if (apiIdent) apiObjectData.identifier = apiIdent;
             
             // Include is_meme if present
             if (selectedRowForMetadata.isMeme !== undefined) {
@@ -4071,6 +4124,7 @@ function App() {
           if (!willSaveVariantsOrRelationships) {
             const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
             setSelectedRowForMetadata(refreshedObject);
+            setObjectsRemoteEpoch(e => e + 1);
           }
         } catch (error) {
           console.error('Error updating object:', error);
@@ -4133,6 +4187,7 @@ function App() {
             // Update selectedRowForMetadata with fresh data including variants FIRST
             // This ensures the variants textarea gets updated immediately
             setSelectedRowForMetadata(parsedRefreshedObject);
+            setObjectsRemoteEpoch(e => e + 1);
             
             // Wait a moment for state to sync before refreshing the grid (loading still on)
             await new Promise(resolve => setTimeout(resolve, 100));
@@ -6594,6 +6649,7 @@ function App() {
                     deletedDriverType={deletedDriverType}
                     onEnterRelationshipView={handleEnterRelationshipView}
                     onObjectsRefresh={fetchObjects}
+                    objectsRemoteEpoch={objectsRemoteEpoch}
                   />
                 )}
               </div>

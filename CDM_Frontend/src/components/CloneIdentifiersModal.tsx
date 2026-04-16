@@ -34,9 +34,9 @@ export const CloneIdentifiersModal: React.FC<CloneIdentifiersModalProps> = ({
   const targetIds = new Set(effectiveTargetObjects.map(obj => obj.id));
   const availableObjects = allObjects.filter(obj => !targetIds.has(obj.id));
 
-  // Columns for the clone modal - only show S, D, C, Being, Avatar, Object
+  // Columns for the clone modal - only show Object column
   const cloneColumns = objectColumns.filter(col => 
-    ['sector', 'domain', 'country', 'being', 'avatar', 'object'].includes(col.key)
+    ['object'].includes(col.key)
   );
 
   // Prepare grid data
@@ -186,6 +186,7 @@ export const CloneIdentifiersModal: React.FC<CloneIdentifiersModalProps> = ({
               relationshipData={relationshipData}
               onRelationshipRowClick={handleRowClick}
               selectionMode="row"
+              persistState={false}
             />
           </div>
         </div>
@@ -196,7 +197,7 @@ export const CloneIdentifiersModal: React.FC<CloneIdentifiersModalProps> = ({
             {selectedSourceObject ? (
               <span>
                 Selected: <span className="text-ag-dark-text font-medium">
-                  {selectedSourceObject.being} - {selectedSourceObject.avatar} - {selectedSourceObject.object}
+                  {selectedSourceObject.object}
                 </span>
               </span>
             ) : (

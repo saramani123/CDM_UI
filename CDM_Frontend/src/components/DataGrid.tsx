@@ -65,6 +65,7 @@ interface DataGridProps {
   onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
   onIsGroupKeyChange?: (rowId: string, checked: boolean) => void; // Handler for isGroupKey checkbox changes
   gridType?: 'objects' | 'variables' | 'lists' | 'metadata'; // Add grid type to separate localStorage keys
+  persistState?: boolean; // Set false for transient modal grids
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
   onResetHandlersReady?: (handlers: { clearFilters: () => void; resetSorting: () => void; hasActiveFilters: boolean; hasActiveSorting: boolean }) => void;
@@ -95,6 +96,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   onIsMemeChange,
   onIsGroupKeyChange,
   gridType = 'objects', // Default to 'objects' for backward compatibility
+  persistState = true,
   isPredefinedSortEnabled = false,
   predefinedSortOrder,
   onResetHandlersReady
@@ -112,6 +114,12 @@ export const DataGrid: React.FC<DataGridProps> = ({
   };
   // Load persisted state from localStorage - use grid-specific keys
   const loadPersistedDataGridState = () => {
+    if (!persistState) {
+      return {
+        columnFilters: {},
+        sortConfig: null
+      };
+    }
     try {
       const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
                        gridType === 'lists' ? 'cdm_lists_column_filters' : 
@@ -190,31 +198,34 @@ export const DataGrid: React.FC<DataGridProps> = ({
 
   // Persist column filters to localStorage - use grid-specific key
   React.useEffect(() => {
+    if (!persistState) return;
     const filterKey = gridType === 'variables' ? 'cdm_variables_column_filters' : 
                      gridType === 'lists' ? 'cdm_lists_column_filters' : 
                      'cdm_objects_column_filters';
     localStorage.setItem(filterKey, JSON.stringify(columnFilters));
-  }, [columnFilters, gridType]);
+  }, [columnFilters, gridType, persistState]);
 
   // Clear sortConfig when custom sort is applied (grid-level sort takes priority)
   React.useEffect(() => {
     if (isCustomSortActive && customSortRules.length > 0 && sortConfig !== null) {
       console.log('🧹 Clearing sortConfig because custom sort is active');
       setSortConfig(null);
+      if (!persistState) return;
       const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
                      gridType === 'lists' ? 'cdm_lists_sort_config' : 
                      'cdm_objects_sort_config';
       localStorage.removeItem(sortKey);
     }
-  }, [isCustomSortActive, customSortRules.length, gridType]);
+  }, [isCustomSortActive, customSortRules.length, gridType, persistState]);
 
   // Persist sort config to localStorage - use grid-specific key
   React.useEffect(() => {
+    if (!persistState) return;
     const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
                    gridType === 'lists' ? 'cdm_lists_sort_config' : 
                    'cdm_objects_sort_config';
     localStorage.setItem(sortKey, JSON.stringify(sortConfig));
-  }, [sortConfig, gridType]);
+  }, [sortConfig, gridType, persistState]);
 
   const handleColumnHeaderClick = (column: Column, event: React.MouseEvent) => {
     const rect = (event.target as HTMLElement).getBoundingClientRect();

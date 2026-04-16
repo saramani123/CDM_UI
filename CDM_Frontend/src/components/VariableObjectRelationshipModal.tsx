@@ -706,14 +706,14 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     };
   });
 
-  // Apply custom sort if rules exist - only sort by Being, Avatar, Object (removed S, D, C)
+  // Apply custom sort rules (Object column only)
   if (customSortRules.length > 0) {
     gridData = [...gridData].sort((a, b) => {
       for (const rule of customSortRules) {
         if (!rule.column) continue;
         
-        // Only allow sorting by Being, Avatar, Object (removed S, D, C)
-        if (!['being', 'avatar', 'object'].includes(rule.column)) continue;
+        // Only allow sorting by Object in relevance modal
+        if (!['object'].includes(rule.column)) continue;
         
         const aValue = String(a[rule.column] || '').toLowerCase();
         const bValue = String(b[rule.column] || '').toLowerCase();
@@ -736,9 +736,9 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   }
 
   // Custom columns for the variable-object relationship modal
-  // Only show Being, Avatar, and Object columns (removed S, D, C, Object Clarifier)
+  // Only show Object column
   const relationshipColumns = [
-    ...objectColumns.filter(col => ['being', 'avatar', 'object'].includes(col.key))
+    ...objectColumns.filter(col => ['object'].includes(col.key))
   ];
 
   return (
@@ -827,6 +827,7 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
                   selectionMode="row"
                   isPredefinedSortEnabled={isRelevanceOrderEnabled}
                   predefinedSortOrder={objectsOrderSortOrder}
+                  persistState={false}
                 />
               </div>
             )}

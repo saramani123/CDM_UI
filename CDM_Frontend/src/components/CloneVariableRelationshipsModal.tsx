@@ -37,9 +37,9 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
     !targetIds.has(v.id) && (v.objectRelationships || 0) > 0
   );
 
-  // Columns for the clone modal - only show S, D, C, Part, Group, Variable
+  // Columns for the clone modal - only show Variable column
   const cloneColumns = variableColumns.filter(col => 
-    ['sector', 'domain', 'country', 'part', 'group', 'variable'].includes(col.key)
+    ['variable'].includes(col.key)
   );
 
   // Prepare grid data
@@ -197,6 +197,7 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
               onRelationshipRowClick={handleRowClick}
               selectionMode="row"
               gridType="variables"
+              persistState={false}
             />
           </div>
         </div>
