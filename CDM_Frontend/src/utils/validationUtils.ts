@@ -252,7 +252,7 @@ export function validateValidationInput(valType: ValType, value: string, formatI
 
     case 'Range':
       // For Range, validate based on Format V-I and Format V-II (Format-V mapping)
-      if (formatI === 'Time') {
+      if (formatI === 'Date' || formatI === 'Time') {
         return validateTimeFormat(value, formatII);
       } else if (formatI === 'Number' && formatII) {
         return validateNumberFormat(value, formatII);
@@ -266,8 +266,7 @@ export function validateValidationInput(valType: ValType, value: string, formatI
 }
 
 /**
- * Validate Time format (date/datetime) based on Format V-I = Time and Format V-II = Date | DateTime.
- * Format II "Date" → date only. Format II "DateTime" → datetime (and date-only allowed).
+ * Validate date/datetime for Format V-I = Date (or legacy Time) and Format V-II = Date | Datetime | DateTime.
  */
 function validateTimeFormat(value: string, formatII?: string): { isValid: boolean; error?: string } {
   if (!value || value.trim() === '') {
@@ -300,7 +299,7 @@ function validateTimeFormat(value: string, formatII?: string): { isValid: boolea
     };
   }
 
-  if (formatII === 'DateTime') {
+  if (formatII === 'DateTime' || formatII === 'Datetime') {
     const valid =
       datePatterns.some(p => p.test(trimmed)) ||
       datetimePatterns.some(p => p.test(trimmed)) ||
@@ -312,7 +311,7 @@ function validateTimeFormat(value: string, formatII?: string): { isValid: boolea
     };
   }
 
-  // Time but no Format II or other: allow any date/datetime/timestamp
+  // Date category but no Format II or other: allow any date/datetime/timestamp
   const isValidDate = datePatterns.some(p => p.test(trimmed));
   const isValidDatetime = datetimePatterns.some(p => p.test(trimmed));
   const isValidTimestamp = timestampPattern.test(trimmed);

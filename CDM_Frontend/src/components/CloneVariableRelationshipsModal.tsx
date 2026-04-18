@@ -30,12 +30,10 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
   const isBulkMode = targetVariables.length > 0;
   const effectiveTargetVariables = isBulkMode ? targetVariables : (targetVariable ? [targetVariable] : []);
 
-  // Filter out target variables from the list (can't clone from themselves)
-  // Also filter to only show variables that have object relationships
-  const targetIds = new Set(effectiveTargetVariables.map(v => v.id));
-  const availableVariables = allVariables.filter(v => 
-    !targetIds.has(v.id) && (v.objectRelationships || 0) > 0
-  );
+  // Filter out target variables from the list (can't clone from themselves).
+  // With default relevance-to-all-objects, every variable has edges; list all other variables as sources.
+  const targetIds = new Set(effectiveTargetVariables.map(v => v.id).filter(Boolean));
+  const availableVariables = allVariables.filter(v => v.id && !targetIds.has(v.id));
 
   // Columns for the clone modal - only show Variable column
   const cloneColumns = variableColumns.filter(col => 
@@ -75,12 +73,6 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
 
     if (effectiveTargetVariables.length === 0) {
       setError('No target variables specified');
-      return;
-    }
-
-    // Check that source variable has relationships
-    if ((selectedSourceVariable.objectRelationships || 0) === 0) {
-      setError('Selected variable has no object relationships to clone');
       return;
     }
 
@@ -130,7 +122,7 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
           <div className="flex items-center gap-3">
             <Copy className="w-5 h-5 text-ag-dark-accent" />
             <h2 className="text-xl font-semibold text-ag-dark-text">
-              Clone Object Relationships
+              Clone Relevance
             </h2>
           </div>
           <button
@@ -164,8 +156,9 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
             </span>
           </div>
           <div className="text-sm text-ag-dark-text-secondary mt-1">
-            Select a variable below to clone its object relationships to the {isBulkMode ? 'selected variables' : 'target variable'}.
-            Only variables with existing object relationships are shown.
+            {
+              "Select a variable below. Each target variable's relevance to objects will be updated to match the source (only the edges that differ are removed or added)."
+            }
           </div>
         </div>
 
@@ -178,6 +171,12 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
 
         {/* Content */}
         <div className="flex-1 p-6 overflow-y-auto">
+          {availableVariables.length === 0 ? (
+            <div className="rounded-lg border border-ag-dark-border bg-ag-dark-bg p-6 text-sm text-ag-dark-text-secondary">
+              No other variables are available to use as a source (every variable in the dataset may be in your
+              current selection). Deselect some variables or pick a smaller set of targets.
+            </div>
+          ) : (
           <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
             <DataGrid
               columns={cloneColumns}
@@ -200,6 +199,7 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
               persistState={false}
             />
           </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -208,7 +208,7 @@ export const CloneVariableRelationshipsModal: React.FC<CloneVariableRelationship
             {selectedSourceVariable ? (
               <span>
                 Selected: <span className="text-ag-dark-text font-medium">
-                  {selectedSourceVariable.variable} ({selectedSourceVariable.objectRelationships || 0} relationships)
+                  {selectedSourceVariable.variable} ({selectedSourceVariable.objectRelationships ?? 0} objects)
                 </span>
               </span>
             ) : (

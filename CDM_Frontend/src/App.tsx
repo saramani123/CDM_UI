@@ -1770,16 +1770,6 @@ function App() {
         ...field,
         value: (() => {
           switch (field.key) {
-            case 'format':
-              return selectedList.format || '';
-            case 'source':
-              return selectedList.source || '';
-            case 'upkeep':
-              return selectedList.upkeep || '';
-            case 'graph':
-              return selectedList.graph || '';
-            case 'origin':
-              return selectedList.origin || '';
             case 'set':
               return selectedList.set || '';
             case 'grouping':
@@ -3232,6 +3222,11 @@ function App() {
   };
 
   const handleBulkEdit = async (updatedData: Record<string, any>) => {
+    if (updatedData._refreshRelationships && activeTab === 'variables') {
+      await fetchVariables();
+      return;
+    }
+
     const selectedIds = selectedRows.map(row => row.id);
     
     // Handle variables bulk edit via API
@@ -3454,12 +3449,10 @@ function App() {
         setIsLoading(true);
         setLoadingType('lists');
         
-        // Ensure listType is NOT included in bulk edit (unless explicitly changed)
-        const { listType, tieredListsList, tieredListValues, ...bulkEditData } = updatedData;
+        const { tieredListsList, tieredListValues, listType: _bulkListType, ...bulkEditData } = updatedData;
         
         // Update each selected list via API
         for (const listId of selectedIds) {
-          // Prepare the update data for this list (exclude listType)
           const listUpdateData = { ...bulkEditData };
           console.log(`🔄 Bulk edit - updating list ${listId} with data:`, listUpdateData);
           
@@ -3483,8 +3476,7 @@ function App() {
         if (bulkEditData.set !== undefined || bulkEditData.grouping !== undefined) {
           changedFields.push('ontology');
         }
-        if (bulkEditData.format !== undefined || bulkEditData.source !== undefined || bulkEditData.upkeep !== undefined || 
-            bulkEditData.graph !== undefined || bulkEditData.origin !== undefined || bulkEditData.status !== undefined) {
+        if (bulkEditData.status !== undefined) {
           changedFields.push('metadata');
         }
         if (bulkEditData.variationsList !== undefined) {
@@ -4727,6 +4719,35 @@ function App() {
       console.error('Error fetching lists:', error);
       // Keep existing data on error
       return [];
+    }
+  };
+
+  const refreshListDetailFromApi = async (listId: string) => {
+    try {
+      const list: any = await apiService.getList(listId);
+      const patch: Partial<ListData> = {
+        listValuesList: Array.isArray(list.listValuesList) ? list.listValuesList : [],
+        listValueVariations:
+          list.listValueVariations && typeof list.listValueVariations === 'object'
+            ? list.listValueVariations
+            : {}
+      };
+      if (typeof list.totalValuesCount === 'number') {
+        patch.totalValuesCount = list.totalValuesCount;
+      }
+      if (Array.isArray(list.sampleValues)) {
+        patch.sampleValues = list.sampleValues;
+      }
+      setListData(prev =>
+        prev.map(item =>
+          item.id === listId ? ({ ...item, ...patch } as ListData) : item
+        )
+      );
+      setSelectedRowForMetadata(prev =>
+        prev && prev.id === listId ? ({ ...prev, ...patch } as ListData) : prev
+      );
+    } catch (e) {
+      console.error('refreshListDetailFromApi failed', e);
     }
   };
 
@@ -6624,6 +6645,7 @@ function App() {
                     selectedCount={selectedRows.length}
                     variablesOrderSortOrder={variablesOrderSortOrder}
                     isVariablesOrderEnabled={isVariablesOrderEnabled}
+                    onListDetailRefresh={refreshListDetailFromApi}
                   />
                 ) : activeTab === 'variables' ? (
                   <VariableMetadataPanel

@@ -1,6 +1,34 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText } from 'lucide-react';
 
+/** Split a CSV line on commas, respecting double-quoted fields and "" escapes. */
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const next = line[i + 1];
+    if (char === '"' && inQuotes && next === '"') {
+      current += '"';
+      i++;
+      continue;
+    }
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (char === ',' && !inQuotes) {
+      values.push(current.trim().replace(/^"|"$/g, ''));
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  values.push(current.trim().replace(/^"|"$/g, ''));
+  return values;
+}
+
 interface ListCsvUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -31,7 +59,8 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
     'list-values': {
       title: 'Upload List Values',
       columns: [
-        { number: 1, name: 'Value' }
+        { number: 1, name: 'List Value *' },
+        { number: 2, name: 'List Value Variation' }
       ]
     }
   };
@@ -41,31 +70,80 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
   const handleFileUpload = (file: File) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const csv = e.target?.result as string;
-      const lines = csv.split('\n').filter(line => line.trim());
+      let csv = e.target?.result as string;
+      if (csv.charCodeAt(0) === 0xfeff) {
+        csv = csv.slice(1);
+      }
+      const lines = csv.split(/\r?\n/).filter(line => line.trim());
       
       if (lines.length < 2) {
         alert('CSV must contain at least a header row and one data row');
         return;
       }
 
-      // Parse header row
-      const headerRow = lines[0].toLowerCase().trim();
-      
       if (type === 'list-values') {
-        // For list values, check that header contains "Values" (case-insensitive)
-        if (!headerRow.includes('value')) {
-          alert('CSV header must contain "Values" column. Please check the format.');
+        const headers = parseCsvLine(lines[0]);
+        const norm = (s: string) => s.trim().toLowerCase();
+        let valIdx = headers.findIndex(h => norm(h) === 'list value');
+        let varIdx = headers.findIndex(h => norm(h) === 'list value variation');
+        if (valIdx < 0) {
+          valIdx = headers.findIndex(h => norm(h).includes('value'));
+        }
+        if (valIdx < 0) {
+          valIdx = 0;
+        }
+        if (varIdx < 0 && headers.length >= 2) {
+          const alt = headers.findIndex((h, i) => i !== valIdx && norm(h).includes('variation'));
+          if (alt >= 0) {
+            varIdx = alt;
+          }
+        }
+        if (headers.length === 0 || valIdx < 0 || valIdx >= headers.length) {
+          alert('CSV must include a column with header "List Value" (required). Optional: "List Value Variation".');
           return;
         }
+
+        const parsedData: { id: string; value: string; variation?: string }[] = [];
+        const seen = new Set<string>();
+
+        for (let index = 1; index < lines.length; index++) {
+          const values = parseCsvLine(lines[index]);
+          const rawVal = (values[valIdx] ?? '').trim();
+          if (!rawVal) {
+            const rawVar = varIdx >= 0 ? (values[varIdx] ?? '').trim() : '';
+            if (rawVar) {
+              alert(`Row ${index + 1}: List Value Variation is set without a List Value. Fix the CSV and try again.`);
+              return;
+            }
+            continue;
+          }
+          const key = rawVal.toLowerCase();
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          const variation = varIdx >= 0 ? (values[varIdx] ?? '').trim() : '';
+          parsedData.push({
+            id: Date.now().toString() + index,
+            value: rawVal,
+            ...(variation ? { variation } : {})
+          });
+        }
+
+        if (parsedData.length > 0) {
+          onUpload(parsedData);
+          onClose();
+        } else {
+          alert('No valid data rows found. Ensure each row has a List Value.');
+        }
+        return;
       }
 
-      // Skip header row and parse data rows
+      // Parse header row (variables-attached)
       const dataRows = lines.slice(1);
       const parsedData: any[] = [];
 
       dataRows.forEach((line, index) => {
-        // Handle CSV parsing more robustly (handles quoted values with commas)
         const values: string[] = [];
         let currentValue = '';
         let inQuotes = false;
@@ -81,7 +159,7 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
             currentValue += char;
           }
         }
-        values.push(currentValue.trim().replace(/^"|"$/g, '')); // Add last value
+        values.push(currentValue.trim().replace(/^"|"$/g, ''));
         
         if (type === 'variables-attached') {
           if (values.length >= 4) {
@@ -91,15 +169,6 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
               section: values[1] || '',
               group: values[2] || '',
               variable: values[3] || ''
-            });
-          }
-        } else if (type === 'list-values') {
-          // For list values, use the first column (Values column)
-          const value = values[0] || '';
-          if (value.trim()) {
-            parsedData.push({
-              id: Date.now().toString() + index,
-              value: value.trim()
             });
           }
         }
@@ -115,9 +184,14 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
     reader.readAsText(file);
   };
 
+  const isCsvFile = (file: File) =>
+    file.type === 'text/csv' ||
+    file.type === 'application/csv' ||
+    file.name.toLowerCase().endsWith('.csv');
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'text/csv') {
+    if (file && isCsvFile(file)) {
       handleFileUpload(file);
     } else {
       alert('Please select a valid CSV file');
@@ -129,7 +203,7 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
     setIsDragOver(false);
     
     const file = event.dataTransfer.files[0];
-    if (file && file.type === 'text/csv') {
+    if (file && isCsvFile(file)) {
       handleFileUpload(file);
     } else {
       alert('Please drop a valid CSV file');
@@ -146,8 +220,8 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border max-w-md w-full mx-4">
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[110]">
+      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border max-w-lg w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
           <h2 className="text-xl font-semibold text-ag-dark-text">{currentSpec.title}</h2>
@@ -173,7 +247,11 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
                   <span className="text-sm text-ag-dark-text-secondary">
                     Column {column.number}
                   </span>
-                  <span className="text-sm font-medium text-ag-dark-text">
+                  <span
+                    className={`text-sm font-medium ${
+                      type === 'list-values' && column.number === 1 ? 'text-red-400' : 'text-ag-dark-text'
+                    }`}
+                  >
                     {column.name}
                   </span>
                 </div>
@@ -228,7 +306,11 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
               <p>• All fields (Part, Section, Group, Variable) are required</p>
             )}
             {type === 'list-values' && (
-              <p>• Header must contain "Values" column (case-insensitive)</p>
+              <>
+                <p>• Required header: <span className="text-red-400">List Value</span> (exact name, any column order)</p>
+                <p>• Optional header: List Value Variation</p>
+                <p>• A variation without a list value on the same row is not allowed</p>
+              </>
             )}
           </div>
         </div>

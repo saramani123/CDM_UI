@@ -686,6 +686,16 @@ class ApiService {
     return this.request(`/lists/${id}`);
   }
 
+  async syncSingleListValues(
+    listId: string,
+    body: { rows: Array<{ value: string; variation?: string }> }
+  ) {
+    return this.request(`/lists/${listId}/single-list-values/sync`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   async createList(listData: any) {
     console.log('🔵 API createList called with data:', {
       list: listData.list,

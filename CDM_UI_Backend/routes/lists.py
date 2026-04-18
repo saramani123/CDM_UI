@@ -15,6 +15,17 @@ class ListValueRequest(BaseModel):
     id: Optional[str] = None
     value: str
 
+
+class SingleListValueSyncRow(BaseModel):
+    value: str
+    variation: Optional[str] = ""
+
+
+class SyncSingleListValuesRequest(BaseModel):
+    """Single-tier list values + optional one variation string per row (comma-separated allowed)."""
+    rows: List[SingleListValueSyncRow]
+
+
 class TieredListRequest(BaseModel):
     id: Optional[str] = None
     set: str
@@ -2920,6 +2931,20 @@ async def get_list(list_id: str):
             # Fallback to extracting from tieredListsList if query didn't work
             if not tier_names:
                 tier_names = [tier.get("list", "") for tier in tieredListsList if tier.get("list")]
+
+            list_value_variations: Dict[str, List[str]] = {}
+            if tiered_count == 0:
+                vr = session.run("""
+                    MATCH (l:List {id: $id})-[:HAS_LIST_VALUE]->(lv:ListValue)
+                    WHERE lv.tier IS NULL OR lv.tier = 0
+                    OPTIONAL MATCH (lv)-[:HAS_VALUE_VARIATION]->(var:Variation)
+                    RETURN lv.value as value, collect(DISTINCT var.name) as names
+                """, {"id": list_id})
+                for rec in vr:
+                    names = [n for n in (rec.get("names") or []) if n]
+                    val = rec.get("value")
+                    if val and names:
+                        list_value_variations[str(val)] = names
             
             return {
                 "id": record["id"],
@@ -2938,6 +2963,7 @@ async def get_list(list_id: str):
                 "variables": record["variables_count"] or 0,
                 "variablesAttachedList": [],
                 "listValuesList": listValuesList,
+                "listValueVariations": list_value_variations,
                 "tieredListsList": tieredListsList,
                 "hasIncomingTier": record.get("has_incoming_tier", False),
                 "tierNumber": tier_number,
@@ -2951,6 +2977,122 @@ async def get_list(list_id: str):
     except Exception as e:
         print(f"Error fetching list: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch list: {str(e)}")
+
+
+@router.post("/lists/{list_id}/single-list-values/sync")
+async def sync_single_list_values(list_id: str, body: SyncSingleListValuesRequest):
+    """
+    Replace single-tier list values for a list: List-[:HAS_LIST_VALUE]->ListValue,
+    optional ListValue-[:HAS_VALUE_VARIATION]->Variation per row.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    for row in body.rows:
+        if (row.variation or "").strip() and not (row.value or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="List Value is required when List Value Variation is set.",
+            )
+
+    seen_lower: set = set()
+    ordered: List[Dict[str, str]] = []
+    for row in body.rows:
+        v = (row.value or "").strip()
+        if not v:
+            continue
+        k = v.lower()
+        if k in seen_lower:
+            continue
+        seen_lower.add(k)
+        ordered.append({"value": v, "variation": (row.variation or "").strip()})
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            chk = session.run("""
+                MATCH (l:List {id: $id})
+                OPTIONAL MATCH (parent:List)-[:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5
+                    |HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                OPTIONAL MATCH (l)-[:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5
+                    |HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(child:List)
+                RETURN l.name as name, count(DISTINCT parent) as parent_count, count(DISTINCT child) as child_count
+            """, id=list_id).single()
+            if not chk or not chk.get("name"):
+                raise HTTPException(status_code=404, detail="List not found")
+            if (chk.get("parent_count") or 0) > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="This list is part of a tier hierarchy. Edit values on the tier list instead.",
+                )
+            if (chk.get("child_count") or 0) > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Multi-level lists must be edited via the tiered list values tools.",
+                )
+            list_name = chk["name"]
+
+            def sync_tx(tx):
+                tx.run("""
+                    MATCH (l:List {id: $list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
+                    WHERE lv.tier IS NULL OR lv.tier = 0
+                    DELETE r
+                """, list_id=list_id)
+
+                for item in ordered:
+                    val = item["value"]
+                    var_str = item["variation"]
+                    tx.run("""
+                        MATCH (l:List {id: $list_id})
+                        MERGE (lv:ListValue {value: $value})
+                        ON CREATE SET lv.tier = 0
+                        SET lv.listName = $list_name
+                        MERGE (l)-[:HAS_LIST_VALUE]->(lv)
+                    """, list_id=list_id, value=val, list_name=list_name)
+
+                    tx.run("""
+                        MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue {value: $value})
+                        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:Variation)
+                        DELETE rv
+                    """, list_id=list_id, value=val)
+
+                    if var_str:
+                        for part in [p.strip() for p in var_str.split(",") if p.strip()]:
+                            vid = str(uuid.uuid4())
+                            tx.run("""
+                                MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue {value: $list_value})
+                                MERGE (var:Variation {name: $variation_value, valueVariation: true})
+                                ON CREATE SET var.id = $variation_id, var.valueVariation = true
+                                MERGE (lv)-[:HAS_VALUE_VARIATION]->(var)
+                            """,
+                                list_id=list_id,
+                                list_value=val,
+                                variation_value=part,
+                                variation_id=vid,
+                            )
+
+                cnt = tx.run("""
+                    MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue)
+                    WHERE lv.tier IS NULL OR lv.tier = 0
+                    RETURN count(DISTINCT lv) as c
+                """, list_id=list_id).single()
+                return (cnt or {}).get("c") or 0
+
+            value_count = session.execute_write(sync_tx)
+            return {
+                "success": True,
+                "message": f"Synced {value_count} list value(s) to Neo4j",
+                "valueCount": value_count,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error syncing single list values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to sync list values: {str(e)}")
+
 
 @router.get("/lists/{list_id}/variable-relationships")
 async def get_list_variable_relationships(list_id: str):

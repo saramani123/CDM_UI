@@ -1854,7 +1854,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                       }}
                       onChange={() => {}}
                       disabled={!isPanelEnabled}
-                      placeholder={formData.formatI === 'Time' ? 'e.g. 12/5/2025' : formData.formatI === 'Number' && formData.formatII ? (formData.formatII === 'Integer' ? 'e.g. 42' : formData.formatII === 'Decimal' ? 'e.g. 3.14' : formData.formatII === 'Percentage' ? 'e.g. 50%' : 'Enter value') : 'Enter value'}
+                      placeholder={formData.formatI === 'Date' || formData.formatI === 'Time' ? 'e.g. 12/5/2025' : formData.formatI === 'Number' && formData.formatII ? (formData.formatII === 'Integer' ? 'e.g. 42' : formData.formatII === 'Decimal' ? 'e.g. 3.14' : formData.formatII === 'Percent' || formData.formatII === 'Percentage' ? 'e.g. 50%' : 'Enter value') : 'Enter value'}
                       className={`w-full px-3 py-2 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : 'border-ag-dark-border'} ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     {validationError && validationError.includes('Value') && (
@@ -1909,7 +1909,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                       }}
                       onChange={() => {}}
                       disabled={!isPanelEnabled}
-                      placeholder={formData.formatI === 'Time' ? 'e.g. 3/8/2026' : 'Enter value'}
+                      placeholder={formData.formatI === 'Date' || formData.formatI === 'Time' ? 'e.g. 3/8/2026' : 'Enter value'}
                       className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : ''} ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     {validationError && validationError.includes('Value') && (
@@ -2031,11 +2031,11 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             {!(selectedVariable?._isCloned && !selectedVariable?._isSaved) && (
               <button
                 onClick={() => setIsCloneVariableRelationshipsModalOpen(true)}
-                disabled={!isPanelEnabled || (selectedVariable?.objectRelationships || 0) > 0}
+                disabled={!isPanelEnabled}
                 className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                  !isPanelEnabled || (selectedVariable?.objectRelationships || 0) > 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+                  !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
                 }`}
-                title={(selectedVariable?.objectRelationships || 0) > 0 ? "Please delete existing relationships to use clone" : "Clone object relationships from another variable"}
+                title="Clone relevance from another variable (object selections are matched, not fully rebuilt)"
               >
                 <Copy className="w-5 h-5" />
               </button>

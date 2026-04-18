@@ -18,6 +18,8 @@ export interface ListData {
   variables?: number; // Count of variables with HAS_LIST relationships (applicability)
   variablesAttachedList?: VariableAttached[];
   listValuesList?: ListValue[];
+  /** Per list-value labels linked via HAS_VALUE_VARIATION (single-tier lists). */
+  listValueVariations?: Record<string, string[]>;
   tieredListsList?: TieredList[]; // Lists that are tiered under this list
   tiers?: string; // Comma-separated string of child tiered lists (for display in grid)
   variations?: number; // Count of variations
@@ -217,36 +219,6 @@ export const listFieldOptions = {
 };
 
 export const listMetadataFields = [
-  { 
-    key: 'format', 
-    label: 'Format', 
-    type: 'text' as const,
-    required: false
-  },
-  { 
-    key: 'source', 
-    label: 'Source', 
-    type: 'text' as const,
-    required: false
-  },
-  { 
-    key: 'upkeep', 
-    label: 'Upkeep', 
-    type: 'text' as const,
-    required: false
-  },
-  { 
-    key: 'graph', 
-    label: 'Graph', 
-    type: 'text' as const,
-    required: false
-  },
-  { 
-    key: 'origin', 
-    label: 'Origin', 
-    type: 'text' as const,
-    required: false
-  },
   { 
     key: 'set', 
     label: 'Set', 

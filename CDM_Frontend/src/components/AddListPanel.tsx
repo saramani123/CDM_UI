@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, ArrowUpAZ, ArrowDownZA, Layers, Grid } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Layers, Grid3x3, ArrowUpAZ, ArrowDownZA, Copy } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -9,6 +9,7 @@ import { VariableObjectRelationshipModal } from './VariableObjectRelationshipMod
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
+import { SingleListValuesModal, type SingleListDraftRow } from './SingleListValuesModal';
 import { apiService } from '../services/api';
 
 interface VariableAttached {
@@ -147,24 +148,15 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
   // Basic form data
   const [formData, setFormData] = useState({
-    format: '',
     set: '',
     grouping: '',
-    list: '',
-    source: '',
-    upkeep: '',
-    graph: '',
-    origin: ''
+    list: ''
   });
 
   // Variables attached and list values
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>([]);
-  const [listValuesText, setListValuesText] = useState<string>('');
-  
-  // Refs for textarea management
-  const listValuesTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const isListValuesTextareaFocusedRef = useRef(false);
-  const lastListValuesChangeTimeRef = useRef(0);
+  const [singleListDraftRows, setSingleListDraftRows] = useState<SingleListDraftRow[]>([]);
+  const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
 
   // Variations state
   const [variationsText, setVariationsText] = useState<string>('');
@@ -190,26 +182,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   const tierNameInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
   const tierNameLastChangeTimeRefs = useRef<Map<number, number>>(new Map());
 
-  // Metadata input fields focus management
-  const formatInputRef = useRef<HTMLInputElement>(null);
-  const sourceInputRef = useRef<HTMLInputElement>(null);
-  const upkeepInputRef = useRef<HTMLInputElement>(null);
-  const graphInputRef = useRef<HTMLInputElement>(null);
-  const originInputRef = useRef<HTMLInputElement>(null);
-  const isFormatInputFocusedRef = useRef<boolean>(false);
-  const isSourceInputFocusedRef = useRef<boolean>(false);
-  const isUpkeepInputFocusedRef = useRef<boolean>(false);
-  const isGraphInputFocusedRef = useRef<boolean>(false);
-  const isOriginInputFocusedRef = useRef<boolean>(false);
-  const lastFormatChangeTimeRef = useRef<number>(0);
-  const lastSourceChangeTimeRef = useRef<number>(0);
-  const lastUpkeepChangeTimeRef = useRef<number>(0);
-  const lastGraphChangeTimeRef = useRef<number>(0);
-  const lastOriginChangeTimeRef = useRef<number>(0);
-
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
-  const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
   
   // Modal state for add set/grouping values
   const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
@@ -332,54 +306,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setVariablesAttached(prev => prev.filter(variable => variable.id !== id));
   };
 
-  // Handle list values textarea changes
-  const handleListValuesTextChange = (text: string) => {
-    const textarea = listValuesTextareaRef.current;
-    const cursorPosition = textarea?.selectionStart || 0;
-    lastListValuesChangeTimeRef.current = Date.now();
-    setListValuesText(text);
-    // Restore cursor position after state update
-    requestAnimationFrame(() => {
-      if (listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-        listValuesTextareaRef.current.focus();
-        const maxPos = listValuesTextareaRef.current.value.length;
-        const safePos = Math.min(cursorPosition, maxPos);
-        listValuesTextareaRef.current.setSelectionRange(safePos, safePos);
-      }
-    });
-  };
-
-  // Sort list values A-Z or Z-A
-  const handleSortListValues = (direction: 'asc' | 'desc') => {
-    const lines = listValuesText.split('\n').filter(line => line.trim());
-    const sorted = direction === 'asc' 
-      ? lines.sort((a, b) => a.trim().localeCompare(b.trim()))
-      : lines.sort((a, b) => b.trim().localeCompare(a.trim()));
-    setListValuesText(sorted.join('\n'));
-  };
-
   const handleVariableAttachedCsvUpload = (uploadedVariables: VariableAttached[]) => {
     setVariablesAttached(prev => [...prev, ...uploadedVariables]);
-  };
-
-  const handleListValuesCsvUpload = (uploadedValues: ListValue[]) => {
-    // Append uploaded values to existing textarea text
-    const existingLines = listValuesText.split('\n').filter(line => line.trim());
-    const existingSet = new Set(existingLines.map(line => line.trim().toLowerCase()));
-    
-    // Filter out duplicates (case-insensitive)
-    const newValues = uploadedValues
-      .map(lv => lv.value.trim())
-      .filter(val => val && !existingSet.has(val.toLowerCase()));
-    
-    if (newValues.length < uploadedValues.length) {
-      const skippedCount = uploadedValues.length - newValues.length;
-      alert(`Uploaded ${newValues.length} new list values. Skipped ${skippedCount} duplicates.`);
-    }
-    
-    // Append new values to textarea
-    const newLines = newValues.join('\n');
-    setListValuesText(prev => prev ? `${prev}\n${newLines}` : newLines);
   };
 
   // Variations handlers
@@ -497,26 +425,26 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       }
     }
 
-    // Convert textarea text to list values array (only for Single lists)
     let listValuesArray: Array<{ id: string; value: string }> = [];
+    let listValuesVariations: Record<string, string[]> | undefined;
     if (listType === 'Single') {
-      listValuesArray = listValuesText
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0)
-        .map((value, index) => ({
-          id: (Date.now() + index).toString(),
-          value
-        }));
-      
-      // Check for duplicate values (case-insensitive) within the same list
+      const seen = new Set<string>();
+      singleListDraftRows.forEach((row, index) => {
+        const v = row.value.trim();
+        if (!v) return;
+        const k = v.toLowerCase();
+        if (seen.has(k)) return;
+        seen.add(k);
+        listValuesArray.push({ id: `${Date.now()}-${index}`, value: v });
+        const parts = row.variation.split(',').map(s => s.trim()).filter(Boolean);
+        if (parts.length) {
+          if (!listValuesVariations) listValuesVariations = {};
+          listValuesVariations[v] = parts;
+        }
+      });
       const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
       if (listValuesArray.length !== uniqueValues.size) {
-        const duplicateValues = listValuesArray.filter((lv, index) => 
-          listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
-        ).map(lv => lv.value);
-        
-        alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
+        alert('Cannot add list: duplicate list values detected. Use the list values grid to fix duplicates.');
         return;
       }
     }
@@ -547,6 +475,11 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     const newList: any = {
       id: `list-${Date.now()}`,
       ...formData,
+      format: '',
+      source: '',
+      upkeep: '',
+      graph: '',
+      origin: '',
       sector: driverSelections.sector.length === 1 && driverSelections.sector[0] === 'ALL' ? 'ALL' : driverSelections.sector.join(','),
       domain: driverSelections.domain.length === 1 && driverSelections.domain[0] === 'ALL' ? 'ALL' : driverSelections.domain.join(','),
       country: driverSelections.country.length === 1 && driverSelections.country[0] === 'ALL' ? 'ALL' : driverSelections.country.join(','),
@@ -556,9 +489,11 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       listType: listType
     };
 
-    // Include list values only for Single lists
     if (listType === 'Single') {
       newList.listValuesList = listValuesArray;
+      if (listValuesVariations && Object.keys(listValuesVariations).length > 0) {
+        newList.listValuesVariations = listValuesVariations;
+      }
     }
 
     // Include tiered list configuration for Multi-Level lists
@@ -605,14 +540,9 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     
     // Reset form
     setFormData({
-      format: '',
       set: '',
       grouping: '',
-      list: '',
-      source: '',
-      upkeep: '',
-      graph: '',
-      origin: ''
+      list: ''
     });
     setDriverSelections({
       sector: ['ALL'],
@@ -620,7 +550,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       country: ['ALL']
     });
     setVariablesAttached([]);
-    setListValuesText('');
+    setSingleListDraftRows([]);
     setVariationsText('');
     setSelectedVariables([]);
     setListType('Single');
@@ -956,261 +886,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       {/* Metadata Section */}
       <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Format
-            </label>
-            <input
-              ref={formatInputRef}
-              type="text"
-              value={formData.format}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastFormatChangeTimeRef.current = Date.now();
-                handleChange('format', newValue);
-                const restoreFocus = () => {
-                  if (formatInputRef.current) {
-                    formatInputRef.current.focus();
-                    const maxPos = formatInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    formatInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                restoreFocus();
-                Promise.resolve().then(restoreFocus);
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => { e.stopPropagation(); }}
-              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isFormatInputFocusedRef.current = true; }}
-              onBlur={(e) => {
-                const timeSinceLastChange = Date.now() - lastFormatChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300;
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                if (wasRecentTyping && !clickedOnInput && formatInputRef.current && isFormatInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setTimeout(() => { if (formatInputRef.current) formatInputRef.current.focus(); }, 0);
-                } else if (!wasRecentTyping) {
-                  isFormatInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter format..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Source
-            </label>
-            <input
-              ref={sourceInputRef}
-              type="text"
-              value={formData.source}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastSourceChangeTimeRef.current = Date.now();
-                handleChange('source', newValue);
-                const restoreFocus = () => {
-                  if (sourceInputRef.current) {
-                    sourceInputRef.current.focus();
-                    const maxPos = sourceInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    sourceInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                restoreFocus();
-                Promise.resolve().then(restoreFocus);
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => { e.stopPropagation(); }}
-              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isSourceInputFocusedRef.current = true; }}
-              onBlur={(e) => {
-                const timeSinceLastChange = Date.now() - lastSourceChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300;
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                if (wasRecentTyping && !clickedOnInput && sourceInputRef.current && isSourceInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setTimeout(() => { if (sourceInputRef.current) sourceInputRef.current.focus(); }, 0);
-                } else if (!wasRecentTyping) {
-                  isSourceInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter source..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Upkeep
-            </label>
-            <input
-              ref={upkeepInputRef}
-              type="text"
-              value={formData.upkeep}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastUpkeepChangeTimeRef.current = Date.now();
-                handleChange('upkeep', newValue);
-                const restoreFocus = () => {
-                  if (upkeepInputRef.current) {
-                    upkeepInputRef.current.focus();
-                    const maxPos = upkeepInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    upkeepInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                restoreFocus();
-                Promise.resolve().then(restoreFocus);
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => { e.stopPropagation(); }}
-              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isUpkeepInputFocusedRef.current = true; }}
-              onBlur={(e) => {
-                const timeSinceLastChange = Date.now() - lastUpkeepChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300;
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                if (wasRecentTyping && !clickedOnInput && upkeepInputRef.current && isUpkeepInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setTimeout(() => { if (upkeepInputRef.current) upkeepInputRef.current.focus(); }, 0);
-                } else if (!wasRecentTyping) {
-                  isUpkeepInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter upkeep..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Graph
-            </label>
-            <input
-              ref={graphInputRef}
-              type="text"
-              value={formData.graph}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastGraphChangeTimeRef.current = Date.now();
-                handleChange('graph', newValue);
-                const restoreFocus = () => {
-                  if (graphInputRef.current) {
-                    graphInputRef.current.focus();
-                    const maxPos = graphInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    graphInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                restoreFocus();
-                Promise.resolve().then(restoreFocus);
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => { e.stopPropagation(); }}
-              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isGraphInputFocusedRef.current = true; }}
-              onBlur={(e) => {
-                const timeSinceLastChange = Date.now() - lastGraphChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300;
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                if (wasRecentTyping && !clickedOnInput && graphInputRef.current && isGraphInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setTimeout(() => { if (graphInputRef.current) graphInputRef.current.focus(); }, 0);
-                } else if (!wasRecentTyping) {
-                  isGraphInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter graph..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Origin
-            </label>
-            <input
-              ref={originInputRef}
-              type="text"
-              value={formData.origin}
-              onInput={(e) => {
-                e.stopPropagation();
-                const input = e.target as HTMLInputElement;
-                const cursorPosition = input.selectionStart;
-                const newValue = input.value;
-                lastOriginChangeTimeRef.current = Date.now();
-                handleChange('origin', newValue);
-                const restoreFocus = () => {
-                  if (originInputRef.current) {
-                    originInputRef.current.focus();
-                    const maxPos = originInputRef.current.value.length;
-                    const safePos = Math.min(cursorPosition, maxPos);
-                    originInputRef.current.setSelectionRange(safePos, safePos);
-                  }
-                };
-                restoreFocus();
-                Promise.resolve().then(restoreFocus);
-                requestAnimationFrame(restoreFocus);
-              }}
-              onChange={(e) => { e.stopPropagation(); }}
-              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-              onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isOriginInputFocusedRef.current = true; }}
-              onBlur={(e) => {
-                const timeSinceLastChange = Date.now() - lastOriginChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 300;
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                if (wasRecentTyping && !clickedOnInput && originInputRef.current && isOriginInputFocusedRef.current) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  setTimeout(() => { if (originInputRef.current) originInputRef.current.focus(); }, 0);
-                } else if (!wasRecentTyping) {
-                  isOriginInputFocusedRef.current = false;
-                }
-              }}
-              placeholder="Enter origin..."
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-            />
-          </div>
-
           {/* List Type Dropdown */}
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -1229,9 +904,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
                   // Initialize with 2 tiers (Tier 1 and Tier 2)
                   setNumberOfLevels(2);
                   setTierNames(['', '']);
-                  // Clear list values when switching to Multi-Level
-                  // (they will be managed via grid modal instead)
-                  setListValuesText('');
+                  setSingleListDraftRows([]);
                 }
               }}
               className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
@@ -1368,26 +1041,37 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* Relationships Section */}
+      {/* Applicability Section */}
       <CollapsibleSection 
-        title="Relationships" 
+        title="Applicability" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
         actions={
-          <button
-            onClick={() => setIsVariableRelationshipModalOpen(true)}
-            className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-            title="View and manage relationships"
-          >
-            View Relationships
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled
+              className="p-1.5 text-ag-dark-text-secondary rounded opacity-50 cursor-not-allowed"
+              title="Save the list first to clone applicability from another list."
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsVariableRelationshipModalOpen(true)}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="View and manage applicability"
+            >
+              <Grid3x3 className="w-5 h-5" />
+            </button>
+          </div>
         }
       >
         <div className="mb-6">
           {selectedVariables.length === 0 ? (
             <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
               <div className="text-sm text-ag-dark-text-secondary">
-                <span className="font-medium">No variables selected:</span> Click "View Relationships" to select variables from the variables grid.
+                <span className="font-medium">No variables selected:</span> Use the grid icon above to select variables from the variables grid.
               </div>
             </div>
           ) : (
@@ -1420,46 +1104,29 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
             <h4 className="text-md font-semibold text-ag-dark-text">List Values</h4>
           </div>
           <div className="flex items-center gap-2">
-            {/* For Multi-Level lists, show only grid icon */}
             {listType === 'Multi-Level' && (
               <button
+                type="button"
                 onClick={() => setIsTieredListValuesModalOpen(true)}
                 className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
                 title="Edit Tiered List Values"
               >
-                <Grid className="w-5 h-5" />
+                <Grid3x3 className="w-5 h-5" />
               </button>
             )}
-            {/* For Single lists, show sort and upload buttons */}
             {listType === 'Single' && (
-              <>
-                <button
-                  onClick={() => handleSortListValues('asc')}
-                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-                  title="Sort A-Z"
-                >
-                  <ArrowUpAZ className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => handleSortListValues('desc')}
-                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-                  title="Sort Z-A"
-                >
-                  <ArrowDownZA className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsListValuesUploadOpen(true)}
-                  className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-                  title="Upload List Values CSV"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setIsSingleListValuesModalOpen(true)}
+                className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+                title="Edit list values (grid and CSV)"
+              >
+                <Grid3x3 className="w-5 h-5" />
+              </button>
             )}
           </div>
         </div>
-        
-        {/* For Multi-Level lists, show message instead of textarea */}
+
         {listType === 'Multi-Level' ? (
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
@@ -1467,61 +1134,11 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
             </div>
           </div>
         ) : (
-          <textarea
-            ref={listValuesTextareaRef}
-            value={listValuesText}
-            onChange={(e) => {
-              handleListValuesTextChange(e.target.value);
-            }}
-            onKeyDown={(e) => {
-              // Prevent Enter key from propagating to parent components
-              e.stopPropagation();
-              // Prevent default only for Escape, not Enter
-              if (e.key === 'Escape') {
-                listValuesTextareaRef.current?.blur();
-              }
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-            }}
-            onMouseDown={(e) => {
-              e.stopPropagation();
-              e.nativeEvent.stopImmediatePropagation();
-            }}
-            onFocus={(e) => {
-              e.stopPropagation();
-              isListValuesTextareaFocusedRef.current = true;
-            }}
-            onBlur={(e) => {
-              // Only restore focus if blur happened very recently after typing (likely accidental)
-              const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
-              const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-              
-              // Check if blur was intentional (user clicked on another focusable element)
-              const relatedTarget = e.relatedTarget as HTMLElement;
-              const clickedOutside = !relatedTarget || 
-                (relatedTarget.tagName !== 'TEXTAREA' && 
-                 relatedTarget.tagName !== 'INPUT' && 
-                 !relatedTarget.isContentEditable);
-              
-              // Only restore focus if it was recent typing and user didn't click on another input
-              if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-                // Restore focus after a brief delay to let React finish its render cycle
-                setTimeout(() => {
-                  if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
-                    listValuesTextareaRef.current.focus();
-                  }
-                }, 10);
-              } else if (!wasRecentTyping) {
-                // User intentionally blurred, don't restore
-                isListValuesTextareaFocusedRef.current = false;
-              }
-            }}
-            placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
-            rows={8}
-            className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-          />
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This is a single-level list. Use the grid icon above to add or edit list values (including CSV upload).
+            </div>
+          </div>
         )}
       </div>
 
@@ -1650,13 +1267,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         defaultSet={formData.set || ''}
       />
 
-      <ListCsvUploadModal
-        isOpen={isListValuesUploadOpen}
-        onClose={() => setIsListValuesUploadOpen(false)}
-        type="list-values"
-        onUpload={handleListValuesCsvUpload}
-      />
-
       <CsvUploadModal
         isOpen={isVariationUploadOpen}
         onClose={() => setIsVariationUploadOpen(false)}
@@ -1709,6 +1319,16 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           });
           setTieredListValues(tieredValues);
         }}
+      />
+
+      <SingleListValuesModal
+        isOpen={isSingleListValuesModalOpen}
+        onClose={() => setIsSingleListValuesModalOpen(false)}
+        selectedList={null}
+        variant="draft"
+        draftTitle={formData.list.trim() || 'New list'}
+        draftInitialRows={singleListDraftRows}
+        onDraftSave={setSingleListDraftRows}
       />
     </div>
   );

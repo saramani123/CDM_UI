@@ -23,8 +23,6 @@ import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
-import { ListCsvUploadModal } from './ListCsvUploadModal';
-
 interface Variant {
   id: string;
   name: string;
@@ -80,12 +78,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [listFormData, setListFormData] = useState({
     list: '',
     set: '',
-    grouping: '',
-    format: '',
-    source: '',
-    upkeep: '',
-    graph: '',
-    origin: ''
+    grouping: ''
   });
 
   // Driver selections state
@@ -124,12 +117,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [variantsText, setVariantsText] = useState('');
   const [variantsArray, setVariantsArray] = useState<Variant[]>([]);
   
-  // List values textarea state (for bulk edit - always starts empty)
-  const [listValuesText, setListValuesText] = useState<string>('');
-  const listValuesTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const isListValuesTextareaFocusedRef = useRef(false);
-  const lastListValuesChangeTimeRef = useRef(0);
-
   // Variations state for lists (for bulk edit - always starts empty)
   const [variationsText, setVariationsText] = useState<string>('');
   const variationsTextareaRef = useRef<HTMLTextAreaElement>(null);
@@ -179,23 +166,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const isTextareaFocusedRef = useRef<boolean>(false);
   const lastChangeTimeRef = useRef<number>(0);
 
-  // List metadata input fields focus management (for lists tab)
-  const listFormatInputRef = useRef<HTMLInputElement>(null);
-  const listSourceInputRef = useRef<HTMLInputElement>(null);
-  const listUpkeepInputRef = useRef<HTMLInputElement>(null);
-  const listGraphInputRef = useRef<HTMLInputElement>(null);
-  const listOriginInputRef = useRef<HTMLInputElement>(null);
-  const isListFormatInputFocusedRef = useRef<boolean>(false);
-  const isListSourceInputFocusedRef = useRef<boolean>(false);
-  const isListUpkeepInputFocusedRef = useRef<boolean>(false);
-  const isListGraphInputFocusedRef = useRef<boolean>(false);
-  const isListOriginInputFocusedRef = useRef<boolean>(false);
-  const lastListFormatChangeTimeRef = useRef<number>(0);
-  const lastListSourceChangeTimeRef = useRef<number>(0);
-  const lastListUpkeepChangeTimeRef = useRef<number>(0);
-  const lastListGraphChangeTimeRef = useRef<number>(0);
-  const lastListOriginChangeTimeRef = useRef<number>(0);
-
   const handleSortVariants = (direction: 'asc' | 'desc') => {
     const lines = variantsText.split('\n').filter(line => line.trim() !== '');
     const sortedLines = [...lines].sort((a, b) => {
@@ -208,53 +178,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       }
     });
     setVariantsText(sortedLines.join('\n') + (variantsText.endsWith('\n') ? '\n' : ''));
-  };
-
-  // Handle list values textarea changes
-  const handleListValuesTextChange = (text: string) => {
-    const textarea = listValuesTextareaRef.current;
-    const cursorPosition = textarea?.selectionStart || 0;
-    lastListValuesChangeTimeRef.current = Date.now();
-    setListValuesText(text);
-    // Restore cursor position after state update
-    requestAnimationFrame(() => {
-      if (listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-        listValuesTextareaRef.current.focus();
-        const maxPos = listValuesTextareaRef.current.value.length;
-        const safePos = Math.min(cursorPosition, maxPos);
-        listValuesTextareaRef.current.setSelectionRange(safePos, safePos);
-      }
-    });
-  };
-
-  // Sort list values A-Z or Z-A
-  const handleSortListValues = (direction: 'asc' | 'desc') => {
-    const lines = listValuesText.split('\n').filter(line => line.trim());
-    const sorted = direction === 'asc' 
-      ? lines.sort((a, b) => a.trim().localeCompare(b.trim()))
-      : lines.sort((a, b) => b.trim().localeCompare(a.trim()));
-    setListValuesText(sorted.join('\n'));
-  };
-
-  // Handle list values CSV upload
-  const handleListValuesCsvUpload = (uploadedValues: any[]) => {
-    // Append uploaded values to existing textarea text
-    const existingLines = listValuesText.split('\n').filter(line => line.trim());
-    const existingSet = new Set(existingLines.map(line => line.trim().toLowerCase()));
-    
-    // Filter out duplicates (case-insensitive)
-    const newValues = uploadedValues
-      .map((lv: any) => lv.value?.trim() || lv.name?.trim() || '')
-      .filter((val: string) => val && !existingSet.has(val.toLowerCase()));
-    
-    if (newValues.length < uploadedValues.length) {
-      const skippedCount = uploadedValues.length - newValues.length;
-      alert(`Uploaded ${newValues.length} new list values. Skipped ${skippedCount} duplicates.`);
-    }
-    
-    // Append new values to textarea
-    const newLines = newValues.join('\n');
-    setListValuesText(prev => prev ? `${prev}\n${newLines}` : newLines);
   };
 
   // Variations handlers for lists
@@ -309,8 +232,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isRelationshipUploadOpen, setIsRelationshipUploadOpen] = useState(false);
   const [isVariantUploadOpen, setIsVariantUploadOpen] = useState(false);
   const [isVariantsModalOpen, setIsVariantsModalOpen] = useState(false);
-  const [isListValuesUploadOpen, setIsListValuesUploadOpen] = useState(false);
-  
   // Relationship modal state
   const [isRelationshipModalOpen, setIsRelationshipModalOpen] = useState(false);
   const [isCloneRelationshipsModalOpen, setIsCloneRelationshipsModalOpen] = useState(false);
@@ -848,51 +769,9 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         saveData.grouping = listFormData.grouping;
       }
       
-      // Add metadata fields if changed
-      if (listFormData.format.trim() !== '') {
-        saveData.format = listFormData.format;
-      }
-      if (listFormData.source.trim() !== '') {
-        saveData.source = listFormData.source;
-      }
-      if (listFormData.upkeep.trim() !== '') {
-        saveData.upkeep = listFormData.upkeep;
-      }
-      if (listFormData.graph.trim() !== '') {
-        saveData.graph = listFormData.graph;
-      }
-      if (listFormData.origin.trim() !== '') {
-        saveData.origin = listFormData.origin;
-      }
-      
       // Add relationships if selected (for future implementation)
       if (selectedVariables.length > 0) {
         saveData.variablesAttachedList = selectedVariables;
-      }
-      
-      // Add list values if entered (will be appended to each selected list)
-      if (listValuesText.trim() !== '') {
-        const listValuesArray = listValuesText
-          .split('\n')
-          .map(line => line.trim())
-          .filter(line => line.length > 0)
-          .map((value, index) => ({
-            id: (Date.now() + index).toString(),
-            value
-          }));
-        
-        // Check for duplicate values (case-insensitive) within the entered values
-        const uniqueValues = new Set(listValuesArray.map(lv => lv.value.toLowerCase()));
-        if (listValuesArray.length !== uniqueValues.size) {
-          const duplicateValues = listValuesArray.filter((lv, index) => 
-            listValuesArray.findIndex(v => v.value.toLowerCase() === lv.value.toLowerCase()) !== index
-          ).map(lv => lv.value);
-          
-          alert(`Cannot save: Duplicate list values found: ${duplicateValues.join(', ')}. Please remove duplicates before saving.`);
-          return;
-        }
-        
-        saveData.listValuesList = listValuesArray;
       }
       
       // Handle variationsList - parse from textarea and check for duplicates
@@ -1495,257 +1374,16 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Format
+                  List Type
                 </label>
-                <input
-                  ref={listFormatInputRef}
-                  type="text"
-                  value={listFormData.format}
-                  onInput={(e) => {
-                    e.stopPropagation();
-                    const input = e.target as HTMLInputElement;
-                    const cursorPosition = input.selectionStart;
-                    const newValue = input.value;
-                    lastListFormatChangeTimeRef.current = Date.now();
-                    handleChange('format', newValue);
-                    const restoreFocus = () => {
-                      if (listFormatInputRef.current) {
-                        listFormatInputRef.current.focus();
-                        const maxPos = listFormatInputRef.current.value.length;
-                        const safePos = Math.min(cursorPosition, maxPos);
-                        listFormatInputRef.current.setSelectionRange(safePos, safePos);
-                      }
-                    };
-                    restoreFocus();
-                    Promise.resolve().then(restoreFocus);
-                    requestAnimationFrame(restoreFocus);
-                  }}
-                  onChange={(e) => { e.stopPropagation(); }}
-                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListFormatInputFocusedRef.current = true; }}
-                  onBlur={(e) => {
-                    const timeSinceLastChange = Date.now() - lastListFormatChangeTimeRef.current;
-                    const wasRecentTyping = timeSinceLastChange < 300;
-                    const relatedTarget = e.relatedTarget as HTMLElement;
-                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                    if (wasRecentTyping && !clickedOnInput && listFormatInputRef.current && isListFormatInputFocusedRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setTimeout(() => { if (listFormatInputRef.current) listFormatInputRef.current.focus(); }, 0);
-                    } else if (!wasRecentTyping) {
-                      isListFormatInputFocusedRef.current = false;
-                    }
-                  }}
-                  placeholder="Keep current format"
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Source
-                </label>
-                <input
-                  ref={listSourceInputRef}
-                  type="text"
-                  value={listFormData.source}
-                  onInput={(e) => {
-                    e.stopPropagation();
-                    const input = e.target as HTMLInputElement;
-                    const cursorPosition = input.selectionStart;
-                    const newValue = input.value;
-                    lastListSourceChangeTimeRef.current = Date.now();
-                    handleChange('source', newValue);
-                    const restoreFocus = () => {
-                      if (listSourceInputRef.current) {
-                        listSourceInputRef.current.focus();
-                        const maxPos = listSourceInputRef.current.value.length;
-                        const safePos = Math.min(cursorPosition, maxPos);
-                        listSourceInputRef.current.setSelectionRange(safePos, safePos);
-                      }
-                    };
-                    restoreFocus();
-                    Promise.resolve().then(restoreFocus);
-                    requestAnimationFrame(restoreFocus);
-                  }}
-                  onChange={(e) => { e.stopPropagation(); }}
-                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListSourceInputFocusedRef.current = true; }}
-                  onBlur={(e) => {
-                    const timeSinceLastChange = Date.now() - lastListSourceChangeTimeRef.current;
-                    const wasRecentTyping = timeSinceLastChange < 300;
-                    const relatedTarget = e.relatedTarget as HTMLElement;
-                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                    if (wasRecentTyping && !clickedOnInput && listSourceInputRef.current && isListSourceInputFocusedRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setTimeout(() => { if (listSourceInputRef.current) listSourceInputRef.current.focus(); }, 0);
-                    } else if (!wasRecentTyping) {
-                      isListSourceInputFocusedRef.current = false;
-                    }
-                  }}
-                  placeholder="Keep current source"
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Upkeep
-                </label>
-                <input
-                  ref={listUpkeepInputRef}
-                  type="text"
-                  value={listFormData.upkeep}
-                  onInput={(e) => {
-                    e.stopPropagation();
-                    const input = e.target as HTMLInputElement;
-                    const cursorPosition = input.selectionStart;
-                    const newValue = input.value;
-                    lastListUpkeepChangeTimeRef.current = Date.now();
-                    handleChange('upkeep', newValue);
-                    const restoreFocus = () => {
-                      if (listUpkeepInputRef.current) {
-                        listUpkeepInputRef.current.focus();
-                        const maxPos = listUpkeepInputRef.current.value.length;
-                        const safePos = Math.min(cursorPosition, maxPos);
-                        listUpkeepInputRef.current.setSelectionRange(safePos, safePos);
-                      }
-                    };
-                    restoreFocus();
-                    Promise.resolve().then(restoreFocus);
-                    requestAnimationFrame(restoreFocus);
-                  }}
-                  onChange={(e) => { e.stopPropagation(); }}
-                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListUpkeepInputFocusedRef.current = true; }}
-                  onBlur={(e) => {
-                    const timeSinceLastChange = Date.now() - lastListUpkeepChangeTimeRef.current;
-                    const wasRecentTyping = timeSinceLastChange < 300;
-                    const relatedTarget = e.relatedTarget as HTMLElement;
-                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                    if (wasRecentTyping && !clickedOnInput && listUpkeepInputRef.current && isListUpkeepInputFocusedRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setTimeout(() => { if (listUpkeepInputRef.current) listUpkeepInputRef.current.focus(); }, 0);
-                    } else if (!wasRecentTyping) {
-                      isListUpkeepInputFocusedRef.current = false;
-                    }
-                  }}
-                  placeholder="Keep current upkeep"
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Graph
-                </label>
-                <input
-                  ref={listGraphInputRef}
-                  type="text"
-                  value={listFormData.graph}
-                  onInput={(e) => {
-                    e.stopPropagation();
-                    const input = e.target as HTMLInputElement;
-                    const cursorPosition = input.selectionStart;
-                    const newValue = input.value;
-                    lastListGraphChangeTimeRef.current = Date.now();
-                    handleChange('graph', newValue);
-                    const restoreFocus = () => {
-                      if (listGraphInputRef.current) {
-                        listGraphInputRef.current.focus();
-                        const maxPos = listGraphInputRef.current.value.length;
-                        const safePos = Math.min(cursorPosition, maxPos);
-                        listGraphInputRef.current.setSelectionRange(safePos, safePos);
-                      }
-                    };
-                    restoreFocus();
-                    Promise.resolve().then(restoreFocus);
-                    requestAnimationFrame(restoreFocus);
-                  }}
-                  onChange={(e) => { e.stopPropagation(); }}
-                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListGraphInputFocusedRef.current = true; }}
-                  onBlur={(e) => {
-                    const timeSinceLastChange = Date.now() - lastListGraphChangeTimeRef.current;
-                    const wasRecentTyping = timeSinceLastChange < 300;
-                    const relatedTarget = e.relatedTarget as HTMLElement;
-                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                    if (wasRecentTyping && !clickedOnInput && listGraphInputRef.current && isListGraphInputFocusedRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setTimeout(() => { if (listGraphInputRef.current) listGraphInputRef.current.focus(); }, 0);
-                    } else if (!wasRecentTyping) {
-                      isListGraphInputFocusedRef.current = false;
-                    }
-                  }}
-                  placeholder="Keep current graph"
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-ag-dark-text mb-2">
-                  Origin
-                </label>
-                <input
-                  ref={listOriginInputRef}
-                  type="text"
-                  value={listFormData.origin}
-                  onInput={(e) => {
-                    e.stopPropagation();
-                    const input = e.target as HTMLInputElement;
-                    const cursorPosition = input.selectionStart;
-                    const newValue = input.value;
-                    lastListOriginChangeTimeRef.current = Date.now();
-                    handleChange('origin', newValue);
-                    const restoreFocus = () => {
-                      if (listOriginInputRef.current) {
-                        listOriginInputRef.current.focus();
-                        const maxPos = listOriginInputRef.current.value.length;
-                        const safePos = Math.min(cursorPosition, maxPos);
-                        listOriginInputRef.current.setSelectionRange(safePos, safePos);
-                      }
-                    };
-                    restoreFocus();
-                    Promise.resolve().then(restoreFocus);
-                    requestAnimationFrame(restoreFocus);
-                  }}
-                  onChange={(e) => { e.stopPropagation(); }}
-                  onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
-                  onFocus={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); isListOriginInputFocusedRef.current = true; }}
-                  onBlur={(e) => {
-                    const timeSinceLastChange = Date.now() - lastListOriginChangeTimeRef.current;
-                    const wasRecentTyping = timeSinceLastChange < 300;
-                    const relatedTarget = e.relatedTarget as HTMLElement;
-                    const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
-                    if (wasRecentTyping && !clickedOnInput && listOriginInputRef.current && isListOriginInputFocusedRef.current) {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setTimeout(() => { if (listOriginInputRef.current) listOriginInputRef.current.focus(); }, 0);
-                    } else if (!wasRecentTyping) {
-                      isListOriginInputFocusedRef.current = false;
-                    }
-                  }}
-                  placeholder="Keep current origin"
-                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                />
+                <div
+                  className="rounded-lg border border-ag-dark-border bg-ag-dark-bg/60 p-4 opacity-60 pointer-events-none select-none"
+                  aria-disabled="true"
+                >
+                  <p className="text-sm text-ag-dark-text-secondary">
+                    List type can only be changed when editing a single list, not in bulk edit.
+                  </p>
+                </div>
               </div>
             </div>
           </CollapsibleSection>
@@ -1786,11 +1424,15 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   );
                 })()}
                 <button
+                  type="button"
                   onClick={() => setIsVariableRelationshipModalOpen(true)}
-                  className="px-3 py-1.5 text-sm font-medium border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors"
-                  title="View and manage applicability"
+                  disabled={selectedCount === 0}
+                  className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
+                    selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  title={selectedCount === 0 ? "Select lists to view applicability" : "View and manage applicability"}
                 >
-                  View Applicability
+                  <Grid3x3 className="w-5 h-5" />
                 </button>
               </div>
             }
@@ -1799,7 +1441,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               {selectedVariables.length === 0 ? (
                 <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
                   <div className="text-sm text-ag-dark-text-secondary">
-                    <span className="font-medium">No variables selected:</span> Click "View Applicability" to select variables from the variables grid.
+                    <span className="font-medium">No variables selected:</span> Use the grid icon above to select variables from the variables grid.
                   </div>
                 </div>
               ) : (
@@ -1831,111 +1473,35 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </div>
           </CollapsibleSection>
 
-          {/* List Values Section - Lists */}
+          {/* List Values Section - Lists (not configurable in bulk edit) */}
           <CollapsibleSection 
             title="List Values" 
             sectionKey="listValues"
             icon={<List className="w-4 h-4 text-ag-dark-text-secondary" />}
             actions={
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleSortListValues('asc')}
-                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-                  title="Sort A-Z"
-                >
-                  <ArrowUpAZ className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => handleSortListValues('desc')}
-                  className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-                  title="Sort Z-A"
-                >
-                  <ArrowDownZA className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => setIsListValuesUploadOpen(true)}
-                  className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-                  title="Upload List Values CSV"
-                >
-                  <Upload className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setListValuesGraphModalOpen(true)}
-                  disabled={selectedObjects.length === 0}
-                  className={`p-1 transition-colors ${
-                    selectedObjects.length > 0
-                      ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
-                      : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
-                  }`}
-                  title={selectedObjects.length > 0 ? "View List Values Graph" : "Select lists to view list values graph"}
-                >
-                  <Network className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setListValuesGraphModalOpen(true)}
+                disabled={selectedObjects.length === 0}
+                className={`p-1 transition-colors ${
+                  selectedObjects.length > 0
+                    ? 'text-ag-dark-text-secondary hover:text-ag-dark-accent' 
+                    : 'text-ag-dark-text-secondary/30 cursor-not-allowed opacity-50'
+                }`}
+                title={selectedObjects.length > 0 ? "View List Values Graph" : "Select lists to view list values graph"}
+              >
+                <Network className="w-4 h-4" />
+              </button>
             }
           >
-            <div className="mb-4">
-              <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
-                <div className="text-sm text-ag-dark-text-secondary">
-                  <span className="font-medium">Bulk list values editing:</span> Enter list values below to append them to all selected lists. Each list value should be on a new line.
-                </div>
-              </div>
+            <div
+              className="rounded-lg border border-ag-dark-border bg-ag-dark-bg/60 p-4 opacity-60 pointer-events-none select-none"
+              aria-disabled="true"
+            >
+              <p className="text-sm text-ag-dark-text-secondary">
+                List values cannot be configured in bulk edit.
+              </p>
             </div>
-            <textarea
-              ref={listValuesTextareaRef}
-              value={listValuesText}
-              onChange={(e) => {
-                handleListValuesTextChange(e.target.value);
-              }}
-              onKeyDown={(e) => {
-                // Prevent Enter key from propagating to parent components
-                e.stopPropagation();
-                // Prevent default only for Escape, not Enter
-                if (e.key === 'Escape') {
-                  listValuesTextareaRef.current?.blur();
-                }
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                e.nativeEvent.stopImmediatePropagation();
-              }}
-              onFocus={(e) => {
-                e.stopPropagation();
-                isListValuesTextareaFocusedRef.current = true;
-              }}
-              onBlur={(e) => {
-                // Only restore focus if blur happened very recently after typing (likely accidental)
-                const timeSinceLastChange = Date.now() - lastListValuesChangeTimeRef.current;
-                const wasRecentTyping = timeSinceLastChange < 200; // 200ms window
-                
-                // Check if blur was intentional (user clicked on another focusable element)
-                const relatedTarget = e.relatedTarget as HTMLElement;
-                const clickedOutside = !relatedTarget || 
-                  (relatedTarget.tagName !== 'TEXTAREA' && 
-                   relatedTarget.tagName !== 'INPUT' && 
-                   !relatedTarget.isContentEditable);
-                
-                // Only restore focus if it was recent typing and user didn't click on another input
-                if (wasRecentTyping && clickedOutside && listValuesTextareaRef.current && isListValuesTextareaFocusedRef.current) {
-                  // Restore focus after a brief delay to let React finish its render cycle
-                  setTimeout(() => {
-                    if (listValuesTextareaRef.current && document.activeElement !== listValuesTextareaRef.current) {
-                      listValuesTextareaRef.current.focus();
-                    }
-                  }, 10);
-                } else if (!wasRecentTyping) {
-                  // User intentionally blurred, don't restore
-                  isListValuesTextareaFocusedRef.current = false;
-                }
-              }}
-              placeholder={listValuesText.trim() === '' ? "Type one list value per line. Press Enter to add more. These values will be appended to all selected lists. Use the upload icon to import from CSV." : undefined}
-              rows={8}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-            />
           </CollapsibleSection>
 
           {/* Variations Section - Lists */}
@@ -2407,13 +1973,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         onUpload={handleVariantCsvUpload}
       />
       
-      <ListCsvUploadModal
-        isOpen={isListValuesUploadOpen}
-        onClose={() => setIsListValuesUploadOpen(false)}
-        type="list-values"
-        onUpload={handleListValuesCsvUpload}
-      />
-
       <CsvUploadModal
         isOpen={isVariationUploadOpen}
         onClose={() => setIsVariationUploadOpen(false)}

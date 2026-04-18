@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, ArrowUpAZ, ArrowDownZA, Grid3x3, Copy } from 'lucide-react';
 import { getDriversData, concatenateDrivers } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
@@ -11,6 +11,8 @@ import { VariationsModal } from './VariationsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
+import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
+import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 
 interface BulkEditVariablesPanelProps {
   isOpen: boolean;
@@ -29,7 +31,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   onSave,
   selectedCount,
   allData = [],
-  objectsData: _objectsData = [],
+  objectsData = [],
   selectedVariableIds,
   selectedVariableNames
 }) => {
@@ -90,6 +92,9 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     isOpen: boolean;
     viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships' | null;
   }>({ isOpen: false, viewType: null });
+
+  const [isCloneVariableRelevanceModalOpen, setIsCloneVariableRelevanceModalOpen] = useState(false);
+  const [isBulkVariableRelevanceModalOpen, setIsBulkVariableRelevanceModalOpen] = useState(false);
 
   const openOntologyModal = (viewType: 'drivers' | 'ontology' | 'metadata' | 'objectRelationships') => {
     setOntologyModalOpen({ isOpen: true, viewType });
@@ -1599,7 +1604,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
                 const hasSameFormat = formatIs.length === 1 && formatIIs.length === 1;
                 const commonFormatI = hasSameFormat ? formatIs[0] : undefined;
                 const commonFormatII = hasSameFormat ? formatIIs[0] : undefined;
-                const placeholder = hasSameFormat && commonFormatI === 'Time' ? 'e.g. 12/5/2025' : hasSameFormat && commonFormatI === 'Number' && commonFormatII ? (commonFormatII === 'Integer' ? 'e.g. 42' : commonFormatII === 'Decimal' ? 'e.g. 3.14' : 'e.g. 50%') : 'Enter value';
+                const placeholder = hasSameFormat && (commonFormatI === 'Date' || commonFormatI === 'Time') ? 'e.g. 12/5/2025' : hasSameFormat && commonFormatI === 'Number' && commonFormatII ? (commonFormatII === 'Integer' ? 'e.g. 42' : commonFormatII === 'Decimal' ? 'e.g. 3.14' : commonFormatII === 'Percent' || commonFormatII === 'Percentage' ? 'e.g. 50%' : 'Enter value') : 'Enter value';
                 return (
                   <>
                     <div>
@@ -1757,16 +1762,59 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         </div>
       </CollapsibleSection>
 
-      {/* Object Relationships Section */}
+      {/* Relevance (object applicability per variable) */}
       <CollapsibleSection 
         title="Relevance" 
         sectionKey="relationships"
         icon={<Link className="w-4 h-4 text-ag-dark-text-secondary" />}
+        ontologyViewType="objectRelationships"
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsCloneVariableRelevanceModalOpen(true);
+              }}
+              disabled={selectedCount === 0}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={
+                selectedCount === 0
+                  ? 'Select variables to clone relevance'
+                  : 'Clone relevance from another variable onto all selected variables'
+              }
+            >
+              <Copy className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsBulkVariableRelevanceModalOpen(true);
+              }}
+              disabled={selectedCount === 0}
+              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
+                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
+              }`}
+              title={
+                selectedCount === 0
+                  ? 'Select variables to configure relevance'
+                  : 'Configure which objects apply to the selected variables'
+              }
+            >
+              <Grid3x3 className="w-5 h-5" />
+            </button>
+          </div>
+        }
       >
         <div className="py-4">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Relevance is disabled in bulk edit:</span> reconciling per-variable relevance with bulk selections can produce ambiguous results. Configure relevance one variable at a time in Edit Metadata.
+              {
+                "Bulk relevance: use the copy icon to match another variable's object selections on every selected variable, or the grid icon to add object links (existing links are shown when you open the modal)."
+              }
             </div>
           </div>
         </div>
@@ -1925,6 +1973,33 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
           viewType={ontologyModalOpen.viewType}
           mode="variable"
           isBulkMode={true}
+        />
+      )}
+
+      <CloneVariableRelationshipsModal
+        isOpen={isCloneVariableRelevanceModalOpen}
+        onClose={() => setIsCloneVariableRelevanceModalOpen(false)}
+        targetVariables={
+          selectedVariableIds?.length
+            ? allData.filter((v: any) => selectedVariableIds.includes(v.id))
+            : []
+        }
+        allVariables={allData}
+        onCloneSuccess={async () => {
+          await onSave({ _refreshRelationships: true });
+        }}
+      />
+
+      {selectedVariableIds && selectedVariableIds.length > 0 && (
+        <VariableObjectRelationshipModal
+          isOpen={isBulkVariableRelevanceModalOpen}
+          onClose={() => setIsBulkVariableRelevanceModalOpen(false)}
+          selectedVariables={allData.filter((v: any) => selectedVariableIds.includes(v.id))}
+          allObjects={objectsData}
+          isBulkMode={true}
+          onSave={async () => {
+            await onSave({ _refreshRelationships: true });
+          }}
         />
       )}
     </div>
