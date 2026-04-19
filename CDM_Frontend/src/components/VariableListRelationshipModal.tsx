@@ -1,10 +1,21 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { X, Save, Link, ArrowUpAZ } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { X, Save, Link, ArrowUpAZ, Loader2 } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { variableColumns } from '../data/variablesData';
 import { apiService } from '../services/api';
 import type { VariableData } from '../data/variablesData';
 import { VariablesCustomSortModal } from './VariablesCustomSortModal';
+
+/** Lowercased text for keyword applicability (`variable` + optional API `name`; spacing preserved). */
+function variableKeywordHaystack(v: { variable?: string; name?: string }): string {
+  return `${v.variable ?? ''} ${v.name ?? ''}`.trim().toLowerCase();
+}
+
+export type ListApplicabilityDraftPayload = {
+  variables: VariableData[];
+  selectionMode: 'manual' | 'any' | 'keyword';
+  keyword: string;
+};
 
 interface VariableListRelationshipModalProps {
   isOpen: boolean;
@@ -14,6 +25,11 @@ interface VariableListRelationshipModalProps {
   allVariables: VariableData[];
   onSave?: () => void; // Callback to refresh main data
   isBulkMode?: boolean; // Flag to indicate bulk edit mode
+  /** When true, do not call list APIs; commit selection via onDraftSave (e.g. Add List panel). */
+  isDraftMode?: boolean;
+  /** Variable IDs to show as selected when opening draft (manual baseline). */
+  draftInitialVariableIds?: string[];
+  onDraftSave?: (payload: ListApplicabilityDraftPayload) => void;
   variablesOrderSortOrder?: {
     partOrder: string[];
     sectionOrders: Record<string, string[]>;
@@ -28,6 +44,9 @@ interface SelectedVariableData {
   isSelected: boolean;
 }
 
+/** Stable fallback so default `= []` is not re-created every render (that was re-firing init effects). */
+const EMPTY_DRAFT_VARIABLE_IDS: readonly string[] = [];
+
 export const VariableListRelationshipModal: React.FC<VariableListRelationshipModalProps> = ({
   isOpen,
   onClose,
@@ -36,6 +55,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
   allVariables,
   onSave,
   isBulkMode = false,
+  isDraftMode = false,
+  draftInitialVariableIds,
+  onDraftSave,
   variablesOrderSortOrder,
   isVariablesOrderEnabled = false
 }) => {
@@ -57,6 +79,28 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
     order: 'asc' | 'desc';
   }>>([]);
   const [isApplicabilityOrderEnabled, setIsApplicabilityOrderEnabled] = useState(isVariablesOrderEnabled);
+
+  /** Avoid effect churn when the variables array reference changes but contents are stable. */
+  const allVariablesRef = useRef<VariableData[]>(allVariables);
+  allVariablesRef.current = allVariables;
+
+  const resolvedDraftVariableIds = draftInitialVariableIds ?? EMPTY_DRAFT_VARIABLE_IDS;
+  /** Content-based key — stable when parent omits prop or passes a fresh `[]` each render. */
+  const draftVariableIdsKey = [...resolvedDraftVariableIds].filter(Boolean).sort().join('\x1e');
+
+  const initGenerationRef = useRef(0);
+
+  /** Set loading before first paint when opening so we never flash the grid at wrong state. */
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      setLoading(false);
+      return;
+    }
+    if (sourceLists.length === 0 || allVariables.length === 0) {
+      return;
+    }
+    setLoading(true);
+  }, [isOpen, sourceLists.length, sourceLists[0]?.id, allVariables.length, draftVariableIdsKey]);
   
   // Selection mode: 'manual' (default), 'any', or 'keyword'
   const [selectionMode, setSelectionMode] = useState<'manual' | 'any' | 'keyword'>('manual');
@@ -66,6 +110,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
   // Get storage key for persisting keyword filter per list
   const getKeywordStorageKey = () => {
+    if (isDraftMode) {
+      return 'cdm_add_list_applicability_keyword';
+    }
     if (sourceLists.length === 1) {
       return `list_keyword_filter_${sourceLists[0].id}`;
     }
@@ -74,6 +121,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
   // Get storage key for persisting saved keyword per list
   const getSavedKeywordStorageKey = () => {
+    if (isDraftMode) {
+      return 'cdm_add_list_applicability_saved_keyword';
+    }
     if (sourceLists.length === 1) {
       return `list_saved_keyword_${sourceLists[0].id}`;
     }
@@ -119,22 +169,21 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
   // Initialize selected variables when modal opens or list changes
   useEffect(() => {
-    if (isOpen && sourceLists.length > 0 && allVariables.length > 0) {
-      initializeSelectedVariables();
-    }
-    // Reset when modal closes (but preserve keyword filter)
     if (!isOpen) {
       setSelectedVariables({});
-      // Don't reset selectionMode and keywordFilter - they're persisted
+      initGenerationRef.current++;
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, sourceLists.length, sourceLists[0]?.id, allVariables.length]); // Add list ID to dependencies
+    if (sourceLists.length === 0 || allVariables.length === 0) {
+      return;
+    }
 
-  const initializeSelectedVariables = async () => {
-    if (sourceLists.length === 0) return;
+    const generation = ++initGenerationRef.current;
 
-    setLoading(true);
-    try {
+    const initializeSelectedVariables = async () => {
+      if (sourceLists.length === 0) return;
+
+      try {
       // Get current keyword from localStorage (in case state hasn't updated yet)
       const storageKey = getKeywordStorageKey();
       const savedKeywordKey = getSavedKeywordStorageKey();
@@ -153,41 +202,45 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       
       let allExistingRelationships: any[] = [];
       
-      if (!isBulkMode && sourceLists.length === 1) {
-        // For single list, load existing relationships
-        try {
-          const listId = sourceLists[0].id;
-          const existingRelationships = await apiService.getListVariableRelationships(listId) as any;
-          allExistingRelationships = existingRelationships.variables || [];
-        } catch (error) {
-          console.error('Failed to load existing relationships:', error);
-        }
-      } else if (isBulkMode) {
-        // Bulk mode: load existing relationships for all source lists
-        for (const list of sourceLists) {
+      if (!isDraftMode) {
+        if (!isBulkMode && sourceLists.length === 1) {
+          // For single list, load existing relationships
           try {
-            const existingRelationships = await apiService.getListVariableRelationships(list.id) as any;
-            const variablesList = existingRelationships.variables || [];
-            allExistingRelationships.push(...variablesList.map((var_: any) => ({ ...var_, listId: list.id })));
+            const listId = sourceLists[0].id;
+            const existingRelationships = await apiService.getListVariableRelationships(listId) as any;
+            allExistingRelationships = existingRelationships.variables || [];
           } catch (error) {
-            console.error(`Failed to load relationships for list ${list.id}:`, error);
+            console.error('Failed to load existing relationships:', error);
+          }
+        } else if (isBulkMode) {
+          // Bulk mode: load existing relationships for all source lists (union for display)
+          for (const list of sourceLists) {
+            try {
+              const existingRelationships = await apiService.getListVariableRelationships(list.id) as any;
+              const variablesList = existingRelationships.variables || [];
+              allExistingRelationships.push(...variablesList.map((var_: any) => ({ ...var_, listId: list.id })));
+            } catch (error) {
+              console.error(`Failed to load relationships for list ${list.id}:`, error);
+            }
           }
         }
       }
 
+      const draftIdSet = new Set(resolvedDraftVariableIds.filter(Boolean));
+
       // Initialize selection data for all variables
       const initialData: Record<string, SelectedVariableData> = {};
       
-      // If keyword mode is active, use keyword to determine selection
-      // Otherwise, use existing relationships
-      if (selectionMode === 'keyword' && currentKeyword && currentKeyword.trim()) {
-        // Apply keyword filter to determine selection - ONLY match in variable name
+      // Keyword selection: use storage-resolved keyword even if React hasn't committed
+      // `selectionMode === 'keyword'` yet (keyword effect runs in the same tick as this effect).
+      // "Any" still wins when explicitly selected.
+      const useKeywordInit =
+        selectionMode !== 'any' && Boolean((currentKeyword || '').trim());
+      if (useKeywordInit) {
         const keywordParts = currentKeyword.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
         for (const variable of allVariables) {
-          // Only search in the variable name itself, not in part/group/section
-          const searchableText = (variable.variable || '').toLowerCase();
-          
-          const matches = keywordParts.every(keyword => searchableText.includes(keyword));
+          const haystack = variableKeywordHaystack(variable);
+          const matches = keywordParts.every(keyword => haystack.includes(keyword));
           
           initialData[variable.id] = {
             variableId: variable.id,
@@ -203,21 +256,21 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
           };
         }
       } else {
-        // Manual mode: use existing relationships
+        // Manual mode: use existing relationships (or draft IDs for Add List)
         for (const variable of allVariables) {
-          // Check if this variable has a relationship with any of the source lists
-          const hasRelationship = allExistingRelationships.some((rel: any) => {
-            // Match by variable ID or by composite key (part, group, section, variable)
-            if (rel.id === variable.id) return true;
-            if (rel.variableId === variable.id) return true;
-            if (rel.part === variable.part && 
-                rel.group === variable.group && 
-                rel.section === variable.section && 
-                rel.variable === variable.variable) {
-              return true;
-            }
-            return false;
-          });
+          const hasRelationship = isDraftMode
+            ? draftIdSet.has(variable.id)
+            : allExistingRelationships.some((rel: any) => {
+                if (rel.id === variable.id) return true;
+                if (rel.variableId === variable.id) return true;
+                if (rel.part === variable.part && 
+                    rel.group === variable.group && 
+                    rel.section === variable.section && 
+                    rel.variable === variable.variable) {
+                  return true;
+                }
+                return false;
+              });
           
           initialData[variable.id] = {
             variableId: variable.id,
@@ -226,18 +279,36 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         }
       }
       
+      if (generation !== initGenerationRef.current) return;
       setSelectedVariables(initialData);
     } finally {
-      setLoading(false);
+      if (generation === initGenerationRef.current) {
+        setLoading(false);
+      }
     }
-  };
+    };
+
+    void initializeSelectedVariables();
+
+    return () => {
+      initGenerationRef.current++;
+    };
+  }, [
+    isOpen,
+    sourceLists.length,
+    sourceLists[0]?.id,
+    allVariables.length,
+    isDraftMode,
+    draftVariableIdsKey
+  ]);
 
   // Apply selection mode (Any or Keyword) to variables
   const applySelectionMode = useCallback(() => {
+    const vars = allVariablesRef.current;
     if (selectionMode === 'any') {
       // Select ALL variables dynamically
       const newSelection: Record<string, SelectedVariableData> = {};
-      for (const variable of allVariables) {
+      for (const variable of vars) {
         newSelection[variable.id] = {
           variableId: variable.id,
           isSelected: true
@@ -245,17 +316,13 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       }
       setSelectedVariables(newSelection);
     } else if (selectionMode === 'keyword' && keywordFilter.trim()) {
-      // Select variables matching keywords - ONLY match in variable name
-      // Split by spaces to support multiple keywords (AND logic - all keywords must match)
+      // Select variables matching keywords (name + variable label; case-insensitive)
       const keywordParts = keywordFilter.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
       const newSelection: Record<string, SelectedVariableData> = {};
       
-      for (const variable of allVariables) {
-        // Only search in the variable name itself, not in part/group/section
-        const searchableText = (variable.variable || '').toLowerCase();
-        
-        // All keyword parts must be found in the variable name (AND logic)
-        const matches = keywordParts.every(keyword => searchableText.includes(keyword));
+      for (const variable of vars) {
+        const haystack = variableKeywordHaystack(variable);
+        const matches = keywordParts.every(keyword => haystack.includes(keyword));
         
         newSelection[variable.id] = {
           variableId: variable.id,
@@ -265,16 +332,16 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
       setSelectedVariables(newSelection);
     }
     // For 'manual' mode, keep current selection
-  }, [selectionMode, keywordFilter, allVariables]);
+  }, [selectionMode, keywordFilter]);
 
-  // Update selection when mode changes or allVariables changes
+  // Update selection when mode / keyword changes (variables read from ref to avoid dependency loops)
   useEffect(() => {
-    if (isOpen && allVariables.length > 0 && !loading) {
+    if (isOpen && allVariablesRef.current.length > 0 && !loading) {
       if (selectionMode === 'any' || (selectionMode === 'keyword' && keywordFilter.trim())) {
         applySelectionMode();
       }
     }
-  }, [selectionMode, keywordFilter, allVariables, isOpen, loading, applySelectionMode]);
+  }, [selectionMode, keywordFilter, isOpen, loading, applySelectionMode, allVariables.length]);
 
   const handleAnyButtonClick = () => {
     setSelectionMode('any');
@@ -354,30 +421,46 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
 
     setSaving(true);
     try {
-      if (isBulkMode) {
-        // BULK MODE: Create relationships from each selected variable to each source list
-        const selectedVariableIds = Object.entries(selectedVariables)
-          .filter(([_, data]) => data.isSelected)
-          .map(([id, _]) => id);
-        
-        if (selectedVariableIds.length === 0) {
-          alert('Please select at least one variable to create relationships.');
-          setSaving(false);
-          return;
+      const resolveVariablesToRelate = (): string[] => {
+        const currentKeyword =
+          selectionMode === 'keyword' && keywordFilter.trim() ? keywordFilter.trim() : '';
+        if (selectionMode === 'keyword' && currentKeyword) {
+          const keywordParts = currentKeyword.toLowerCase().split(/\s+/).filter(k => k.length > 0);
+          return allVariables
+            .filter(variable => {
+              const hay = variableKeywordHaystack(variable);
+              return keywordParts.every(keyword => hay.includes(keyword));
+            })
+            .map(v => v.id);
         }
+        if (selectionMode === 'any') {
+          return allVariables.map(v => v.id);
+        }
+        return Object.entries(selectedVariables)
+          .filter(([_, data]) => data.isSelected)
+          .map(([id]) => id);
+      };
 
-        // Collect all relationships to create
-        const relationshipsToCreate: Array<{
-          variableId: string;
-          listId: string;
-          variable: VariableData;
-        }> = [];
+      if (isDraftMode) {
+        const variablesToRelate = resolveVariablesToRelate();
+        const variables = allVariables.filter(v => variablesToRelate.includes(v.id));
+        onDraftSave?.({
+          variables,
+          selectionMode,
+          keyword: keywordFilter.trim(),
+        });
+        if (onSave) {
+          await onSave();
+        }
+        onClose();
+        return;
+      }
 
-        // Check for duplicates before creating
-        const duplicates: Array<{ variableName: string; listName: string }> = [];
+      if (isBulkMode) {
+        const variablesToRelate = resolveVariablesToRelate();
+        const targetSet = new Set(variablesToRelate);
 
         for (const list of sourceLists) {
-          // Get existing relationships for this list
           let existingRelationships: any[] = [];
           try {
             const existing = await apiService.getListVariableRelationships(list.id) as any;
@@ -385,63 +468,40 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
           } catch (error) {
             console.error(`Failed to load relationships for list ${list.id}:`, error);
           }
-          
-          // Create a set of existing variable IDs for this list
-          const existingVariableIds = new Set(
-            existingRelationships.map((rel: any) => rel.id || rel.variableId)
+          const existingVariableIdSet = new Set(
+            existingRelationships.map((rel: any) => rel.id || rel.variableId),
           );
 
-          for (const variableId of selectedVariableIds) {
-            const variable = allVariables.find(v => v.id === variableId);
-            if (!variable) continue;
+          for (const existingRel of existingRelationships) {
+            const variableId = existingRel.id || existingRel.variableId;
+            if (!targetSet.has(variableId)) {
+              try {
+                await apiService.deleteVariableListRelationship(variableId, list.id);
+              } catch (error) {
+                console.error(`Failed to delete relationship:`, error);
+              }
+            }
+          }
 
-            // Check if relationship already exists
-            if (existingVariableIds.has(variableId)) {
-              duplicates.push({
-                variableName: variable.variable || variable.id,
-                listName: list.list || list.name || list.id
-              });
-            } else {
-              relationshipsToCreate.push({
-                variableId: variableId,
-                listId: list.id,
-                variable: variable
-              });
+          for (const variableId of variablesToRelate) {
+            if (!existingVariableIdSet.has(variableId)) {
+              try {
+                await apiService.createVariableListRelationship(variableId, list.id);
+              } catch (error: any) {
+                const msg = error?.message || String(error);
+                if (!msg.includes('already exists') && !msg.includes('Duplicate')) {
+                  console.error(`Failed to create relationship:`, error);
+                  throw error;
+                }
+              }
             }
           }
         }
 
-        // If duplicates found, show error and abort
-        if (duplicates.length > 0) {
-          const duplicateMessages = duplicates.map(dup => 
-            `${dup.variableName} → ${dup.listName}`
-          );
-          alert(`Duplicate relationships detected. The following relationships already exist:\n\n${duplicateMessages.slice(0, 10).join('\n')}${duplicateMessages.length > 10 ? `\n... and ${duplicateMessages.length - 10} more` : ''}\n\nPlease remove duplicates before saving.`);
-          setSaving(false);
-          return;
-        }
-
-        // Create relationships
-        for (const rel of relationshipsToCreate) {
-          try {
-            await apiService.createVariableListRelationship(rel.variableId, rel.listId);
-          } catch (error: any) {
-            // Check if it's a duplicate error
-            if (error.message?.includes('Duplicate') || error.message?.includes('already exists')) {
-              console.warn(`Duplicate relationship skipped: ${rel.variableId} -> ${rel.listId}`);
-            } else {
-              console.error(`Failed to create relationship:`, error);
-              throw error;
-            }
-          }
-        }
-
-        // Call the callback to refresh main data
         if (onSave) {
           await onSave();
         }
-        
-        alert(`Bulk relationships created successfully! Created ${relationshipsToCreate.length} relationship(s) for ${sourceLists.length} list(s).`);
+        alert(`Applicability updated for ${sourceLists.length} list(s).`);
         onClose();
         return;
       }
@@ -458,31 +518,9 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
         console.error('Failed to load existing relationships:', error);
       }
 
-      // Determine current keyword (empty if not in keyword mode or keyword cleared)
-      // For "any" mode, we don't track a keyword
-      const currentKeyword = (selectionMode === 'keyword' && keywordFilter.trim()) ? keywordFilter.trim() : '';
-      
-      // If in keyword mode, ONLY use variables that match the keyword (ignore manual selections)
-      let variablesToRelate: string[] = [];
-      
-      if (selectionMode === 'keyword' && currentKeyword) {
-        // Keyword mode: ONLY create relationships for variables matching the keyword
-        const keywordParts = currentKeyword.toLowerCase().split(/\s+/).filter(k => k.length > 0);
-        variablesToRelate = allVariables
-          .filter(variable => {
-            const searchableText = (variable.variable || '').toLowerCase();
-            return keywordParts.every(keyword => searchableText.includes(keyword));
-          })
-          .map(v => v.id);
-      } else if (selectionMode === 'any') {
-        // Any mode: select all variables
-        variablesToRelate = allVariables.map(v => v.id);
-      } else {
-        // Manual mode: use selected variables
-        variablesToRelate = Object.entries(selectedVariables)
-          .filter(([_, data]) => data.isSelected)
-          .map(([id, _]) => id);
-      }
+      const currentKeyword =
+        selectionMode === 'keyword' && keywordFilter.trim() ? keywordFilter.trim() : '';
+      const variablesToRelate = resolveVariablesToRelate();
 
       // Get all existing variable IDs
       const existingVariableIdSet = new Set(
@@ -608,9 +646,8 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
     if (selectionMode === 'keyword' && keywordFilter.trim()) {
       const keywordParts = keywordFilter.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
       return gridData.filter(variable => {
-        // Only search in the variable name itself, not in part/group/section
-        const searchableText = (variable.variable || '').toLowerCase();
-        return keywordParts.every(keyword => searchableText.includes(keyword));
+        const haystack = variableKeywordHaystack(variable);
+        return keywordParts.every(keyword => haystack.includes(keyword));
       });
     }
     return gridData;
@@ -647,17 +684,19 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 p-6 overflow-y-auto">
-          {loading || allVariables.length === 0 ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-ag-dark-text-secondary">
-                {loading ? 'Loading relationships...' : 'Loading variables data...'}
-              </div>
+        {/* Content: keep layout stable — overlay while relationships load instead of swapping the whole pane */}
+        <div className="flex-1 p-6 overflow-y-auto min-h-0">
+          {allVariables.length === 0 ? (
+            <div className="flex items-center justify-center h-full min-h-[200px]">
+              <div className="text-ag-dark-text-secondary">Loading variables data...</div>
             </div>
           ) : (
-            <>
-              <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
+            <div className="relative h-full min-h-[280px]">
+              <div
+                className={`h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto transition-opacity duration-150 ${
+                  loading ? 'opacity-45 pointer-events-none' : 'opacity-100'
+                }`}
+              >
                 {/* Selection Mode Controls - Positioned above Variables column */}
                 <div className="mb-4 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border flex justify-end">
                   <div className="flex items-center gap-4 flex-wrap">
@@ -729,9 +768,23 @@ export const VariableListRelationshipModal: React.FC<VariableListRelationshipMod
                 selectionMode="row"
                 isPredefinedSortEnabled={isApplicabilityOrderEnabled}
                 predefinedSortOrder={variablesOrderSortOrder}
+                gridType="variables"
+                persistState={false}
               />
               </div>
-            </>
+              {loading && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center rounded-lg bg-ag-dark-surface/55 pointer-events-none z-10"
+                  aria-busy="true"
+                  aria-live="polite"
+                >
+                  <div className="flex items-center gap-2 px-4 py-2 rounded-md bg-ag-dark-bg/90 border border-ag-dark-border text-sm text-ag-dark-text shadow-lg">
+                    <Loader2 className="w-4 h-4 animate-spin text-ag-dark-accent shrink-0" />
+                    <span>Loading relationships…</span>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

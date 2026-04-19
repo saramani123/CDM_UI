@@ -990,7 +990,7 @@ class ApiService {
 
     const text = await file.text();
     const { headers, rows } = this.parseVariableCSV(text);
-    const required = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable'];
+    const required = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type'];
     const missingCols = required.filter((c) => !headers.includes(c));
     if (missingCols.length > 0) {
       throw new Error(`CSV missing required columns: ${missingCols.join(', ')}. Required: ${required.join(', ')}.`);

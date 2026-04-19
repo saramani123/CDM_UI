@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiService } from '../services/api';
 import { VariableData, ObjectRelationship } from '../data/variablesData';
+import { normalizeOntologyType } from '../constants/ontologyTypes';
 
 export const useVariables = () => {
   const [variables, setVariables] = useState<VariableData[]>([]);
@@ -28,15 +29,16 @@ export const useVariables = () => {
       console.log('First variable:', data?.[0]);
       console.log('Data type:', typeof data);
       console.log('Is array:', Array.isArray(data));
-      // Map is_meme and is_group_key from backend to isMeme and isGroupKey for frontend
-      // Also clear any loading states
       const mappedData = (data || []).map((v: any) => ({
         ...v,
-        isMeme: v.is_meme ?? v.isMeme ?? false,
+        ontologyType:
+          normalizeOntologyType(v.ontologyType) ??
+          normalizeOntologyType(v.ontology_type) ??
+          (v.is_meme === true || v.isMeme === true ? 'Meme' : 'Variant'),
         isGroupKey: v.is_group_key ?? v.isGroupKey ?? v['Is Group Key'] ?? false,
         groupKey: v.group_key ?? v.groupKey ?? v['Group Key'] ?? '',
-        _isMemeLoading: false, // Clear loading state
-        _isGroupKeyLoading: false // Clear loading state
+        _ontologyTypeLoading: false,
+        _isGroupKeyLoading: false
       }));
       setVariables(mappedData);
     } catch (err) {
@@ -65,15 +67,17 @@ export const useVariables = () => {
   const updateVariable = async (id: string, variableData: Partial<VariableData>) => {
     try {
       const updatedVariable = await apiService.updateVariable(id, variableData) as any;
-      // Map is_meme and is_group_key from backend to isMeme and isGroupKey for frontend
-      const variableWithMeme: VariableData = {
+      const variableWithType: VariableData = {
         ...updatedVariable,
-        isMeme: updatedVariable.is_meme ?? updatedVariable.isMeme ?? false,
+        ontologyType:
+          normalizeOntologyType(updatedVariable.ontologyType) ??
+          normalizeOntologyType(updatedVariable.ontology_type) ??
+          (updatedVariable.is_meme === true || updatedVariable.isMeme === true ? 'Meme' : 'Variant'),
         isGroupKey: updatedVariable.is_group_key ?? updatedVariable.isGroupKey ?? updatedVariable['Is Group Key'] ?? false,
         groupKey: updatedVariable.group_key ?? updatedVariable.groupKey ?? updatedVariable['Group Key'] ?? ''
       };
-      setVariables(prev => prev.map(v => v.id === id ? variableWithMeme : v));
-      return variableWithMeme;
+      setVariables(prev => prev.map(v => v.id === id ? variableWithType : v));
+      return variableWithType;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update variable');
       // Refresh data to ensure consistency after error

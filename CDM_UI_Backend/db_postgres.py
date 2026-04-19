@@ -131,11 +131,16 @@ def init_db():
         # Create tables if they don't exist
         Base.metadata.create_all(bind=engine)
         
-        # Migrate existing heuristics table: add is_hero and documentation if missing
+        # Lightweight migrations: create_all() does not add new columns to existing tables.
         with engine.connect() as conn:
             for stmt in [
+                # Heuristics: hero vs documentation-only agents
                 "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS is_hero BOOLEAN NOT NULL DEFAULT TRUE",
                 "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS documentation TEXT",
+                # Metadata: S/D/C columns were added after some prod DBs were created
+                "ALTER TABLE metadata ADD COLUMN IF NOT EXISTS sector VARCHAR DEFAULT ''",
+                "ALTER TABLE metadata ADD COLUMN IF NOT EXISTS domain VARCHAR DEFAULT ''",
+                "ALTER TABLE metadata ADD COLUMN IF NOT EXISTS country VARCHAR DEFAULT ''",
             ]:
                 try:
                     conn.execute(text(stmt))

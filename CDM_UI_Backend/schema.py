@@ -4,7 +4,7 @@ Creates nodes and relationships for Objects, Variables, Lists, and Drivers
 """
 
 from db import get_driver
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices
 from typing import Any, Dict, List, Optional
 
 # ObjectRelationshipCreateRequest class definition
@@ -415,7 +415,10 @@ class ObjectCreateRequest(BaseModel):
     variants: Optional[List[str]] = Field(default=[], description="List of variants")
     relationships: Optional[List[dict]] = Field(default=[], description="List of relationships")
     status: Optional[str] = Field(default="Active", description="Object status")
-    isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
+    ontologyType: Optional[str] = Field(
+        default="Variant",
+        description="Ontology classification: Meme, Variant, or Vulqan",
+    )
     variableIds: Optional[List[str]] = Field(default=[], description="List of variable IDs to clone HAS_SPECIFIC_VARIABLE relationships")
     identifier: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -438,7 +441,7 @@ class ObjectResponse(BaseModel):
     variables: int = 0
     relationshipsList: List[dict] = []
     variantsList: List[dict] = []
-    is_meme: Optional[bool] = False
+    ontology_type: Optional[str] = "Variant"
 
 class CSVRowData(BaseModel):
     """Schema for validating individual CSV rows"""
@@ -449,6 +452,7 @@ class CSVRowData(BaseModel):
     Being: str = Field(..., description="Being type")
     Avatar: str = Field(..., description="Avatar type")
     Object: str = Field(..., description="Object name")
+    Type: str = Field(..., description="Ontology type: Meme, Variant, or Vulqan")
     Variants: Optional[str] = Field(None, description="Comma-separated list of variants (optional)")
     
     class Config:
@@ -471,7 +475,7 @@ class VariableCreateRequest(BaseModel):
     status: Optional[str] = Field("Active", description="Status")
     variationsList: Optional[List[dict]] = None  # List of variations to create for the variable
     selectedObjectIds: Optional[List[str]] = None  # Explicit object IDs for relevance selection in add flow
-    isMeme: Optional[bool] = Field(default=False, description="Is Meme flag")
+    ontologyType: Optional[str] = Field(default="Variant", description="Meme, Variant, or Vulqan")
     isGroupKey: Optional[bool] = Field(default=False, description="Is Group Key flag")
     # When true, each variation name creates a NEW Variation node (clone flow); do not reuse global by name
     forceNewVariationNodes: Optional[bool] = Field(default=False, description="Always create distinct Variation nodes")
@@ -491,7 +495,7 @@ class VariableUpdateRequest(BaseModel):
     graph: Optional[str] = None
     status: Optional[str] = None
     variationsList: Optional[List[dict]] = None  # List of variations to append to the variable
-    isMeme: Optional[bool] = None
+    ontologyType: Optional[str] = None
     isGroupKey: Optional[bool] = None
     
     model_config = ConfigDict(extra='allow')  # Allow extra fields like "Validation #2", "Validation #3", etc.
@@ -515,6 +519,7 @@ class BulkVariableUpdateRequest(BaseModel):
     objectRelationshipsList: Optional[List[ObjectRelationshipCreateRequest]] = None
     shouldOverrideRelationships: Optional[bool] = False  # If true, delete existing relationships before creating new ones
     variationsList: Optional[List[dict]] = None  # List of variations to append to each variable
+    ontologyType: Optional[str] = None  # Meme, Variant, or Vulqan (bulk)
 
 class BulkVariableUpdateResponse(BaseModel):
     """Schema for bulk variable update response"""
@@ -526,6 +531,8 @@ class BulkVariableUpdateResponse(BaseModel):
 
 class VariableResponse(BaseModel):
     """Schema for variable response"""
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str
     driver: str
     part: str
@@ -543,7 +550,11 @@ class VariableResponse(BaseModel):
     objectRelationshipsList: List[dict] = []
     variations: int = 0
     variationsList: List[dict] = []
-    is_meme: Optional[bool] = False
+    ontology_type: str = Field(
+        default="Variant",
+        validation_alias=AliasChoices("ontologyType", "ontology_type"),
+        serialization_alias="ontologyType",
+    )
     is_group_key: Optional[bool] = False
     group_key: Optional[str] = ""
 
@@ -559,7 +570,7 @@ class VariableCSVRowData(BaseModel):
     FormatI: str = Field(..., alias="Format I", description="Format I")
     FormatII: str = Field(..., alias="Format II", description="Format II")
     GType: Optional[str] = Field("", alias="G-Type", description="G-Type")
-    Type: Optional[str] = Field("", description="Type (Meme/Variant)")
+    Type: str = Field(..., description="Required: Meme, Variant, or Vulqan")
     Default: Optional[str] = Field("", description="Default value")
     Graph: Optional[str] = Field("Yes", description="Graph inclusion (Yes/No)")
     

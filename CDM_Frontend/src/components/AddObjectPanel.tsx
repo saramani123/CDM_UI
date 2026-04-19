@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, ArrowUpAZ, ArrowDownZA, Grid3x3 } from 'lucide-react';
 import { concatenateDrivers } from '../data/mockData';
+import { ONTOLOGY_TYPES } from '../constants/ontologyTypes';
 import { CsvUploadModal } from './CsvUploadModal';
 import { RelationshipModal } from './RelationshipModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
@@ -269,7 +270,8 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   const [formData, setFormData] = useState({
     being: '',
     avatar: '',
-    objectName: ''
+    objectName: '',
+    ontologyType: 'Variant' as string
   });
 
   // Driver selections state - default to 'ALL' for sector, domain, and country
@@ -737,6 +739,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
       being: formData.being,
       avatar: formData.avatar,
       object: formData.objectName,
+      ontologyType: formData.ontologyType || 'Variant',
       relationships: 0, // Will be updated when relationships are created
       variants: variantsList.length,
       variables: 54, // Fixed value as requested
@@ -769,7 +772,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     }
 
     // Reset form only after successful create
-    setFormData({ being: '', avatar: '', objectName: '' });
+    setFormData({ being: '', avatar: '', objectName: '', ontologyType: 'Variant' });
     setDriverSelections({
       sector: ['ALL'],
       domain: ['ALL'],
@@ -878,6 +881,28 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         onToggle={toggleSection}
       >
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={formData.ontologyType || 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-ag-dark-text">

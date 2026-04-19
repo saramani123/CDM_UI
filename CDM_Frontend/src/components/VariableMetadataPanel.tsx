@@ -10,6 +10,7 @@ import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddPartValueModal } from './AddPartValueModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { OntologyModal } from './OntologyModal';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { VariationsModal } from './VariationsModal';
 import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, splitValidationString, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
@@ -436,6 +437,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         section: '',
         group: '',
         variable: '',
+        ontologyType: 'Variant',
         formatI: '',
         formatII: '',
         gType: '',
@@ -462,6 +464,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           section: selectedVariable?.section || '',
           group: selectedVariable?.group || '',
           variable: selectedVariable?.variable || '',
+          ontologyType:
+            normalizeOntologyType((selectedVariable as any)?.ontologyType) ??
+            (((selectedVariable as any)?.is_meme === true || (selectedVariable as any)?.isMeme === true) ? 'Meme' : 'Variant'),
           formatI: selectedVariable?.formatI || '',
           formatII: selectedVariable?.formatII || '',
           gType: selectedVariable?.gType || '',
@@ -1305,6 +1310,34 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={normalizeOntologyType(formData.ontologyType) ?? 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
+              disabled={!isPanelEnabled}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-ag-dark-text">

@@ -1,6 +1,47 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 import { ObjectData, parseDriverField } from '../data/mockData';
+import { normalizeOntologyType } from '../constants/ontologyTypes';
+
+/** Merge PUT /objects/:id response into local row without dropping list fields the API omits. */
+function mergeObjectPutResponse(
+  existing: ObjectData | undefined,
+  updatedObject: Record<string, unknown>,
+): ObjectData {
+  const driverForParse =
+    updatedObject.driver != null && String(updatedObject.driver).length > 0
+      ? String(updatedObject.driver)
+      : existing?.driver ?? '';
+  const parsed = parseDriverField(driverForParse);
+  const parsedObject = {
+    ...updatedObject,
+    sector: parsed.sector,
+    domain: parsed.domain,
+    country: parsed.country,
+    classifier: parsed.classifier,
+    ontologyType:
+      normalizeOntologyType((updatedObject as any).ontologyType) ??
+      normalizeOntologyType((updatedObject as any).ontology_type) ??
+      (((updatedObject as any).is_meme === true || (updatedObject as any).isMeme === true)
+        ? 'Meme'
+        : 'Variant'),
+  } as ObjectData;
+
+  if (!existing) {
+    return parsedObject;
+  }
+
+  return {
+    ...existing,
+    ...parsedObject,
+    relationshipsList: parsedObject.relationshipsList ?? existing.relationshipsList,
+    variantsList: parsedObject.variantsList ?? existing.variantsList,
+    relationships:
+      parsedObject.relationships != null ? parsedObject.relationships : existing.relationships,
+    variants: parsedObject.variants != null ? parsedObject.variants : existing.variants,
+    variables: parsedObject.variables != null ? parsedObject.variables : existing.variables,
+  };
+}
 
 export const useObjects = () => {
   const [objects, setObjects] = useState<ObjectData[]>([]);
@@ -27,7 +68,10 @@ export const useObjects = () => {
           domain: parsed.domain,
           country: parsed.country,
           classifier: parsed.classifier,
-          isMeme: (obj as any).is_meme ?? (obj as any).isMeme ?? false
+          ontologyType:
+            normalizeOntologyType((obj as any).ontologyType) ??
+            normalizeOntologyType((obj as any).ontology_type) ??
+            ((obj as any).is_meme === true || (obj as any).isMeme === true ? 'Meme' : 'Variant')
         };
       });
       
@@ -56,7 +100,11 @@ export const useObjects = () => {
         sector: parsed.sector,
         domain: parsed.domain,
         country: parsed.country,
-        classifier: parsed.classifier
+        classifier: parsed.classifier,
+        ontologyType:
+          normalizeOntologyType((newObject as any).ontologyType) ??
+          normalizeOntologyType((newObject as any).ontology_type) ??
+          (((newObject as any).is_meme === true || (newObject as any).isMeme === true) ? 'Meme' : 'Variant')
       };
       
       setObjects(prev => [...prev, parsedObject]);
@@ -73,28 +121,24 @@ export const useObjects = () => {
       console.log('🔄 Current objects before update:', objects.find(obj => obj.id === id));
       const updatedObject = await apiService.updateObject(id, objectData);
       console.log('✅ updateObject response:', updatedObject);
-      
-      // Parse driver string and add parsed fields
-      const parsed = parseDriverField(updatedObject.driver);
-      // Map is_meme from backend to isMeme for frontend
-      const parsedObject = {
-        ...updatedObject,
-        sector: parsed.sector,
-        domain: parsed.domain,
-        country: parsed.country,
-        classifier: parsed.classifier,
-        isMeme: (updatedObject as any).is_meme ?? (updatedObject as any).isMeme ?? false
-      };
-      
+
+      let mergedForReturn: ObjectData | null = null;
       setObjects(prev => {
         console.log('🔄 Previous objects state before update:', prev.find(obj => obj.id === id));
-        const newObjects = prev.map(obj => obj.id === id ? parsedObject : obj);
+        const newObjects = prev.map(obj => {
+          if (obj.id !== id) return obj;
+          mergedForReturn = mergeObjectPutResponse(obj, updatedObject as Record<string, unknown>);
+          return mergedForReturn;
+        });
         console.log('🔄 Updated objects state:', newObjects.find(obj => obj.id === id));
         console.log('🔄 Full updated objects array length:', newObjects.length);
-        console.log('🔄 Updated object being set:', parsedObject);
+        console.log('🔄 Updated object being set:', mergedForReturn);
         return newObjects;
       });
-      return parsedObject;
+      return (
+        mergedForReturn ??
+        mergeObjectPutResponse(undefined, updatedObject as Record<string, unknown>)
+      );
     } catch (err) {
       console.error('❌ updateObject error:', err);
       setError(err instanceof Error ? err.message : 'Failed to update object');

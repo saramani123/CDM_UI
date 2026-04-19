@@ -22,6 +22,7 @@ from schema import (
     VariablePartCreateRequest,
     VariableGroupCreateRequest,
 )
+from ontology_type import normalize_ontology_type, DEFAULT_ONTOLOGY_TYPE, coerce_legacy_to_string
 from routes.variable_ontology import (
     get_variable_taxonomy,
     merge_part_section_group,
@@ -52,7 +53,7 @@ class BulkUploadVariablesChunkRequest(BaseModel):
         ...,
         description=(
             "Array of row objects with keys: Sector, Domain, Country, Part, Section, Group, Variable, "
-            "and optional Format I, Format II, G-Type, Type, Default, Graph."
+            "and required Type (Meme/Variant/Vulqan), optional Format I, Format II, G-Type, Default, Graph."
         ),
     )
     start_row_index: int = Field(2, description="1-based row index of first row (for error messages)")
@@ -71,7 +72,7 @@ CSV_FORMAT_II_BY_FORMAT_I: Dict[str, List[str]] = {
     "Freeform": ["Text", "Binary", "JSON", "CSV", "XLS", "PDF"],
 }
 CSV_ALLOWED_GTYPE = {"Loose", "Tight"}
-CSV_ALLOWED_TYPE = {"Meme", "Variant"}
+CSV_ALLOWED_TYPE = {"Meme", "Variant", "Vulqan"}
 CSV_ALLOWED_GRAPH = {"Yes", "No"}
 
 
@@ -108,7 +109,7 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
     format_ii = ""
     g_type = ""
     graph = ""
-    var_type = "Variant"
+    var_type: Optional[str] = None
 
     if format_i_raw:
         format_i = _normalize_allowed_value(format_i_raw, list(CSV_FORMAT_II_BY_FORMAT_I.keys()))
@@ -146,14 +147,18 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
             )
             return None
 
-    if type_raw:
-        normalized_type = _normalize_allowed_value(type_raw, CSV_ALLOWED_TYPE)
-        if not normalized_type:
-            push_error(
-                f"Row {row_num}: Invalid Type '{type_raw}'. Allowed values: Meme, Variant."
-            )
-            return None
-        var_type = normalized_type
+    normalized_type = _normalize_allowed_value(type_raw, CSV_ALLOWED_TYPE) if type_raw else ""
+    if not type_raw or not type_raw.strip():
+        push_error(
+            f"Row {row_num}: Type is required. Allowed values: Meme, Variant, Vulqan."
+        )
+        return None
+    if not normalized_type:
+        push_error(
+            f"Row {row_num}: Invalid Type '{type_raw}'. Allowed values: Meme, Variant, Vulqan."
+        )
+        return None
+    var_type = normalized_type
 
     graph = _normalize_allowed_value(graph_raw, CSV_ALLOWED_GRAPH)
     if not graph:
@@ -168,7 +173,7 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
         "gType": g_type,
         "default": default_raw,
         "graph": graph,
-        "is_meme": var_type == "Meme",
+        "ontology_type": var_type,
     }
 
 
@@ -865,7 +870,8 @@ async def get_variables():
                 RETURN v.id as id, v.name as variable, s.name as section,
                        v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                        v.validation as validation, v.default as default, v.graph as graph,
-                       v.status as status, COALESCE(v.is_meme, false) as is_meme,
+                       v.status as status,
+                       coalesce(v.`Type`, CASE WHEN coalesce(v.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
                        coalesce(v.`Group Key`, '') as group_key,
                        p.name as part, g.name as group,
@@ -925,7 +931,8 @@ async def get_variables():
                     "default": str(record["default"]) if record["default"] else "",
                     "graph": str(record["graph"]) if record["graph"] else "Yes",
                     "status": str(record["status"]) if record["status"] else "Active",
-                    "is_meme": record.get("is_meme", False),
+                    "ontology_type": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
+                    "ontologyType": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                     "is_group_key": record.get("is_group_key", False),
                     "group_key": str(record.get("group_key") or ""),
                     "objectRelationships": int(record["objectRelationships"]) if record["objectRelationships"] is not None else 0,
@@ -995,7 +1002,7 @@ async def create_variable(request: Request):
                     graph: $graph,
                     status: $status,
                     driver: $driver,
-                    is_meme: $is_meme,
+                    `Type`: $ontology_type,
                     is_group_key: $is_group_key,
                     `Is Group Key`: $is_group_key,
                     `Group Key`: CASE WHEN $is_group_key THEN $id ELSE '' END
@@ -1004,7 +1011,8 @@ async def create_variable(request: Request):
                 RETURN v.id AS id, v.name AS variable,
                        v.formatI AS formatI, v.formatII AS formatII, v.gType AS gType,
                        v.validation AS validation, v.default AS default, v.graph AS graph,
-                       v.status AS status, COALESCE(v.is_meme, false) AS is_meme,
+                       v.status AS status,
+                       coalesce(v.`Type`, CASE WHEN coalesce(v.is_meme, false) THEN 'Meme' ELSE 'Variant' END) AS ontology_type,
                        coalesce(v.`Is Group Key`, v.is_group_key, false) AS is_group_key,
                        coalesce(v.`Group Key`, '') AS group_key,
                        $section AS section, $part AS part, $group AS group
@@ -1024,7 +1032,11 @@ async def create_variable(request: Request):
                     "graph": variable_data.graph or "Yes",
                     "status": variable_data.status or "Active",
                     "driver": variable_data.driver or "ALL, ALL, ALL, None",
-                    "is_meme": getattr(variable_data, "isMeme", False) or False,
+                    "ontology_type": (
+                        normalize_ontology_type(raw_data.get("ontologyType"))
+                        or normalize_ontology_type(getattr(variable_data, "ontologyType", None))
+                        or coerce_legacy_to_string(raw_data.get("isMeme"), None)
+                    ),
                     "is_group_key": getattr(variable_data, "isGroupKey", False) or False,
                 },
             )
@@ -1174,7 +1186,7 @@ async def create_variable(request: Request):
                 default=record["default"],
                 graph=record["graph"],
                 status=record["status"],
-                is_meme=record.get("is_meme", False),
+                ontology_type=record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                 is_group_key=record.get("is_group_key", False),
                 group_key=record.get("group_key", ""),
                 objectRelationships=object_relationships_count,
@@ -1271,6 +1283,7 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
 
                     # Build dynamic SET clause for only provided fields that are not "Keep Current"
                     set_clauses = []
+                    remove_parts: List[str] = []
                     params = {"id": variable_id_str}  # Use variable_id_str instead of variable_id
                     
                     # Helper function to check if a field should be updated
@@ -1363,6 +1376,12 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                     if should_update_field(bulk_data.driver):
                         set_clauses.append("v.driver = $driver")
                         params["driver"] = bulk_data.driver
+                    if should_update_field(bulk_data.ontologyType, "Keep Current Type"):
+                        ot_bulk = normalize_ontology_type(bulk_data.ontologyType)
+                        if ot_bulk:
+                            set_clauses.append("v.`Type` = $ontology_type_bulk")
+                            params["ontology_type_bulk"] = ot_bulk
+                            remove_parts.append("v.is_meme")
 
                     # Ontology (Part → Section → Group) — resolve existing group only (no auto-create in bulk edit)
                     part_provided = should_update_field(bulk_data.part, "Keep Current Part")
@@ -1418,9 +1437,10 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
 
                     # Only update if there are fields to update
                     if set_clauses:
+                        remove_clause = f" REMOVE {', '.join(remove_parts)}" if remove_parts else ""
                         update_query = f"""
                             MATCH (v:Variable {{id: $id}})
-                            SET {', '.join(set_clauses)}
+                            SET {', '.join(set_clauses)}{remove_clause}
                         """
                         session.run(update_query, params)
                         print(f"DEBUG: Bulk edit - Updated variable {variable_id_str} properties: {', '.join(set_clauses)}", flush=True)
@@ -1597,8 +1617,17 @@ async def update_variable(variable_id: str, request: Request):
             current_group = current_record["group"] if current_record["group"] else ""
             # Get driver from current variable node
             current_driver = current_variable.get("driver", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'driver', "")
-            # Get is_meme and group key flags from node properties
-            current_is_meme = current_variable.get("is_meme", False) if hasattr(current_variable, 'get') else getattr(current_variable, 'is_meme', False)
+            # Ontology type on node (legacy is_meme supported for reads)
+            current_ontology_type = (
+                normalize_ontology_type(current_variable.get("Type"))
+                if hasattr(current_variable, "get")
+                else normalize_ontology_type(getattr(current_variable, "Type", None))
+            )
+            if not current_ontology_type:
+                current_ontology_type = coerce_legacy_to_string(
+                    current_variable.get("is_meme", False) if hasattr(current_variable, "get") else getattr(current_variable, "is_meme", False),
+                    None,
+                )
             current_is_group_key = (
                 current_variable.get("Is Group Key", None) if hasattr(current_variable, 'get') else getattr(current_variable, "Is Group Key", None)
             )
@@ -1615,6 +1644,7 @@ async def update_variable(variable_id: str, request: Request):
 
             # Build dynamic SET clause for only provided fields
             set_clauses = []
+            remove_parts: List[str] = []
             params = {"id": variable_id}
             
             # Only update fields that are provided in the request
@@ -1686,11 +1716,18 @@ async def update_variable(variable_id: str, request: Request):
             if variable_data.driver is not None:
                 set_clauses.append("v.driver = $driver")
                 params["driver"] = variable_data.driver
-            if variable_data.isMeme is not None:
-                is_meme_value = bool(variable_data.isMeme)
-                set_clauses.append("v.is_meme = $is_meme")
-                params["is_meme"] = is_meme_value
-                print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for variable {variable_id}")
+            if variable_data.ontologyType is not None:
+                ot_up = normalize_ontology_type(variable_data.ontologyType)
+                if ot_up:
+                    set_clauses.append("v.`Type` = $ontology_type")
+                    params["ontology_type"] = ot_up
+                    remove_parts.append("v.is_meme")
+                    print(f"DEBUG: 🎭 Adding Type update: {ot_up} for variable {variable_id}")
+            elif raw_data.get("isMeme") is not None or raw_data.get("is_meme") is not None:
+                ot_legacy = coerce_legacy_to_string(raw_data.get("isMeme", raw_data.get("is_meme")), None)
+                set_clauses.append("v.`Type` = $ontology_type")
+                params["ontology_type"] = ot_legacy
+                remove_parts.append("v.is_meme")
             
             # Track isGroupKey (processed after ontology moves using Group *name* scope).
             is_group_key_provided = False
@@ -1775,23 +1812,24 @@ async def update_variable(variable_id: str, request: Request):
 
             # Only update if there are fields to update
             if set_clauses:
+                remove_clause = f" REMOVE {', '.join(remove_parts)}" if remove_parts else ""
                 update_query = f"""
                     MATCH (v:Variable {{id: $id}})
-                    SET {', '.join(set_clauses)}
+                    SET {', '.join(set_clauses)}{remove_clause}
                     RETURN v.id as id, v.name as variable,
                            v.formatI as formatI, v.formatII as formatII, v.gType as gType,
                            v.validation as validation, v.default as default, v.graph as graph,
                            v.status as status, COALESCE(v.driver, '') as driver,
-                           COALESCE(v.is_meme, false) as is_meme,
+                           coalesce(v.`Type`, CASE WHEN coalesce(v.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                            coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
                            coalesce(v.`Group Key`, '') as group_key
                 """
                 
-                print(f"DEBUG: 🎭 Executing variable update query with is_meme: {params.get('is_meme', 'NOT_SET')}, is_group_key: {params.get('is_group_key', 'NOT_SET')}")
+                print(f"DEBUG: 🎭 Executing variable update query; is_group_key: {params.get('is_group_key', 'NOT_SET')}")
                 result = session.run(update_query, params)
                 record = result.single()
                 if record:
-                    print(f"DEBUG: 🎭 ✅ Variable update successful - is_meme: {record.get('is_meme')}, is_group_key: {record.get('is_group_key')}")
+                    print(f"DEBUG: 🎭 ✅ Variable update successful - ontology_type: {record.get('ontology_type')}, is_group_key: {record.get('is_group_key')}")
             else:
                 # No fields to update, use current data
                 record = {
@@ -1805,7 +1843,7 @@ async def update_variable(variable_id: str, request: Request):
                     "default": current_variable.get("default", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'default', ""),
                     "graph": current_variable.get("graph", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'graph', ""),
                     "status": current_variable.get("status", "") if hasattr(current_variable, 'get') else getattr(current_variable, 'status', ""),
-                    "is_meme": current_is_meme,
+                    "ontology_type": current_ontology_type,
                     "is_group_key": current_is_group_key,
                     "group_key": current_group_key or ""
                 }
@@ -2009,7 +2047,7 @@ async def update_variable(variable_id: str, request: Request):
                 default=record["default"],
                 graph=record["graph"],
                 status=record["status"],
-                is_meme=record.get("is_meme", False),
+                ontology_type=record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                 is_group_key=record.get("is_group_key", False),
                 group_key=record.get("group_key", ""),
                 objectRelationships=relationships_count,
@@ -2604,7 +2642,7 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                                 formatI: $formatI, formatII: $formatII, gType: $gType,
                                 validation: $validation, default: $default, graph: $graph,
                                 status: $status, driver: $driver,
-                                is_meme: coalesce($is_meme, false),
+                                `Type`: $ontology_type,
                                 is_group_key: false,
                                 `Is Group Key`: false,
                                 `Group Key`: ''
@@ -2696,7 +2734,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
         headers = [h.strip() for h in headers]
         
         # Validate required column names exist exactly (CSV must have these headers)
-        required_columns = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
+        required_columns = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type']
         missing_columns = [col for col in required_columns if col not in headers]
         if missing_columns:
             raise HTTPException(
@@ -2704,7 +2742,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 detail=(
                     f"CSV must contain these exact column headers (required): {', '.join(required_columns)}. "
                     f"Missing: {', '.join(missing_columns)}. "
-                    "Optional: Format I, Format II, G-Type, Type, Default, Graph."
+                    "Required: Type (Meme, Variant, or Vulqan). Optional: Format I, Format II, G-Type, Default, Graph."
                 )
             )
         
@@ -2749,7 +2787,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
     for row_num, row in enumerate(rows, start=2):  # Start at 2 because of header
         try:
             # Validate required fields
-            required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
+            required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type']
             missing_fields = [field for field in required_fields if not row.get(field, '').strip()]
             
             if missing_fields:
@@ -2804,7 +2842,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 "validation": "",
                 "default": metadata["default"],
                 "graph": metadata["graph"],
-                "is_meme": metadata["is_meme"],
+                "ontology_type": metadata["ontology_type"],
                 "status": "Active"
             }
             
@@ -2845,7 +2883,7 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
     variables = []
     errors = []
     start = body.start_row_index
-    required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable']
+    required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type']
     seen_chunk: set = set()
 
     for i, row in enumerate(body.rows):
@@ -2894,7 +2932,7 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
             "validation": "",
             "default": metadata["default"],
             "graph": metadata["graph"],
-            "is_meme": metadata["is_meme"],
+            "ontology_type": metadata["ontology_type"],
             "status": "Active",
         }
         variables.append(variable_data)

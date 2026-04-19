@@ -28,10 +28,10 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
       { number: 5, name: 'Section', required: true },
       { number: 6, name: 'Group', required: true },
       { number: 7, name: 'Variable', required: true },
-      { number: 8, name: 'Format I', required: false },
-      { number: 9, name: 'Format II', required: false },
-      { number: 10, name: 'G-Type', required: false },
-      { number: 11, name: 'Type', required: false },
+      { number: 8, name: 'Type', required: true },
+      { number: 9, name: 'Format I', required: false },
+      { number: 10, name: 'Format II', required: false },
+      { number: 11, name: 'G-Type', required: false },
       { number: 12, name: 'Default', required: false },
       { number: 13, name: 'Graph', required: false }
     ]
@@ -123,7 +123,7 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
               ))}
             </div>
             <div className="text-xs text-ag-dark-error">
-              * Required: Sector, Domain, Country, Part, Section, Group, Variable (columns 1–7)
+              * Required: Sector, Domain, Country, Part, Section, Group, Variable, Type (columns 1–8)
             </div>
           </div>
 
@@ -185,9 +185,9 @@ export const BulkVariableUploadModal: React.FC<BulkVariableUploadModalProps> = (
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required:</strong></p>
-            <p>• CSV must have column headers named exactly: Sector, Domain, Country, Part, Section, Group, Variable (columns 1–7).</p>
-            <p>• Optional: Format I, Format II, G-Type, Type, Default, Graph (columns 8–13) — may be omitted or left empty.</p>
-            <p>• Type values: Meme or Variant. (Meme sets Is Meme = true.)</p>
+            <p>• CSV must have column headers named exactly: Sector, Domain, Country, Part, Section, Group, Variable, Type (columns 1–8).</p>
+            <p>• Optional: Format I, Format II, G-Type, Default, Graph (columns 9–13) — may be omitted or left empty.</p>
+            <p>• Type (required): exactly one of Meme, Variant, or Vulqan (stored on the variable node).</p>
             <p>• Graph values: Yes or No.</p>
             <p><strong>After Upload:</strong></p>
             <p>• You can add object relationships through the Variable Metadata panel</p>

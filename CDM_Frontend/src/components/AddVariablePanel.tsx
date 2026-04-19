@@ -12,6 +12,7 @@ import { VariationsModal } from './VariationsModal';
 import { useObjects } from '../hooks/useObjects';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
+import { ONTOLOGY_TYPES } from '../constants/ontologyTypes';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 
 interface AddVariablePanelProps {
@@ -35,6 +36,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     section: '',
     group: '',
     variable: '',
+    ontologyType: 'Variant' as string,
     formatI: '',
     formatII: '',
     gType: '',
@@ -805,6 +807,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       section: '',
       group: '',
       variable: '',
+      ontologyType: 'Variant',
       formatI: '',
       formatII: '',
       gType: '',
@@ -1080,6 +1083,28 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={formData.ontologyType || 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">

@@ -9,6 +9,7 @@ import { OntologyModal } from './OntologyModal';
 import { VariationsModal } from './VariationsModal';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { apiService } from '../services/api';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
@@ -51,6 +52,7 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
 
   // Metadata fields
   const [metadata, setMetadata] = useState({
+    ontologyType: '',
     formatI: '',
     formatII: '',
     gType: '',
@@ -806,6 +808,11 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       // Only include driver if it has a value
       ...(driverString && driverString.trim() !== '' && { driver: driverString }),
       // Only include metadata fields that have values
+      ...(metadata.ontologyType &&
+        metadata.ontologyType.trim() !== '' &&
+        metadata.ontologyType !== 'Keep Current Type' && {
+          ontologyType: normalizeOntologyType(metadata.ontologyType) || metadata.ontologyType
+        }),
       ...(metadata.formatI && metadata.formatI.trim() !== '' && metadata.formatI !== 'Keep Current Format I' && { formatI: metadata.formatI }),
       ...(metadata.formatII && metadata.formatII.trim() !== '' && metadata.formatII !== 'Keep Current Format II' && { formatII: metadata.formatII }),
       ...(metadata.gType && metadata.gType.trim() !== '' && metadata.gType !== 'Keep Current G-Type' && { gType: metadata.gType }),
@@ -1127,6 +1134,32 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology (Taxonomy)" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={metadata.ontologyType}
+              onChange={(e) => handleMetadataChange('ontologyType', e.target.value)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.stopPropagation()}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">Keep Current Type</option>
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
               Part

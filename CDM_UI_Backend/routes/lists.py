@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from neo4j import WRITE_ACCESS
 from db import get_driver
 from schema import CSVUploadResponse
+from ontology_type import normalize_ontology_type, DEFAULT_ONTOLOGY_TYPE
 
 router = APIRouter()
 
@@ -48,7 +49,10 @@ class ListCreateRequest(BaseModel):
     graph: Optional[str] = ""
     origin: Optional[str] = ""
     status: Optional[str] = "Active"
-    isMeme: Optional[bool] = Field(False, alias="is_meme", description="Is this list a meme?")
+    ontologyType: Optional[str] = Field(
+        default="Variant",
+        description="Ontology classification: Meme, Variant, or Vulqan",
+    )
     listValuesList: Optional[List[ListValueRequest]] = []
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
@@ -56,6 +60,7 @@ class ListCreateRequest(BaseModel):
     listType: Optional[str] = None  # 'Single' or 'Multi-Level'
     numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
     tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
+    variablesAttachedList: Optional[List[Dict[str, Any]]] = None  # Variables to link via HAS_LIST on create
     
     @model_validator(mode='before')
     @classmethod
@@ -66,6 +71,12 @@ class ListCreateRequest(BaseModel):
         the nested _variations structure. We convert the entire tieredListValues to a
         plain dict that Pydantic will accept as Any without deep validation.
         """
+        if isinstance(data, dict):
+            if data.get("ontologyType") is None and data.get("ontology_type") is None:
+                if data.get("isMeme") is True or data.get("is_meme") is True:
+                    data["ontologyType"] = "Meme"
+                elif data.get("isMeme") is False or data.get("is_meme") is False:
+                    data["ontologyType"] = "Variant"
         if isinstance(data, dict) and 'tieredListValues' in data:
             tiered_values = data.get('tieredListValues')
             if tiered_values is not None:
@@ -94,7 +105,7 @@ class ListUpdateRequest(BaseModel):
     graph: Optional[str] = None
     origin: Optional[str] = None
     status: Optional[str] = None
-    isMeme: Optional[bool] = Field(None, alias="is_meme", description="Is this list a meme?")
+    ontologyType: Optional[str] = Field(None, description="Meme, Variant, or Vulqan")
     listValuesList: Optional[List[ListValueRequest]] = None
     listValuesVariations: Optional[Dict[str, List[str]]] = None  # Dict mapping list value to list of its variations (abbreviated versions, can have multiple)
     tieredListsList: Optional[List[TieredListRequest]] = None
@@ -1152,7 +1163,7 @@ async def get_lists():
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       COALESCE(l.is_meme, false) as is_meme,
+                       coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        s.name as set_name, g.name as grouping_name,
                        sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
                        variations_count, variations, tiered_count, tier_number
@@ -1338,7 +1349,8 @@ async def get_lists():
                     "graph": record["graph"] or "",
                     "origin": record["origin"] or "",
                     "status": record["status"] or "Active",
-                    "is_meme": record.get("is_meme", False),  # Added for the "Memez" feature
+                    "ontology_type": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
+                    "ontologyType": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                     "variables": record["variables_count"] or 0,
                     "variablesAttachedList": [],
                     "listValuesList": listValuesList,
@@ -1411,7 +1423,7 @@ async def create_list(list_data: ListCreateRequest):
                     graph: $graph,
                     origin: $origin,
                     status: $status,
-                    is_meme: $is_meme
+                    `Type`: $ontology_type
                 })
                 
                 // Create relationship Grouping -> List
@@ -1421,7 +1433,7 @@ async def create_list(list_data: ListCreateRequest):
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       COALESCE(l.is_meme, false) as is_meme
+                       coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
             """, {
                 "id": list_id,
                 "set": list_data.set,
@@ -1430,7 +1442,8 @@ async def create_list(list_data: ListCreateRequest):
                 "format": list_data.format or "",
                 "source": list_data.source or "",
                 "upkeep": list_data.upkeep or "",
-                "is_meme": getattr(list_data, 'isMeme', False) or False,
+                "ontology_type": normalize_ontology_type(getattr(list_data, "ontologyType", None))
+                or DEFAULT_ONTOLOGY_TYPE,
                 "graph": list_data.graph or "",
                 "origin": list_data.origin or "",
                 "status": list_data.status or "Active"
@@ -1448,6 +1461,24 @@ async def create_list(list_data: ListCreateRequest):
                 list_data.domain, 
                 list_data.country
             )
+
+            # Optional: HAS_LIST from variables attached at creation time
+            attached = list_data.variablesAttachedList or []
+            for item in attached:
+                if not isinstance(item, dict):
+                    continue
+                vid = item.get("id") or item.get("variableId")
+                if not vid:
+                    continue
+                session.run(
+                    """
+                    MATCH (v:Variable {id: $vid})
+                    MATCH (l:List {id: $lid})
+                    MERGE (v)-[:HAS_LIST]->(l)
+                    """,
+                    vid=str(vid),
+                    lid=list_id,
+                )
 
             # ====================================================================
             # MULTI-LEVEL LIST SETUP - EXACT FLOW:
@@ -1736,7 +1767,8 @@ async def create_list(list_data: ListCreateRequest):
                 "graph": record["graph"],
                 "origin": record["origin"],
                 "status": record["status"],
-                "is_meme": record.get("is_meme", False),  # Added for the "Memez" feature
+                "ontology_type": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
+                "ontologyType": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                 "variablesAttachedList": [],
                 "listValuesList": list_data.listValuesList if list_data.listValuesList else [],
                 "tieredListsList": tiered_lists,
@@ -1781,11 +1813,12 @@ async def update_list(list_id: str, request: Request):
             if not check_result.single():
                 raise HTTPException(status_code=404, detail="List not found")
             
-            # Store is_meme value if provided (we'll use it in the response)
-            is_meme_updated_value = None
+            # Store ontology type if updated (for response)
+            ontology_updated_value = None
             
             # Build update query dynamically based on provided fields
             update_fields = []
+            remove_parts: List[str] = []
             params = {"id": list_id}
             
             if list_data.set is not None:
@@ -1816,40 +1849,30 @@ async def update_list(list_id: str, request: Request):
                 update_fields.append("l.status = $status")
                 params["status"] = list_data.status
             
-            # Handle isMeme - check both the model field and raw_data (since model_construct might not handle alias correctly)
-            # We need to explicitly check for the key in raw_data because False values might be missed
-            is_meme_value = None
-            is_meme_provided = False
-            
-            # Check raw_data first (most reliable)
-            if 'isMeme' in raw_data:
-                is_meme_value = bool(raw_data['isMeme'])
-                is_meme_provided = True
-            elif 'is_meme' in raw_data:
-                is_meme_value = bool(raw_data['is_meme'])
-                is_meme_provided = True
-            
-            # Fallback to list_data if not in raw_data
-            if not is_meme_provided and hasattr(list_data, 'isMeme'):
-                if list_data.isMeme is not None:
-                    is_meme_value = bool(list_data.isMeme)
-                    is_meme_provided = True
-            
-            # Always update if isMeme is provided (even if False)
-            if is_meme_provided:
-                # Ensure we have a boolean value
-                if is_meme_value is None:
-                    is_meme_value = False
-                
-                update_fields.append("l.is_meme = $is_meme")
-                params["is_meme"] = is_meme_value
-                is_meme_updated_value = is_meme_value  # Store for use in response
+            # Ontology type (Meme / Variant / Vulqan) — legacy isMeme bool maps to Meme/Variant
+            new_type = None
+            if raw_data.get("ontologyType") is not None:
+                new_type = normalize_ontology_type(raw_data.get("ontologyType"))
+            elif raw_data.get("ontology_type") is not None:
+                new_type = normalize_ontology_type(raw_data.get("ontology_type"))
+            elif getattr(list_data, "ontologyType", None) is not None:
+                new_type = normalize_ontology_type(list_data.ontologyType)
+            elif "isMeme" in raw_data or "is_meme" in raw_data:
+                legacy = raw_data.get("isMeme", raw_data.get("is_meme"))
+                new_type = "Meme" if legacy is True else "Variant"
+            if new_type is not None:
+                update_fields.append("l.`Type` = $ontology_type")
+                params["ontology_type"] = new_type
+                ontology_updated_value = new_type
+                remove_parts.append("l.is_meme")
             
             if update_fields:
+                remove_clause = f" REMOVE {', '.join(remove_parts)}" if remove_parts else ""
                 update_query = f"""
                     MATCH (l:List {{id: $id}})
-                    SET {', '.join(update_fields)}
-                    RETURN l.id as id, l.is_meme as is_meme
+                    SET {', '.join(update_fields)}{remove_clause}
+                    RETURN l.id as id,
+                           coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
                 """
                 try:
                     result = session.run(update_query, params)
@@ -1860,14 +1883,12 @@ async def update_list(list_id: str, request: Request):
                     traceback.print_exc()
                     raise
             else:
-                # Even if no update, we should still return is_meme in the response
-                # Fetch current value from database
                 current_result = session.run("""
                     MATCH (l:List {id: $id})
-                    RETURN COALESCE(l.is_meme, false) as is_meme
+                    RETURN coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
                 """, {"id": list_id}).single()
                 if current_result:
-                    is_meme_updated_value = current_result.get("is_meme", False)
+                    ontology_updated_value = current_result.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE
             
             # Update taxonomy relationships if set or grouping changed
             if list_data.set is not None or list_data.grouping is not None:
@@ -2301,7 +2322,7 @@ async def update_list(list_id: str, request: Request):
                         "list": tier_record["list"]
                     })
             
-            # Get other data - fetch fresh from database to ensure we have the latest is_meme value
+            # Get other data — include ontology type (reads legacy is_meme if needed)
             result = session.run("""
                 MATCH (l:List {id: $id})
                 OPTIONAL MATCH (s:Sector)-[:IS_RELEVANT_TO]->(l)
@@ -2319,7 +2340,7 @@ async def update_list(list_id: str, request: Request):
                 RETURN l.id as id, l.name as list, l.set as set, l.grouping as grouping,
                        l.format as format, l.source as source, l.upkeep as upkeep,
                        l.graph as graph, l.origin as origin, l.status as status,
-                       COALESCE(l.is_meme, false) as is_meme,
+                       coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        sectors, domains, countries, list_values, variations_count, variations
             """, {"id": list_id})
             
@@ -2392,16 +2413,14 @@ async def update_list(list_id: str, request: Request):
             else:
                 tier_names = [tier.get("list", "") for tier in tieredListsList if tier and isinstance(tier, dict) and tier.get("list")]
             
-            # Get is_meme value - use the updated value if we just updated it, otherwise from record
-            is_meme_response_value = False
-            if is_meme_updated_value is not None:
-                # We just updated it, use the value we set
-                is_meme_response_value = is_meme_updated_value
-            else:
-                # Use value from record
-                is_meme_response_value = record.get("is_meme", False)
+            ot_val = (
+                ontology_updated_value
+                if ontology_updated_value is not None
+                else (record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE)
+            )
+            if normalize_ontology_type(ot_val) is None:
+                ot_val = DEFAULT_ONTOLOGY_TYPE
             
-            # Ensure is_meme is always in the response
             response_data = {
                 "id": record["id"],
                 "sector": sector_str if sector_str != "ALL" else ["ALL"],
@@ -2425,15 +2444,8 @@ async def update_list(list_id: str, request: Request):
                 "numberOfLevels": number_of_levels,
                 "tierNames": tier_names
             }
-            
-            # ALWAYS include is_meme - use updated value if we set it, otherwise from record
-            # Ensure is_meme_response_value is never None
-            if is_meme_response_value is None:
-                is_meme_response_value = False
-            
-            # Force set both snake_case and camelCase versions
-            response_data["is_meme"] = bool(is_meme_response_value)
-            response_data["isMeme"] = bool(is_meme_response_value)
+            response_data["ontology_type"] = ot_val
+            response_data["ontologyType"] = ot_val
             
             return response_data
 

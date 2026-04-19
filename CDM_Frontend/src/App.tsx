@@ -41,6 +41,7 @@ import {
   type SourceLdmRow,
 } from './hooks/useSources';
 import { parseSourceLdmCsvText } from './utils/sourceLdmCsv';
+import { normalizeOntologyType } from './constants/ontologyTypes';
 import { apiService } from './services/api';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
@@ -2880,83 +2881,150 @@ function App() {
     }
   };
 
-  const handleIsMemeChange = async (rowId: string, checked: boolean) => {
-    // Early return for tiered lists
+  const handleOntologyTypeChange = async (rowId: string, rawValue: string) => {
+    const newType = normalizeOntologyType(rawValue);
+    if (!newType) return;
+
     if (activeTab === 'lists') {
       const listToUpdate = listData.find(l => l.id === rowId);
       if (listToUpdate && listToUpdate.hasIncomingTier) {
-        return; // Don't allow updates for tiered lists
+        return;
       }
     }
-    
-    // Optimistically update UI immediately with loading state (non-blocking)
+
+    const rowForPrev =
+      activeTab === 'objects'
+        ? data.find((o) => o.id === rowId)
+        : activeTab === 'variables'
+          ? variableData.find((v) => v.id === rowId)
+          : listData.find((l) => l.id === rowId);
+    const previousType =
+      normalizeOntologyType((rowForPrev as any)?.ontologyType) ??
+      ((rowForPrev as any)?.is_meme === true || (rowForPrev as any)?.isMeme === true ? 'Meme' : 'Variant');
+
     if (activeTab === 'objects') {
-      setData(prev => prev.map(obj => 
-        obj.id === rowId 
-          ? { ...obj, isMeme: checked, _isMemeLoading: true }
-          : obj
-      ));
+      setData((prev) =>
+        prev.map((obj) =>
+          obj.id === rowId ? { ...obj, ontologyType: newType, _ontologyTypeLoading: true } : obj
+        )
+      );
+      setSelectedRowForMetadata((prev) =>
+        prev && prev.id === rowId ? ({ ...prev, ontologyType: newType, _ontologyTypeLoading: true } as any) : prev
+      );
     } else if (activeTab === 'variables') {
-      setVariableData(prev => prev.map(v => 
-        v.id === rowId 
-          ? { ...v, isMeme: checked, _isMemeLoading: true }
-          : v
-      ));
+      setVariableData((prev) =>
+        prev.map((v) =>
+          v.id === rowId ? { ...v, ontologyType: newType, _ontologyTypeLoading: true } : v
+        )
+      );
+      setSelectedRowForMetadata((prev) =>
+        prev && prev.id === rowId ? ({ ...prev, ontologyType: newType, _ontologyTypeLoading: true } as any) : prev
+      );
     } else if (activeTab === 'lists') {
-      setListData(prev => prev.map(l => 
-        l.id === rowId 
-          ? { ...l, isMeme: checked, _isMemeLoading: true }
-          : l
-      ));
+      setListData((prev) =>
+        prev.map((l) =>
+          l.id === rowId ? { ...l, ontologyType: newType, _ontologyTypeLoading: true } : l
+        )
+      );
+      setSelectedRowForMetadata((prev) =>
+        prev && prev.id === rowId ? ({ ...prev, ontologyType: newType, _ontologyTypeLoading: true } as any) : prev
+      );
     }
 
-    // Perform API call asynchronously (non-blocking)
     (async () => {
       try {
         if (activeTab === 'objects') {
-          const updated = await updateObject(rowId, { isMeme: checked });
-          setData(prev => prev.map(obj => 
-            obj.id === rowId 
-              ? { ...obj, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
-              : obj
-          ));
+          const updated = await updateObject(rowId, { ontologyType: newType } as any);
+          const resolved =
+            normalizeOntologyType((updated as any).ontologyType) ??
+            normalizeOntologyType((updated as any).ontology_type) ??
+            newType;
+          setData((prev) =>
+            prev.map((obj) =>
+              obj.id === rowId
+                ? { ...obj, ontologyType: resolved, _ontologyTypeLoading: false }
+                : obj
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: resolved, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         } else if (activeTab === 'variables') {
-          const updated = await updateVariable(rowId, { isMeme: checked });
-          setVariableData(prev => prev.map(v => 
-            v.id === rowId 
-              ? { ...v, isMeme: updated.isMeme ?? checked, _isMemeLoading: false }
-              : v
-          ));
+          const updated = await updateVariable(rowId, { ontologyType: newType } as any);
+          const resolved =
+            normalizeOntologyType((updated as any).ontologyType) ??
+            normalizeOntologyType((updated as any).ontology_type) ??
+            newType;
+          setVariableData((prev) =>
+            prev.map((v) =>
+              v.id === rowId ? { ...v, ontologyType: resolved, _ontologyTypeLoading: false } : v
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: resolved, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         } else if (activeTab === 'lists') {
-          const updated = await apiService.updateList(rowId, { isMeme: checked });
-          const isMemeValue = (updated as any)?.is_meme ?? (updated as any)?.isMeme ?? checked;
-          setListData(prev => prev.map(l => 
-            l.id === rowId 
-              ? { ...l, isMeme: isMemeValue, _isMemeLoading: false }
-              : l
-          ));
+          const updated = await apiService.updateList(rowId, { ontologyType: newType });
+          const resolved =
+            normalizeOntologyType((updated as any).ontologyType) ??
+            normalizeOntologyType((updated as any).ontology_type) ??
+            (((updated as any).is_meme === true || (updated as any).isMeme === true) ? 'Meme' : newType);
+          setListData((prev) =>
+            prev.map((l) =>
+              l.id === rowId ? { ...l, ontologyType: resolved, _ontologyTypeLoading: false } : l
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: resolved, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         }
       } catch (error) {
-        console.error('❌ Error updating isMeme:', error);
-        // Revert on error
+        console.error('❌ Error updating ontology Type:', error);
         if (activeTab === 'objects') {
-          setData(prev => prev.map(obj => 
-            obj.id === rowId 
-              ? { ...obj, isMeme: !checked, _isMemeLoading: false }
-              : obj
-          ));
+          setData((prev) =>
+            prev.map((obj) =>
+              obj.id === rowId
+                ? { ...obj, ontologyType: previousType, _ontologyTypeLoading: false }
+                : obj
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: previousType, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         } else if (activeTab === 'variables') {
-          setVariableData(prev => prev.map(v => 
-            v.id === rowId 
-              ? { ...v, isMeme: !checked, _isMemeLoading: false }
-              : v
-          ));
+          setVariableData((prev) =>
+            prev.map((v) =>
+              v.id === rowId
+                ? { ...v, ontologyType: previousType, _ontologyTypeLoading: false }
+                : v
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: previousType, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         } else if (activeTab === 'lists') {
-          setListData(prev => prev.map(l => 
-            l.id === rowId 
-              ? { ...l, isMeme: !checked, _isMemeLoading: false }
-              : l
-          ));
+          setListData((prev) =>
+            prev.map((l) =>
+              l.id === rowId
+                ? { ...l, ontologyType: previousType, _ontologyTypeLoading: false }
+                : l
+            )
+          );
+          setSelectedRowForMetadata((prev) =>
+            prev && prev.id === rowId
+              ? ({ ...prev, ontologyType: previousType, _ontologyTypeLoading: false } as any)
+              : prev
+          );
         }
       }
     })();
@@ -3029,8 +3097,10 @@ function App() {
           sector: parsedDriver.sector.length > 0 ? parsedDriver.sector[0] : (fullObjectData.sector || ''),
           domain: parsedDriver.domain.length > 0 ? parsedDriver.domain[0] : (fullObjectData.domain || ''),
           country: parsedDriver.country.length > 0 ? parsedDriver.country[0] : (fullObjectData.country || ''),
-          // Ensure is_meme is preserved (map from backend field name)
-          isMeme: (fullObjectData.is_meme ?? fullObjectData.isMeme ?? false),
+          ontologyType:
+            normalizeOntologyType((fullObjectData as any).ontologyType) ??
+            normalizeOntologyType((fullObjectData as any).ontology_type) ??
+            ((fullObjectData as any).is_meme === true || (fullObjectData as any).isMeme === true ? 'Meme' : 'Variant'),
           // Preserve relationships and variants lists
           relationshipsList: fullObjectData.relationshipsList || fullObjectData.relationships || [],
           variantsList: fullObjectData.variantsList || (fullObjectData.variants || []).map((v: any) => typeof v === 'string' ? { name: v } : v),
@@ -3105,7 +3175,7 @@ function App() {
           id: `clone-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // Temporary ID
           variable: '', // Clear variable name - user must provide new name
           name: '', // Also clear name field if it exists
-          isMeme: false,
+          ontologyType: normalizeOntologyType((row as any).ontologyType) ?? 'Variant',
           isGroupKey: false,
           groupKey: '',
           relevance: row.relevance || '',
@@ -3176,6 +3246,8 @@ function App() {
       avatar: newObjectData.avatar,
       object: newObjectData.object,
       status: newObjectData.status || 'Active',
+      ontologyType:
+        normalizeOntologyType((newObjectData as any).ontologyType) ?? 'Variant',
       // Include relationships and variants if they exist
       relationships: newObjectData.relationshipsList || [],
       variants: (newObjectData.variantsList || []).map(v => v.name)
@@ -3211,6 +3283,8 @@ function App() {
         default: newVariableData.default || '',
         graph: newVariableData.graph || 'Y',
         status: newVariableData.status || 'Active',
+        ontologyType:
+          normalizeOntologyType((newVariableData as any).ontologyType) ?? 'Variant',
         selectedObjectIds: (newVariableData as any).selectedObjectIds || [],
         variationsList: newVariableData.variationsList || []
       } as any);
@@ -3631,7 +3705,7 @@ function App() {
         if (bulkEditData.sector !== undefined || bulkEditData.domain !== undefined || bulkEditData.country !== undefined) {
           changedFields.push('drivers');
         }
-        if (bulkEditData.set !== undefined || bulkEditData.grouping !== undefined) {
+        if (bulkEditData.set !== undefined || bulkEditData.grouping !== undefined || bulkEditData.ontologyType !== undefined) {
           changedFields.push('ontology');
         }
         if (bulkEditData.status !== undefined) {
@@ -3832,9 +3906,9 @@ function App() {
             const apiIdent = rawIdent?.discreteId ? rawIdent : coerceIdentifierForCreate(rawIdent);
             if (apiIdent) apiObjectData.identifier = apiIdent;
             
-            // Include is_meme if present
-            if (selectedRowForMetadata.isMeme !== undefined) {
-              apiObjectData.is_meme = selectedRowForMetadata.isMeme;
+            if ((selectedRowForMetadata as any).ontologyType !== undefined) {
+              const ot = normalizeOntologyType((selectedRowForMetadata as any).ontologyType);
+              if (ot) apiObjectData.ontologyType = ot;
             }
             
             // Get variable IDs from source object to clone HAS_SPECIFIC_VARIABLE relationships
@@ -3901,7 +3975,11 @@ function App() {
                 ...foundObject,
                 sector: parsed.sector.length > 0 ? parsed.sector[0] : (foundObject.sector || ''),
                 domain: parsed.domain.length > 0 ? parsed.domain[0] : (foundObject.domain || ''),
-                country: parsed.country.length > 0 ? parsed.country[0] : (foundObject.country || '')
+                country: parsed.country.length > 0 ? parsed.country[0] : (foundObject.country || ''),
+                ontologyType:
+                  normalizeOntologyType((foundObject as any).ontologyType) ??
+                  normalizeOntologyType((foundObject as any).ontology_type) ??
+                  (((foundObject as any).is_meme === true || (foundObject as any).isMeme === true) ? 'Meme' : 'Variant')
               };
               
               // Update selected row with the new object (without clone flags)
@@ -3916,7 +3994,11 @@ function App() {
                 ...freshObjectData,
                 sector: parsed.sector.length > 0 ? parsed.sector[0] : '',
                 domain: parsed.domain.length > 0 ? parsed.domain[0] : '',
-                country: parsed.country.length > 0 ? parsed.country[0] : ''
+                country: parsed.country.length > 0 ? parsed.country[0] : '',
+                ontologyType:
+                  normalizeOntologyType((freshObjectData as any).ontologyType) ??
+                  normalizeOntologyType((freshObjectData as any).ontology_type) ??
+                  (((freshObjectData as any).is_meme === true || (freshObjectData as any).isMeme === true) ? 'Meme' : 'Variant')
               };
               
               // Ensure it's in the data array
@@ -4008,7 +4090,9 @@ function App() {
               default: updatedData.default || selectedRowForMetadata.default || '',
               graph: updatedData.graph || selectedRowForMetadata.graph || 'Yes',
               status: updatedData.status || selectedRowForMetadata.status || 'Active',
-              isMeme: false,
+              ontologyType:
+                normalizeOntologyType(updatedData.ontologyType ?? (selectedRowForMetadata as any).ontologyType) ??
+                'Variant',
               isGroupKey: false,
               forceNewVariationNodes: true,
             };
@@ -4041,7 +4125,10 @@ function App() {
             const cv = createdVariable as any;
             const cleanVariableData: any = {
               ...cv,
-              isMeme: cv.is_meme ?? cv.isMeme ?? false,
+              ontologyType:
+                normalizeOntologyType(cv.ontologyType) ??
+                normalizeOntologyType(cv.ontology_type) ??
+                (cv.is_meme === true || cv.isMeme === true ? 'Meme' : 'Variant'),
               isGroupKey: cv.is_group_key ?? cv.isGroupKey ?? false,
               groupKey: cv.group_key ?? cv.groupKey ?? '',
               _isCloned: undefined,
@@ -4219,6 +4306,10 @@ function App() {
           object: updatedData.object,
           driver: updatedData.driver
         };
+        const otSave = normalizeOntologyType(updatedData.ontologyType);
+        if (otSave) {
+          basicFields.ontologyType = otSave;
+        }
         
         // Include identifier data if present
         if (updatedData.identifier) {
@@ -4273,7 +4364,18 @@ function App() {
           // If saving variants, we'll reload it after variants are saved
           if (!willSaveVariantsOrRelationships) {
             const refreshedObject = await apiService.getObject(selectedRowForMetadata.id);
-            setSelectedRowForMetadata(refreshedObject);
+            const parsed = parseDriverField(refreshedObject.driver || '');
+            setSelectedRowForMetadata({
+              ...refreshedObject,
+              sector: parsed.sector,
+              domain: parsed.domain,
+              country: parsed.country,
+              classifier: parsed.classifier,
+              ontologyType:
+                normalizeOntologyType((refreshedObject as any).ontologyType) ??
+                normalizeOntologyType((refreshedObject as any).ontology_type) ??
+                (((refreshedObject as any).is_meme === true || (refreshedObject as any).isMeme === true) ? 'Meme' : 'Variant')
+            });
             setObjectsRemoteEpoch(e => e + 1);
           }
         } catch (error) {
@@ -4331,7 +4433,10 @@ function App() {
               domain: parsed.domain,
               country: parsed.country,
               classifier: parsed.classifier,
-              isMeme: (refreshedObject as any).is_meme ?? false
+              ontologyType:
+                normalizeOntologyType((refreshedObject as any).ontologyType) ??
+                normalizeOntologyType((refreshedObject as any).ontology_type) ??
+                (((refreshedObject as any).is_meme === true || (refreshedObject as any).isMeme === true) ? 'Meme' : 'Variant')
             };
             
             // Update selectedRowForMetadata with fresh data including variants FIRST
@@ -4408,6 +4513,10 @@ function App() {
           if (gridData.upkeep !== undefined) apiListData.upkeep = gridData.upkeep;
           if (gridData.graph !== undefined) apiListData.graph = gridData.graph;
           if (gridData.origin !== undefined) apiListData.origin = gridData.origin;
+          if (gridData.ontologyType !== undefined) {
+            const otList = normalizeOntologyType(gridData.ontologyType);
+            if (otList) apiListData.ontologyType = otList;
+          }
           if (gridData.status !== undefined) apiListData.status = gridData.status;
           if (gridData.listValuesList !== undefined) apiListData.listValuesList = gridData.listValuesList;
           if (gridData.variablesAttachedList !== undefined) apiListData.variablesAttachedList = gridData.variablesAttachedList;
@@ -4481,7 +4590,12 @@ function App() {
               hasIncomingTier: updatedList.hasIncomingTier || false,
               listType: updatedList.listType || (updatedList.tieredListsList && updatedList.tieredListsList.length > 0 ? 'Multi-Level' : 'Single'),
               numberOfLevels: updatedList.numberOfLevels || (updatedList.tieredListsList ? updatedList.tieredListsList.length + 1 : 2),
-              tierNames: updatedList.tierNames || (updatedList.tieredListsList ? updatedList.tieredListsList.map((tier: any) => tier.list) : [])
+              tierNames: updatedList.tierNames || (updatedList.tieredListsList ? updatedList.tieredListsList.map((tier: any) => tier.list) : []),
+              ontologyType:
+                normalizeOntologyType((updatedList as any).ontologyType) ??
+                normalizeOntologyType((updatedList as any).ontology_type) ??
+                (((updatedList as any).is_meme === true || (updatedList as any).isMeme === true) ? 'Meme' : 'Variant'),
+              variables: (updatedList as any).variables ?? (selectedRowForMetadata as ListData).variables
             };
             
             // Update local state
@@ -4772,7 +4886,10 @@ function App() {
           tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : []),
           totalValuesCount: list.totalValuesCount ?? 0, // Total count of values
           sampleValues: Array.isArray(list.sampleValues) ? list.sampleValues.filter(v => v && String(v).trim()) : [], // First 3 values for display
-          isMeme: (list as any).is_meme ?? (list as any).isMeme ?? false // Map is_meme from backend
+          ontologyType:
+            normalizeOntologyType((list as any).ontologyType) ??
+            normalizeOntologyType((list as any).ontology_type) ??
+            (((list as any).is_meme === true || (list as any).isMeme === true) ? 'Meme' : 'Variant')
         };
       });
       
@@ -4964,7 +5081,8 @@ function App() {
           upkeep: listData.upkeep || '',
           graph: listData.graph || '',
           origin: listData.origin || '',
-          status: listData.status || 'Active'
+          status: listData.status || 'Active',
+          ontologyType: normalizeOntologyType((listData as any).ontologyType) ?? 'Variant'
         };
         
         await apiService.createList(apiListData) as any;
@@ -5218,6 +5336,11 @@ function App() {
         hasTieredListValues: 'tieredListValues' in apiListData,
         tieredListValuesKeys: apiListData.tieredListValues ? Object.keys(apiListData.tieredListValues) : 'N/A'
       });
+
+      const attached = (newListData as any).variablesAttachedList;
+      if (Array.isArray(attached) && attached.length > 0) {
+        apiListData.variablesAttachedList = attached;
+      }
       
         await apiService.createList(apiListData) as any;
 
@@ -6854,7 +6977,7 @@ function App() {
                 onRowSelect={handleRowSelect}
                 onDelete={handleDelete}
                 onClone={handleClone}
-                onIsMemeChange={handleIsMemeChange}
+                onOntologyTypeChange={handleOntologyTypeChange}
                 onIsGroupKeyChange={handleIsGroupKeyChange}
                 selectionMode={activeTab === 'objects' || activeTab === 'variables' || activeTab === 'lists' ? 'row' : 'checkbox'}
                 selectedRows={selectedRows}

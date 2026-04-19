@@ -17,6 +17,7 @@ import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { VariantsModal } from './VariantsModal';
 import { apiService } from '../services/api';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
@@ -71,14 +72,16 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [formData, setFormData] = useState({
     being: '',
     avatar: '',
-    objectName: ''
+    objectName: '',
+    ontologyType: ''
   });
 
   // Lists form data
   const [listFormData, setListFormData] = useState({
     list: '',
     set: '',
-    grouping: ''
+    grouping: '',
+    ontologyType: ''
   });
 
   // Driver selections state
@@ -253,6 +256,27 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
   const [isCloneListApplicabilityModalOpen, setIsCloneListApplicabilityModalOpen] = useState(false);
   const [relationshipsGraphModalOpen, setRelationshipsGraphModalOpen] = useState(false);
+
+  const refreshListsApplicabilityPreview = useCallback(async () => {
+    if (activeTab !== 'lists' || selectedObjects.length === 0) {
+      setSelectedVariables([]);
+      return;
+    }
+    try {
+      const byId = new Map<string, any>();
+      for (const list of selectedObjects) {
+        const lid = (list as any)?.id;
+        if (!lid) continue;
+        const rel = (await apiService.getListVariableRelationships(lid)) as any;
+        for (const v of rel?.variables || []) {
+          byId.set(v.id, v);
+        }
+      }
+      setSelectedVariables([...byId.values()]);
+    } catch {
+      setSelectedVariables([]);
+    }
+  }, [activeTab, selectedObjects]);
   
   // Check if any selected lists are part of a tiered structure
   const hasTieredLists = activeTab === 'lists' && allData.some((list: any) => {
@@ -768,6 +792,13 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       if (listFormData.grouping.trim() !== '') {
         saveData.grouping = listFormData.grouping;
       }
+      if (
+        listFormData.ontologyType.trim() !== '' &&
+        listFormData.ontologyType !== 'Keep Current Type'
+      ) {
+        const ot = normalizeOntologyType(listFormData.ontologyType);
+        if (ot) saveData.ontologyType = ot;
+      }
       
       // Add relationships if selected (for future implementation)
       if (selectedVariables.length > 0) {
@@ -869,6 +900,11 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     const saveData: Record<string, any> = {
       ...(formData.being && formData.being.trim() !== '' && { being: formData.being }),
       ...(formData.avatar && formData.avatar.trim() !== '' && { avatar: formData.avatar }),
+      ...(formData.ontologyType &&
+        formData.ontologyType.trim() !== '' &&
+        formData.ontologyType !== 'Keep Current Type' && {
+          ontologyType: normalizeOntologyType(formData.ontologyType) || formData.ontologyType
+        }),
       ...(driverString && { driver: driverString }),
       ...(uniqueRelationships.length > 0 && { relationshipsList: uniqueRelationships }),
       ...(variantsList.length > 0 && { variantsList: variantsList }),
@@ -932,6 +968,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         cancelled = true;
       };
     }, [selectedObjects, activeTab]);
+
+  useEffect(() => {
+    void refreshListsApplicabilityPreview();
+  }, [refreshListsApplicabilityPreview]);
 
   // Multi-select component
   const MultiSelect: React.FC<{
@@ -1361,6 +1401,30 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   })()}
                 </select>
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                  Type
+                </label>
+                <select
+                  value={listFormData.ontologyType}
+                  onChange={(e) => handleChange('ontologyType', e.target.value)}
+                  className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                    backgroundPosition: 'right 12px center',
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '16px'
+                  }}
+                >
+                  <option value="">Keep Current Type</option>
+                  {ONTOLOGY_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </CollapsibleSection>
 
@@ -1743,6 +1807,30 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={formData.ontologyType}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              <option value="">Keep Current Type</option>
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+
         </div>
       </CollapsibleSection>
 
@@ -2022,10 +2110,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             selectedLists={selectedObjects}
             allVariables={variablesData}
             onSave={async () => {
-              // Refresh data after saving relationships
               if (onSave) {
-                onSave({});
+                await onSave({});
               }
+              await refreshListsApplicabilityPreview();
             }}
             isBulkMode={true}
             variablesOrderSortOrder={variablesOrderSortOrder}

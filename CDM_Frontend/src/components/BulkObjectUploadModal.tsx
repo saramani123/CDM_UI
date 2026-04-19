@@ -26,7 +26,8 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
       { number: 4, name: 'Being', required: true },
       { number: 5, name: 'Avatar', required: true },
       { number: 6, name: 'Object', required: true },
-      { number: 7, name: 'Variants', required: false }
+      { number: 7, name: 'Type', required: true },
+      { number: 8, name: 'Variants', required: false }
     ]
   };
 
@@ -60,12 +61,13 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
       if (result.created_objects && result.created_objects.length > 0) {
         // Convert the created objects to the format expected by the UI
         // Use actual values from backend response
-        const uiObjects = result.created_objects.map((obj) => ({
+        const uiObjects = result.created_objects.map((obj: any) => ({
           id: obj.id,
           driver: obj.driver,
           being: obj.being,
           avatar: obj.avatar,
           object: obj.object,
+          ontologyType: obj.ontologyType || 'Variant',
           relationships: obj.relationships || 0,
           variants: obj.variants || 0,
           variables: '-',
@@ -200,10 +202,11 @@ export const BulkObjectUploadModal: React.FC<BulkObjectUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required Fields:</strong></p>
-            <p>• Columns 1-6 must have values</p>
+            <p>• Columns 1–7 must have values (headers: Sector, Domain, Country, Being, Avatar, Object, Type)</p>
+            <p>• Type must be Meme, Variant, or Vulqan (must match column header exactly: Type)</p>
             <p>• Use "ALL" for Sector/Domain/Country to apply to all values</p>
             <p><strong>Optional Fields:</strong></p>
-            <p>• Column 7 (Variants): Comma-separated list of variants (e.g., "Variant1, Variant2, Variant3")</p>
+            <p>• Column 8 (Variants): Comma-separated list of variants (e.g., "Variant1, Variant2, Variant3")</p>
             <p>• Variants will be automatically created and linked to the object</p>
             <p><strong>After Upload:</strong></p>
             <p>• IDs and relationships can be added after upload</p>

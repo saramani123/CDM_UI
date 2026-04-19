@@ -15,6 +15,7 @@ import { apiService, getTieredListValues } from '../services/api';
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { LoadingSpinner } from './LoadingSpinner';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 
 interface ListMetadataField {
   key: string;
@@ -111,6 +112,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       initial.set = selectedList.set || '';
       initial.grouping = selectedList.grouping || '';
       initial.list = selectedList.list || '';
+      initial.ontologyType =
+        normalizeOntologyType((selectedList as any).ontologyType) ??
+        (((selectedList as any).is_meme === true || (selectedList as any).isMeme === true) ? 'Meme' : 'Variant');
       
       // Initialize driver selections from selectedList
       if (selectedList.sector) {
@@ -188,6 +192,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         newFormData.set = selectedList.set || '';
         newFormData.grouping = selectedList.grouping || '';
         newFormData.list = selectedList.list || '';
+        newFormData.ontologyType =
+          normalizeOntologyType((selectedList as any).ontologyType) ??
+          (((selectedList as any).is_meme === true || (selectedList as any).isMeme === true) ? 'Meme' : 'Variant');
         
         // Update driver selections from selectedList
         // Helper function to process driver values and detect if ALL is selected
@@ -306,8 +313,23 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       const countries = processDriverValues(selectedList.country, driversData.countries);
       
       setDriverSelections({ sector: sectors, domain: domains, country: countries });
+
+      const nextOntology =
+        normalizeOntologyType((selectedList as any).ontologyType) ??
+        (((selectedList as any).is_meme === true || (selectedList as any).isMeme === true) ? 'Meme' : 'Variant');
+      setFormData(prev => {
+        if (normalizeOntologyType(prev.ontologyType) === nextOntology) return prev;
+        return { ...prev, ontologyType: nextOntology };
+      });
     }
-  }, [selectedList?.id, fields, driversData]);
+  }, [
+    selectedList?.id,
+    fields,
+    driversData,
+    normalizeOntologyType((selectedList as any)?.ontologyType),
+    (selectedList as any)?.isMeme,
+    (selectedList as any)?.is_meme
+  ]);
 
   // Initialize variables attached state
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>(() => {
@@ -1610,6 +1632,32 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                   </option>
                 ));
               })()}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={normalizeOntologyType(formData.ontologyType) ?? 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              disabled={!isPanelEnabled || !!selectedList?.hasIncomingTier}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
             </select>
           </div>
 

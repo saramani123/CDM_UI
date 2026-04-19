@@ -5,6 +5,7 @@ import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { CsvUploadModal } from './CsvUploadModal';
 import { OntologyModal } from './OntologyModal';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { CloneIdentifiersModal } from './CloneIdentifiersModal';
 import { AddBeingValueModal } from './AddBeingValueModal';
@@ -76,14 +77,18 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       return {
         being: selectedObject.being || '',
         avatar: selectedObject.avatar || '',
-        object: selectedObject.object || ''
+        object: selectedObject.object || '',
+        ontologyType:
+          normalizeOntologyType((selectedObject as any).ontologyType) ??
+          (((selectedObject as any).is_meme === true || (selectedObject as any).isMeme === true) ? 'Meme' : 'Variant')
       };
     }
     // Fallback to empty values
     return {
       being: '',
       avatar: '',
-      object: ''
+      object: '',
+      ontologyType: 'Variant' as const
     };
   });
 
@@ -150,7 +155,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       setFormData({
         being: '',
         avatar: '',
-        object: ''
+        object: '',
+        ontologyType: 'Variant'
       });
       setDriverSelections({
         sector: [],
@@ -166,7 +172,10 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         const newFormData: Record<string, any> = {
           being: selectedObject?.being || '',
           avatar: selectedObject?.avatar || '',
-          object: selectedObject?.object || ''
+          object: selectedObject?.object || '',
+          ontologyType:
+            normalizeOntologyType((selectedObject as any)?.ontologyType) ??
+            (((selectedObject as any)?.is_meme === true || (selectedObject as any)?.isMeme === true) ? 'Meme' : 'Variant')
         };
         console.log('MetadataPanel: newFormData for new object', newFormData);
         setFormData(newFormData);
@@ -2144,6 +2153,31 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="ontology">
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={normalizeOntologyType(formData.ontologyType) ?? 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              disabled={!isPanelEnabled}
+              className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-ag-dark-text">

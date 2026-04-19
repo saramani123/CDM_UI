@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Upload, FileText, Loader2 } from 'lucide-react';
 
 import { ListData } from '../data/listsData';
+import { normalizeOntologyType } from '../constants/ontologyTypes';
 
 interface BulkListUploadModalProps {
   isOpen: boolean;
@@ -31,11 +32,12 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
       { number: 4, name: 'Set', required: true },
       { number: 5, name: 'Grouping', required: true },
       { number: 6, name: 'List', required: true },
-      { number: 7, name: 'Format', required: false },
-      { number: 8, name: 'Source', required: false },
-      { number: 9, name: 'Upkeep', required: false },
-      { number: 10, name: 'Graph', required: false },
-      { number: 11, name: 'Origin', required: false }
+      { number: 7, name: 'Type', required: true },
+      { number: 8, name: 'Format', required: false },
+      { number: 9, name: 'Source', required: false },
+      { number: 10, name: 'Upkeep', required: false },
+      { number: 11, name: 'Graph', required: false },
+      { number: 12, name: 'Origin', required: false }
     ]
   };
 
@@ -77,11 +79,10 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
         }
         values.push(currentValue.trim().replace(/^"|"$/g, '')); // Add last value
         
-        // Check required fields (columns 1-6)
-        const requiredFields = ['Sector', 'Domain', 'Country', 'Set', 'Grouping', 'List'];
+        const requiredFields = ['Sector', 'Domain', 'Country', 'Set', 'Grouping', 'List', 'Type'];
         const missingFields: string[] = [];
         
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < 7; i++) {
           if (!values[i] || values[i].trim() === '') {
             missingFields.push(requiredFields[i]);
           }
@@ -89,6 +90,14 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
 
         if (missingFields.length > 0) {
           errors.push(`Row ${index + 2}: Missing required fields: ${missingFields.join(', ')}`);
+          return;
+        }
+
+        const listOntologyType = normalizeOntologyType(values[6]);
+        if (!listOntologyType) {
+          errors.push(
+            `Row ${index + 2}: Invalid Type "${values[6] || ''}". Must be Meme, Variant, or Vulqan.`
+          );
           return;
         }
 
@@ -157,11 +166,12 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
           set,
           grouping,
           list,
-          format: values[6] && values[6].trim() !== '' ? values[6].trim() : undefined,
-          source: values[7] && values[7].trim() !== '' ? values[7].trim() : undefined,
-          upkeep: values[8] && values[8].trim() !== '' ? values[8].trim() : undefined,
-          graph: values[9] && values[9].trim() !== '' ? values[9].trim() : undefined,
-          origin: values[10] && values[10].trim() !== '' ? values[10].trim() : undefined,
+          ontologyType: listOntologyType,
+          format: values[7] && values[7].trim() !== '' ? values[7].trim() : undefined,
+          source: values[8] && values[8].trim() !== '' ? values[8].trim() : undefined,
+          upkeep: values[9] && values[9].trim() !== '' ? values[9].trim() : undefined,
+          graph: values[10] && values[10].trim() !== '' ? values[10].trim() : undefined,
+          origin: values[11] && values[11].trim() !== '' ? values[11].trim() : undefined,
           status: 'Active',
           variablesAttachedList: [],
           listValuesList: []
@@ -277,7 +287,7 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
               ))}
             </div>
             <div className="text-xs text-ag-dark-error">
-              * Required fields (columns 1-6)
+              * Required fields (columns 1–7)
             </div>
           </div>
 
@@ -343,8 +353,9 @@ export const BulkListUploadModal: React.FC<BulkListUploadModalProps> = ({
           {/* Format Notes */}
           <div className="text-xs text-ag-dark-text-secondary space-y-1">
             <p><strong>Required Fields:</strong></p>
-            <p>• Sector, Domain, Country, Set, Grouping, and List must have values</p>
-            <p>• Format, Source, Upkeep, Graph, Origin are optional and can be left empty</p>
+            <p>• Sector, Domain, Country, Set, Grouping, List, and Type must have values (positional columns 1–7)</p>
+            <p>• Type must be Meme, Variant, or Vulqan</p>
+            <p>• Format, Source, Upkeep, Graph, Origin are optional (columns 8–12) and can be left empty</p>
             <p><strong>After Upload:</strong></p>
             <p>• You can attach variables through the List Metadata panel</p>
             <p>• Select any uploaded list to edit its variables attached and list values</p>

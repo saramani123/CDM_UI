@@ -4,6 +4,7 @@ import { ColumnFilterDropdown } from './ColumnFilterDropdown';
 import { ResizableColumn } from './ResizableColumn';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
 import { parseDriverField, getDriversData } from '../data/mockData';
+import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 
 interface Column {
   key: string;
@@ -116,7 +117,7 @@ interface DataGridProps {
   relationshipData?: Record<string, any>;
   onRelationshipCheckboxChange?: (objectId: string, checked: boolean) => void;
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
-  onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
+  onOntologyTypeChange?: (rowId: string, value: string) => void;
   onIsGroupKeyChange?: (rowId: string, checked: boolean) => void; // Handler for isGroupKey checkbox changes
   gridType?: 'objects' | 'variables' | 'lists' | 'metadata' | 'heuristics' | 'sources' | 'source_ldm'; // localStorage keys per tab
   persistState?: boolean; // Set false for transient modal grids
@@ -147,7 +148,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
   relationshipData,
   onRelationshipCheckboxChange,
   onRelationshipRowClick,
-  onIsMemeChange,
+  onOntologyTypeChange,
   onIsGroupKeyChange,
   gridType = 'objects', // Default to 'objects' for backward compatibility
   persistState = true,
@@ -1868,36 +1869,35 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   >
                     {column.render ? (
                       column.render(row)
-                    ) : column.key === 'isMeme' ? (
-                      // Only show checkbox for parent lists (not tiered lists)
+                    ) : column.key === 'ontologyType' ? (
                       gridType === 'lists' && (row as any).hasIncomingTier ? (
-                        <div className="flex items-center justify-center w-4 h-4"></div>
+                        <div className="flex items-center justify-center min-w-[72px] text-ag-dark-text-secondary text-xs">—</div>
                       ) : (
-                        <div className="flex items-center justify-center">
-                          {row._isMemeLoading ? (
+                        <div className="flex items-center justify-center w-full min-w-[88px] max-w-[120px]">
+                          {row._ontologyTypeLoading ? (
                             <div className="w-4 h-4 border-2 border-ag-dark-accent border-t-transparent rounded-full animate-spin"></div>
                           ) : (
-                            <input
-                              type="checkbox"
-                              checked={!!row.isMeme}
+                            <select
+                              value={normalizeOntologyType((row as any).ontologyType) ?? 'Variant'}
                               onChange={(e) => {
                                 e.stopPropagation();
-                                // Prevent clicks on tier lists
-                                if (gridType === 'lists' && (row as any).hasIncomingTier) {
-                                  return;
-                                }
-                                onIsMemeChange?.(row.id, e.target.checked);
+                                if (gridType === 'lists' && (row as any).hasIncomingTier) return;
+                                onOntologyTypeChange?.(row.id, e.target.value);
                               }}
-                              className="rounded border-ag-dark-border bg-ag-dark-surface text-ag-dark-accent focus:ring-ag-dark-accent focus:ring-2 focus:ring-offset-0 cursor-pointer w-4 h-4"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                // Prevent clicks on tier lists
-                                if (gridType === 'lists' && (row as any).hasIncomingTier) {
-                                  e.preventDefault();
-                                }
-                              }}
-                              disabled={row._isMemeLoading || (gridType === 'lists' && (row as any).hasIncomingTier)}
-                            />
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
+                              disabled={
+                                row._ontologyTypeLoading ||
+                                (gridType === 'lists' && (row as any).hasIncomingTier)
+                              }
+                              className="w-full max-w-[112px] px-1.5 py-0.5 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {ONTOLOGY_TYPES.map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
                           )}
                         </div>
                       )

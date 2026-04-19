@@ -29,7 +29,8 @@ export interface VariableData {
   // Parsed driver fields for UI (legacy for metadata panel)
   variableClarifier?: string;
   status?: string;
-  isMeme?: boolean; // Meme flag
+  /** Meme | Variant | Vulqan (Neo4j `Type`) */
+  ontologyType?: string;
   isGroupKey?: boolean; // Group Key flag
   groupKey?: string; // ID of selected group key variable for this group-name bucket
 }
@@ -56,7 +57,7 @@ export const variableColumns = [
   { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
   { key: 'group', title: 'Group', sortable: true, filterable: true, width: '140px' },
   { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '200px' },
-  { key: 'isMeme', title: 'Meme', sortable: true, filterable: true, width: '100px' },
+  { key: 'ontologyType', title: 'Type', sortable: true, filterable: true, width: '120px' },
   { key: 'isGroupKey', title: 'Is Group Key', sortable: true, filterable: true, width: '120px' },
   { key: 'formatI', title: 'Format I', sortable: true, filterable: true, width: '120px' },
   { key: 'formatII', title: 'Format II', sortable: true, filterable: true, width: '140px' },

@@ -1,16 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Layers, Grid3x3, ArrowUpAZ, ArrowDownZA, Copy, Loader2 } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
-import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
+import { VariableListRelationshipModal } from './VariableListRelationshipModal';
 import { AddSetValueModal } from './AddSetValueModal';
 import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
 import { SingleListValuesModal, type SingleListDraftRow } from './SingleListValuesModal';
 import { apiService } from '../services/api';
+import { ONTOLOGY_TYPES } from '../constants/ontologyTypes';
+
+const ADD_LIST_APPLICABILITY_STUB_ID = '__add_list_applicability_draft__';
 
 interface VariableAttached {
   id: string;
@@ -44,6 +47,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   // Use API drivers data
   const { drivers: apiDrivers } = useDrivers();
   const { variables: variablesData } = useVariables();
+
   const driversData = apiDrivers || {
     sectors: [],
     domains: [],
@@ -153,8 +157,24 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   const [formData, setFormData] = useState({
     set: '',
     grouping: '',
-    list: ''
+    list: '',
+    ontologyType: 'Variant' as string
   });
+
+  const draftListForApplicability = useMemo(
+    () => ({
+      id: ADD_LIST_APPLICABILITY_STUB_ID,
+      list: formData.list.trim() || 'New list',
+      set: formData.set,
+      grouping: formData.grouping,
+    }),
+    [formData.list, formData.set, formData.grouping],
+  );
+
+  const draftInitialVariableIds = useMemo(
+    () => selectedVariables.map((v: any) => v?.id).filter(Boolean) as string[],
+    [selectedVariables],
+  );
 
   // Variables attached and list values
   const [variablesAttached, setVariablesAttached] = useState<VariableAttached[]>([]);
@@ -584,6 +604,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
 
     try {
       await Promise.resolve(onAdd(newList));
+      localStorage.removeItem('cdm_add_list_applicability_keyword');
+      localStorage.removeItem('cdm_add_list_applicability_saved_keyword');
     } catch {
       return;
     }
@@ -591,7 +613,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setFormData({
       set: '',
       grouping: '',
-      list: ''
+      list: '',
+      ontologyType: 'Variant'
     });
     setDriverSelections({
       sector: ['ALL'],
@@ -849,6 +872,28 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       {/* Ontology Section */}
       <CollapsibleSection title="Ontology" sectionKey="ontology" icon={<Users className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Type
+            </label>
+            <select
+              value={formData.ontologyType || 'Variant'}
+              onChange={(e) => handleChange('ontologyType', e.target.value)}
+              className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                backgroundPosition: 'right 12px center',
+                backgroundRepeat: 'no-repeat',
+                backgroundSize: '16px'
+              }}
+            >
+              {ONTOLOGY_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-ag-dark-text">
@@ -1330,19 +1375,17 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         onUpload={handleVariationCsvUpload}
       />
 
-      {/* Variable Relationship Modal */}
-      <VariableObjectRelationshipModal
+      <VariableListRelationshipModal
         isOpen={isVariableRelationshipModalOpen}
         onClose={() => setIsVariableRelationshipModalOpen(false)}
-        selectedVariable={null}
-        allObjects={variablesData}
-        onSave={() => {
-          // Relationships saved
+        selectedList={draftListForApplicability}
+        allVariables={variablesData}
+        isDraftMode
+        draftInitialVariableIds={draftInitialVariableIds}
+        onDraftSave={({ variables }) => {
+          setSelectedVariables(variables);
         }}
-        onRelationshipsChange={(relationships) => {
-          // Update selected variables when relationships change
-          setSelectedVariables(relationships);
-        }}
+        isBulkMode={false}
       />
 
       {/* Tiered List Values Modal */}

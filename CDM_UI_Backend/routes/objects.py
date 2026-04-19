@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from neo4j import WRITE_ACCESS
 from db import get_driver
 from schema import ObjectCreateRequest, ObjectResponse, CSVUploadResponse, CSVRowData
+from ontology_type import normalize_ontology_type, DEFAULT_ONTOLOGY_TYPE, coerce_legacy_to_string
 
 # Pydantic models for JSON body parameters
 class RelationshipCreateRequest(BaseModel):
@@ -427,7 +428,7 @@ async def get_objects():
                        o.avatar as avatar,
                        o.object as object,
                        o.status as status,
-                       COALESCE(o.is_meme, false) as is_meme,
+                       coalesce(o.`Type`, CASE WHEN coalesce(o.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        relationships,
                        variant_names,
                        COALESCE(o.variables, 0) as variables_count,
@@ -483,7 +484,8 @@ async def get_objects():
                     "variants": len(variants),
                     "variables": variables_count,
                     "status": record["status"] or "Active",
-                    "is_meme": record.get("is_meme", False),
+                    "ontology_type": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
+                    "ontologyType": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                     "relationshipsList": relationships,
                     "variantsList": variants
                 }
@@ -511,7 +513,7 @@ async def get_object(object_id: str):
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.driver as driver, o.being as being,
                        o.avatar as avatar, o.object as object, o.status as status,
-                       COALESCE(o.is_meme, false) as is_meme
+                       coalesce(o.`Type`, CASE WHEN coalesce(o.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
             """, object_id=object_id)
 
             record = result.single()
@@ -540,7 +542,8 @@ async def get_object(object_id: str):
                 "avatar": record["avatar"],
                 "object": record["object"],
                 "status": record["status"],
-                "is_meme": record.get("is_meme", False),
+                "ontology_type": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
+                "ontologyType": record.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE,
                 "relationships": additional_rel_count,
                 "variants": var_count_result["var_count"] if var_count_result else 0,
                 "variables": variables_count_result["variables_count"] if variables_count_result else 0,
@@ -688,8 +691,7 @@ async def create_object(object_data: ObjectCreateRequest):
             if existing.single():
                 raise HTTPException(status_code=409, detail="Object with this Being/Avatar/Object/Driver combination already exists")
             
-            # Get is_meme value (default to False)
-            is_meme = getattr(object_data, 'isMeme', False) or False
+            ont = normalize_ontology_type(getattr(object_data, "ontologyType", None)) or DEFAULT_ONTOLOGY_TYPE
             
             # Create the Object node
             session.run("""
@@ -701,7 +703,7 @@ async def create_object(object_data: ObjectCreateRequest):
                     avatar: $avatar,
                     object: $object,
                     status: $status,
-                    is_meme: $is_meme
+                    `Type`: $ontology_type
                 })
             """, 
             id=new_id,
@@ -710,7 +712,7 @@ async def create_object(object_data: ObjectCreateRequest):
             avatar=object_data.avatar,
             object=object_data.object,
             status=getattr(object_data, 'status', 'Active'),
-            is_meme=is_meme)
+            ontology_type=ont)
             
             # Create Being, Avatar, Object taxonomy relationships if they don't exist
             # Ensure Being exists
@@ -1180,7 +1182,8 @@ async def create_object(object_data: ObjectCreateRequest):
                 "avatar": object_data.avatar,
                 "object": object_data.object,
                 "status": getattr(object_data, 'status', 'Active'),
-                "is_meme": is_meme,
+                "ontology_type": ont,
+                "ontologyType": ont,
                 "relationships": additional_count,
                 "variants": len(variants),
                 "variables": variables_count,
@@ -1331,6 +1334,7 @@ async def update_object(
                 
                 # Build dynamic SET clause for basic fields
                 set_clauses = []
+                remove_parts: List[str] = []
                 params = {"object_id": object_id}
                 
                 if 'being' in request_data and request_data['being']:
@@ -1352,12 +1356,17 @@ async def update_object(
                     set_clauses.append("o.discreteId = $discreteId")
                     params["discreteId"] = request_data['discreteId']
                 
-                # Handle isMeme - check if key exists (even if value is False)
-                if 'isMeme' in request_data:
-                    is_meme_value = bool(request_data['isMeme'])
-                    set_clauses.append("o.is_meme = $is_meme")
-                    params["is_meme"] = is_meme_value
-                    print(f"DEBUG: 🎭 Adding is_meme update: {is_meme_value} for object {object_id}")
+                if request_data.get("ontologyType") is not None:
+                    ot_o = normalize_ontology_type(request_data.get("ontologyType"))
+                    if ot_o:
+                        set_clauses.append("o.`Type` = $ontology_type")
+                        params["ontology_type"] = ot_o
+                        remove_parts.append("o.is_meme")
+                elif "isMeme" in request_data or "is_meme" in request_data:
+                    ot_o = coerce_legacy_to_string(request_data.get("isMeme", request_data.get("is_meme")), None)
+                    set_clauses.append("o.`Type` = $ontology_type")
+                    params["ontology_type"] = ot_o
+                    remove_parts.append("o.is_meme")
 
                 # Renaming the object: keep default RELATES_TO edges aligned (role = object name).
                 # Otherwise old edges still use the previous name as `role` while `o.object` is new,
@@ -1390,17 +1399,19 @@ async def update_object(
                 
                 # Update basic fields if any
                 if set_clauses:
+                    remove_clause = f" REMOVE {', '.join(remove_parts)}" if remove_parts else ""
                     update_query = f"""
                         MATCH (o:Object {{id: $object_id}})
-                        SET {', '.join(set_clauses)}
-                        RETURN o.id as id, o.is_meme as is_meme
+                        SET {', '.join(set_clauses)}{remove_clause}
+                        RETURN o.id as id,
+                        coalesce(o.`Type`, CASE WHEN coalesce(o.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
                     """
                     print(f"DEBUG: Executing update query: {update_query}")
                     print(f"DEBUG: With parameters: {params}")
                     result = session.run(update_query, params)
                     updated_record = result.single()
                     if updated_record:
-                        print(f"DEBUG: ✅ Update successful - is_meme is now: {updated_record.get('is_meme')}")
+                        print(f"DEBUG: ✅ Update successful - ontology_type: {updated_record.get('ontology_type')}")
                     print(f"DEBUG: Updated basic fields: {set_clauses}")
                     
                     # Verify the update was successful
@@ -1972,10 +1983,11 @@ async def update_object(
                     MATCH (o:Object {id: $object_id})
                     RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
                            o.driver as driver, o.relationships as relationships, o.variants as variants,
-                           COALESCE(o.is_meme, false) as is_meme
+                           coalesce(o.`Type`, CASE WHEN coalesce(o.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
                 """, object_id=object_id).single()
                 
                 if updated_object:
+                    ot_u = updated_object.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE
                     return {
                         "id": updated_object["id"],
                         "being": updated_object["being"],
@@ -1984,7 +1996,8 @@ async def update_object(
                         "driver": updated_object["driver"],
                         "relationships": updated_object["relationships"],
                         "variants": updated_object["variants"],
-                        "is_meme": updated_object.get("is_meme", False)
+                        "ontology_type": ot_u,
+                        "ontologyType": ot_u,
                     }
                 else:
                     return {"message": "Object relationships and variants updated successfully"}
@@ -1994,10 +2007,11 @@ async def update_object(
                 MATCH (o:Object {id: $object_id})
                 RETURN o.id as id, o.being as being, o.avatar as avatar, o.object as object, 
                        o.driver as driver, o.relationships as relationships, o.variants as variants,
-                       COALESCE(o.is_meme, false) as is_meme
+                       coalesce(o.`Type`, CASE WHEN coalesce(o.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type
             """, object_id=object_id).single()
             
             if updated_object:
+                ot_u2 = updated_object.get("ontology_type") or DEFAULT_ONTOLOGY_TYPE
                 return {
                     "id": updated_object["id"],
                     "being": updated_object["being"],
@@ -2006,7 +2020,8 @@ async def update_object(
                     "driver": updated_object["driver"],
                     "relationships": updated_object["relationships"],
                     "variants": updated_object["variants"],
-                    "is_meme": updated_object.get("is_meme", False)
+                    "ontology_type": ot_u2,
+                    "ontologyType": ot_u2,
                 }
             else:
                 return {"message": "Object updated successfully"}
@@ -2171,7 +2186,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
         csv_reader = csv.DictReader(io.StringIO(csv_content))
 
         # Validate required columns - support both formats
-        required_columns = ['Sector', 'Domain', 'Country', 'Being', 'Avatar', 'Object']
+        required_columns = ['Sector', 'Domain', 'Country', 'Being', 'Avatar', 'Object', 'Type']
         optional_columns = ['Variants']
         print(f"DEBUG: CSV fieldnames: {csv_reader.fieldnames}")
 
@@ -2254,6 +2269,14 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     # Create object
                     new_id = str(uuid.uuid4())
 
+                    csv_type = normalize_ontology_type(csv_row.Type)
+                    if not csv_type:
+                        errors.append(
+                            f"Row {row_num}: Invalid or missing Type '{getattr(csv_row, 'Type', '')}'. "
+                            "Must be Meme, Variant, or Vulqan."
+                        )
+                        continue
+
                     # Create the Object node
                     session.run("""
                         CREATE (o:Object {
@@ -2264,7 +2287,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             avatar: $avatar,
                             object: $object,
                             status: $status,
-                            is_meme: false
+                            `Type`: $ontology_type
                         })
                     """, 
                     id=new_id,
@@ -2272,7 +2295,8 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     driver=driver_string,
                     being=csv_row.Being,
                     avatar=csv_row.Avatar,
-                    status="Active")
+                    status="Active",
+                    ontology_type=csv_type)
 
                     # Create taxonomy relationships
                     # Ensure Being exists
@@ -2554,6 +2578,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         "avatar": csv_row.Avatar,
                         "object": csv_row.Object,
                         "status": "Active",
+                        "ontologyType": csv_type,
                         "relationships": len(relationships),
                         "variants": var_count,
                         "variables": variables_count,

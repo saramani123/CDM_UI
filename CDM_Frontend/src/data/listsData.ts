@@ -31,8 +31,8 @@ export interface ListData {
   tierNames?: string[]; // Names of tier lists (Tier 2, Tier 3, etc.)
   totalValuesCount?: number; // Total count of values (for single lists) or across all tiers (for multi-level)
   sampleValues?: string[]; // First 3 values for display (single lists) or first 3 tier 1 values (multi-level)
-  isMeme?: boolean; // Added for the "Memez" feature
-  _isMemeLoading?: boolean; // Internal loading state for optimistic UI updates
+  ontologyType?: string;
+  _ontologyTypeLoading?: boolean;
 }
 
 export interface VariableAttached {
@@ -209,7 +209,7 @@ export const listColumns = [
   { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' },
   { key: 'totalValuesCount', title: '# Values', sortable: true, filterable: false, width: '100px' },
   { key: 'sampleValues', title: 'Values', sortable: false, filterable: false, width: '200px' },
-  { key: 'isMeme', title: 'Meme', sortable: true, filterable: true, width: '100px' }
+  { key: 'ontologyType', title: 'Type', sortable: true, filterable: true, width: '120px' }
 ];
 
 // Dropdown options for list fields
