@@ -50,17 +50,17 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
     'variables-attached': {
       title: 'Upload Variables Attached',
       columns: [
-        { number: 1, name: 'Part' },
-        { number: 2, name: 'Section' },
-        { number: 3, name: 'Group' },
-        { number: 4, name: 'Variable' }
+        { number: 1, name: 'Part', required: false },
+        { number: 2, name: 'Section', required: false },
+        { number: 3, name: 'Group', required: false },
+        { number: 4, name: 'Variable', required: false }
       ]
     },
     'list-values': {
       title: 'Upload List Values',
       columns: [
-        { number: 1, name: 'List Value *' },
-        { number: 2, name: 'List Value Variation' }
+        { number: 1, name: 'List Value', required: true as const },
+        { number: 2, name: 'List Value Variation', required: false as const }
       ]
     }
   };
@@ -249,10 +249,10 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
                   </span>
                   <span
                     className={`text-sm font-medium ${
-                      type === 'list-values' && column.number === 1 ? 'text-red-400' : 'text-ag-dark-text'
+                      'required' in column && column.required ? 'text-red-400' : 'text-ag-dark-text'
                     }`}
                   >
-                    {column.name}
+                    {'required' in column && column.required ? `${column.name} *` : column.name}
                   </span>
                 </div>
               ))}
@@ -307,7 +307,10 @@ export const ListCsvUploadModal: React.FC<ListCsvUploadModalProps> = ({
             )}
             {type === 'list-values' && (
               <>
-                <p>• Required header: <span className="text-red-400">List Value</span> (exact name, any column order)</p>
+                <p>
+                  • Required header: <span className="text-red-400">List Value</span>
+                  <span className="text-red-400"> *</span> (exact name; any column order)
+                </p>
                 <p>• Optional header: List Value Variation</p>
                 <p>• A variation without a list value on the same row is not allowed</p>
               </>

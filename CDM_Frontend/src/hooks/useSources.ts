@@ -1,92 +1,152 @@
 import { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../services/api';
 
-export interface SourcesData {
+export interface SourceCatalogEntry {
   id: string;
+  source_key: string;
+  name: string;
   sector: string;
   domain: string;
   country: string;
-  system: string;
-  sub_system: string;
-  type: string;
-  table: string;
-  column: string;
-  cdm_full_variable: string;
+  is_preset: boolean;
+  table_count: number;
+  variable_count: number;
+}
+
+export interface SourceLdmRow {
+  id: string;
+  source_id: string;
+  source_name: string;
+  source_table: string;
+  /** External system column (UI: Source Column). */
+  source_variable: string;
+  /** CDM variable name (UI: Variable). */
+  variable: string;
+  being: string;
+  avatar: string;
+  object: string;
+  part: string;
+  section: string;
+  group: string;
+  format_vi: string;
+  format_vii: string;
+  validations: string;
+}
+
+export interface SourceDetail extends SourceCatalogEntry {
+  ldm_rows: SourceLdmRow[];
+}
+
+export type SourceAutoMapRowKind =
+  | 'primary'
+  | 'extra'
+  | 'unmatched_source'
+  | 'unmatched_target';
+
+/** One row in the Auto Map grid (paired source/target physical columns + shared LDM fields). */
+export interface SourceAutoMapRow {
+  id: string;
+  map_row_kind: SourceAutoMapRowKind;
+  match_group_index: number;
+  pair_index: number;
+  source_schema_table: string;
+  source_schema_column: string;
+  target_schema_table: string;
+  target_schema_column: string;
+  being: string;
+  avatar: string;
+  object: string;
+  part: string;
+  section: string;
+  group: string;
+  variable: string;
+  format_vi: string;
+  format_vii: string;
+  validations: string;
+}
+
+export interface SourceAutoMapResponse {
+  source_id: string;
+  target_id: string;
+  source_name: string;
+  target_name: string;
+  rows: SourceAutoMapRow[];
+}
+
+/** Coerce catalog rows from snake_case or camelCase API payloads. */
+function normalizeSourceCatalogRow(raw: unknown): SourceCatalogEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const source_key = String(r.source_key ?? r.sourceKey ?? '').trim();
+  const id = String(r.id ?? '').trim();
+  if (!id) return null;
+  return {
+    id,
+    source_key,
+    name: String(r.name ?? '').trim(),
+    sector: String(r.sector ?? '').trim(),
+    domain: String(r.domain ?? '').trim(),
+    country: String(r.country ?? '').trim(),
+    is_preset: Boolean(r.is_preset ?? r.isPreset),
+    table_count: Number(r.table_count ?? r.tableCount ?? 0) || 0,
+    variable_count: Number(r.variable_count ?? r.variableCount ?? 0) || 0,
+  };
 }
 
 export const useSources = () => {
-  const [sources, setSources] = useState<SourcesData[]>([]);
+  const [catalog, setCatalog] = useState<SourceCatalogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSources = useCallback(async () => {
+  const fetchCatalog = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      console.log('Fetching sources from API...');
       const data = await apiService.getSources();
-      console.log('Sources fetched:', data);
-      // Ensure data is an array
       if (Array.isArray(data)) {
-        setSources(data);
+        const rows = data
+          .map(normalizeSourceCatalogRow)
+          .filter((x): x is SourceCatalogEntry => x !== null);
+        setCatalog(rows);
       } else {
-        console.error('Sources data is not an array:', data);
-        setError('Invalid sources format received from server');
+        setError('Invalid sources response');
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch sources';
-      setError(errorMessage);
-      console.error('Error fetching sources:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch sources');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Fetch sources on mount
   useEffect(() => {
-    fetchSources();
-  }, [fetchSources]);
+    fetchCatalog();
+  }, [fetchCatalog]);
 
-  const createSourceItem = async (item: SourcesData) => {
-    try {
-      const newItem = await apiService.createSourceItem(item);
-      setSources(prev => [...prev, newItem]);
-      return newItem;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create source item');
-      throw err;
-    }
+  const createSource = async (body: { name: string; sector?: string; domain?: string; country?: string }) => {
+    const raw = await apiService.createSource(body);
+    const created = normalizeSourceCatalogRow(raw);
+    if (!created) throw new Error('Invalid create source response');
+    setCatalog((prev) => [...prev, created]);
+    return created;
   };
 
-  const updateSourceItem = async (id: string, update: Partial<SourcesData>) => {
-    try {
-      const updatedItem = await apiService.updateSourceItem(id, update);
-      setSources(prev => prev.map(item => item.id === id ? updatedItem : item));
-      return updatedItem;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update source item');
-      throw err;
-    }
-  };
-
-  const deleteSourceItem = async (id: string) => {
-    try {
-      await apiService.deleteSourceItem(id);
-      setSources(prev => prev.filter(item => item.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete source item');
-      throw err;
-    }
+  const updateSource = async (
+    id: string,
+    update: { sector?: string; domain?: string; country?: string; name?: string }
+  ) => {
+    const raw = await apiService.updateSource(id, update);
+    const updated = normalizeSourceCatalogRow(raw);
+    if (!updated) throw new Error('Invalid update source response');
+    setCatalog((prev) => prev.map((c) => (c.id === id ? { ...c, ...updated } : c)));
+    return updated;
   };
 
   return {
-    sources,
+    catalog,
     loading,
     error,
-    fetchSources,
-    createSourceItem,
-    updateSourceItem,
-    deleteSourceItem,
+    fetchCatalog,
+    createSource,
+    updateSource,
   };
 };
-

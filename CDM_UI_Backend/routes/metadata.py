@@ -145,8 +145,8 @@ def load_metadata_postgres() -> List[dict]:
                 "examples": item.examples or "",
                 "isRequired": is_required  # Mark required rows
             }
-            if item.detailData:
-                result["detailData"] = item.detailData
+            # Always include key so clients can distinguish null vs missing (matches JSON path).
+            result["detailData"] = getattr(item, "detailData", None)
             metadata.append(result)
         return metadata
     except Exception as e:
@@ -526,16 +526,11 @@ async def get_being_values():
 @router.get("/metadata/group-values")
 async def get_group_values():
     """
-    Get all distinct Group values with their associated Part and Section values from Variables in Neo4j.
-    Returns all Part-Section-Group triplets that are used in the Variables grid.
-    Used for populating the Group metadata concept widget.
-    
-    Group values are nodes in Neo4j that connect to Parts and Variables.
-    Section values are properties on Variable nodes.
-    The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
-    
-    Results are sorted by Part first, then Section, then Group alphabetically.
-    This ensures proper grouping: all Groups for a Part-Section combination are together.
+    Get all distinct Part–Section–Group triplets from the same graph path as the Variables grid:
+    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+
+    Used for populating the Group metadata concept widget (ontology hierarchy).
+    Results are sorted by Part, then Section, then Group.
     """
     driver = get_driver()
     if not driver:
@@ -543,9 +538,7 @@ async def get_group_values():
     
     try:
         with driver.session() as session:
-            # Get all distinct Part-Section-Group triplets from Variables
-            # Group is a node, Section is a property on Variable nodes
-            # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
+            # Same lineage as variables: only groups that appear under a section with at least one variable.
             result = session.run("""
                 MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE p.name IS NOT NULL AND p.name <> ''
@@ -582,13 +575,10 @@ async def get_group_values():
 @router.get("/metadata/section-values")
 async def get_section_values():
     """
-    Get all distinct Section values with their associated Part values from Variables in Neo4j.
-    Returns all Part-Section pairs that are used in the Variables grid.
-    Used for populating the Section metadata concept widget.
-    
-    Section values are properties on Variable nodes, and they're cascading with Part values.
-    Results are sorted by Part first, then Section alphabetically.
-    This ensures proper grouping: all Sections for a Part are together.
+    Get distinct Part–Section pairs from the same graph path as the Variables grid:
+    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+
+    Excludes sections that have no groups/variables yet so Section metadata stays aligned with the grid.
     """
     driver = get_driver()
     if not driver:
@@ -596,11 +586,8 @@ async def get_section_values():
     
     try:
         with driver.session() as session:
-            # Get all distinct Part-Section pairs from Variables
-            # Section is a property on Variable nodes
-            # The relationship is: Part-[:HAS_GROUP]->Group-[:HAS_VARIABLE]->Variable
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE p.name IS NOT NULL AND p.name <> ''
                   AND s.name IS NOT NULL AND s.name <> ''
                 RETURN DISTINCT p.name as part, s.name as section
@@ -909,9 +896,8 @@ async def get_metadata_item(item_id: str):
                             "country": getattr(item, 'country', '') or "",
                             "number": item.number or "",
                             "examples": item.examples or "",
+                            "detailData": getattr(item, "detailData", None),
                         }
-                        if item.detailData:
-                            result["detailData"] = item.detailData
                         return result
                 finally:
                     db.close()
@@ -976,11 +962,15 @@ async def create_metadata_item(item: MetadataItem):
                     raise
                 except Exception as e:
                     db.rollback()
-                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                    print(f"PostgreSQL error creating metadata item: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to create metadata item in database: {str(e)}",
+                    ) from e
                 finally:
                     db.close()
         
-        # Fallback to JSON
+        # Fallback to JSON (no DB session)
         file_path = get_metadata_file_path()
         print(f"DEBUG: Creating metadata item - File: {file_path}, Environment: {get_environment()}", flush=True)
         metadata = load_metadata_json()
@@ -1048,11 +1038,15 @@ async def update_metadata_item(item_id: str, update: MetadataUpdateRequest):
                     raise
                 except Exception as e:
                     db.rollback()
-                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                    print(f"PostgreSQL error updating metadata item: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to update metadata item in database: {str(e)}",
+                    ) from e
                 finally:
                     db.close()
         
-        # Fallback to JSON
+        # Fallback to JSON (no DB session)
         metadata = load_metadata_json()
         item_index = next((i for i, m in enumerate(metadata) if m.get("id") == item_id), None)
         if item_index is None:
@@ -1117,11 +1111,15 @@ async def delete_metadata_item(item_id: str):
                     raise
                 except Exception as e:
                     db.rollback()
-                    print(f"PostgreSQL error, falling back to JSON: {e}")
+                    print(f"PostgreSQL error deleting metadata item: {e}")
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to delete metadata item in database: {str(e)}",
+                    ) from e
                 finally:
                     db.close()
         
-        # Fallback to JSON
+        # Fallback to JSON (no DB session)
         metadata = load_metadata_json()
         item_index = next((i for i, m in enumerate(metadata) if m.get("id") == item_id), None)
         if item_index is None:

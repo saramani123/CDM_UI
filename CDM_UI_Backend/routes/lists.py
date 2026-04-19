@@ -656,6 +656,40 @@ async def create_tier_list_nodes(session, parent_list_id: str, tier_names: List[
         print(f"Error creating tier list nodes: {e}")
         raise
 
+
+async def dismantle_multi_level_list_structure(session, list_id: str) -> None:
+    """
+    Remove multi-level structure for a parent list: tier value edges, HAS_LIST_VALUE from
+    tier lists, then DETACH DELETE tier List nodes. Scoped to this parent list only.
+    Replaces previous unscoped graph deletes when switching to Single.
+    """
+    tier1_row = session.run("""
+        MATCH (p:List {id: $id})-[:HAS_TIER_1]->(t1:List)
+        RETURN t1.id as id
+        LIMIT 1
+    """, id=list_id).single()
+    if tier1_row and tier1_row.get("id"):
+        session.run("""
+            MATCH (tier1_list:List {id: $tier1_id})-[:HAS_LIST_VALUE]->(lv1:ListValue)
+            MATCH (lv1)-[r2]->(lv2:ListValue)
+            WHERE type(r2) STARTS WITH 'HAS_' AND type(r2) ENDS WITH '_VALUE'
+              AND type(r2) <> 'HAS_LIST_VALUE'
+            DELETE r2
+        """, tier1_id=tier1_row["id"])
+
+    session.run("""
+        MATCH (p:List {id: $id})-[rt:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier:List)
+        MATCH (tier)-[r:HAS_LIST_VALUE]->(lv:ListValue)
+        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:Variation)
+        DELETE rv, r
+    """, id=list_id)
+
+    session.run("""
+        MATCH (p:List {id: $id})-[rt:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(child:List)
+        DETACH DELETE child
+    """, id=list_id)
+
+
 async def create_tiered_list_relationships(session, list_id: str, tiered_lists: List[Dict[str, Any]]):
     """
     Create tiered list relationships (HAS_TIER_1, HAS_TIER_2, etc.) from parent list to tiered lists.
@@ -1860,32 +1894,9 @@ async def update_list(list_id: str, request: Request):
             
             # Handle listType changes (Single vs Multi-Level)
             if list_data.listType is not None:
-                # If switching to Single, clear all tiered relationships
                 if list_data.listType == 'Single':
-                    print(f"Switching list {list_id} to Single type - clearing tiered relationships")
-                    session.run("""
-                        MATCH (l:List {id: $list_id})-[r:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
-                        DELETE r
-                    """, list_id=list_id)
-                    
-                    # Delete tiered value relationships
-                    session.run("""
-                        MATCH (lv1:ListValue)-[r]->(lv2:ListValue)
-                        WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
-                          AND type(r) <> 'HAS_LIST_VALUE'
-                        DELETE r
-                    """)
-                    
-                    # Delete orphaned tiered list value nodes
-                    session.run("""
-                        MATCH (lv:ListValue)
-                        WHERE lv.tier IS NOT NULL
-                          AND NOT EXISTS {
-                            MATCH (lv2:ListValue)-[r]->(lv)
-                            WHERE type(r) STARTS WITH 'HAS_' AND type(r) ENDS WITH '_VALUE'
-                          }
-                        DETACH DELETE lv
-                    """)
+                    print(f"Switching list {list_id} to Single type - dismantling multi-level structure (scoped)")
+                    await dismantle_multi_level_list_structure(session, list_id)
             
             # Handle Multi-Level list setup: create tier list nodes and relationships
             print(f"DEBUG: Checking listType setup - listType={list_data.listType}, tierNames={list_data.tierNames}, numberOfLevels={list_data.numberOfLevels}")

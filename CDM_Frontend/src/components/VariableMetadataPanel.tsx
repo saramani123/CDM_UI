@@ -6,7 +6,6 @@ import { apiService } from '../services/api';
 import { VariableObjectRelationshipModal } from './VariableObjectRelationshipModal';
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
-import { AddFormatIIValueModal } from './AddFormatIIValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddPartValueModal } from './AddPartValueModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
@@ -15,7 +14,12 @@ import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsMod
 import { VariationsModal } from './VariationsModal';
 import { parseValidation, buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, splitValidationString, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
 import { LoadingSpinner } from './LoadingSpinner';
-import { getAllFormatIValues, getFormatIIValuesForFormatI, isValidFormatIIForFormatI } from '../utils/formatMapping';
+import {
+  getAllFormatIValues,
+  getFormatIIValuesForFormatI,
+  isValidFormatIIForFormatI,
+  sanitizeStoredFormatPair,
+} from '../utils/formatMapping';
 
 interface VariableMetadataField {
   key: string;
@@ -95,7 +99,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // State for add field value modal
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
-  const [isAddFormatIIValueModalOpen, setIsAddFormatIIValueModalOpen] = useState(false);
   const [formatIIByFormatIMap, setFormatIIByFormatIMap] = useState<Record<string, string[]>>({});
   
   // State for add group value modal
@@ -173,35 +176,12 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     }
   };
 
-  const handleAddFormatIIValue = async (formatI: string, formatIIValue: string) => {
-    await apiService.addVariableFieldOption('formatII', formatIIValue, formatI);
-    const apiOptions = await apiService.getVariableFieldOptions() as {
-      formatI: string[];
-      formatII: string[];
-      gType: string[];
-      validation: string[];
-      default: string[];
-      formatIIByFormatI?: Record<string, string[]>;
-    };
-    setFormatIIByFormatIMap(apiOptions.formatIIByFormatI || {});
-    if (formData.formatI === formatI) {
-      handleChange('formatII', formatIIValue);
-    }
-  };
-
   const getFormatIOptions = (): string[] => {
-    return [...new Set([...(getAllFormatIValues() || []), ...(dynamicFieldOptions.formatI || [])])].sort();
+    return getAllFormatIValues();
   };
 
   const getFormatIIOptionsForFormatI = (formatI: string): string[] => {
-    if (!formatI) return [];
-    const mapped = formatIIByFormatIMap[formatI] || [];
-    const fallback = getFormatIIValuesForFormatI(formatI) || [];
-    const fromData = (allData || [])
-      .filter((item: any) => item?.formatI === formatI && item?.formatII)
-      .map((item: any) => String(item.formatII).trim())
-      .filter(Boolean);
-    return [...new Set([...fallback, ...mapped, ...fromData])].sort();
+    return getFormatIIValuesForFormatI(formatI);
   };
 
   const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
@@ -490,6 +470,9 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           graph: selectedVariable?.graph || 'Yes',
           status: selectedVariable?.status || 'Active'
         };
+        const fmt = sanitizeStoredFormatPair(String(newFormData.formatI || ''), String(newFormData.formatII || ''));
+        newFormData.formatI = fmt.formatI;
+        newFormData.formatII = fmt.formatII;
         console.log('VariableMetadataPanel: newFormData for new variable', newFormData);
         setFormData(newFormData);
         
@@ -1505,23 +1488,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />} ontologyViewType="metadata">
         <div className="space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format I
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'formatI', label: 'Format I' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Format I value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">Format I</label>
             <select
               value={formData.formatI}
               onChange={(e) => handleChange('formatI', e.target.value)}
@@ -1546,20 +1513,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format II
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsAddFormatIIValueModalOpen(true)}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Format II value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">Format II</label>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
@@ -2275,14 +2229,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
           onSave={handleAddFieldValue}
         />
       )}
-
-      <AddFormatIIValueModal
-        isOpen={isAddFormatIIValueModalOpen}
-        onClose={() => setIsAddFormatIIValueModalOpen(false)}
-        formatIOptions={getFormatIOptions()}
-        defaultFormatI={formData.formatI || ''}
-        onSave={handleAddFormatIIValue}
-      />
 
       {/* Add Group Value Modal */}
       <AddGroupValueModal

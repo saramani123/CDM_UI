@@ -35,6 +35,60 @@ interface PredefinedSortOrder {
   countryOrder?: string[]; // Independent C column order
 }
 
+/**
+ * Lists grid: after any sort/filter, place each tier-list row directly under its parent
+ * so tier rows stay grouped regardless of column sort or custom S/D/C rules.
+ */
+function hoistListTierChildrenInDisplayOrder(rows: Record<string, any>[]): Record<string, any>[] {
+  if (!rows.length) return rows;
+  const byId = new Map<string, Record<string, any>>(rows.map(r => [String(r.id), r]));
+  const childTierIds = new Set<string>();
+  rows.forEach(r => {
+    const tiers = r.tieredListsList;
+    if (!Array.isArray(tiers)) return;
+    tiers.forEach((t: any) => {
+      if (t?.listId) childTierIds.add(String(t.listId));
+    });
+  });
+
+  const out: Record<string, any>[] = [];
+  const placed = new Set<string>();
+
+  for (const row of rows) {
+    if (row.hasIncomingTier && childTierIds.has(String(row.id))) continue;
+    out.push(row);
+    placed.add(String(row.id));
+
+    const tiers = row.tieredListsList;
+    if (!Array.isArray(tiers) || tiers.length === 0) continue;
+
+    const ordered = tiers
+      .map((t: any, idx: number) => ({
+        id: String(t.listId || ''),
+        tier: typeof t.tier === 'number' ? t.tier : idx + 1
+      }))
+      .filter(x => x.id)
+      .sort((a, b) => a.tier - b.tier);
+
+    for (const { id } of ordered) {
+      const childRow = byId.get(id);
+      if (childRow && !placed.has(String(childRow.id))) {
+        out.push(childRow);
+        placed.add(String(childRow.id));
+      }
+    }
+  }
+
+  for (const row of rows) {
+    if (!placed.has(String(row.id))) {
+      out.push(row);
+      placed.add(String(row.id));
+    }
+  }
+
+  return out;
+}
+
 interface DataGridProps {
   columns: Column[];
   data: Record<string, any>[];
@@ -64,7 +118,7 @@ interface DataGridProps {
   onRelationshipRowClick?: (objectId: string) => void; // Handler for row clicks in relationship mode
   onIsMemeChange?: (rowId: string, checked: boolean) => void; // Handler for isMeme checkbox changes
   onIsGroupKeyChange?: (rowId: string, checked: boolean) => void; // Handler for isGroupKey checkbox changes
-  gridType?: 'objects' | 'variables' | 'lists' | 'metadata'; // Add grid type to separate localStorage keys
+  gridType?: 'objects' | 'variables' | 'lists' | 'metadata' | 'heuristics' | 'sources' | 'source_ldm'; // localStorage keys per tab
   persistState?: boolean; // Set false for transient modal grids
   isPredefinedSortEnabled?: boolean;
   predefinedSortOrder?: PredefinedSortOrder;
@@ -126,12 +180,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                        gridType === 'metadata' ? 'cdm_metadata_column_filters' :
                        gridType === 'heuristics' ? 'cdm_heuristics_column_filters' :
                        gridType === 'sources' ? 'cdm_sources_column_filters' :
+                       gridType === 'source_ldm' ? 'cdm_source_ldm_column_filters' :
                        'cdm_objects_column_filters';
       const sortKey = gridType === 'variables' ? 'cdm_variables_sort_config' : 
                      gridType === 'lists' ? 'cdm_lists_sort_config' : 
                      gridType === 'metadata' ? 'cdm_metadata_sort_config' :
                      gridType === 'heuristics' ? 'cdm_heuristics_sort_config' :
                      gridType === 'sources' ? 'cdm_sources_sort_config' :
+                     gridType === 'source_ldm' ? 'cdm_source_ldm_sort_config' :
                      'cdm_objects_sort_config';
       const savedColumnFilters = localStorage.getItem(filterKey);
       const savedSortConfig = localStorage.getItem(sortKey);
@@ -1089,6 +1145,129 @@ export const DataGrid: React.FC<DataGridProps> = ({
         });
         
         console.log('✅ DEFAULT ORDER FOR LISTS APPLIED');
+      } else if (
+        gridType === 'source_ldm' &&
+        predefinedSortOrder.partOrder &&
+        predefinedSortOrder.beingOrder
+      ) {
+        processedData.sort((a, b) => {
+          const getValueType = (value: string): 'ALL' | 'multiple' | 'single' => {
+            const strValue = String(value || '').trim();
+            if (!strValue) return 'single';
+            if (strValue === 'ALL') return 'ALL';
+            const values = strValue.split(',').map((v) => v.trim()).filter(Boolean);
+            return values.length > 1 ? 'multiple' : 'single';
+          };
+          const getSortIndex = (
+            value: string,
+            valueType: 'ALL' | 'multiple' | 'single',
+            order: string[]
+          ): number => {
+            const allIndex = order.indexOf('ALL');
+            if (valueType === 'ALL') {
+              const ai = order.indexOf('ALL');
+              if (ai === -1) return -1000000;
+              return ai;
+            } else if (valueType === 'multiple') {
+              const values = value.split(',').map((v) => v.trim()).filter(Boolean);
+              const firstIndex = order.indexOf(values[0] || '');
+              return firstIndex === -1 ? 1000000 : 100000 + firstIndex;
+            } else {
+              const index = order.indexOf(value);
+              if (index === -1) return 2000000;
+              if (allIndex !== -1 && index < allIndex) return index - 10000;
+              if (allIndex !== -1 && index > allIndex) return index + 10000;
+              return index;
+            }
+          };
+
+          const aBeing = String(a.being || '');
+          const bBeing = String(b.being || '');
+          const aBeingIndex = predefinedSortOrder.beingOrder!.indexOf(aBeing);
+          const bBeingIndex = predefinedSortOrder.beingOrder!.indexOf(bBeing);
+          if (aBeingIndex !== bBeingIndex) {
+            if (aBeingIndex === -1) return 1;
+            if (bBeingIndex === -1) return -1;
+            return aBeingIndex - bBeingIndex;
+          }
+
+          const aAvatar = String(a.avatar || '');
+          const bAvatar = String(b.avatar || '');
+          const avatarOrder = predefinedSortOrder.avatarOrders?.[aBeing] || [];
+          const aAvatarIndex = avatarOrder.indexOf(aAvatar);
+          const bAvatarIndex = avatarOrder.indexOf(bAvatar);
+          if (aAvatarIndex !== bAvatarIndex) {
+            if (aAvatarIndex === -1) return 1;
+            if (bAvatarIndex === -1) return -1;
+            return aAvatarIndex - bAvatarIndex;
+          }
+
+          const aObject = String(a.object || '');
+          const bObject = String(b.object || '');
+          const objKey = `${aBeing}|${aAvatar}`;
+          const objectOrder = predefinedSortOrder.objectOrders?.[objKey] || [];
+          const aObjectIndex = objectOrder.indexOf(aObject);
+          const bObjectIndex = objectOrder.indexOf(bObject);
+          if (aObjectIndex !== bObjectIndex) {
+            if (aObjectIndex === -1) return 1;
+            if (bObjectIndex === -1) return -1;
+            return aObjectIndex - bObjectIndex;
+          }
+
+          const aPart = String(a.part || '');
+          const bPart = String(b.part || '');
+          const aPartIndex = predefinedSortOrder.partOrder!.indexOf(aPart);
+          const bPartIndex = predefinedSortOrder.partOrder!.indexOf(bPart);
+          if (aPartIndex !== bPartIndex) {
+            if (aPartIndex === -1) return 1;
+            if (bPartIndex === -1) return -1;
+            return aPartIndex - bPartIndex;
+          }
+
+          const aSection = String(a.section || '');
+          const bSection = String(b.section || '');
+          let sectionOrder: string[] = [];
+          if (predefinedSortOrder.sectionOrders && predefinedSortOrder.sectionOrders[aPart]) {
+            sectionOrder = predefinedSortOrder.sectionOrders[aPart];
+          } else if (predefinedSortOrder.sectionOrder) {
+            sectionOrder = predefinedSortOrder.sectionOrder;
+          }
+          if (sectionOrder.length > 0) {
+            const aSectionIndex = sectionOrder.indexOf(aSection);
+            const bSectionIndex = sectionOrder.indexOf(bSection);
+            if (aSectionIndex !== bSectionIndex) {
+              if (aSectionIndex === -1) return 1;
+              if (bSectionIndex === -1) return -1;
+              return aSectionIndex - bSectionIndex;
+            }
+          }
+
+          const aGroup = String(a.group || '');
+          const bGroup = String(b.group || '');
+          const groupKey = `${aPart}|${aSection}`;
+          const groupOrder = predefinedSortOrder.groupOrders?.[groupKey] || [];
+          const aGroupIndex = groupOrder.indexOf(aGroup);
+          const bGroupIndex = groupOrder.indexOf(bGroup);
+          if (aGroupIndex !== bGroupIndex) {
+            if (aGroupIndex === -1) return 1;
+            if (bGroupIndex === -1) return -1;
+            return aGroupIndex - bGroupIndex;
+          }
+
+          const aVariable = String(a.variable || '');
+          const bVariable = String(b.variable || '');
+          const variableKey = `${aPart}|${aSection}|${aGroup}`;
+          const variableOrder = predefinedSortOrder.variableOrders?.[variableKey] || [];
+          const aVariableIndex = variableOrder.indexOf(aVariable);
+          const bVariableIndex = variableOrder.indexOf(bVariable);
+          if (aVariableIndex !== bVariableIndex) {
+            if (aVariableIndex === -1) return 1;
+            if (bVariableIndex === -1) return -1;
+            return aVariableIndex - bVariableIndex;
+          }
+
+          return 0;
+        });
       }
     }
     
@@ -1147,6 +1326,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
       }
     }
 
+    if (gridType === 'lists') {
+      return hoistListTierChildrenInDisplayOrder(processedData);
+    }
     return processedData;
   }, [data, filters, columnFilters, sortConfig, affectedIds, customSortRules, gridType, isPredefinedSortEnabled, predefinedSortOrder]);
 
@@ -1862,7 +2044,13 @@ export const DataGrid: React.FC<DataGridProps> = ({
                                           ? (filtered.length > 50 ? displayText + '...' : displayText)
                                           : '-';
                                       })()
-                                    : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
+                                    : gridType === 'source_ldm' && row && typeof row === 'object'
+                                      ? (() => {
+                                          const v = (row as Record<string, unknown>)[column.key];
+                                          if (v === null || v === undefined) return '-';
+                                          return String(v);
+                                        })()
+                                      : (row && typeof row === 'object' ? (row[column.key] || '-') : '-'))
                         }
                       </span>
                     )}

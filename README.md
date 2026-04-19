@@ -55,6 +55,11 @@ Configure in `CDM_UI_Backend/.env` (see `env.example`). Typical keys:
 | `NEO4J_PASSWORD` | Neo4j password |
 | `ENVIRONMENT` | e.g. `development` / `production` (used for behavior and UI hints) |
 | `NEO4J_INSTANCE_NAME` | Label for logging / env indicator (instance nickname) |
+| `DATABASE_URL` | **PostgreSQL** connection string (Render injects this when you attach a Postgres instance). Used for **Metadata**, **Heuristics**, and **Sources** (catalog + LDM rows) when the backend enables Postgres (see below). |
+| `RENDER` | Set automatically on **Render** Web Services. With `DATABASE_URL`, the backend persists Sources LDM data and related tables in Postgres instead of JSON files. |
+| `FORCE_POSTGRES` | Optional: set to `1` / `true` / `yes` if you deploy somewhere that provides `DATABASE_URL` but does not set `RENDER`, to force Postgres instead of JSON. |
+
+**Sources on Render:** Link your Render PostgreSQL add-on so `DATABASE_URL` is available to the CDM backend service, deploy from `main`, and ensure `requirements.txt` is installed (includes `sqlalchemy`, `psycopg2-binary`). Local development without `RENDER` / `FORCE_POSTGRES` continues to use `cdm_sources_store.*.json` for Sources.
 
 Never commit real `.env` files or passwords. Rotate any credentials that were ever committed to git.
 

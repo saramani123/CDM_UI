@@ -16,7 +16,28 @@ interface VariablesCustomSortModalProps {
   currentSortRules?: SortRule[];
   isDefaultOrderEnabled?: boolean;
   onDefaultOrderToggle?: (enabled: boolean) => void;
+  /** Columns removed from custom sort when default order is enabled (conflict with predefined hierarchy). */
+  hierarchyColumnKeysForDefaultOrder?: string[];
+  /** Driver columns (S/D/C) allowed when default order is on. */
+  driverColumnKeys?: string[];
+  /** All column keys allowed in the Column dropdown when default order is off. */
+  allowedCustomSortColumnKeys?: string[];
+  /** Shown under "Enable default order" when that option is on (overrides the Variables-specific copy). */
+  defaultOrderEnabledHelpText?: string;
+  /** Hide the long "Define multi-column sorting rules…" instructions block (e.g. Source LDM). */
+  hideInstructions?: boolean;
+  /** Hide "Enable default order" (e.g. Auto Map grid uses a separate Default Sort control). */
+  hideDefaultOrderToggle?: boolean;
+  /** Shown in the instructions paragraph (e.g. "Variables", "Source LDM mappings"). */
+  sortTargetLabel?: string;
 }
+
+const DEFAULT_DRIVER_KEYS = ['sector', 'domain', 'country'] as const;
+const DEFAULT_VARIABLES_HIERARCHY_KEYS = ['part', 'section', 'group', 'variable'] as const;
+const DEFAULT_VARIABLES_CUSTOM_OFF_KEYS = [
+  ...DEFAULT_DRIVER_KEYS,
+  ...DEFAULT_VARIABLES_HIERARCHY_KEYS,
+] as const;
 
 export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> = ({
   isOpen,
@@ -25,8 +46,18 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
   columns,
   currentSortRules = [],
   isDefaultOrderEnabled = false,
-  onDefaultOrderToggle
+  onDefaultOrderToggle,
+  hierarchyColumnKeysForDefaultOrder,
+  driverColumnKeys,
+  allowedCustomSortColumnKeys,
+  defaultOrderEnabledHelpText,
+  hideInstructions = false,
+  hideDefaultOrderToggle = false,
+  sortTargetLabel = 'Variables',
 }) => {
+  const hierarchyKeys = hierarchyColumnKeysForDefaultOrder ?? [...DEFAULT_VARIABLES_HIERARCHY_KEYS];
+  const driverKeys = driverColumnKeys ?? [...DEFAULT_DRIVER_KEYS];
+  const keysWhenDefaultOff = allowedCustomSortColumnKeys ?? [...DEFAULT_VARIABLES_CUSTOM_OFF_KEYS];
   const [sortRules, setSortRules] = useState<SortRule[]>(
     currentSortRules.length > 0 ? currentSortRules : [
       { id: '1', column: '', sortOn: 'cellValues', order: 'asc' }
@@ -45,17 +76,17 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
   useEffect(() => {
     if (isOpen && defaultOrderEnabled && sortRules.length > 0 && !sortRulesBackup) {
       // Check if we have rules that would be filtered out
-      const hasConflictingRules = sortRules.some(rule => 
-        rule.column && ['part', 'section', 'group', 'variable'].includes(rule.column)
+      const hasConflictingRules = sortRules.some(
+        (rule) => rule.column && hierarchyKeys.includes(rule.column)
       );
       if (hasConflictingRules) {
         setSortRulesBackup([...sortRules]);
-        setSortRules(prev => prev.filter(rule => 
-          !rule.column || !['part', 'section', 'group', 'variable'].includes(rule.column)
-        ));
+        setSortRules((prev) =>
+          prev.filter((rule) => !rule.column || !hierarchyKeys.includes(rule.column))
+        );
       }
     }
-  }, [isOpen]);
+  }, [isOpen, defaultOrderEnabled, hierarchyKeys]);
 
   // Custom Sort handlers
   const addSortRule = () => {
@@ -92,18 +123,19 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
     if (enabled) {
       // When enabling default order, backup current rules and filter out conflicting ones
       setSortRulesBackup([...sortRules]);
-      setSortRules(prev => prev.filter(rule => 
-        !rule.column || !['part', 'section', 'group', 'variable'].includes(rule.column)
-      ));
+      setSortRules((prev) =>
+        prev.filter((rule) => !rule.column || !hierarchyKeys.includes(rule.column))
+      );
     } else {
       // When disabling default order, restore the backup if it exists
       // Only add new S, D, C rules that don't already exist in the backup (to avoid duplicates)
       if (sortRulesBackup) {
-        const backupColumnSet = new Set(sortRulesBackup.map(rule => rule.column));
-        const newNonConflictingRules = sortRules.filter(rule => 
-          rule.column && 
-          ['sector', 'domain', 'country'].includes(rule.column) &&
-          !backupColumnSet.has(rule.column)
+        const backupColumnSet = new Set(sortRulesBackup.map((rule) => rule.column));
+        const newNonConflictingRules = sortRules.filter(
+          (rule) =>
+            rule.column &&
+            driverKeys.includes(rule.column) &&
+            !backupColumnSet.has(rule.column)
         );
         // Restore backup and add only truly new S, D, C rules
         setSortRules([...sortRulesBackup, ...newNonConflictingRules]);
@@ -126,18 +158,14 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
     onClose();
   };
 
-  // Get available columns for Variables custom sort
-  // When default order is enabled: only Sector, Domain, Country
-  // When default order is disabled: Sector, Domain, Country, Part, Section, Group, Variable
-  const availableColumns = columns.filter(col => {
+  // When default order is enabled: only driver columns (e.g. S, D, C)
+  // When default order is disabled: allowed custom-sort keys for this grid
+  const availableColumns = columns.filter((col) => {
     if (!col.sortable) return false;
     if (defaultOrderEnabled) {
-      // Only S, D, C when default order is enabled
-      return ['sector', 'domain', 'country'].includes(col.key);
-    } else {
-      // All columns when default order is disabled
-      return ['sector', 'domain', 'country', 'part', 'section', 'group', 'variable'].includes(col.key);
+      return driverKeys.includes(col.key);
     }
+    return keysWhenDefaultOff.includes(col.key);
   });
 
   if (!isOpen) return null;
@@ -160,35 +188,41 @@ export const VariablesCustomSortModal: React.FC<VariablesCustomSortModalProps> =
         {(
           <>
             {/* Enable Default Order Toggle */}
-            <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={defaultOrderEnabled}
-                  onChange={(e) => handleDefaultOrderToggle(e.target.checked)}
-                  className="w-5 h-5 text-ag-dark-accent bg-ag-dark-surface border-ag-dark-border rounded focus:ring-ag-dark-accent"
-                />
-                <span className="text-sm font-medium text-ag-dark-text">Enable default order</span>
-              </label>
-              {defaultOrderEnabled && (
-                <p className="text-xs text-ag-dark-text-secondary mt-2 ml-8">
-                  When enabled, sorting will be: Sector, Domain, Country (custom sort), then Part, Section, Group, Variable (default order).
-                  Part, Section, Group, and Variable columns are not available in custom sort when default order is enabled.
-                </p>
-              )}
-            </div>
+            {!hideDefaultOrderToggle && (
+              <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={defaultOrderEnabled}
+                    onChange={(e) => handleDefaultOrderToggle(e.target.checked)}
+                    className="w-5 h-5 text-ag-dark-accent bg-ag-dark-surface border-ag-dark-border rounded focus:ring-ag-dark-accent"
+                  />
+                  <span className="text-sm font-medium text-ag-dark-text">Enable default order</span>
+                </label>
+                {defaultOrderEnabled && (
+                  <p className="text-xs text-ag-dark-text-secondary mt-2 ml-8">
+                    {defaultOrderEnabledHelpText ??
+                      'When enabled, sorting will be: Sector, Domain, Country (custom sort), then Part, Section, Group, Variable (default order). Part, Section, Group, and Variable columns are not available in custom sort when default order is enabled.'}
+                  </p>
+                )}
+              </div>
+            )}
 
-            {/* Instructions */}
-            <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
-              <p className="text-sm text-ag-dark-text-secondary">
-                Define multi-column sorting rules for Variables. The first rule will be the primary sort, 
-                the second will be the secondary sort, and so on. 
-                {defaultOrderEnabled 
-                  ? ' Available columns: Sector, Domain, Country. Default order (Part, Section, Group, Variable) will be applied after custom sort.'
-                  : ' Available columns: Sector, Domain, Country, Part, Section, Group, Variable.'
-                }
-              </p>
-            </div>
+            {!hideInstructions && (
+              <div className="mb-6 p-4 bg-ag-dark-bg rounded-lg border border-ag-dark-border">
+                <p className="text-sm text-ag-dark-text-secondary">
+                  Define multi-column sorting rules for {sortTargetLabel}. The first rule will be the primary sort,
+                  the second will be the secondary sort, and so on.
+                  {defaultOrderEnabled
+                    ? driverKeys.length > 0
+                      ? ` Available columns: ${driverKeys.map((k) => columns.find((c) => c.key === k)?.title || k).join(', ')}. Default hierarchy order will be applied after these driver sorts.`
+                      : ' Default order uses the hierarchy from the Default Sort dialog (Being → Avatar → Object → Part → Section → Group → Variable). Custom multi-column rules are disabled while this is on; turn it off to sort by grid columns such as Source Name, Source Table, and Source Column.'
+                    : ` Available columns: ${keysWhenDefaultOff
+                        .map((k) => columns.find((c) => c.key === k)?.title || k)
+                        .join(', ')}.`}
+                </p>
+              </div>
+            )}
 
             {/* Sort Rules */}
             <div className="space-y-4 mb-6">

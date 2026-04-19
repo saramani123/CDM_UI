@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Layers, Grid3x3, ArrowUpAZ, ArrowDownZA, Copy } from 'lucide-react';
+import { Settings, Save, X, Trash2, Plus, Link, Upload, List, Database, Users, FileText, ChevronRight, ChevronDown, Layers, Grid3x3, ArrowUpAZ, ArrowDownZA, Copy, Loader2 } from 'lucide-react';
 import { listFieldOptions } from '../data/listsData';
 import { ListCsvUploadModal } from './ListCsvUploadModal';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -28,15 +28,18 @@ interface ListValue {
 interface AddListPanelProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (listData: any) => void;
+  onAdd: (listData: any) => void | Promise<void>;
   allData?: any[];
+  /** True while list is being created and grid is refetching */
+  isSubmitting?: boolean;
 }
 
 export const AddListPanel: React.FC<AddListPanelProps> = ({
   isOpen,
   onClose,
   onAdd,
-  allData = []
+  allData = [],
+  isSubmitting = false
 }) => {
   // Use API drivers data
   const { drivers: apiDrivers } = useDrivers();
@@ -176,6 +179,9 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   // Tiered list values state
   const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
+
+  const [listTypeSwitchDialog, setListTypeSwitchDialog] = useState<null | { newType: 'Single' | 'Multi-Level' }>(null);
+  const [listTypeSwitchBusy, setListTypeSwitchBusy] = useState(false);
   
   // Refs for tier name input focus management
   const tierNameInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
@@ -387,6 +393,45 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   };
 
   // Validation - all required fields must be filled
+  const hasConfiguredDraftListValues = (): boolean => {
+    if (singleListDraftRows.some(r => (r.value || '').trim())) return true;
+    const loc = tieredListValues;
+    const keys = Object.keys(loc).filter(k => k !== '_variations');
+    if (
+      keys.some(k => {
+        const arr = (loc as Record<string, string[][]>)[k];
+        return (
+          Array.isArray(arr) &&
+          arr.some(row => Array.isArray(row) && row.some(c => String(c || '').trim()))
+        );
+      })
+    ) {
+      return true;
+    }
+    const vars = (loc as { _variations?: Record<string, unknown> })._variations;
+    return !!(vars && typeof vars === 'object' && Object.keys(vars).length > 0);
+  };
+
+  const mustConfirmAddListTypeSwitch = (
+    prevType: 'Single' | 'Multi-Level',
+    newType: 'Single' | 'Multi-Level'
+  ): boolean => prevType !== newType && hasConfiguredDraftListValues();
+
+  const applyAddListTypeLocally = (newType: 'Single' | 'Multi-Level') => {
+    setListType(newType);
+    if (newType === 'Single') {
+      setNumberOfLevels(2);
+      setTierNames(['', '']);
+      setTieredListValues({});
+      setSingleListDraftRows([]);
+    } else {
+      setNumberOfLevels(2);
+      setTierNames(['', '']);
+      setSingleListDraftRows([]);
+      setTieredListValues({});
+    }
+  };
+
   const isFormValid = () => {
     const hasSector = driverSelections.sector.length > 0;
     const hasDomain = driverSelections.domain.length > 0;
@@ -397,7 +442,8 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     return hasSector && hasDomain && hasCountry && hasSet && hasGrouping && hasListName;
   };
 
-  const handleAddList = () => {
+  const handleAddList = async () => {
+    if (isSubmitting) return;
     if (!isFormValid()) {
       alert('Please fill in all required fields:\n• Sector\n• Domain\n• Country\n• Set\n• Grouping\n• List Name');
       return;
@@ -536,9 +582,12 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
       tieredListValuesKeys: newList.tieredListValues ? Object.keys(newList.tieredListValues) : 'N/A'
     });
 
-    onAdd(newList);
-    
-    // Reset form
+    try {
+      await Promise.resolve(onAdd(newList));
+    } catch {
+      return;
+    }
+
     setFormData({
       set: '',
       grouping: '',
@@ -557,7 +606,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     setNumberOfLevels(2);
     setTierNames(['', '']);
     setTieredListValues({});
-    
+
     onClose();
   };
 
@@ -730,8 +779,10 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
           <h3 className="text-lg font-semibold text-ag-dark-text">Add New List</h3>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors"
+          disabled={isSubmitting}
+          className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors disabled:opacity-40 disabled:pointer-events-none"
         >
           <X className="w-5 h-5" />
         </button>
@@ -895,17 +946,12 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               value={listType}
               onChange={(e) => {
                 const newType = e.target.value as 'Single' | 'Multi-Level';
-                setListType(newType);
-                if (newType === 'Single') {
-                  setNumberOfLevels(2);
-                  setTierNames(['', '']);
-                  setTieredListValues({});
-                } else {
-                  // Initialize with 2 tiers (Tier 1 and Tier 2)
-                  setNumberOfLevels(2);
-                  setTierNames(['', '']);
-                  setSingleListDraftRows([]);
+                if (newType === listType) return;
+                if (mustConfirmAddListTypeSwitch(listType, newType)) {
+                  setListTypeSwitchDialog({ newType });
+                  return;
                 }
+                applyAddListTypeLocally(newType);
               }}
               className="w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none"
               style={{
@@ -1041,6 +1087,86 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         </div>
       </CollapsibleSection>
 
+      {/* Variations Section */}
+      <CollapsibleSection 
+        title="Variations" 
+        sectionKey="variations"
+        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleSortVariations('asc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort A-Z"
+            >
+              <ArrowUpAZ className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleSortVariations('desc')}
+              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
+              title="Sort Z-A"
+            >
+              <ArrowDownZA className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setIsVariationUploadOpen(true)}
+              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
+              title="Upload Variations CSV"
+            >
+              <Upload className="w-4 h-4" />
+            </button>
+          </div>
+        }
+      >
+        <textarea
+          ref={variationsTextareaRef}
+          value={variationsText}
+          onChange={(e) => {
+            handleVariationsTextChange(e.target.value);
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              variationsTextareaRef.current?.blur();
+            }
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            e.nativeEvent.stopImmediatePropagation();
+          }}
+          onFocus={(e) => {
+            e.stopPropagation();
+            isVariationsTextareaFocusedRef.current = true;
+          }}
+          onBlur={(e) => {
+            const timeSinceLastChange = Date.now() - lastVariationsChangeTimeRef.current;
+            const wasRecentTyping = timeSinceLastChange < 200;
+            const relatedTarget = e.relatedTarget as HTMLElement;
+            const clickedOutside = !relatedTarget || 
+              (relatedTarget.tagName !== 'TEXTAREA' && 
+               relatedTarget.tagName !== 'INPUT' && 
+               !relatedTarget.isContentEditable);
+            
+            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
+              setTimeout(() => {
+                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
+                  variationsTextareaRef.current.focus();
+                }
+              }, 10);
+            } else if (!wasRecentTyping) {
+              isVariationsTextareaFocusedRef.current = false;
+            }
+          }}
+          placeholder={variationsText.trim() === '' ? "Type one variation per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
+          rows={8}
+          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
+        />
+      </CollapsibleSection>
+
       {/* Applicability Section */}
       <CollapsibleSection 
         title="Applicability" 
@@ -1142,99 +1268,29 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         )}
       </div>
 
-      {/* Variations Section */}
-      <CollapsibleSection 
-        title="Variations" 
-        sectionKey="variations"
-        icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
-        actions={
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => handleSortVariations('asc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort A-Z"
-            >
-              <ArrowUpAZ className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => handleSortVariations('desc')}
-              className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="Sort Z-A"
-            >
-              <ArrowDownZA className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => setIsVariationUploadOpen(true)}
-              className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors"
-              title="Upload Variations CSV"
-            >
-              <Upload className="w-4 h-4" />
-            </button>
-          </div>
-        }
-      >
-        <textarea
-          ref={variationsTextareaRef}
-          value={variationsText}
-          onChange={(e) => {
-            handleVariationsTextChange(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Escape') {
-              variationsTextareaRef.current?.blur();
-            }
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.nativeEvent.stopImmediatePropagation();
-          }}
-          onFocus={(e) => {
-            e.stopPropagation();
-            isVariationsTextareaFocusedRef.current = true;
-          }}
-          onBlur={(e) => {
-            const timeSinceLastChange = Date.now() - lastVariationsChangeTimeRef.current;
-            const wasRecentTyping = timeSinceLastChange < 200;
-            const relatedTarget = e.relatedTarget as HTMLElement;
-            const clickedOutside = !relatedTarget || 
-              (relatedTarget.tagName !== 'TEXTAREA' && 
-               relatedTarget.tagName !== 'INPUT' && 
-               !relatedTarget.isContentEditable);
-            
-            if (wasRecentTyping && clickedOutside && variationsTextareaRef.current && isVariationsTextareaFocusedRef.current) {
-              setTimeout(() => {
-                if (variationsTextareaRef.current && document.activeElement !== variationsTextareaRef.current) {
-                  variationsTextareaRef.current.focus();
-                }
-              }, 10);
-            } else if (!wasRecentTyping) {
-              isVariationsTextareaFocusedRef.current = false;
-            }
-          }}
-          placeholder={variationsText.trim() === '' ? "Type one variation per line. Press Enter to add more. Use the upload icon to import from CSV." : undefined}
-          rows={8}
-          className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-y"
-        />
-      </CollapsibleSection>
-
       {/* Add List Button */}
       <div className="mt-8 pt-6 border-t border-ag-dark-border">
         <button
-          onClick={handleAddList}
-          disabled={!isFormValid()}
+          type="button"
+          onClick={() => void handleAddList()}
+          disabled={!isFormValid() || isSubmitting}
           className={`w-full py-2 px-4 rounded transition-colors flex items-center justify-center gap-2 ${
-            isFormValid()
+            isFormValid() && !isSubmitting
               ? 'bg-ag-dark-accent text-white hover:bg-ag-dark-accent-hover'
               : 'bg-ag-dark-text-secondary text-ag-dark-text-secondary cursor-not-allowed opacity-50'
           }`}
         >
-          <Plus className="w-4 h-4" />
-          Add List
+          {isSubmitting ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Saving…
+            </>
+          ) : (
+            <>
+              <Plus className="w-4 h-4" />
+              Add List
+            </>
+          )}
         </button>
       </div>
       </div>
@@ -1330,6 +1386,50 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         draftInitialRows={singleListDraftRows}
         onDraftSave={setSingleListDraftRows}
       />
+
+      {listTypeSwitchDialog && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]"
+          onClick={() => !listTypeSwitchBusy && setListTypeSwitchDialog(null)}
+        >
+          <div
+            className="bg-ag-dark-surface rounded-lg border border-ag-dark-border max-w-md w-full mx-4 p-6 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-ag-dark-text mb-3">Switch list type?</h3>
+            <p className="text-sm text-ag-dark-text-secondary leading-relaxed mb-6">
+              Are you sure you want to switch list type? You have list values configured for this list
+              which will get cleared if you change the list type.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={listTypeSwitchBusy}
+                onClick={() => setListTypeSwitchDialog(null)}
+                className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={listTypeSwitchBusy}
+                onClick={() => {
+                  setListTypeSwitchBusy(true);
+                  try {
+                    applyAddListTypeLocally(listTypeSwitchDialog.newType);
+                  } finally {
+                    setListTypeSwitchBusy(false);
+                    setListTypeSwitchDialog(null);
+                  }
+                }}
+                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

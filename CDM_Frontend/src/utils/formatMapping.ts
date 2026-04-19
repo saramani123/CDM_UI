@@ -1,39 +1,30 @@
 /**
  * Format V-I to Format V-II cascading mapping (canonical allowed values).
- * Format V-II values depend on Format V-I. Used by Add Variable, Edit Metadata, and Bulk Edit.
+ * Matches the product spreadsheet: Format V-I options and allowed Format V-II per V-I.
+ * Used by Variables (Format I/II), Source LDM (Format VI/VII), Add/Bulk edit.
  */
 export const FORMAT_I_TO_FORMAT_II_MAPPING: Record<string, string[]> = {
   Date: ['Date', 'Datetime'],
+  Number: ['Decimal', 'Currency', 'Percent', 'Integer'],
+  ID: ['Numeric ID', 'Custom ID', 'Alphanumeric ID'],
+  List: ['Static List', 'Flag', 'Reference List', 'Specific List'],
   Directory: ['Phone', 'Email', 'URL', 'Zip'],
   Freeform: ['Text', 'JSON'],
-  ID: ['Numeric ID', 'Alphanumeric ID', 'Custom ID', 'Reference List'],
-  List: ['Static List', 'Flag', 'Reference List', 'Specific List'],
-  Number: ['Decimal', 'Currency', 'Percent', 'Integer'],
-};
-
-/** Legacy UI / graph values: still resolve Format II when editing older variables. */
-const LEGACY_FORMAT_I_TO_FORMAT_II: Record<string, string[]> = {
-  Contact: ['Email', 'Phone', 'PostalCode', 'URL', 'Zip'],
-  Time: ['Date', 'DateTime', 'Month', 'Period'],
 };
 
 /**
- * Get all Format V-I values (canonical keys only; panels also merge API / grid data).
+ * All allowed Format V-I (Format VI on Source LDM) values — no API/grid merge.
  */
 export const getAllFormatIValues = (): string[] => {
   return Object.keys(FORMAT_I_TO_FORMAT_II_MAPPING).sort();
 };
 
 /**
- * Get Format V-II values for a given Format V-I value (canonical + legacy keys).
+ * Allowed Format V-II (Format VII) values for a given Format V-I — canonical only.
  */
 export const getFormatIIValuesForFormatI = (formatI: string): string[] => {
   if (!formatI) return [];
-  return (
-    FORMAT_I_TO_FORMAT_II_MAPPING[formatI] ||
-    LEGACY_FORMAT_I_TO_FORMAT_II[formatI] ||
-    []
-  );
+  return FORMAT_I_TO_FORMAT_II_MAPPING[formatI] || [];
 };
 
 /**
@@ -44,3 +35,14 @@ export const isValidFormatIIForFormatI = (formatI: string, formatII: string): bo
   const validFormatIIValues = getFormatIIValuesForFormatI(formatI);
   return validFormatIIValues.includes(formatII);
 };
+
+/** Coerce stored values to allowed canonical pair (clears invalid legacy/API values). */
+export function sanitizeStoredFormatPair(formatI: string, formatII: string): { formatI: string; formatII: string } {
+  const fi = (formatI || '').trim();
+  const fii = (formatII || '').trim();
+  const allowedI = new Set(getAllFormatIValues());
+  if (!fi || !allowedI.has(fi)) return { formatI: '', formatII: '' };
+  const allowedII = getFormatIIValuesForFormatI(fi);
+  if (!fii || !allowedII.includes(fii)) return { formatI: fi, formatII: '' };
+  return { formatI: fi, formatII: fii };
+}

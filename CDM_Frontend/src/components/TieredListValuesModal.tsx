@@ -33,7 +33,6 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [editingCell, setEditingCell] = useState<{ rowId: string; colIndex: number; isVariation?: boolean } | null>(null);
   const [editValue, setEditValue] = useState('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
   // Track if we've loaded initial data to prevent reloading when parent state updates
   const hasLoadedInitialData = useRef(false);
   // Track current tieredValueRows to avoid stale closure issues
@@ -752,27 +751,13 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
           </h2>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setIsCsvUploadOpen(true);
-                fileInputRef.current?.click();
-              }}
+              type="button"
+              onClick={() => setIsCsvUploadOpen(true)}
               className="p-2 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
               title="Upload CSV"
             >
               <Upload className="w-5 h-5" />
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  handleCsvUpload(file);
-                }
-              }}
-              className="hidden"
-            />
             <button
               onClick={onClose}
               className="p-2 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
@@ -811,8 +796,8 @@ export const TieredListValuesModal: React.FC<TieredListValuesModalProps> = ({
                         <span className="text-sm text-ag-dark-text-secondary">
                           Column {index + 1}
                         </span>
-                        <span className="text-sm font-medium text-ag-dark-text">
-                          {header}
+                        <span className="text-sm font-medium text-red-400">
+                          {(header && header.trim()) || `Tier ${index + 1}`} *
                         </span>
                       </div>
                     ))}

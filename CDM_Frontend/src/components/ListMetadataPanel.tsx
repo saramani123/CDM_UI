@@ -63,6 +63,8 @@ interface ListMetadataPanelProps {
   isVariablesOrderEnabled?: boolean;
   /** Refetch one list from GET /lists/{id} after grid modal syncs values to Neo4j. */
   onListDetailRefresh?: (listId: string) => void | Promise<void>;
+  /** Reload full lists collection (e.g. after list type switch removes tier list rows). */
+  onFullListsRefresh?: () => void | Promise<unknown>;
 }
 
 export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
@@ -75,7 +77,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   selectedCount = 0,
   variablesOrderSortOrder,
   isVariablesOrderEnabled = false,
-  onListDetailRefresh
+  onListDetailRefresh,
+  onFullListsRefresh
 }) => {
   // Use API drivers data
   const { drivers: apiDrivers } = useDrivers();
@@ -415,6 +418,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     }
     return 'Single';
   });
+
+  const [listTypeSwitchDialog, setListTypeSwitchDialog] = useState<null | { newType: 'Single' | 'Multi-Level' }>(null);
+  const [listTypeSwitchBusy, setListTypeSwitchBusy] = useState(false);
   
   // Number of tiers for Multi-Level lists (1-10)
   const [numberOfLevels, setNumberOfLevels] = useState<number>(() => {
@@ -696,6 +702,59 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   // Check if panel should be enabled (exactly 1 list selected)
   const isPanelEnabled = selectedCount === 1;
 
+  const resolveOriginalListType = (): 'Single' | 'Multi-Level' => {
+    if (!selectedList) return 'Single';
+    if (selectedList.listType === 'Multi-Level') return 'Multi-Level';
+    if (selectedList.tieredListsList && selectedList.tieredListsList.length > 0) return 'Multi-Level';
+    return 'Single';
+  };
+
+  const hasSingleTierValuesOnRecord = (): boolean =>
+    (selectedList?.listValuesList?.length ?? 0) > 0;
+
+  const hasMultiTierStructureOrValues = (): boolean => {
+    if ((selectedList?.tieredListsList?.length ?? 0) > 0) return true;
+    const loc = tieredListValues;
+    const tieredKeys = Object.keys(loc).filter(k => k !== '_variations');
+    const hasRows = tieredKeys.some(k => {
+      const arr = (loc as Record<string, string[][]>)[k];
+      return (
+        Array.isArray(arr) &&
+        arr.some(row => Array.isArray(row) && row.some(c => String(c || '').trim()))
+      );
+    });
+    if (hasRows) return true;
+    const vars = (loc as { _variations?: Record<string, unknown> })._variations;
+    return !!(vars && typeof vars === 'object' && Object.keys(vars).length > 0);
+  };
+
+  const mustConfirmListTypeSwitch = (
+    original: 'Single' | 'Multi-Level',
+    newType: 'Single' | 'Multi-Level'
+  ): boolean => {
+    if (original === newType) return false;
+    if (original === 'Single' && newType === 'Multi-Level') {
+      return hasSingleTierValuesOnRecord();
+    }
+    return hasMultiTierStructureOrValues();
+  };
+
+  const applyListTypeUiSideEffects = (newType: 'Single' | 'Multi-Level') => {
+    setListType(newType);
+    if (newType === 'Single') {
+      setNumberOfLevels(2);
+      setTierNames([]);
+      setTieredListValues({});
+      tieredValuesEditedRef.current = false;
+      tieredValuesLoadedRef.current = null;
+      setListValuesText('');
+    } else {
+      setNumberOfLevels(2);
+      setTierNames(['', '']);
+      setListValuesText('');
+    }
+  };
+
   const toggleSection = (sectionKey: string) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -859,6 +918,48 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       
       const newLines = newVariations.map((v: any) => typeof v === 'string' ? v : v.name).join('\n');
       setVariationsText(prev => prev ? `${prev}\n${newLines}` : newLines);
+    }
+  };
+
+  const runConfirmedListTypeSwitch = async () => {
+    if (!listTypeSwitchDialog?.newType || !selectedList?.id) return;
+    const newType = listTypeSwitchDialog.newType;
+    const orig = resolveOriginalListType();
+    setListTypeSwitchBusy(true);
+    try {
+      if (orig === 'Multi-Level' && newType === 'Single') {
+        await apiService.updateList(selectedList.id, {
+          listType: 'Single',
+          listValuesList: [],
+          tieredListValues: {},
+          tieredListsList: []
+        });
+        applyListTypeUiSideEffects('Single');
+      } else if (orig === 'Single' && newType === 'Multi-Level') {
+        await apiService.syncSingleListValues(selectedList.id, { rows: [] });
+        const idShort = selectedList.id.replace(/-/g, '').slice(0, 10);
+        const autoTierNames = [`Tier_1_${idShort}`, `Tier_2_${idShort}`];
+        await apiService.updateList(selectedList.id, {
+          listType: 'Multi-Level',
+          numberOfLevels: 2,
+          tierNames: autoTierNames,
+          listValuesList: []
+        });
+        setNumberOfLevels(2);
+        setTierNames(autoTierNames);
+        setTieredListValues({});
+        tieredValuesEditedRef.current = false;
+        tieredValuesLoadedRef.current = selectedList.id;
+        setListType('Multi-Level');
+        setListValuesText('');
+      }
+      await onFullListsRefresh?.();
+      await onListDetailRefresh?.(selectedList.id);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to change list type. Please try again.');
+    } finally {
+      setListTypeSwitchBusy(false);
+      setListTypeSwitchDialog(null);
     }
   };
 
@@ -1532,18 +1633,14 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               value={listType}
               onChange={(e) => {
                 const newType = e.target.value as 'Single' | 'Multi-Level';
-                setListType(newType);
-                if (newType === 'Single') {
-                  setNumberOfLevels(2);
-                  setTierNames([]);
-                } else {
-                  // Initialize with 2 tiers (Tier 1 and Tier 2)
-                  setNumberOfLevels(2);
-                  setTierNames(['', '']);
-                  // Clear list values when switching to Multi-Level
-                  // (they will be managed via grid modal instead)
-                  setListValuesText('');
+                if (!isPanelEnabled || selectedList?.hasIncomingTier) return;
+                if (newType === listType) return;
+                const orig = resolveOriginalListType();
+                if (mustConfirmListTypeSwitch(orig, newType)) {
+                  setListTypeSwitchDialog({ newType });
+                  return;
                 }
+                applyListTypeUiSideEffects(newType);
               }}
               disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
@@ -2130,6 +2227,42 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           setSingleListValuesVariations({});
         }}
       />
+
+      {listTypeSwitchDialog && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[120]"
+          onClick={() => !listTypeSwitchBusy && setListTypeSwitchDialog(null)}
+        >
+          <div
+            className="bg-ag-dark-surface rounded-lg border border-ag-dark-border max-w-md w-full mx-4 p-6 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-ag-dark-text mb-3">Switch list type?</h3>
+            <p className="text-sm text-ag-dark-text-secondary leading-relaxed mb-6">
+              Are you sure you want to switch list type? You have list values configured for this list
+              which will get cleared if you change the list type. This cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={listTypeSwitchBusy}
+                onClick={() => setListTypeSwitchDialog(null)}
+                className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={listTypeSwitchBusy}
+                onClick={() => void runConfirmedListTypeSwitch()}
+                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50"
+              >
+                {listTypeSwitchBusy ? 'Working…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

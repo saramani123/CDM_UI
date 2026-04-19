@@ -1314,54 +1314,48 @@ class ApiService {
     });
   }
 
-  // Sources API
+  // Sources tab — catalog + per-source LDM rows
   async getSources() {
     return this.request('/sources', { method: 'GET' });
   }
 
-  async getSourceItem(id: string) {
+  async getSourceDetail(id: string) {
     return this.request(`/sources/${id}`, { method: 'GET' });
   }
 
-  async createSourceItem(item: {
-    id: string;
-    sector: string;
-    domain: string;
-    country: string;
-    system: string;
-    sub_system: string;
-    type: string;
-    table: string;
-    column: string;
-    cdm_full_variable: string;
-  }) {
-    return this.request('/sources', {
-      method: 'POST',
-      body: JSON.stringify(item),
+  async getSourcesAutoMap(sourceId: string, targetId: string) {
+    const q = new URLSearchParams({
+      source_id: sourceId,
+      target_id: targetId,
+      _: String(Date.now()),
+    });
+    return this.request(`/sources/auto-map?${q.toString()}`, {
+      method: 'GET',
+      cache: 'no-store',
     });
   }
 
-  async updateSourceItem(id: string, update: {
-    sector?: string;
-    domain?: string;
-    country?: string;
-    system?: string;
-    sub_system?: string;
-    type?: string;
-    table?: string;
-    column?: string;
-    cdm_full_variable?: string;
-    detailData?: string;
-  }) {
+  async createSource(body: { name: string; sector?: string; domain?: string; country?: string }) {
+    return this.request('/sources', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async updateSource(
+    id: string,
+    update: { sector?: string; domain?: string; country?: string; name?: string }
+  ) {
     return this.request(`/sources/${id}`, {
       method: 'PUT',
       body: JSON.stringify(update),
     });
   }
 
-  async deleteSourceItem(id: string) {
-    return this.request(`/sources/${id}`, {
-      method: 'DELETE',
+  async replaceSourceLdmRows(id: string, rows: Record<string, unknown>[]) {
+    return this.request(`/sources/${id}/ldm-rows`, {
+      method: 'PUT',
+      body: JSON.stringify({ rows }),
     });
   }
 }

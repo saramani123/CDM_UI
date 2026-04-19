@@ -8,7 +8,6 @@ import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddPartValueModal } from './AddPartValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
-import { AddFormatIIValueModal } from './AddFormatIIValueModal';
 import { VariationsModal } from './VariationsModal';
 import { useObjects } from '../hooks/useObjects';
 import { buildValidationString, validateValidationInput, getOperatorsForValType, RANGE_GREATER_OPERATORS, RANGE_LESS_OPERATORS, type ValidationComponents, type ValType, type Operator, type RangeOperator } from '../utils/validationUtils';
@@ -78,7 +77,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   // Modal state for add field value (Format I, Format II, G-Type, Default)
   const [isAddFieldValueModalOpen, setIsAddFieldValueModalOpen] = useState(false);
   const [selectedFieldForAdd, setSelectedFieldForAdd] = useState<{ name: string; label: string } | null>(null);
-  const [isAddFormatIIValueModalOpen, setIsAddFormatIIValueModalOpen] = useState(false);
   const [formatIIByFormatIMap, setFormatIIByFormatIMap] = useState<Record<string, string[]>>({});
   
   // Get objects data - use hook if not provided as prop
@@ -457,35 +455,12 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     }
   };
 
-  const handleAddFormatIIValue = async (formatI: string, formatIIValue: string) => {
-    await apiService.addVariableFieldOption('formatII', formatIIValue, formatI);
-    const apiOptions = await apiService.getVariableFieldOptions() as {
-      formatI: string[];
-      formatII: string[];
-      gType: string[];
-      validation: string[];
-      default: string[];
-      formatIIByFormatI?: Record<string, string[]>;
-    };
-    setFormatIIByFormatIMap(apiOptions.formatIIByFormatI || {});
-    if (formData.formatI === formatI) {
-      handleChange('formatII', formatIIValue);
-    }
-  };
-
   const getFormatIOptions = (): string[] => {
-    return [...new Set([...(getAllFormatIValues() || []), ...(dynamicFieldOptions.formatI || [])])].sort();
+    return getAllFormatIValues();
   };
 
   const getFormatIIOptionsForFormatI = (formatI: string): string[] => {
-    if (!formatI) return [];
-    const mapped = formatIIByFormatIMap[formatI] || [];
-    const fallback = getFormatIIValuesForFormatI(formatI) || [];
-    const fromData = (allData || [])
-      .filter((item: any) => item?.formatI === formatI && item?.formatII)
-      .map((item: any) => String(item.formatII).trim())
-      .filter(Boolean);
-    return [...new Set([...fallback, ...mapped, ...fromData])].sort();
+    return getFormatIIValuesForFormatI(formatI);
   };
 
   // Collapsible sections state
@@ -1276,22 +1251,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
       <CollapsibleSection title="Metadata" sectionKey="metadata" icon={<FileText className="w-4 h-4 text-ag-dark-text-secondary" />}>
         <div className="space-y-4">
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format I <span className="text-ag-dark-error">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedFieldForAdd({ name: 'formatI', label: 'Format I' });
-                  setIsAddFieldValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Format I value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Format I <span className="text-ag-dark-error">*</span>
+            </label>
             <select
               value={formData.formatI}
               onChange={(e) => handleChange('formatI', e.target.value)}
@@ -1313,19 +1275,9 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-ag-dark-text">
-                Format II <span className="text-ag-dark-error">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsAddFormatIIValueModalOpen(true)}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Format II value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </div>
+            <label className="block text-sm font-medium text-ag-dark-text mb-2">
+              Format II <span className="text-ag-dark-error">*</span>
+            </label>
             <select
               value={formData.formatII}
               onChange={(e) => handleChange('formatII', e.target.value)}
@@ -1710,14 +1662,6 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         onSave={handleAddFieldValue}
         fieldName={selectedFieldForAdd?.name || ''}
         fieldLabel={selectedFieldForAdd?.label || ''}
-      />
-
-      <AddFormatIIValueModal
-        isOpen={isAddFormatIIValueModalOpen}
-        onClose={() => setIsAddFormatIIValueModalOpen(false)}
-        formatIOptions={getFormatIOptions()}
-        defaultFormatI={formData.formatI || ''}
-        onSave={handleAddFormatIIValue}
       />
 
       {/* Variations Modal */}

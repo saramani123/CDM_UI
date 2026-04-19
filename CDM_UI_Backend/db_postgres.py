@@ -4,7 +4,7 @@ This is separate from Neo4j and ensures data persists permanently.
 """
 
 import os
-from sqlalchemy import create_engine, Column, String, Text, Boolean, text
+from sqlalchemy import create_engine, Column, String, Text, Boolean, text, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
@@ -49,31 +49,65 @@ class HeuristicModel(Base):
     # Free-text documentation when is_hero = FALSE; NULL when is_hero = TRUE
     documentation = Column(Text, nullable=True)
 
+
+# Sources tab: logical data model catalog + per-source grid rows (separate from Neo4j)
+class SourceCatalogModel(Base):
+    __tablename__ = "source_catalog"
+
+    id = Column(String, primary_key=True)
+    source_key = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    sector = Column(String, default="")
+    domain = Column(String, default="")
+    country = Column(String, default="")
+    is_preset = Column(Boolean, nullable=False, default=False)
+
+
+class SourceLdmRowModel(Base):
+    __tablename__ = "source_ldm_rows"
+
+    id = Column(String, primary_key=True)
+    source_id = Column(String, ForeignKey("source_catalog.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_name = Column(String, default="")
+    source_table = Column(String, default="")
+    source_variable = Column(String, default="")
+    cdm_variable = Column("cdm_variable", String, default="")
+    being = Column(String, default="")
+    avatar = Column(String, default="")
+    cdm_object = Column("cdm_object", String, default="")
+    part = Column(String, default="")
+    section = Column(String, default="")
+    cdm_group = Column("cdm_group", String, default="")
+    format_vi = Column(String, default="")
+    format_vii = Column(String, default="")
+    validations = Column(Text, default="")
+
+
 # Database connection
 def get_postgres_url():
-    """Get PostgreSQL connection URL from environment variables"""
-    # IMPORTANT: Only use PostgreSQL in production (Render)
-    # For local development, we use JSON files to keep dev/prod data separate
-    
-    # Check if we're in production (Render)
-    render_env = os.getenv("RENDER")
-    is_production = render_env and render_env.strip()
-    
-    # Only use PostgreSQL in production
-    if is_production:
-        # Check for Render PostgreSQL connection string
-        database_url = os.getenv("DATABASE_URL")
-        if database_url:
-            # Render provides DATABASE_URL in format: postgresql://user:pass@host:port/dbname
-            # SQLAlchemy needs postgresql:// (not postgres://)
-            if database_url.startswith("postgres://"):
-                database_url = database_url.replace("postgres://", "postgresql://", 1)
-            return database_url
-    
-    # For local development, return None to force JSON fallback
-    # This ensures dev and prod data are completely separate
-    print("ℹ️  Local development detected - using JSON files instead of PostgreSQL")
-    return None
+    """Get PostgreSQL connection URL from environment variables.
+
+    PostgreSQL is used when ``DATABASE_URL`` is set and any of:
+    - ``RENDER`` is set (native Render Web Services), or
+    - ``FORCE_POSTGRES`` is ``1`` / ``true`` / ``yes`` (explicit opt-in, e.g. custom Docker).
+
+    Otherwise returns ``None`` so Sources / Metadata / Heuristics use JSON files locally.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url or not str(database_url).strip():
+        print("ℹ️  No DATABASE_URL — using JSON files for Sources / Metadata / Heuristics")
+        return None
+
+    render_on = bool(os.getenv("RENDER", "").strip())
+    force_pg = os.getenv("FORCE_POSTGRES", "").strip().lower() in ("1", "true", "yes")
+
+    if not (render_on or force_pg):
+        print("ℹ️  DATABASE_URL present but RENDER / FORCE_POSTGRES not set — using JSON files (local dev)")
+        return None
+
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    return database_url
 
 # Create engine and session
 engine = None

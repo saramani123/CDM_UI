@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter, GripVertical } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter, GripVertical, ChevronLeft } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
 import { MetadataPanel } from './components/MetadataPanel';
@@ -16,8 +16,13 @@ import { AddMetadataModal } from './components/AddMetadataModal';
 import { MetadataDetailModal } from './components/MetadataDetailModal';
 import { AddHeuristicsModal } from './components/AddHeuristicsModal';
 import { HeuristicsDetailPanel } from './components/HeuristicsDetailPanel';
-import { AddSourcesModal } from './components/AddSourcesModal';
-import { SourcesDetailPanel } from './components/SourcesDetailPanel';
+import { AddSourceCatalogModal } from './components/AddSourceCatalogModal';
+import { SourceMetadataPanel } from './components/SourceMetadataPanel';
+import { SourceLdmCsvUploadModal } from './components/SourceLdmCsvUploadModal';
+import { SourceLdmAddRowModal } from './components/SourceLdmAddRowModal';
+import { SourceLdmRowMetadataPanel } from './components/SourceLdmRowMetadataPanel';
+import { logoUrlForSourceKey } from './config/sourceLogos';
+import { mergePresetSourcesWithCatalog } from './config/sourcePresets';
 import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseDriverString, type ObjectData } from './data/mockData';
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
@@ -28,7 +33,14 @@ import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
 import { useMetadata, type MetadataData } from './hooks/useMetadata';
 import { useHeuristics, type HeuristicsData } from './hooks/useHeuristics';
-import { useSources, type SourcesData } from './hooks/useSources';
+import {
+  useSources,
+  type SourceAutoMapResponse,
+  type SourceCatalogEntry,
+  type SourceDetail,
+  type SourceLdmRow,
+} from './hooks/useSources';
+import { parseSourceLdmCsvText } from './utils/sourceLdmCsv';
 import { apiService } from './services/api';
 import { DriversColumn } from './components/DriversColumn';
 import { DriversMetadataPanel } from './components/DriversMetadataPanel';
@@ -37,6 +49,9 @@ import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
 import { VariablesCustomSortModal } from './components/VariablesCustomSortModal';
 import { VariablesOrderModal } from './components/VariablesOrderModal';
+import { SourceLdmOrderModal } from './components/SourceLdmOrderModal';
+import { SourceMapPanel } from './components/SourceMapPanel';
+import { SourceAutoMapView } from './components/SourceAutoMapView';
 import { ObjectsOrderModal } from './components/ObjectsOrderModal';
 import { ListsCustomSortModal } from './components/ListsCustomSortModal';
 import { ListsOrderModal } from './components/ListsOrderModal';
@@ -71,6 +86,65 @@ function resolveSelectedObjectIdsForVariableCreate(
   }
   if (ids.length === 0) return undefined;
   return [...new Set(ids)];
+}
+
+function ldmRowVariableFromApi(r: SourceLdmRow | Record<string, unknown>): string {
+  const o = r as Record<string, unknown>;
+  const raw = o.variable ?? o.cdm_variable ?? o.cdmVariable;
+  if (raw === null || raw === undefined) return '';
+  return String(raw).trim();
+}
+
+function normalizeSourceDetailLdm(d: SourceDetail): SourceDetail {
+  return {
+    ...d,
+    ldm_rows: (d.ldm_rows || []).map((r) => ({
+      ...r,
+      variable: ldmRowVariableFromApi(r as SourceLdmRow),
+    })),
+  };
+}
+
+/** Resolved S/D/C from Objects grid for the same Being / Avatar / Object triple (for Source LDM sorting). */
+function resolveLdmRowDrivers(row: SourceLdmRow, objects: ObjectData[]) {
+  const b = (row.being || '').trim();
+  const a = (row.avatar || '').trim();
+  const o = (row.object || '').trim();
+  const m = objects.find(
+    (obj) =>
+      (obj.being || '').trim() === b &&
+      (obj.avatar || '').trim() === a &&
+      (obj.object || '').trim() === o
+  );
+  return {
+    sector: String(m?.sector ?? '').trim(),
+    domain: String(m?.domain ?? '').trim(),
+    country: String(m?.country ?? '').trim(),
+  };
+}
+
+function SourceBrandLogo({ sourceKey, name }: { sourceKey: string; name: string }) {
+  const [hideLogo, setHideLogo] = useState(false);
+  const label = (name ?? '').trim() || (sourceKey ?? '').trim() || '?';
+  const initials = label.slice(0, 2).toUpperCase();
+  const url = logoUrlForSourceKey(sourceKey || '');
+  if (!url || hideLogo) {
+    return (
+      <div className="flex min-h-[140px] flex-1 w-full items-center justify-center rounded-lg border border-ag-dark-border/40 bg-ag-dark-bg/90 text-ag-dark-text font-semibold text-xl tracking-tight">
+        {initials}
+      </div>
+    );
+  }
+  return (
+    <div className="flex min-h-[140px] flex-1 w-full items-center justify-center rounded-lg border border-ag-dark-border/40 bg-ag-dark-bg/60 px-3">
+      <img
+        src={url}
+        alt=""
+        className="max-h-[112px] max-w-[92%] object-contain"
+        onError={() => setHideLogo(true)}
+      />
+    </div>
+  );
 }
 
 function App() {
@@ -128,8 +202,69 @@ function App() {
   const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem, deleteHeuristicItem } = useHeuristics();
   
   // Use API hook for sources data
-  const { sources: apiSources, loading: sourcesLoading, error: sourcesError, fetchSources, createSourceItem } = useSources();
-  
+  const {
+    catalog: sourcesCatalog,
+    loading: sourcesLoading,
+    error: sourcesError,
+    fetchCatalog: fetchSourcesCatalog,
+    createSource,
+  } = useSources();
+
+  const sourcesCardsCatalog = useMemo(
+    () => mergePresetSourcesWithCatalog(sourcesCatalog ?? []),
+    [sourcesCatalog]
+  );
+
+  const [isSourceMapPanelOpen, setIsSourceMapPanelOpen] = useState(false);
+  const [sourceMapSlots, setSourceMapSlots] = useState<{
+    source: SourceCatalogEntry | null;
+    target: SourceCatalogEntry | null;
+  }>({ source: null, target: null });
+
+  const sourcesCardsForMapGrid = useMemo(() => {
+    if (!isSourceMapPanelOpen) return sourcesCardsCatalog;
+    const held = new Set(
+      [sourceMapSlots.source?.id, sourceMapSlots.target?.id].filter(Boolean) as string[]
+    );
+    return sourcesCardsCatalog.filter((s) => !held.has(s.id));
+  }, [isSourceMapPanelOpen, sourcesCardsCatalog, sourceMapSlots.source?.id, sourceMapSlots.target?.id]);
+
+  const handleOpenSourceMapPanel = useCallback(() => {
+    setSelectedSourceId(null);
+    setActiveSourceDetail(null);
+    setAutoMapSession(null);
+    setSourceMapSlots({ source: null, target: null });
+    setIsSourceMapPanelOpen(true);
+  }, []);
+
+  const handleCloseSourceMapPanel = useCallback(() => {
+    setIsSourceMapPanelOpen(false);
+    setSourceMapSlots({ source: null, target: null });
+  }, []);
+
+  const handleSourceMapDropSlot = useCallback(
+    (slot: 'source' | 'target', sourceId: string) => {
+      const entry = sourcesCardsCatalog.find((s) => s.id === sourceId);
+      if (!entry) return;
+      setSourceMapSlots((prev) => {
+        const next = { source: prev.source, target: prev.target };
+        if (next.source?.id === sourceId) next.source = null;
+        if (next.target?.id === sourceId) next.target = null;
+        if (slot === 'source') next.source = entry;
+        else next.target = entry;
+        return next;
+      });
+    },
+    [sourcesCardsCatalog]
+  );
+
+  const handleSourceMapDropGrid = useCallback((sourceId: string) => {
+    setSourceMapSlots((prev) => ({
+      source: prev.source?.id === sourceId ? null : prev.source,
+      target: prev.target?.id === sourceId ? null : prev.target,
+    }));
+  }, []);
+
   // Fallback to mock data if API fails
   const [data, setData] = useState<ObjectData[]>([]);
   const [isAddObjectOpen, setIsAddObjectOpen] = useState(false);
@@ -146,6 +281,7 @@ function App() {
   const [listData, setListData] = useState(mockListData);
   const [isBulkListUploadOpen, setIsBulkListUploadOpen] = useState(false);
   const [isAddListOpen, setIsAddListOpen] = useState(false);
+  const [isAddListSubmitting, setIsAddListSubmitting] = useState(false);
   
   // Metadata tab state
   const [isAddMetadataOpen, setIsAddMetadataOpen] = useState(false);
@@ -167,11 +303,41 @@ function App() {
     }
   });
 
-  // Sources tab state
-  const [selectedSourceRow, setSelectedSourceRow] = useState<SourcesData | null>(null);
-  const [isAddSourcesOpen, setIsAddSourcesOpen] = useState(false);
-  const [sourceTypes, setSourceTypes] = useState<string[]>([]);
-  
+  // Sources tab state (card grid + LDM grid + metadata panel)
+  const [sourcesView, setSourcesView] = useState<'cards' | 'ldm' | 'auto_map'>('cards');
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [activeSourceDetail, setActiveSourceDetail] = useState<SourceDetail | null>(null);
+  const [isAddSourceCatalogOpen, setIsAddSourceCatalogOpen] = useState(false);
+  const [isSourceLdmCsvModalOpen, setIsSourceLdmCsvModalOpen] = useState(false);
+  const [isSourceLdmAddRowModalOpen, setIsSourceLdmAddRowModalOpen] = useState(false);
+  const [isSourceLdmClearAllModalOpen, setIsSourceLdmClearAllModalOpen] = useState(false);
+  const [sourceLdmClearAllBusy, setSourceLdmClearAllBusy] = useState(false);
+  const [sourceLdmUploadBusy, setSourceLdmUploadBusy] = useState(false);
+  const [selectedSourceLdmRows, setSelectedSourceLdmRows] = useState<SourceLdmRow[]>([]);
+  const [autoMapSession, setAutoMapSession] = useState<SourceAutoMapResponse | null>(null);
+  const [autoMapLoading, setAutoMapLoading] = useState(false);
+  /** Bumped on each successful Auto Map so the grid remounts with fresh LDM-backed data. */
+  const [autoMapRunId, setAutoMapRunId] = useState(0);
+
+  const handleSourceMapAutoMap = useCallback(async () => {
+    const src = sourceMapSlots.source;
+    const tgt = sourceMapSlots.target;
+    if (!src || !tgt) return;
+    setAutoMapLoading(true);
+    try {
+      const res = (await apiService.getSourcesAutoMap(src.id, tgt.id)) as SourceAutoMapResponse;
+      setAutoMapRunId((n) => n + 1);
+      setAutoMapSession(res);
+      setSourcesView('auto_map');
+      setIsSourceMapPanelOpen(false);
+      setSourceMapSlots({ source: null, target: null });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Auto Map failed');
+    } finally {
+      setAutoMapLoading(false);
+    }
+  }, [sourceMapSlots.source, sourceMapSlots.target]);
+
   // Required metadata concepts - handle both "Group-Type" and "G-Type", "List Set" and "Set", "List Grouping" and "Grouping"
   const REQUIRED_METADATA_CONCEPTS = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping'];
   const isRequiredMetadataItem = (concept: string) => {
@@ -391,25 +557,208 @@ function App() {
     });
   }, [apiHeuristics, heuristicsOrder]);
 
-  // Sources tab columns
-  const sourcesColumns = [
-    { 
-      key: 'sdc', 
-      title: 'S | D | C', 
-      sortable: true, 
-      filterable: true, 
-      width: '150px',
-      render: (row: SourcesData) => (
-        <span>{row.sector}, {row.domain}, {row.country}</span>
-      )
+  const sourceLdmColumns = useMemo(
+    () => [
+      { key: 'source_name', title: 'Source Name', sortable: true, filterable: true, width: '140px' },
+      { key: 'source_table', title: 'Source Table', sortable: true, filterable: true, width: '160px' },
+      { key: 'source_variable', title: 'Source Column', sortable: true, filterable: true, width: '160px' },
+      { key: 'being', title: 'Being', sortable: true, filterable: true, width: '120px' },
+      { key: 'avatar', title: 'Avatar', sortable: true, filterable: true, width: '120px' },
+      { key: 'object', title: 'Object', sortable: true, filterable: true, width: '120px' },
+      { key: 'part', title: 'Part', sortable: true, filterable: true, width: '100px' },
+      { key: 'section', title: 'Section', sortable: true, filterable: true, width: '120px' },
+      { key: 'group', title: 'Group', sortable: true, filterable: true, width: '120px' },
+      { key: 'variable', title: 'Variable', sortable: true, filterable: true, width: '140px' },
+      { key: 'format_vi', title: 'Format VI', sortable: true, filterable: true, width: '110px' },
+      { key: 'format_vii', title: 'Format VII', sortable: true, filterable: true, width: '110px' },
+      { key: 'validations', title: 'Validations', sortable: true, filterable: true, width: '180px' },
+    ],
+    []
+  );
+
+  const handleSourceDetailLoaded = useCallback((d: SourceDetail | null) => {
+    setActiveSourceDetail(d ? normalizeSourceDetailLdm(d) : null);
+  }, []);
+
+  const persistSourceLdmRows = useCallback(
+    async (rows: SourceLdmRow[]) => {
+      if (!selectedSourceId) return;
+      const payload = rows.map((r) => ({
+        id: r.id,
+        source_id: selectedSourceId,
+        source_name: r.source_name ?? '',
+        source_table: r.source_table ?? '',
+        source_variable: r.source_variable ?? '',
+        variable: r.variable ?? '',
+        being: r.being ?? '',
+        avatar: r.avatar ?? '',
+        object: r.object ?? '',
+        part: r.part ?? '',
+        section: r.section ?? '',
+        group: r.group ?? '',
+        format_vi: r.format_vi ?? '',
+        format_vii: r.format_vii ?? '',
+        validations: r.validations ?? '',
+      }));
+      await apiService.replaceSourceLdmRows(selectedSourceId, payload);
+      const d = (await apiService.getSourceDetail(selectedSourceId)) as SourceDetail;
+      const normalized = normalizeSourceDetailLdm(d);
+      setActiveSourceDetail(normalized);
+      setSelectedSourceLdmRows((prev) => {
+        if (prev.length === 0) return prev;
+        const id = prev[0].id;
+        if (!id) return prev;
+        const found = normalized.ldm_rows.find((r) => r.id === id);
+        return found ? [found] : [];
+      });
     },
-    { key: 'system', title: 'System', sortable: true, filterable: true, width: '200px' },
-    { key: 'sub_system', title: 'Sub-System', sortable: true, filterable: true, width: '150px' },
-    { key: 'type', title: 'Type', sortable: true, filterable: true, width: '120px' },
-    { key: 'table', title: 'Table', sortable: true, filterable: true, width: '150px' },
-    { key: 'column', title: 'Column', sortable: true, filterable: true, width: '150px' },
-    { key: 'cdm_full_variable', title: 'CDM Full Variable', sortable: true, filterable: true, width: '200px' }
-  ];
+    [selectedSourceId]
+  );
+
+  const handleSourceLdmRowSelect = useCallback((rows: Record<string, unknown>[]) => {
+    setSelectedSourceLdmRows(rows as unknown as SourceLdmRow[]);
+  }, []);
+
+  const handleSourceLdmRowMetadataSave = useCallback(
+    async (updated: SourceLdmRow) => {
+      if (!selectedSourceId || !activeSourceDetail?.ldm_rows) return;
+      const next = activeSourceDetail.ldm_rows.map((r) => (r.id === updated.id ? updated : r));
+      await persistSourceLdmRows(next);
+    },
+    [selectedSourceId, activeSourceDetail, persistSourceLdmRows]
+  );
+
+  const handleSourceLdmCsvFile = useCallback(
+    async (file: File) => {
+      const name = activeSourceDetail?.name?.trim() || '';
+      if (!name || !selectedSourceId) {
+        alert('Source is not loaded. Open this source from the cards view first.');
+        return;
+      }
+      setSourceLdmUploadBusy(true);
+      try {
+        const text = await file.text();
+        const parsed = parseSourceLdmCsvText(text, name);
+        const existing: SourceLdmRow[] = (activeSourceDetail?.ldm_rows || []).map((r) => ({
+          ...r,
+          variable: r.variable ?? '',
+        }));
+        const appended: SourceLdmRow[] = parsed.map((p) => ({
+          ...p,
+          id: '',
+          source_id: selectedSourceId,
+        }));
+        await persistSourceLdmRows([...existing, ...appended]);
+        setIsSourceLdmCsvModalOpen(false);
+        alert(`Imported ${parsed.length} row(s).`);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'CSV import failed');
+      } finally {
+        setSourceLdmUploadBusy(false);
+      }
+    },
+    [activeSourceDetail, selectedSourceId, persistSourceLdmRows]
+  );
+
+  const handleSourceLdmAddRowSave = useCallback(
+    async (row: Omit<SourceLdmRow, 'id' | 'source_id'>) => {
+      if (!selectedSourceId) return;
+      const existing: SourceLdmRow[] = (activeSourceDetail?.ldm_rows || []).map((r) => ({
+        ...r,
+        variable: r.variable ?? '',
+      }));
+      const newRow: SourceLdmRow = {
+        ...row,
+        id: '',
+        source_id: selectedSourceId,
+      };
+      try {
+        await persistSourceLdmRows([...existing, newRow]);
+        setIsSourceLdmAddRowModalOpen(false);
+      } catch (e) {
+        alert(e instanceof Error ? e.message : 'Failed to save row');
+      }
+    },
+    [activeSourceDetail, selectedSourceId, persistSourceLdmRows]
+  );
+
+  const handleSourceLdmClearAllConfirm = useCallback(async () => {
+    if (!selectedSourceId) return;
+    setSourceLdmClearAllBusy(true);
+    try {
+      await persistSourceLdmRows([]);
+      setSelectedSourceLdmRows([]);
+      await fetchSourcesCatalog();
+      setIsSourceLdmClearAllModalOpen(false);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to clear LDM data');
+    } finally {
+      setSourceLdmClearAllBusy(false);
+    }
+  }, [selectedSourceId, persistSourceLdmRows, fetchSourcesCatalog]);
+
+  const objectsForSourceLdm = useMemo(
+    () => (Array.isArray(apiObjects) ? apiObjects : []),
+    [apiObjects]
+  );
+  const variablesForSourceLdm = useMemo(
+    () => (Array.isArray(apiVariables) ? apiVariables : []),
+    [apiVariables]
+  );
+
+  const sourceLdmGridDisplayRows = useMemo(() => {
+    const rows = activeSourceDetail?.ldm_rows || [];
+    return rows.map((r) => {
+      const d = resolveLdmRowDrivers(r, objectsForSourceLdm);
+      return { ...r, sector: d.sector, domain: d.domain, country: d.country };
+    });
+  }, [activeSourceDetail?.ldm_rows, objectsForSourceLdm]);
+
+  useEffect(() => {
+    if (activeTab !== 'sources') {
+      setSourcesView('cards');
+      setSelectedSourceId(null);
+      setActiveSourceDetail(null);
+      setIsSourceLdmCsvModalOpen(false);
+      setIsSourceLdmAddRowModalOpen(false);
+      setIsSourceLdmClearAllModalOpen(false);
+      setSourceLdmClearAllBusy(false);
+      setSelectedSourceLdmRows([]);
+      setIsSourceMapPanelOpen(false);
+      setSourceMapSlots({ source: null, target: null });
+      setAutoMapSession(null);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    setSelectedSourceLdmRows([]);
+  }, [selectedSourceId]);
+
+  useEffect(() => {
+    if (sourcesView !== 'ldm') {
+      setIsSourceLdmCsvModalOpen(false);
+      setIsSourceLdmAddRowModalOpen(false);
+      setIsSourceLdmClearAllModalOpen(false);
+      setSelectedSourceLdmRows([]);
+    }
+  }, [sourcesView]);
+
+  useEffect(() => {
+    if (activeTab !== 'sources' || sourcesView !== 'ldm' || !selectedSourceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = (await apiService.getSourceDetail(selectedSourceId)) as SourceDetail;
+        if (!cancelled) setActiveSourceDetail(normalizeSourceDetailLdm(d));
+      } catch (e) {
+        console.error('Failed to refresh LDM rows', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, sourcesView, selectedSourceId]);
+
   
   // Custom Sort state
   const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
@@ -656,6 +1005,131 @@ function App() {
     domainOrder?: string[]; // Independent D column order
     countryOrder?: string[]; // Independent C column order
   } | undefined>(listsOrderPersistedState.orderSortOrder);
+
+  const loadSourceLdmGridSortPersistedState = () => {
+    try {
+      const savedRules = localStorage.getItem('cdm_source_ldm_custom_sort_rules');
+      const savedActive = localStorage.getItem('cdm_source_ldm_custom_sort_active');
+      const savedColSort = localStorage.getItem('cdm_source_ldm_column_sort_active');
+      const savedOrderEnabled = localStorage.getItem('cdm_source_ldm_order_enabled');
+      const savedOrderSort = localStorage.getItem('cdm_source_ldm_order_sort_order');
+      type SourceLdmOrderSort = {
+        partOrder: string[];
+        sectionOrders: Record<string, string[]>;
+        groupOrders: Record<string, string[]>;
+        variableOrders: Record<string, string[]>;
+        beingOrder: string[];
+        avatarOrders: Record<string, string[]>;
+        objectOrders: Record<string, string[]>;
+        sectorOrder?: string[];
+        domainOrder?: string[];
+        countryOrder?: string[];
+      };
+      let orderSortOrder: SourceLdmOrderSort | undefined;
+      if (savedOrderSort) {
+        const parsed = JSON.parse(savedOrderSort) as Record<string, unknown>;
+        if (
+          parsed &&
+          typeof parsed === 'object' &&
+          Array.isArray(parsed.partOrder) &&
+          typeof parsed.sectionOrders === 'object' &&
+          typeof parsed.groupOrders === 'object' &&
+          typeof parsed.variableOrders === 'object' &&
+          Array.isArray(parsed.beingOrder) &&
+          typeof parsed.avatarOrders === 'object' &&
+          typeof parsed.objectOrders === 'object'
+        ) {
+          orderSortOrder = {
+            partOrder: parsed.partOrder as string[],
+            sectionOrders: (parsed.sectionOrders || {}) as Record<string, string[]>,
+            groupOrders: (parsed.groupOrders || {}) as Record<string, string[]>,
+            variableOrders: (parsed.variableOrders || {}) as Record<string, string[]>,
+            beingOrder: parsed.beingOrder as string[],
+            avatarOrders: (parsed.avatarOrders || {}) as Record<string, string[]>,
+            objectOrders: (parsed.objectOrders || {}) as Record<string, string[]>,
+            sectorOrder: [],
+            domainOrder: [],
+            countryOrder: [],
+          };
+        }
+      }
+      const DISALLOW_SOURCE_LDM_SORT_KEYS = new Set(['sector', 'domain', 'country']);
+      let sourceLdmCustomSortRules: Array<{ id: string; column: string; sortOn: string; order: 'asc' | 'desc' }> = [];
+      if (savedRules) {
+        try {
+          const parsed = JSON.parse(savedRules) as Array<{
+            id: string;
+            column: string;
+            sortOn: string;
+            order: 'asc' | 'desc';
+          }>;
+          const next = (Array.isArray(parsed) ? parsed : []).filter(
+            (r) => r && r.column && !DISALLOW_SOURCE_LDM_SORT_KEYS.has(r.column)
+          );
+          if (next.length !== (Array.isArray(parsed) ? parsed.length : 0)) {
+            if (next.length === 0) {
+              localStorage.removeItem('cdm_source_ldm_custom_sort_rules');
+              localStorage.setItem('cdm_source_ldm_custom_sort_active', 'false');
+            } else {
+              localStorage.setItem('cdm_source_ldm_custom_sort_rules', JSON.stringify(next));
+            }
+          }
+          sourceLdmCustomSortRules = next;
+        } catch {
+          sourceLdmCustomSortRules = [];
+        }
+      }
+      const isSourceLdmCustomSortActive = savedActive === 'true' && sourceLdmCustomSortRules.length > 0;
+
+      return {
+        sourceLdmCustomSortRules,
+        isSourceLdmCustomSortActive,
+        isSourceLdmColumnSortActive: savedColSort === 'true',
+        isSourceLdmOrderEnabled: savedOrderEnabled === 'true',
+        orderSortOrder,
+      };
+    } catch (e) {
+      console.error('Error loading Source LDM grid sort state:', e);
+      return {
+        sourceLdmCustomSortRules: [] as Array<{ id: string; column: string; sortOn: string; order: 'asc' | 'desc' }>,
+        isSourceLdmCustomSortActive: false,
+        isSourceLdmColumnSortActive: false,
+        isSourceLdmOrderEnabled: false,
+        orderSortOrder: undefined,
+      };
+    }
+  };
+
+  const sourceLdmGridSortPersistedState = loadSourceLdmGridSortPersistedState();
+  const [isSourceLdmCustomSortOpen, setIsSourceLdmCustomSortOpen] = useState(false);
+  const [isSourceLdmOrderOpen, setIsSourceLdmOrderOpen] = useState(false);
+  const [sourceLdmCustomSortRules, setSourceLdmCustomSortRules] = useState<
+    Array<{ id: string; column: string; sortOn: string; order: 'asc' | 'desc' }>
+  >(sourceLdmGridSortPersistedState.sourceLdmCustomSortRules);
+  const [isSourceLdmCustomSortActive, setIsSourceLdmCustomSortActive] = useState(
+    sourceLdmGridSortPersistedState.isSourceLdmCustomSortActive
+  );
+  const [isSourceLdmColumnSortActive, setIsSourceLdmColumnSortActive] = useState(
+    sourceLdmGridSortPersistedState.isSourceLdmColumnSortActive
+  );
+  const [isSourceLdmOrderEnabled, setIsSourceLdmOrderEnabled] = useState(
+    sourceLdmGridSortPersistedState.isSourceLdmOrderEnabled
+  );
+  const [sourceLdmOrderSortOrder, setSourceLdmOrderSortOrder] = useState<
+    | {
+        partOrder: string[];
+        sectionOrders: Record<string, string[]>;
+        groupOrders: Record<string, string[]>;
+        variableOrders: Record<string, string[]>;
+        beingOrder: string[];
+        avatarOrders: Record<string, string[]>;
+        objectOrders: Record<string, string[]>;
+        sectorOrder?: string[];
+        domainOrder?: string[];
+        countryOrder?: string[];
+      }
+    | undefined
+  >(sourceLdmGridSortPersistedState.orderSortOrder);
 
   // Views state
   const [isViewsOpen, setIsViewsOpen] = useState(false);
@@ -1054,365 +1528,49 @@ function App() {
     }
   }, [activeTab, isLoading]);
 
-  // Set body data attribute for CSS targeting and inject global style
-  // Use useLayoutEffect to run synchronously before paint
+  // Mark Sources tab on body for light CSS only (avoid global overlay hacks that can hide the whole UI)
   React.useLayoutEffect(() => {
     if (activeTab === 'sources') {
       document.body.setAttribute('data-active-tab', 'sources');
-      
-      // Immediately hide all overlays before paint
-      // BUT be very careful - only hide true overlays, not Sources tab content
-      const hideAllOverlays = () => {
-        const allElements = document.querySelectorAll('*');
-        allElements.forEach((el) => {
-          const element = el as HTMLElement;
-          
-          // Don't hide anything inside the Sources tab container
-          if (element.closest('.sources-tab-container')) {
-            return;
-          }
-          
-          const style = getComputedStyle(element);
-          const isFixed = style.position === 'fixed';
-          const isFullScreen = (
-            (style.top === '0px' && style.left === '0px' && style.right === '0px' && style.bottom === '0px') ||
-            style.inset === '0px'
-          );
-          const hasDarkBg = (
-            style.backgroundColor.includes('rgba(0, 0, 0') || 
-            style.backgroundColor.includes('rgb(0, 0, 0') ||
-            element.classList.contains('bg-black') ||
-            element.classList.contains('bg-opacity')
-          );
-          
-          // Only hide fixed, full-screen elements with dark backgrounds
-          if (isFixed && isFullScreen && hasDarkBg) {
-            element.style.setProperty('display', 'none', 'important');
-            element.style.setProperty('pointer-events', 'none', 'important');
-            element.style.setProperty('visibility', 'hidden', 'important');
-            element.style.setProperty('opacity', '0', 'important');
-            element.style.setProperty('z-index', '-1', 'important');
-          }
-        });
-      };
-      
-      hideAllOverlays();
-      
-      // Inject a style tag directly into the document head to hide all overlays
-      let styleTag = document.getElementById('sources-overlay-hider');
-      if (!styleTag) {
-        styleTag = document.createElement('style');
-        styleTag.id = 'sources-overlay-hider';
-        document.head.appendChild(styleTag);
-      }
-      styleTag.textContent = `
-        /* Aggressively hide ALL fixed overlays when Sources tab is active */
-        /* BUT exclude modals (they have data-modal="true") */
-        body[data-active-tab="sources"] .fixed.inset-0:not([data-modal="true"]) {
-          display: none !important;
-          pointer-events: none !important;
-          visibility: hidden !important;
-          opacity: 0 !important;
-          z-index: -1 !important;
-          position: absolute !important;
-        }
-      `;
     } else {
       document.body.removeAttribute('data-active-tab');
-      // Remove the style tag when not on Sources tab
-      const styleTag = document.getElementById('sources-overlay-hider');
-      if (styleTag) {
-        styleTag.remove();
-      }
+      const legacy = document.getElementById('sources-overlay-hider');
+      if (legacy) legacy.remove();
     }
   }, [activeTab]);
 
-  // Additional safeguard: Ensure no modals are blocking the Sources tab
+  // When opening Sources, close other modals (no DOM-wide overlay mutation)
   React.useEffect(() => {
-    if (activeTab === 'sources') {
-      // Close any modals that might be blocking - force close all
-      setIsBulkDeleteOpen(false);
-      setIsBulkObjectUploadOpen(false);
-      setIsBulkVariableUploadOpen(false);
-      setIsBulkListUploadOpen(false);
-      setIsRelationshipModalOpen(false);
-      setIsAddObjectOpen(false);
-      setIsAddVariableOpen(false);
-      setIsAddListOpen(false);
-      setIsAddMetadataOpen(false);
-      setIsMetadataDetailModalOpen(false);
-      setIsAddHeuristicsOpen(false);
-      setSelectedHeuristicsRow(null);
-      setIsAddSourcesOpen(false);
-      setIsCustomSortOpen(false);
-      setIsVariablesCustomSortOpen(false);
-      setIsVariablesOrderOpen(false);
-      setIsListsCustomSortOpen(false);
-      setIsListsOrderOpen(false);
-      setIsObjectsOrderOpen(false);
-      setIsViewsOpen(false);
-      setIsVariablesViewsOpen(false);
-      setIsListsViewsOpen(false);
-      setIsDeleteModalOpen(false);
-      setIsBulkEditOpen(false);
-      setIsBulkEditVariablesOpen(false);
-      // Close Neo4j graph modals
-      setIsNeo4jGraphModalOpen(false);
-      setIsNeo4jVariablesGraphModalOpen(false);
-      setIsNeo4jListsGraphModalOpen(false);
-      // Force isLoading to false one more time
-      setIsLoading(false);
-      
-      // Aggressively hide any fixed overlay elements in the DOM
-      const hideOverlays = () => {
-        // Check ALL elements, not just those with specific selectors
-        const allElements = document.querySelectorAll('*');
-        allElements.forEach((element) => {
-          const el = element as HTMLElement;
-          const computedStyle = getComputedStyle(el);
-          const position = computedStyle.position;
-          const zIndex = parseInt(computedStyle.zIndex) || 0;
-          const bgColor = computedStyle.backgroundColor;
-          const top = computedStyle.top;
-          const left = computedStyle.left;
-          const right = computedStyle.right;
-          const bottom = computedStyle.bottom;
-          const inset = computedStyle.inset;
-          
-          // Check if it's a full-screen overlay
-          const isFullScreen = (
-            position === 'fixed' &&
-            (
-              (top === '0px' && left === '0px' && right === '0px' && bottom === '0px') ||
-              inset === '0px' ||
-              (top === '0px' && left === '0px' && (right === '0px' || bottom === '0px'))
-            )
-          );
-          
-          // Check if it's a backdrop (dark background)
-          const isBackdrop = (
-            bgColor.includes('rgba(0, 0, 0') ||
-            bgColor.includes('rgb(0, 0, 0') ||
-            el.classList.contains('bg-black') ||
-            el.classList.contains('bg-opacity')
-          );
-          
-          // Hide if it's a full-screen fixed element with dark background
-          // BUT be very careful - only hide true overlays, not content or modals
-          if (isFullScreen && isBackdrop && position === 'fixed') {
-            // Don't hide modals (they have high z-index >= 100)
-            // Don't hide the Sources tab container or anything inside it
-            if (zIndex < 100 && 
-                !el.classList.contains('sources-tab-container') && 
-                !el.closest('.sources-tab-container') &&
-                !el.closest('[data-active-tab="sources"] .sources-tab-container')) {
-              console.log('DEBUG: Hiding overlay element:', {
-                tag: el.tagName,
-                id: el.id,
-                classes: Array.from(el.classList),
-                bgColor,
-                zIndex,
-                position,
-                top,
-                left,
-                right,
-                bottom,
-                inset
-              });
-              el.style.setProperty('display', 'none', 'important');
-              el.style.setProperty('pointer-events', 'none', 'important');
-              el.style.setProperty('visibility', 'hidden', 'important');
-              el.style.setProperty('opacity', '0', 'important');
-              el.style.setProperty('z-index', '-1', 'important');
-            }
-          }
-        });
-      };
-      
-      // Run immediately and multiple times to catch any late-rendering overlays
-      hideOverlays();
-      const timeoutIds = [
-        setTimeout(hideOverlays, 50),
-        setTimeout(hideOverlays, 100),
-        setTimeout(hideOverlays, 200),
-        setTimeout(hideOverlays, 500)
-      ];
-      
-      // Set up MutationObserver to catch dynamically added overlays
-      const observer = new MutationObserver((mutations) => {
-        let shouldHide = false;
-        mutations.forEach((mutation) => {
-          mutation.addedNodes.forEach((node) => {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              const element = node as HTMLElement;
-              if (element.classList?.contains('fixed') && element.classList?.contains('inset-0')) {
-                shouldHide = true;
-              }
-              // Also check children
-              const fixedChildren = element.querySelectorAll?.('.fixed.inset-0');
-              if (fixedChildren && fixedChildren.length > 0) {
-                shouldHide = true;
-              }
-            }
-          });
-        });
-        if (shouldHide) {
-          hideOverlays();
-        }
-      });
-      
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      
-      // Set up interval to continuously check and hide overlays
-      // BUT don't hide modals (z-index >= 100)
-      const intervalId = setInterval(() => {
-        const overlays = document.querySelectorAll('.fixed.inset-0');
-        // Check if any overlay needs hiding (excluding modals)
-        const needsHiding = Array.from(overlays).some((overlay) => {
-          const el = overlay as HTMLElement;
-          const zIndex = parseInt(getComputedStyle(el).zIndex) || 0;
-          return zIndex < 100; // Only hide if z-index is less than 100 (not a modal)
-        });
-        if (needsHiding) {
-          hideOverlays();
-        }
-      }, 250);
-      
-      // Debug: Log to console - check ALL fixed positioned elements
-      console.log('DEBUG: Sources tab activated - all modals should be closed');
-      const initialOverlays = document.querySelectorAll('.fixed.inset-0');
-      console.log('DEBUG: Found overlay elements (fixed.inset-0):', initialOverlays.length);
-      
-      // Check ALL fixed positioned elements, not just those with specific classes
-      const allFixedElements: HTMLElement[] = [];
-      const allElements = document.querySelectorAll('*');
-      allElements.forEach((el) => {
-        const element = el as HTMLElement;
-        const style = getComputedStyle(element);
-        if (style.position === 'fixed') {
-          allFixedElements.push(element);
-        }
-      });
-      
-      console.log('DEBUG: Found ALL fixed positioned elements:', allFixedElements.length);
-      if (allFixedElements.length > 0) {
-        console.log('DEBUG: All fixed elements:', allFixedElements.map(el => {
-          const style = getComputedStyle(el);
-          return {
-            tag: el.tagName,
-            id: el.id,
-            classes: Array.from(el.classList),
-            styles: el.getAttribute('style'),
-            computedStyles: {
-              position: style.position,
-              top: style.top,
-              left: style.left,
-              right: style.right,
-              bottom: style.bottom,
-              inset: style.inset,
-              zIndex: style.zIndex,
-              backgroundColor: style.backgroundColor,
-              opacity: style.opacity,
-              pointerEvents: style.pointerEvents,
-              display: style.display,
-              visibility: style.visibility
-            },
-            textContent: el.textContent?.substring(0, 50),
-            children: el.children.length
-          };
-        }));
-      }
-      
-      // Also check for elements with high z-index that might be overlays
-      const highZIndexElements: HTMLElement[] = [];
-      allElements.forEach((el) => {
-        const element = el as HTMLElement;
-        const style = getComputedStyle(element);
-        const zIndex = parseInt(style.zIndex) || 0;
-        if (zIndex >= 50) {
-          highZIndexElements.push(element);
-        }
-      });
-      
-      console.log('DEBUG: Found elements with z-index >= 50:', highZIndexElements.length);
-      if (highZIndexElements.length > 0) {
-        console.log('DEBUG: High z-index elements (full details):', highZIndexElements.map(el => {
-          const style = getComputedStyle(el);
-          return {
-            tag: el.tagName,
-            id: el.id,
-            classes: Array.from(el.classList),
-            zIndex: style.zIndex,
-            position: style.position,
-            backgroundColor: style.backgroundColor,
-            opacity: style.opacity,
-            display: style.display,
-            visibility: style.visibility,
-            pointerEvents: style.pointerEvents,
-            top: style.top,
-            left: style.left,
-            right: style.right,
-            bottom: style.bottom,
-            inset: style.inset,
-            width: style.width,
-            height: style.height,
-            innerHTML: el.innerHTML?.substring(0, 100),
-            parentElement: el.parentElement?.tagName + (el.parentElement?.id ? `#${el.parentElement.id}` : '') + (el.parentElement?.className ? `.${Array.from(el.parentElement.classList).join('.')}` : '')
-          };
-        }));
-        
-        // Also try to identify and hide potential overlay elements
-        // BUT be very careful - only hide elements that are clearly overlays
-        highZIndexElements.forEach(el => {
-          // Don't hide anything inside the Sources tab container
-          if (el.closest('.sources-tab-container')) {
-            return;
-          }
-          
-          // Don't hide the Sources tab container itself
-          if (el.classList.contains('sources-tab-container')) {
-            return;
-          }
-          
-          const style = getComputedStyle(el);
-          const isFullScreen = (
-            (style.top === '0px' && style.left === '0px' && style.right === '0px' && style.bottom === '0px') ||
-            style.inset === '0px'
-          );
-          const hasDarkBg = (
-            style.backgroundColor.includes('rgba(0, 0, 0') ||
-            style.backgroundColor.includes('rgb(0, 0, 0')
-          );
-          const isFixed = style.position === 'fixed';
-          
-          // Only hide if it's a fixed, full-screen element with dark background
-          // AND it's not part of the Sources tab
-          if (isFixed && isFullScreen && hasDarkBg) {
-            console.log('DEBUG: Found potential overlay, hiding:', {
-              tag: el.tagName,
-              id: el.id,
-              classes: Array.from(el.classList),
-              position: style.position,
-              bgColor: style.backgroundColor
-            });
-            el.style.setProperty('display', 'none', 'important');
-            el.style.setProperty('pointer-events', 'none', 'important');
-            el.style.setProperty('visibility', 'hidden', 'important');
-            el.style.setProperty('opacity', '0', 'important');
-            el.style.setProperty('z-index', '-1', 'important');
-          }
-        });
-      }
-      
-      return () => {
-        timeoutIds.forEach(id => clearTimeout(id));
-        clearInterval(intervalId);
-        observer.disconnect();
-      };
-    }
+    if (activeTab !== 'sources') return;
+    setIsBulkDeleteOpen(false);
+    setIsBulkObjectUploadOpen(false);
+    setIsBulkVariableUploadOpen(false);
+    setIsBulkListUploadOpen(false);
+    setIsRelationshipModalOpen(false);
+    setIsAddObjectOpen(false);
+    setIsAddVariableOpen(false);
+    setIsAddListOpen(false);
+    setIsAddMetadataOpen(false);
+    setIsMetadataDetailModalOpen(false);
+    setIsAddHeuristicsOpen(false);
+    setSelectedHeuristicsRow(null);
+    setIsAddSourceCatalogOpen(false);
+    setIsCustomSortOpen(false);
+    setIsVariablesCustomSortOpen(false);
+    setIsVariablesOrderOpen(false);
+    setIsListsCustomSortOpen(false);
+    setIsListsOrderOpen(false);
+    setIsObjectsOrderOpen(false);
+    setIsViewsOpen(false);
+    setIsVariablesViewsOpen(false);
+    setIsListsViewsOpen(false);
+    setIsDeleteModalOpen(false);
+    setIsBulkEditOpen(false);
+    setIsBulkEditVariablesOpen(false);
+    setIsNeo4jGraphModalOpen(false);
+    setIsNeo4jVariablesGraphModalOpen(false);
+    setIsNeo4jListsGraphModalOpen(false);
+    setIsLoading(false);
   }, [activeTab]);
 
   // Sync selectedRowForMetadata with updated data
@@ -4725,12 +4883,18 @@ function App() {
   const refreshListDetailFromApi = async (listId: string) => {
     try {
       const list: any = await apiService.getList(listId);
+      const tieredListsList = Array.isArray(list.tieredListsList) ? list.tieredListsList : [];
       const patch: Partial<ListData> = {
         listValuesList: Array.isArray(list.listValuesList) ? list.listValuesList : [],
         listValueVariations:
           list.listValueVariations && typeof list.listValueVariations === 'object'
             ? list.listValueVariations
-            : {}
+            : {},
+        listType: list.listType as ListData['listType'],
+        tieredListsList,
+        tiers: tieredListsList.map((t: any) => t.list).filter(Boolean).join(', '),
+        numberOfLevels: list.numberOfLevels,
+        tierNames: Array.isArray(list.tierNames) ? list.tierNames : []
       };
       if (typeof list.totalValuesCount === 'number') {
         patch.totalValuesCount = list.totalValuesCount;
@@ -4979,83 +5143,8 @@ function App() {
     setSelectedHeuristicsRow(row);
   };
 
-  const handleAddSource = async (sourcesData: {
-    sector: string;
-    domain: string;
-    country: string;
-    system: string;
-    sub_system: string;
-    type: string;
-    table: string;
-    column: string;
-    cdm_full_variable: string;
-  }) => {
-    try {
-      // Check for uniqueness: All fields combination must be unique
-      const existing = apiSources.find(
-        s => s.sector.toLowerCase() === sourcesData.sector.toLowerCase() && 
-             s.domain.toLowerCase() === sourcesData.domain.toLowerCase() &&
-             s.country.toLowerCase() === sourcesData.country.toLowerCase() &&
-             s.system.toLowerCase() === sourcesData.system.toLowerCase() &&
-             s.sub_system.toLowerCase() === sourcesData.sub_system.toLowerCase() &&
-             s.type.toLowerCase() === sourcesData.type.toLowerCase() &&
-             s.table.toLowerCase() === sourcesData.table.toLowerCase() &&
-             s.column.toLowerCase() === sourcesData.column.toLowerCase() &&
-             s.cdm_full_variable.toLowerCase() === sourcesData.cdm_full_variable.toLowerCase()
-      );
-      
-      if (existing) {
-        throw new Error(`A source with this combination of all fields already exists. Each combination must be unique.`);
-      }
-      
-      // Generate a unique ID
-      const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Create source item via API
-      await createSourceItem({
-        id: newId,
-        sector: sourcesData.sector,
-        domain: sourcesData.domain,
-        country: sourcesData.country,
-        system: sourcesData.system,
-        sub_system: sourcesData.sub_system,
-        type: sourcesData.type,
-        table: sourcesData.table,
-        column: sourcesData.column,
-        cdm_full_variable: sourcesData.cdm_full_variable
-      });
-      
-      // Note: createSourceItem already updates the state optimistically
-      // No need to fetchSources() immediately as it might overwrite with stale data
-      // The optimistic update will show the item immediately
-    } catch (error) {
-      console.error('Failed to create source:', error);
-      throw error;
-    }
-  };
-
-  const handleSourceRowClick = (row: SourcesData) => {
-    setSelectedSourceRow(row);
-  };
-
-  const handleAddSourceType = (newType: string) => {
-    setSourceTypes(prev => {
-      if (!prev.includes(newType)) {
-        return [...prev, newType].sort();
-      }
-      return prev;
-    });
-  };
-
-  // Extract unique types from sources data
-  React.useEffect(() => {
-    if (apiSources && apiSources.length > 0) {
-      const types = [...new Set(apiSources.map(s => s.type).filter(Boolean))];
-      setSourceTypes(types);
-    }
-  }, [apiSources]);
-
   const handleAddList = async (newListData: ListData) => {
+    setIsAddListSubmitting(true);
     try {
       // Convert to API format
       const apiListData: any = {
@@ -5130,48 +5219,22 @@ function App() {
         tieredListValuesKeys: apiListData.tieredListValues ? Object.keys(apiListData.tieredListValues) : 'N/A'
       });
       
-        const createdList = await apiService.createList(apiListData) as any;
-        
-        // Append to order after successful creation
+        await apiService.createList(apiListData) as any;
+
+        // Append to order after successful creation (before refetch so default order includes the new list)
         if (newListData.set && newListData.grouping && newListData.list) {
           appendToListsOrder(newListData.set, newListData.grouping, newListData.list);
         }
-        
-        // Convert API response to ListData format
-        const listDataFormat: ListData = {
-          id: createdList.id,
-          sector: Array.isArray(createdList.sector) ? createdList.sector : [createdList.sector || 'ALL'],
-          domain: Array.isArray(createdList.domain) ? createdList.domain : [createdList.domain || 'ALL'],
-          country: Array.isArray(createdList.country) ? createdList.country : [createdList.country || 'ALL'],
-          set: createdList.set,
-          grouping: createdList.grouping,
-          list: createdList.list,
-          format: createdList.format || '',
-          source: createdList.source || '',
-          upkeep: createdList.upkeep || '',
-          graph: createdList.graph || '',
-          origin: createdList.origin || '',
-          status: createdList.status || 'Active',
-          variablesAttachedList: createdList.variablesAttachedList || [],
-          listValuesList: createdList.listValuesList || [],
-          tieredListsList: createdList.tieredListsList || [],
-          tiers: (createdList.tieredListsList || []).map((tier: any) => tier.list).join(', '),
-          hasIncomingTier: createdList.hasIncomingTier || false,
-          listType: createdList.listType || ((createdList.tieredListsList && createdList.tieredListsList.length > 0) ? 'Multi-Level' : 'Single'),
-          numberOfLevels: createdList.numberOfLevels,
-          tierNames: createdList.tierNames || []
-        };
-        
-        // Show success message if list values were included
+
+        // Refetch full lists so # Values, sample Values, tier child rows, and drivers match Neo4j
+        await fetchLists();
+
         if (newListData.listValuesList !== undefined && Array.isArray(newListData.listValuesList)) {
           const valueCount = newListData.listValuesList.length;
           if (valueCount > 0) {
             alert(`List created successfully! ${valueCount} list value${valueCount !== 1 ? 's' : ''} saved.`);
           }
         }
-        
-        setListData(prev => [...prev, listDataFormat]);
-      setIsAddListOpen(false);
     } catch (error: any) {
       console.error('Error creating list:', error);
       const errorMessage = error?.message || 'Failed to create list. Please try again.';
@@ -5181,6 +5244,8 @@ function App() {
         alert(errorMessage);
       }
       throw error;
+    } finally {
+      setIsAddListSubmitting(false);
     }
   };
   const handleFilterChange = (key: string, value: string) => {
@@ -5597,6 +5662,86 @@ function App() {
     console.log('Variables default order toggled:', enabled);
   };
 
+  const handleSourceLdmCustomSortApply = (
+    sortRules: Array<{ id: string; column: string; sortOn: string; order: 'asc' | 'desc' }>,
+    isDefaultOrderEnabled = false
+  ) => {
+    setIsSourceLdmOrderEnabled(isDefaultOrderEnabled);
+    localStorage.setItem('cdm_source_ldm_order_enabled', String(isDefaultOrderEnabled));
+    setSourceLdmCustomSortRules(sortRules);
+    setIsSourceLdmCustomSortActive(!isDefaultOrderEnabled && sortRules.length > 0);
+    setIsSourceLdmColumnSortActive(false);
+    localStorage.removeItem('cdm_source_ldm_column_sort_active');
+    localStorage.removeItem('cdm_source_ldm_sort_config');
+  };
+
+  const handleSourceLdmColumnSort = () => {
+    if (isSourceLdmOrderEnabled) {
+      setIsSourceLdmOrderEnabled(false);
+      localStorage.setItem('cdm_source_ldm_order_enabled', 'false');
+    }
+    if (isSourceLdmCustomSortActive) {
+      setSourceLdmCustomSortRules([]);
+      setIsSourceLdmCustomSortActive(false);
+      localStorage.removeItem('cdm_source_ldm_custom_sort_rules');
+      localStorage.setItem('cdm_source_ldm_custom_sort_active', 'false');
+    }
+    setIsSourceLdmColumnSortActive(true);
+  };
+
+  const handleSourceLdmOrderSave = (order: {
+    partOrder: string[];
+    sectionOrders: Record<string, string[]>;
+    groupOrders: Record<string, string[]>;
+    variableOrders: Record<string, string[]>;
+    beingOrder?: string[];
+    avatarOrders?: Record<string, string[]>;
+    objectOrders?: Record<string, string[]>;
+    sectorOrder?: string[];
+    domainOrder?: string[];
+    countryOrder?: string[];
+  }) => {
+    const full = {
+      partOrder: order.partOrder,
+      sectionOrders: order.sectionOrders,
+      groupOrders: order.groupOrders,
+      variableOrders: order.variableOrders,
+      beingOrder: order.beingOrder ?? [],
+      avatarOrders: order.avatarOrders ?? {},
+      objectOrders: order.objectOrders ?? {},
+      sectorOrder: order.sectorOrder,
+      domainOrder: order.domainOrder,
+      countryOrder: order.countryOrder,
+    };
+    setSourceLdmOrderSortOrder(full);
+    localStorage.setItem('cdm_source_ldm_order_sort_order', JSON.stringify(full));
+  };
+
+  const handleSourceLdmDefaultOrderToggle = (enabled: boolean) => {
+    setIsSourceLdmOrderEnabled(enabled);
+    localStorage.setItem('cdm_source_ldm_order_enabled', String(enabled));
+    if (enabled) {
+      setIsSourceLdmCustomSortActive(false);
+      localStorage.setItem('cdm_source_ldm_custom_sort_active', 'false');
+      try {
+        const savedSortConfig = localStorage.getItem('cdm_source_ldm_sort_config');
+        if (savedSortConfig) {
+          const sortConfig = JSON.parse(savedSortConfig);
+          if (
+            sortConfig &&
+            ['being', 'avatar', 'object', 'part', 'section', 'group', 'variable'].includes(sortConfig.key)
+          ) {
+            localStorage.removeItem('cdm_source_ldm_sort_config');
+            setIsSourceLdmColumnSortActive(false);
+            localStorage.removeItem('cdm_source_ldm_column_sort_active');
+          }
+        }
+      } catch (err) {
+        console.error('Error clearing Source LDM column sort:', err);
+      }
+    }
+  };
+
   const handleObjectsOrderSave = async (order: {
     beingOrder: string[];
     avatarOrders: Record<string, string[]>;
@@ -5783,6 +5928,18 @@ function App() {
     localStorage.setItem('cdm_lists_column_sort_active', isListsColumnSortActive.toString());
   }, [isListsColumnSortActive]);
 
+  React.useEffect(() => {
+    localStorage.setItem('cdm_source_ldm_custom_sort_rules', JSON.stringify(sourceLdmCustomSortRules));
+  }, [sourceLdmCustomSortRules]);
+
+  React.useEffect(() => {
+    localStorage.setItem('cdm_source_ldm_custom_sort_active', String(isSourceLdmCustomSortActive));
+  }, [isSourceLdmCustomSortActive]);
+
+  React.useEffect(() => {
+    localStorage.setItem('cdm_source_ldm_column_sort_active', String(isSourceLdmColumnSortActive));
+  }, [isSourceLdmColumnSortActive]);
+
 
   return (
     <div className="h-screen bg-ag-dark-bg flex flex-col">
@@ -5959,85 +6116,292 @@ function App() {
             )}
           </div>
         ) : activeTab === 'sources' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative" style={{ height: '100%' }}>
-            {/* Data Grid */}
-            <div className={selectedSourceRow ? "lg:col-span-2 flex flex-col min-h-0 h-full" : "lg:col-span-3 flex flex-col min-h-0 h-full"}>
-              {/* Grid Header with Actions */}
-              <div className="flex items-center justify-between mb-4 flex-shrink-0">
-                {/* Left side: Add Button */}
+          <div
+            className={`grid grid-cols-1 gap-6 flex-1 min-h-0 relative sources-tab-container ${
+              sourcesView === 'cards' && (selectedSourceId || isSourceMapPanelOpen)
+                ? 'lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]'
+                : sourcesView === 'ldm' && selectedSourceLdmRows.length > 0
+                  ? 'lg:grid-cols-[minmax(0,3fr)_minmax(300px,1.9fr)]'
+                  : ''
+            }`}
+            style={{ height: '100%' }}
+          >
+            <div className="flex flex-col min-h-0 h-full min-w-0">
+              {sourcesView === 'auto_map' && autoMapSession ? (
+                <SourceAutoMapView
+                  key={`auto-map-${autoMapSession.source_id}-${autoMapSession.target_id}-${autoMapRunId}`}
+                  session={autoMapSession}
+                  onBack={() => {
+                    setSourcesView('cards');
+                    setAutoMapSession(null);
+                  }}
+                />
+              ) : (
+                <>
+              <div className="flex items-center justify-between mb-4 flex-shrink-0 gap-3 flex-wrap">
                 <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => setIsAddSourcesOpen(true)}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
-                    title="Add Source"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add
-                  </button>
+                  {sourcesView === 'ldm' ? (
+                    <button
+                      type="button"
+                      onClick={() => setSourcesView('cards')}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[120px]"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Back
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsAddSourceCatalogOpen(true)}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 bg-ag-dark-accent text-white rounded text-sm font-medium hover:bg-ag-dark-accent-hover transition-colors min-w-[140px]"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Source
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenSourceMapPanel}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded text-sm font-medium text-white bg-sky-600 hover:bg-sky-500 transition-colors min-w-[100px]"
+                        title="Open mapping: choose a source and target schema"
+                      >
+                        MAP
+                      </button>
+                    </>
+                  )}
+                  {sourcesView === 'ldm' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setIsSourceLdmCsvModalOpen(true)}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[140px]"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload CSV
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsSourceLdmAddRowModalOpen(true)}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[120px]"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Row
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsSourceLdmCustomSortOpen(true)}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          isSourceLdmCustomSortActive && !isSourceLdmOrderEnabled
+                            ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent'
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title="Sort the grid by multiple columns"
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                        Custom Sort
+                        {isSourceLdmCustomSortActive && !isSourceLdmOrderEnabled && (
+                          <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                            Grid Sort Active
+                          </span>
+                        )}
+                        {isSourceLdmColumnSortActive && !isSourceLdmCustomSortActive && (
+                          <span className="ml-1 text-xs bg-ag-dark-text-secondary text-white px-1.5 py-0.5 rounded">
+                            Column Sort Active
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSourceLdmCustomSortRules([]);
+                          setIsSourceLdmCustomSortActive(false);
+                          localStorage.removeItem('cdm_source_ldm_custom_sort_rules');
+                          localStorage.setItem('cdm_source_ldm_custom_sort_active', 'false');
+                          setIsSourceLdmOrderOpen(true);
+                        }}
+                        disabled={isSourceLdmCustomSortActive}
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
+                          isSourceLdmCustomSortActive
+                            ? 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                            : isSourceLdmOrderEnabled
+                              ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent'
+                              : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
+                        }`}
+                        title={
+                          isSourceLdmCustomSortActive
+                            ? 'Disable custom sort to use default order'
+                            : 'Define default order (S/D/C, Being/Avatar/Object, Part/Section/Group/Variable)'
+                        }
+                      >
+                        <ArrowUpDown className="w-4 h-4" />
+                        Default Sort
+                        {isSourceLdmOrderEnabled && !isSourceLdmCustomSortActive && (
+                          <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
+                            Active
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsSourceLdmClearAllModalOpen(true)}
+                        disabled={!activeSourceDetail?.ldm_rows?.length}
+                        title={
+                          activeSourceDetail?.ldm_rows?.length
+                            ? 'Remove every LDM row for this source from storage'
+                            : 'No rows to clear'
+                        }
+                        className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[120px] ${
+                          activeSourceDetail?.ldm_rows?.length
+                            ? 'border-ag-dark-error/60 text-ag-dark-error hover:bg-ag-dark-error/10'
+                            : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text-secondary cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        Clear All
+                      </button>
+                    </>
+                  )}
                 </div>
-                
-                {/* Right side: Empty for now */}
-                <div></div>
               </div>
-              
-              {/* Grid Content Area */}
+
               <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col">
-                {/* Data Grid */}
                 {sourcesLoading ? (
                   <div className="flex items-center justify-center min-h-[400px]">
-                    <div className="text-ag-dark-text-secondary">Loading sources...</div>
+                    <div className="text-ag-dark-text-secondary">Loading sources…</div>
                   </div>
                 ) : sourcesError ? (
                   <div className="flex items-center justify-center min-h-[400px]">
                     <div className="text-center">
                       <div className="text-ag-dark-error mb-2">Error: {sourcesError}</div>
-                      <div className="text-sm text-ag-dark-text-secondary">Please ensure the backend server is running and the sources endpoint is available.</div>
+                      <div className="text-sm text-ag-dark-text-secondary">
+                        Please ensure the backend server is running and the sources endpoint is available.
+                      </div>
                     </div>
                   </div>
-                ) : apiSources && apiSources.length > 0 ? (
+                ) : sourcesView === 'ldm' ? (
                   <div className="flex-1 min-h-0">
                     <DataGrid
-                      key="sources"
-                      columns={sourcesColumns}
-                      data={apiSources.map(item => ({
-                        ...item,
-                        sdc: `${item.sector}, ${item.domain}, ${item.country}`
-                      }))}
-                      onRowSelect={(rows) => {
-                        if (rows.length > 0) {
-                          handleSourceRowClick(rows[0] as SourcesData);
-                        }
-                      }}
-                      selectedRows={[]}
+                      key={`source-ldm-${selectedSourceId || 'none'}`}
+                      columns={sourceLdmColumns}
+                      data={sourceLdmGridDisplayRows}
+                      onRowSelect={handleSourceLdmRowSelect}
+                      selectedRows={selectedSourceLdmRows}
                       affectedIds={new Set()}
                       deletedDriverType={null}
-                      customSortRules={[]}
-                      isCustomSortActive={false}
-                      isColumnSortActive={false}
+                      customSortRules={sourceLdmCustomSortRules}
+                      onClearCustomSort={() => {
+                        setSourceLdmCustomSortRules([]);
+                        setIsSourceLdmCustomSortActive(false);
+                        localStorage.removeItem('cdm_source_ldm_custom_sort_rules');
+                        localStorage.setItem('cdm_source_ldm_custom_sort_active', 'false');
+                      }}
+                      onColumnSort={handleSourceLdmColumnSort}
+                      isCustomSortActive={isSourceLdmCustomSortActive && !isSourceLdmOrderEnabled}
+                      isColumnSortActive={isSourceLdmColumnSortActive}
                       highlightCurrentObject={false}
                       showActionsColumn={false}
                       selectionMode="row"
-                      gridType="sources"
+                      gridType="source_ldm"
+                      isPredefinedSortEnabled={isSourceLdmOrderEnabled}
+                      predefinedSortOrder={sourceLdmOrderSortOrder}
                     />
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center min-h-[400px]">
-                    <div className="text-ag-dark-text-secondary">No sources available</div>
+                  <div
+                    className={`flex-1 min-h-0 overflow-y-auto ${isSourceMapPanelOpen ? 'min-h-[200px] rounded-lg border border-dashed border-ag-dark-border/50' : ''}`}
+                    onDragOver={(e) => {
+                      if (!isSourceMapPanelOpen) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      if (!isSourceMapPanelOpen) return;
+                      e.preventDefault();
+                      const id = e.dataTransfer.getData('text/plain').trim();
+                      if (id) handleSourceMapDropGrid(id);
+                    }}
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pb-4">
+                      {sourcesCardsForMapGrid.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          draggable={isSourceMapPanelOpen}
+                          onDragStart={(e) => {
+                            if (!isSourceMapPanelOpen) return;
+                            e.dataTransfer.setData('text/plain', s.id);
+                            e.dataTransfer.effectAllowed = 'move';
+                          }}
+                          onClick={() => {
+                            if (isSourceMapPanelOpen) return;
+                            setSelectedSourceId(s.id);
+                          }}
+                          className={`flex min-h-[272px] flex-col rounded-lg border bg-ag-dark-surface p-4 text-left transition-colors hover:border-ag-dark-accent ${
+                            selectedSourceId === s.id ? 'border-ag-dark-accent ring-1 ring-ag-dark-accent' : 'border-ag-dark-border'
+                          } ${isSourceMapPanelOpen ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                        >
+                          <SourceBrandLogo sourceKey={s.source_key ?? ''} name={s.name ?? ''} />
+                          <div className="mt-auto pt-4 text-center text-sm font-medium text-ag-dark-text">
+                            {s.name?.trim() || s.source_key || 'Source'}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
+                </>
+              )}
             </div>
 
-            {/* Sources Detail Panel */}
-            {selectedSourceRow && (
-              <div className="lg:col-span-1">
-                <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto">
-                  <SourcesDetailPanel
-                    selectedSource={selectedSourceRow}
-                    onClose={() => setSelectedSourceRow(null)}
-                    onSave={async () => {
-                      await fetchSources();
+            {sourcesView === 'cards' && isSourceMapPanelOpen && (
+              <div className="min-h-0 h-full flex flex-col">
+                <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto h-full">
+                  <SourceMapPanel
+                    onClose={handleCloseSourceMapPanel}
+                    sourceSlot={sourceMapSlots.source}
+                    targetSlot={sourceMapSlots.target}
+                    onDropSlot={handleSourceMapDropSlot}
+                    onAutoMap={handleSourceMapAutoMap}
+                    autoMapBusy={autoMapLoading}
+                    renderDroppedCard={(entry) => (
+                      <>
+                        <SourceBrandLogo sourceKey={entry.source_key ?? ''} name={entry.name ?? ''} />
+                        <div className="mt-2 text-center text-sm font-medium text-ag-dark-text">
+                          {entry.name?.trim() || entry.source_key || 'Source'}
+                        </div>
+                      </>
+                    )}
+                  />
+                </div>
+              </div>
+            )}
+
+            {selectedSourceId && sourcesView === 'cards' && !isSourceMapPanelOpen && (
+              <div className="min-h-0 h-full flex flex-col">
+                <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto h-full">
+                  <SourceMetadataPanel
+                    sourceId={selectedSourceId}
+                    onClose={() => {
+                      setSelectedSourceId(null);
+                      setActiveSourceDetail(null);
                     }}
+                    onDetailLoaded={handleSourceDetailLoaded}
+                    onViewLogicalDataModel={() => setSourcesView('ldm')}
+                    onCatalogRefresh={fetchSourcesCatalog}
+                  />
+                </div>
+              </div>
+            )}
+
+            {sourcesView === 'ldm' && selectedSourceLdmRows.length > 0 && (
+              <div className="min-h-0 h-full flex flex-col min-w-0">
+                <div className="sticky top-0 max-h-[calc(100vh-3rem)] overflow-y-auto h-full">
+                  <SourceLdmRowMetadataPanel
+                    row={selectedSourceLdmRows[0]}
+                    onClose={() => setSelectedSourceLdmRows([])}
+                    onSave={handleSourceLdmRowMetadataSave}
+                    objects={objectsForSourceLdm}
+                    variables={variablesForSourceLdm}
                   />
                 </div>
               </div>
@@ -6546,6 +6910,7 @@ function App() {
                 onClose={() => setIsAddListOpen(false)}
                 onAdd={handleAddList}
                 allData={listData}
+                isSubmitting={isAddListSubmitting}
               />
             </div>
           ) : isBulkEditOpen ? (
@@ -6646,6 +7011,7 @@ function App() {
                     variablesOrderSortOrder={variablesOrderSortOrder}
                     isVariablesOrderEnabled={isVariablesOrderEnabled}
                     onListDetailRefresh={refreshListDetailFromApi}
+                    onFullListsRefresh={fetchLists}
                   />
                 ) : activeTab === 'variables' ? (
                   <VariableMetadataPanel
@@ -6737,6 +7103,58 @@ function App() {
         />
       )}
 
+      {activeTab === 'sources' && (
+        <>
+          <SourceLdmCsvUploadModal
+            isOpen={isSourceLdmCsvModalOpen}
+            onClose={() => !sourceLdmUploadBusy && setIsSourceLdmCsvModalOpen(false)}
+            onUpload={handleSourceLdmCsvFile}
+            isLoading={sourceLdmUploadBusy}
+          />
+          <SourceLdmAddRowModal
+            isOpen={isSourceLdmAddRowModalOpen}
+            onClose={() => setIsSourceLdmAddRowModalOpen(false)}
+            onSave={handleSourceLdmAddRowSave}
+            sourceDisplayName={activeSourceDetail?.name?.trim() || ''}
+            objects={objectsForSourceLdm}
+            variables={variablesForSourceLdm}
+          />
+          {isSourceLdmClearAllModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+              <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 max-w-md w-full mx-4">
+                <h3 className="text-lg font-semibold text-ag-dark-text mb-4">Clear LDM data</h3>
+                <p className="text-ag-dark-text-secondary mb-6">
+                  Are you sure you want to clear all data from{' '}
+                  <span className="font-semibold text-ag-dark-text">
+                    {activeSourceDetail?.name?.trim() || 'this source'}
+                  </span>{' '}
+                  LDM? This removes every row for this source from the backend (local JSON in development, PostgreSQL
+                  when the API is configured to use it). You can upload a CSV again afterward.
+                </p>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    disabled={sourceLdmClearAllBusy}
+                    onClick={() => setIsSourceLdmClearAllModalOpen(false)}
+                    className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={sourceLdmClearAllBusy}
+                    onClick={() => void handleSourceLdmClearAllConfirm()}
+                    className="px-4 py-2 bg-ag-dark-error text-white rounded hover:bg-red-600 transition-colors disabled:opacity-50"
+                  >
+                    {sourceLdmClearAllBusy ? 'Clearing…' : 'Yes, clear all'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       {/* Loading Modal for Bulk Variable Upload */}
       {isBulkVariableUploading && activeTab !== 'sources' && (
         <LoadingModal
@@ -6800,6 +7218,51 @@ function App() {
           }
         })()}
         orderSortOrder={variablesOrderSortOrder}
+      />
+
+      <VariablesCustomSortModal
+        isOpen={isSourceLdmCustomSortOpen}
+        onClose={() => setIsSourceLdmCustomSortOpen(false)}
+        onApplySort={handleSourceLdmCustomSortApply}
+        columns={sourceLdmColumns}
+        currentSortRules={sourceLdmCustomSortRules}
+        isDefaultOrderEnabled={isSourceLdmOrderEnabled}
+        onDefaultOrderToggle={handleSourceLdmDefaultOrderToggle}
+        hierarchyColumnKeysForDefaultOrder={[
+          'being',
+          'avatar',
+          'object',
+          'part',
+          'section',
+          'group',
+          'variable',
+        ]}
+        driverColumnKeys={[]}
+        defaultOrderEnabledHelpText="When enabled, rows follow the order you set in Default Sort (Being → Avatar → Object → Part → Section → Group → Variable). Multi-level custom sort is disabled until you turn this off."
+        allowedCustomSortColumnKeys={[
+          'source_name',
+          'source_table',
+          'source_variable',
+          'being',
+          'avatar',
+          'object',
+          'part',
+          'section',
+          'group',
+          'variable',
+        ]}
+        sortTargetLabel="Source LDM mappings"
+        hideInstructions
+      />
+
+      <SourceLdmOrderModal
+        isOpen={isSourceLdmOrderOpen}
+        onClose={() => setIsSourceLdmOrderOpen(false)}
+        onSaveOrder={handleSourceLdmOrderSave}
+        variableData={variablesForSourceLdm}
+        objectData={objectsForSourceLdm}
+        sortConfig={null}
+        orderSortOrder={sourceLdmOrderSortOrder}
       />
 
       {/* Objects Order Modal */}
@@ -6933,13 +7396,13 @@ function App() {
       />
 
 
-      {/* Add Sources Modal */}
-      <AddSourcesModal
-        isOpen={isAddSourcesOpen && activeTab === 'sources'}
-        onClose={() => setIsAddSourcesOpen(false)}
-        onAdd={handleAddSource}
-        existingTypes={sourceTypes}
-        onAddType={handleAddSourceType}
+      <AddSourceCatalogModal
+        isOpen={isAddSourceCatalogOpen && activeTab === 'sources'}
+        onClose={() => setIsAddSourceCatalogOpen(false)}
+        onCreate={async (body) => {
+          await createSource(body);
+          await fetchSourcesCatalog();
+        }}
       />
 
     </div>
