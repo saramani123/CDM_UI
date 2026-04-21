@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import logiqLogo from './assets/logiq-logo.png';
 import { Plus, Upload, Edit2, ArrowUpDown, Eye, Trash2, Network, Filter, GripVertical, ChevronLeft } from 'lucide-react';
 import { TabNavigation } from './components/TabNavigation';
 import { DataGrid, FilterPanel } from './components/DataGrid';
@@ -6067,9 +6068,14 @@ function App() {
   return (
     <div className="h-screen bg-ag-dark-bg flex flex-col">
       {/* Header */}
-      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-4 flex-shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold text-ag-dark-text">Canonical Data Model</h1>
+      <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-3 sm:py-4 flex-shrink-0">
+        <div className="flex items-center min-h-[2.75rem] sm:min-h-[3.5rem]">
+          <img
+            src={logiqLogo}
+            alt="LogIQ"
+            className="h-12 w-auto sm:h-16 md:h-20 max-w-[min(100%,36rem)] object-contain object-left"
+            draggable={false}
+          />
         </div>
       </div>
 
