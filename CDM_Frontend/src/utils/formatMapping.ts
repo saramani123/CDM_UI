@@ -1,22 +1,36 @@
 /**
- * Format V-I to Format V-II cascading mapping (canonical allowed values).
- * Matches the product spreadsheet: Format V-I options and allowed Format V-II per V-I.
+ * Format S → Format VII hierarchy (canonical allowed values).
+ * Aligns with the product "Format Values" spreadsheet: base types Boolean, Date,
+ * Decimal, Integer, String and allowed sub-types per base.
  * Used by Variables (Format I/II), Source LDM (Format VI/VII), Add/Bulk edit.
  */
 export const FORMAT_I_TO_FORMAT_II_MAPPING: Record<string, string[]> = {
-  Date: ['Date', 'Datetime'],
-  Number: ['Decimal', 'Currency', 'Percent', 'Integer'],
-  ID: ['Numeric ID', 'Custom ID', 'Alphanumeric ID'],
-  List: ['Static List', 'Flag', 'Reference List', 'Specific List'],
-  Directory: ['Phone', 'Email', 'URL', 'Zip'],
-  Freeform: ['Text', 'JSON'],
+  Boolean: ['Boolean'],
+  Date: ['Date', 'Time'],
+  Decimal: ['Decimal', 'Currency', 'Percent'],
+  Integer: ['Integer', 'Numeric', 'Static'],
+  String: [
+    'Alphanumeric',
+    'Static',
+    'Specific',
+    'Phone',
+    'Email',
+    'URL',
+    'Zip',
+    'Text',
+    'JSON',
+    'Free',
+  ],
 };
+
+/** Display order matches the spreadsheet base types. */
+const FORMAT_I_ORDER = ['Boolean', 'Date', 'Decimal', 'Integer', 'String'] as const;
 
 /**
  * All allowed Format V-I (Format VI on Source LDM) values — no API/grid merge.
  */
 export const getAllFormatIValues = (): string[] => {
-  return Object.keys(FORMAT_I_TO_FORMAT_II_MAPPING).sort();
+  return [...FORMAT_I_ORDER];
 };
 
 /**

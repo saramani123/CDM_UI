@@ -287,7 +287,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         // Fallback to local data
         const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
         const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
-        setPartsList(parts.length > 0 ? parts : dynamicFieldOptions.part);
+        setPartsList(parts);
       } finally {
         setIsLoadingParts(false);
       }
@@ -398,7 +398,7 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
     // Otherwise fallback to local data
     const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
     const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
-    return parts.length > 0 ? parts : dynamicFieldOptions.part;
+    return parts.length > 0 ? parts : [];
   };
 
   const getGroupsForPart = (part: string): string[] => {
@@ -1841,7 +1841,19 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                       }}
                       onChange={() => {}}
                       disabled={!isPanelEnabled}
-                      placeholder={formData.formatI === 'Date' || formData.formatI === 'Time' ? 'e.g. 12/5/2025' : formData.formatI === 'Number' && formData.formatII ? (formData.formatII === 'Integer' ? 'e.g. 42' : formData.formatII === 'Decimal' ? 'e.g. 3.14' : formData.formatII === 'Percent' || formData.formatII === 'Percentage' ? 'e.g. 50%' : 'Enter value') : 'Enter value'}
+                      placeholder={(() => {
+                        const fi = formData.formatI;
+                        const fii = formData.formatII;
+                        if (fi === 'Date' && fii === 'Time') return 'e.g. 14:30';
+                        if (fi === 'Date' || fi === 'Time') return 'e.g. 12/5/2025';
+                        if ((fi === 'Integer' || fi === 'Decimal' || fi === 'Number') && fii) {
+                          if (fii === 'Integer' || fii === 'Numeric') return 'e.g. 42';
+                          if (fii === 'Decimal') return 'e.g. 3.14';
+                          if (fii === 'Percent' || fii === 'Percentage') return 'e.g. 50%';
+                          if (fii === 'Currency') return 'e.g. $100';
+                        }
+                        return 'Enter value';
+                      })()}
                       className={`w-full px-3 py-2 bg-ag-dark-bg border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : 'border-ag-dark-border'} ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     {validationError && validationError.includes('Value') && (
@@ -1896,7 +1908,13 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
                       }}
                       onChange={() => {}}
                       disabled={!isPanelEnabled}
-                      placeholder={formData.formatI === 'Date' || formData.formatI === 'Time' ? 'e.g. 3/8/2026' : 'Enter value'}
+                      placeholder={(() => {
+                        const fi = formData.formatI;
+                        const fii = formData.formatII;
+                        if (fi === 'Date' && fii === 'Time') return 'e.g. 18:00';
+                        if (fi === 'Date' || fi === 'Time') return 'e.g. 3/8/2026';
+                        return 'Enter value';
+                      })()}
                       className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${validationError && validationError.includes('Value') ? 'border-red-500' : ''} ${!isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''}`}
                     />
                     {validationError && validationError.includes('Value') && (

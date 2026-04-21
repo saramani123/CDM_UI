@@ -251,11 +251,12 @@ export function validateValidationInput(valType: ValType, value: string, formatI
       return { isValid: true };
 
     case 'Range':
-      // For Range, validate based on Format V-I and Format V-II (Format-V mapping)
+      // For Range, validate based on Format V-I and Format V-II (Format S / VI / VII mapping)
       if (formatI === 'Date' || formatI === 'Time') {
         return validateTimeFormat(value, formatII);
-      } else if (formatI === 'Number' && formatII) {
-        return validateNumberFormat(value, formatII);
+      }
+      if ((formatI === 'Decimal' || formatI === 'Integer' || formatI === 'Number') && formatII) {
+        return validateNumberFormat(value, formatII, formatI);
       }
       // If no format restrictions, allow any value
       return { isValid: true };
@@ -274,6 +275,21 @@ function validateTimeFormat(value: string, formatII?: string): { isValid: boolea
   }
 
   const trimmed = value.trim();
+
+  // Time-of-day only (Format VII = Time under Date / Integer decimal context not used here)
+  if (formatII === 'Time') {
+    const timePatterns = [
+      /^\d{1,2}:\d{2}(:\d{2})?$/,
+      /^\d{1,2}:\d{2}(:\d{2})?\s?[AaPp][Mm]$/,
+    ];
+    if (timePatterns.some((p) => p.test(trimmed))) {
+      return { isValid: true };
+    }
+    return {
+      isValid: false,
+      error: 'Invalid time format. Use HH:MM or HH:MM:SS (optional AM/PM), e.g. 14:30 or 2:30 PM.',
+    };
+  }
 
   // Date formats (Format V-II = Date): YYYY-MM-DD, MM/DD/YYYY, DD/MM/YYYY
   const datePatterns = [
@@ -327,7 +343,11 @@ function validateTimeFormat(value: string, formatII?: string): { isValid: boolea
 /**
  * Validate Number format based on Format V-II
  */
-function validateNumberFormat(value: string, formatII: string): { isValid: boolean; error?: string } {
+function validateNumberFormat(
+  value: string,
+  formatII: string,
+  formatI?: string
+): { isValid: boolean; error?: string } {
   if (!value || value.trim() === '') {
     return { isValid: false, error: 'Value cannot be empty' };
   }
@@ -336,8 +356,21 @@ function validateNumberFormat(value: string, formatII: string): { isValid: boole
 
   switch (formatII) {
     case 'Integer':
+    case 'Numeric':
       if (!/^-?\d+$/.test(trimmed)) {
         return { isValid: false, error: 'Value must be an integer (whole number)' };
+      }
+      return { isValid: true };
+
+    case 'Static':
+      if (formatI === 'Integer') {
+        if (!/^-?\d+$/.test(trimmed)) {
+          return { isValid: false, error: 'Value must be an integer (whole number)' };
+        }
+        return { isValid: true };
+      }
+      if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
+        return { isValid: false, error: 'Value must be a number' };
       }
       return { isValid: true };
 

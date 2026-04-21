@@ -199,7 +199,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
         // Fallback to local data
         const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
         const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
-        setPartsList(parts.length > 0 ? parts : dynamicFieldOptions.part);
+        setPartsList(parts);
       } finally {
         setIsLoadingParts(false);
       }
@@ -272,7 +272,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     // Otherwise fallback to local data
     const variablesData = allData.length > 0 ? allData : (window as any).variablesData || [];
     const parts = [...new Set(variablesData.map((item: any) => item.part))].filter(Boolean).sort() as string[];
-    return parts.length > 0 ? parts : dynamicFieldOptions.part;
+    return parts.length > 0 ? parts : [];
   };
 
   // Get distinct sections filtered by selected Part

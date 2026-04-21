@@ -544,6 +544,8 @@ async def get_group_values():
                 WHERE p.name IS NOT NULL AND p.name <> ''
                   AND s.name IS NOT NULL AND s.name <> ''
                   AND g.name IS NOT NULL AND g.name <> ''
+                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT p.name as part, s.name as section, g.name as group
                 ORDER BY p.name, s.name, g.name
             """)
@@ -590,6 +592,8 @@ async def get_section_values():
                 MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE p.name IS NOT NULL AND p.name <> ''
                   AND s.name IS NOT NULL AND s.name <> ''
+                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT p.name as part, s.name as section
                 ORDER BY p.name, s.name
             """)
@@ -619,11 +623,10 @@ async def get_section_values():
 @router.get("/metadata/part-values")
 async def get_part_values():
     """
-    Get all distinct Part values from Part nodes in Neo4j.
-    Returns all Part values that are used in the Variables grid.
-    Used for populating the Part metadata concept widget.
-    
-    Results are sorted alphabetically.
+    Distinct Part values on the Variables grid path only:
+    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+
+    Used for populating the Part metadata concept widget so it matches live grid taxonomy.
     """
     driver = get_driver()
     if not driver:
@@ -631,12 +634,12 @@ async def get_part_values():
     
     try:
         with driver.session() as session:
-            # Get all distinct Part values from Part nodes
-            # These are the same values shown in the Variables grid's Part column
             result = session.run("""
-                MATCH (p:Part)
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE p.name IS NOT NULL AND p.name <> ''
-                RETURN DISTINCT p.name as part
+                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
+                RETURN DISTINCT p.name AS part
                 ORDER BY p.name
             """)
             

@@ -570,8 +570,11 @@ def _sync_variable_relevance_to_objects(
 @router.get("/variables/parts")
 async def get_variable_parts():
     """
-    Get all distinct Part values from Variables.
-    Used for cascading dropdown: Part -> Section -> Group -> Variable
+    Distinct Part values that appear on the Variables grid path only:
+    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+
+    Orphan :Part nodes (no real variables under them) are excluded so wiping variables
+    clears Add Variable / CSV taxonomy dropdowns when the graph has no live rows.
     """
     driver = get_driver()
     if not driver:
@@ -580,9 +583,11 @@ async def get_variable_parts():
     try:
         with driver.session() as session:
             result = session.run("""
-                MATCH (p:Part)
-                RETURN DISTINCT p.name as part
-                ORDER BY p.name
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
+                RETURN DISTINCT p.name AS part
+                ORDER BY part
             """)
             
             parts = [record["part"] for record in result if record.get("part")]
@@ -650,6 +655,9 @@ async def get_variable_sections(part: str = None):
         with driver.session() as session:
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)
+                      -[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT s.name AS section
                 ORDER BY section
             """, part=part)
@@ -788,8 +796,9 @@ async def get_variable_groups(part: str = None, section: str = None):
         with driver.session() as session:
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group)
+                      -[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT g.name AS group
                 ORDER BY group
             """, part=part.strip(), section=section.strip())
