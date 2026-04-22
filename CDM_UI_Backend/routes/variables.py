@@ -653,11 +653,12 @@ async def get_variable_sections(part: str = None):
 
     try:
         with driver.session() as session:
+            # Sections under Part that have at least one real (non-placeholder) Group.
+            # Do not require a Variable on that path — empty groups must appear so users can
+            # move variables into CSV-created groups that do not yet have members.
             result = session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)
-                      -[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)
                 WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT s.name AS section
                 ORDER BY section
             """, part=part)
@@ -794,11 +795,12 @@ async def get_variable_groups(part: str = None, section: str = None):
 
     try:
         with driver.session() as session:
+            # All non-placeholder groups under Part → Section (including empty groups),
+            # so edit-metadata can relink variables into groups created by CSV before any member exists.
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                      -[:HAS_GROUP]->(g:Group)
                 WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT g.name AS group
                 ORDER BY group
             """, part=part.strip(), section=section.strip())
@@ -1566,59 +1568,47 @@ async def update_variable(variable_id: str, request: Request):
     # Read raw body to get extra fields like "Validation #2", "Validation #3", etc.
     body_bytes = await request.body()
     raw_data = json.loads(body_bytes.decode('utf-8'))
-    print(f"🔍 DEBUG: Raw request body keys: {list(raw_data.keys())}", flush=True)
-    print(f"🔍 DEBUG: Raw request body: {raw_data}", flush=True)
+    print(f"🔍 DEBUG: update_variable keys: {list(raw_data.keys())}", flush=True)
     
     # Create Pydantic model from raw data to preserve extra fields
     # Use model_construct to bypass validation and preserve extra fields
     variable_data = VariableUpdateRequest.model_construct(**raw_data)
     
-    # Log the parsed Pydantic model
-    print(f"🎭 update_variable called with variable_id={variable_id}, variable_data={variable_data}")
-    print(f"🎭 variable_data.isMeme={variable_data.isMeme}, type={type(variable_data.isMeme)}")
-    
-    # Check if isGroupKey exists as an attribute
-    print(f"🔑 hasattr(variable_data, 'isGroupKey'): {hasattr(variable_data, 'isGroupKey')}")
-    if hasattr(variable_data, 'isGroupKey'):
-        print(f"🔑 variable_data.isGroupKey={variable_data.isGroupKey}, type={type(variable_data.isGroupKey)}")
-    else:
-        print(f"🔑 ERROR: isGroupKey attribute does not exist on variable_data!")
-    
-    # Use model_dump() to see all fields
-    try:
-        model_dict = variable_data.model_dump()
-        print(f"🔑 variable_data.model_dump() keys: {list(model_dict.keys())}")
-        print(f"🔑 isGroupKey in model_dump: {model_dict.get('isGroupKey')}")
-        print(f"🔑 Full model_dump: {model_dict}")
-    except Exception as e:
-        print(f"🔑 Could not get model_dump: {e}")
-        try:
-            print(f"🔑 variable_data.__dict__: {variable_data.__dict__}")
-        except:
-            print(f"🔑 Could not get __dict__ either")
+    print(
+        f"🎭 update_variable id={variable_id} part={getattr(variable_data, 'part', None)} "
+        f"section={getattr(variable_data, 'section', None)} group={getattr(variable_data, 'group', None)}",
+        flush=True,
+    )
     driver = get_driver()
     if not driver:
         raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
 
     try:
-        print(f"DEBUG: Updating variable {variable_id}")
-        print(f"DEBUG: variable_data type: {type(variable_data)}")
-        print(f"DEBUG: variable_data: {variable_data}")
-        print(f"DEBUG: variationsList: {variable_data.variationsList}")
-        print(f"DEBUG: variationsList type: {type(variable_data.variationsList)}")
+        print(f"DEBUG: Updating variable {variable_id}", flush=True)
         
         with driver.session() as session:
-            # First, get the current variable data
-            current_result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $id})
-                RETURN v, p.name as part, s.name as section, g.name as group, g.id as group_id
-            """, {"id": variable_id})
-
-            current_record = current_result.single()
-            print(f"DEBUG: Query result - current_record is None: {current_record is None}")
-            if not current_record:
-                print(f"DEBUG: ERROR - Variable {variable_id} not found or has no Part/Section/Group linkage!")
+            # Load variable + one taxonomy row. Use ORDER BY + LIMIT (not Result.single()) so
+            # duplicate Group→Variable links (CSV/import bugs) do not crash single-variable save
+            # while bulk edit still works (it matches Variable by id only first).
+            current_rows = list(
+                session.run(
+                    """
+                MATCH (v:Variable {id: $id})
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
+                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                WITH v, p, s, g
+                ORDER BY p.name, s.name, g.name
+                LIMIT 1
+                RETURN v, p.name AS part, s.name AS section, g.name AS group, g.id AS group_id
+                """,
+                    {"id": variable_id},
+                )
+            )
+            if not current_rows:
+                print(f"DEBUG: ERROR - Variable {variable_id} not found or has no Part/Section/Group linkage!", flush=True)
                 raise HTTPException(status_code=404, detail="Variable not found")
+            current_record = current_rows[0]
+            print(f"DEBUG: Loaded variable {variable_id} for update (taxonomy rows collapsed to one)", flush=True)
 
             current_variable = current_record["v"]
             current_part = current_record["part"] if current_record["part"] else ""
@@ -1839,6 +1829,8 @@ async def update_variable(variable_id: str, request: Request):
                 record = result.single()
                 if record:
                     print(f"DEBUG: 🎭 ✅ Variable update successful - ontology_type: {record.get('ontology_type')}, is_group_key: {record.get('is_group_key')}")
+                if not record:
+                    raise HTTPException(status_code=404, detail="Variable not found after property update")
             else:
                 # No fields to update, use current data
                 record = {

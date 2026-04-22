@@ -334,6 +334,14 @@ class ApiService {
       if (error instanceof Error && error.name === 'AbortError') {
         throw new Error('Request timeout: The server took too long to respond. Please try again.');
       }
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg === 'Failed to fetch' || (error instanceof TypeError && msg.includes('fetch'))) {
+        throw new Error(
+          'Network error (Failed to fetch): the browser could not reach the API. ' +
+            'Confirm VITE_API_BASE_URL matches your Render backend, the service is awake, ' +
+            'and the browser console Network tab shows the request URL and status (CORS, 502, or dropped connections often show here).'
+        );
+      }
       throw error;
     }
   }

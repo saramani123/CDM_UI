@@ -97,16 +97,26 @@ def resolve_group_id(session, part: str, section: str, group: str) -> Optional[s
 
 
 def get_variable_taxonomy(session, variable_id: str) -> Optional[Dict[str, Any]]:
-    """Returns part, section, group names and group id for a variable, or None."""
-    rec = session.run(
-        """
-        MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $id})
-        RETURN p.name AS part, s.name AS section, g.name AS grp, g.id AS group_id
-        """,
-        id=variable_id,
-    ).single()
-    if not rec:
+    """Returns part, section, group names and group id for a variable, or None.
+
+    When duplicate Group→Variable links exist, returns one deterministic path (ordered by name)
+    so callers never hit ResultNotSingleError from Result.single().
+    """
+    rows = list(
+        session.run(
+            """
+            MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $id})
+            WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+            RETURN p.name AS part, s.name AS section, g.name AS grp, g.id AS group_id
+            ORDER BY p.name, s.name, g.name
+            LIMIT 1
+            """,
+            id=variable_id,
+        )
+    )
+    if not rows:
         return None
+    rec = rows[0]
     return {
         "part": rec.get("part") or "",
         "section": rec.get("section") or "",

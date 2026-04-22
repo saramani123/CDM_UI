@@ -6069,11 +6069,11 @@ function App() {
     <div className="h-screen bg-ag-dark-bg flex flex-col">
       {/* Header */}
       <div className="bg-ag-dark-surface border-b border-ag-dark-border px-6 py-3 sm:py-4 flex-shrink-0">
-        <div className="flex items-center min-h-[2.75rem] sm:min-h-[3.5rem]">
+        <div className="flex items-center min-h-[2.25rem] sm:min-h-[2.75rem]">
           <img
             src={logiqLogo}
             alt="LogIQ"
-            className="h-12 w-auto sm:h-16 md:h-20 max-w-[min(100%,36rem)] object-contain object-left"
+            className="h-9 w-auto sm:h-11 md:h-14 max-w-[min(100%,28rem)] object-contain object-left"
             draggable={false}
           />
         </div>
@@ -6449,7 +6449,7 @@ function App() {
                       if (id) handleSourceMapDropGrid(id);
                     }}
                   >
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 pb-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-4">
                       {sourcesCardsForMapGrid.map((s) => (
                         <button
                           key={s.id}

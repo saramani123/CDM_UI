@@ -1011,7 +1011,8 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       await onSave?.(saveData);
     } catch (error) {
       console.error('Error saving variable:', error);
-      alert('Failed to update variable. Please try again.');
+      // App.tsx handleMetadataSave already alerts with the real API/network message; avoid a second generic alert.
+      throw error;
     }
   };
 
