@@ -1289,7 +1289,7 @@ class ApiService {
     procedure: string;
     rules: string;
     best: string;
-    is_hero?: boolean;
+    is_heuro?: boolean;
     documentation?: string | null;
   }) {
     return this.request('/heuristics', {
@@ -1306,8 +1306,8 @@ class ApiService {
     procedure?: string;
     rules?: string;
     best?: string;
-    detailData?: string;
-    is_hero?: boolean;
+    detailData?: any;
+    is_heuro?: boolean;
     documentation?: string | null;
   }) {
     return this.request(`/heuristics/${id}`, {

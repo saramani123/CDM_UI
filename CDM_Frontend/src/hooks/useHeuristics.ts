@@ -8,12 +8,17 @@ export interface HeuristicsData {
   country: string;
   agent: string;
   procedure: string;
-  rules: string;
+  rules: any;
+  rules_count?: number;
   best: string;
-  /** TRUE = RCPO agent (Datamaia runtime); FALSE = non-RCPO (documentation-only). Default true for legacy. */
-  is_hero?: boolean;
-  /** Free-text documentation when is_hero is false; null when is_hero is true. */
+  /** TRUE = HEURO agent runtime; FALSE = documentation-only. */
+  is_heuro?: boolean;
+  /** Free-text documentation when is_heuro is false; null when is_heuro is true. */
   documentation?: string | null;
+  ifColumns?: Array<{ id: string; label: string; order: number }>;
+  thenColumns?: Array<{ id: string; label: string; order: number }>;
+  has_legacy_detail_data?: boolean;
+  detailData?: any;
 }
 
 export const useHeuristics = () => {

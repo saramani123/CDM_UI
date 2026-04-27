@@ -1,353 +1,227 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
-import { HeuristicsData } from '../hooks/useHeuristics';
-import { apiService } from '../services/api';
+import React, { useState } from 'react';
+import { Save, X } from 'lucide-react';
+
+export interface HeuroColumnDef {
+  id: string;
+  label: string;
+  order: number;
+}
+
+export interface HeuroRuleRow {
+  id: string;
+  if: Record<string, string>;
+  then: Record<string, string>;
+}
 
 interface HeuristicsDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
-  heuristicsItem: HeuristicsData | null;
-  onSave: () => void;
+  agentName: string;
+  ifColumns: HeuroColumnDef[];
+  thenColumns: HeuroColumnDef[];
+  rows: HeuroRuleRow[];
+  onSave: (rows: HeuroRuleRow[]) => Promise<void>;
 }
 
-interface ModalData {
-  columns: string[];
-  rows: string[][];
+function mkEmptyRow(ifColumns: HeuroColumnDef[], thenColumns: HeuroColumnDef[]): HeuroRuleRow {
+  const ifVals: Record<string, string> = {};
+  const then: Record<string, string> = {};
+  for (const c of ifColumns) ifVals[c.id] = '';
+  for (const c of thenColumns) then[c.id] = '';
+  return {
+    id: `rule_${crypto.randomUUID()}`,
+    if: ifVals,
+    then,
+  };
 }
 
 export const HeuristicsDetailModal: React.FC<HeuristicsDetailModalProps> = ({
   isOpen,
   onClose,
-  heuristicsItem,
-  onSave
+  agentName,
+  ifColumns,
+  thenColumns,
+  rows,
+  onSave,
 }) => {
-  const [columnNames, setColumnNames] = useState<string[]>(['', 'If']);
-  const [rows, setRows] = useState<string[][]>(Array(20).fill(null).map(() => ['', '']));
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [draftRows, setDraftRows] = useState<HeuroRuleRow[]>(
+    rows.length > 0 ? rows : Array.from({ length: 10 }, () => mkEmptyRow(ifColumns, thenColumns))
+  );
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
-  // Load existing data when modal opens or heuristicsItem changes
-  useEffect(() => {
-    if (isOpen && heuristicsItem) {
-      loadHeuristicsDetail();
+  React.useEffect(() => {
+    if (isOpen) {
+      setDraftRows(
+        rows.length > 0 ? rows : Array.from({ length: 10 }, () => mkEmptyRow(ifColumns, thenColumns))
+      );
+      setErrors({});
     }
-  }, [isOpen, heuristicsItem]);
+  }, [isOpen, rows, ifColumns, thenColumns]);
 
-  const loadHeuristicsDetail = async () => {
-    if (!heuristicsItem) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      let detailData = (item as any).detailData;
-      
-      // Parse if it's a string
-      if (typeof detailData === 'string') {
-        try {
-          detailData = JSON.parse(detailData);
-        } catch (e) {
-          console.error('Error parsing detailData:', e);
-          detailData = null;
-        }
-      }
-      
-      if (detailData && typeof detailData === 'object') {
-        // Ensure we have exactly 2 columns; second column is always "If" (fixed)
-        const loadedColumns = detailData.columns || ['', 'If'];
-        setColumnNames([loadedColumns[0] || '', 'If']);
-        // If rows exist, use them; otherwise create 20 empty rows
-        const loadedRows = detailData.rows || [];
-        // Ensure rows have exactly 2 columns
-        const normalizedRows = loadedRows.map(row => [
-          row[0] || '',
-          row[1] || ''
-        ]);
-        // Ensure at least 20 rows
-        if (normalizedRows.length < 20) {
-          const emptyRows = Array(20 - normalizedRows.length).fill(null).map(() => ['', '']);
-          setRows([...normalizedRows, ...emptyRows]);
-        } else {
-          setRows(normalizedRows);
-        }
-      } else {
-        // Initialize with default values - create 20 empty rows with 2 columns; second column is always "If"
-        setColumnNames(['', 'If']);
-        setRows(Array(20).fill(null).map(() => ['', '']));
-      }
-    } catch (err) {
-      console.error('Error loading heuristics detail:', err);
-      // Initialize with defaults on error - 20 empty rows with 2 columns
-      setColumnNames(['', 'If']);
-      setRows(Array(20).fill(null).map(() => ['', '']));
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  if (!isOpen) return null;
 
-  const handleColumnNameChange = (index: number, value: string) => {
-    // Second column (index 1) is always "If" and cannot be changed
-    if (index === 1) return;
-    const newColumns = [...columnNames];
-    newColumns[index] = value;
-    setColumnNames(newColumns);
-  };
+  const addRow = () => setDraftRows((prev) => [...prev, mkEmptyRow(ifColumns, thenColumns)]);
 
-  const handleCellChange = (rowIndex: number, colIndex: number, value: string) => {
-    const newRows = [...rows];
-    if (!newRows[rowIndex]) {
-      newRows[rowIndex] = ['', ''];
-    }
-    newRows[rowIndex][colIndex] = value;
-    setRows(newRows);
-  };
-
-  const handleAddRow = () => {
-    setRows([...rows, ['', '']]);
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, startRowIndex: number, startColIndex: number) => {
-    e.preventDefault();
-    
-    const pastedData = e.clipboardData.getData('text');
-    if (!pastedData) return;
-
-    // Parse the pasted data - Excel uses tabs for columns and newlines for rows
-    const lines = pastedData.split(/\r?\n/).filter(line => line.trim() !== '');
-    const parsedData: string[][] = lines.map(line => 
-      line.split('\t').map(cell => cell.trim())
+  const updateThen = (idx: number, thenId: string, value: string) => {
+    setDraftRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, then: { ...r.then, [thenId]: value } } : r))
     );
+  };
 
-    if (parsedData.length === 0) return;
+  const updateIf = (idx: number, ifId: string, value: string) => {
+    setDraftRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, if: { ...r.if, [ifId]: value } } : r))
+    );
+  };
 
-    // Update rows starting from the clicked cell
-    const newRows = [...rows];
-    
-    parsedData.forEach((pastedRow, rowOffset) => {
-      const targetRowIndex = startRowIndex + rowOffset;
-      
-      // Ensure we have enough rows
-      while (targetRowIndex >= newRows.length) {
-        newRows.push(['', '']);
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, startRow: number, startCol: number) => {
+    e.preventDefault();
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    const parsed = text
+      .split(/\r?\n/)
+      .filter((l) => l.length > 0)
+      .map((l) => l.split('\t'));
+    if (!parsed.length) return;
+
+    const totalCols = thenColumns.length + ifColumns.length; // THEN cols + IF cols
+    setDraftRows((prev) => {
+      const next = [...prev];
+      while (next.length < startRow + parsed.length) {
+        next.push(mkEmptyRow(ifColumns, thenColumns));
+      }
+      parsed.forEach((rowVals, rOff) => {
+        const rIdx = startRow + rOff;
+        rowVals.forEach((cell, cOff) => {
+          const cIdx = startCol + cOff;
+          if (cIdx >= totalCols) return;
+          if (cIdx < thenColumns.length) {
+            const thenId = thenColumns[cIdx].id;
+            next[rIdx] = { ...next[rIdx], then: { ...next[rIdx].then, [thenId]: cell.trim() } };
+          } else {
+            const ifId = ifColumns[cIdx - thenColumns.length].id;
+            next[rIdx] = { ...next[rIdx], if: { ...next[rIdx].if, [ifId]: cell.trim() } };
+          }
+        });
+      });
+      return next;
+    });
+  };
+
+  const validateRows = (): { cleaned: HeuroRuleRow[]; rowErrors: Record<string, string> } => {
+    const rowErrors: Record<string, string> = {};
+    const cleaned: HeuroRuleRow[] = [];
+
+    for (const row of draftRows) {
+      const ifValues = ifColumns.map((c) => (row.if?.[c.id] || '').trim());
+      const thenValues = thenColumns.map((c) => (row.then?.[c.id] || '').trim());
+      const allIfBlank = ifValues.every((v) => !v);
+      const allThenBlank = thenValues.every((v) => !v);
+      const hasAtLeastOneIf = ifValues.some((v) => !!v);
+      const allThenFilled = thenValues.every((v) => !!v);
+      const allBlank = allIfBlank && allThenBlank;
+
+      if (allBlank) continue;
+
+      if (!hasAtLeastOneIf) {
+        rowErrors[row.id] = 'At least one IF condition value must be filled';
+        continue;
+      }
+      if (!allThenFilled) {
+        rowErrors[row.id] = 'All output values must be filled';
+        continue;
       }
 
-      // Update cells in this row (limit to 2 columns)
-      pastedRow.forEach((cellValue, colOffset) => {
-        const targetColIndex = startColIndex + colOffset;
-        if (targetColIndex < 2) {
-          if (!newRows[targetRowIndex]) {
-            newRows[targetRowIndex] = ['', ''];
-          }
-          newRows[targetRowIndex][targetColIndex] = cellValue;
-        }
+      cleaned.push({
+        id: row.id,
+        if: Object.fromEntries(ifColumns.map((c) => [c.id, (row.if?.[c.id] || '').trim()])),
+        then: Object.fromEntries(thenColumns.map((c) => [c.id, (row.then?.[c.id] || '').trim()])),
       });
-    });
+    }
 
-    setRows(newRows);
+    return { cleaned, rowErrors };
   };
 
-  const handleSave = async () => {
-    if (!heuristicsItem) return;
-
-    setIsSaving(true);
-    setError(null);
-
+  const onSaveClick = async () => {
+    const { cleaned, rowErrors } = validateRows();
+    setErrors(rowErrors);
+    if (Object.keys(rowErrors).length > 0) return;
+    setSaving(true);
     try {
-      // Prepare detail data; second column is always "If"
-      const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== '')); // Remove completely empty rows
-      const detailData: ModalData = {
-        columns: [columnNames[0] || '', 'If'],
-        rows: nonEmptyRows
-      };
-
-      // Count the number of rows (non-empty rows)
-      const rowCount = nonEmptyRows.length.toString();
-
-      // Save detail data to backend
-      await apiService.updateHeuristicItem(heuristicsItem.id, {
-        rules: rowCount,
-        detailData: JSON.stringify(detailData)
-      });
-
-      // Close modal and refresh
-      onSave();
+      await onSave(cleaned);
       onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save heuristics detail');
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   };
-
-  if (!isOpen || !heuristicsItem) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 w-full max-w-6xl max-h-[95vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6 flex-shrink-0">
-          <div>
-            <h3 className="text-xl font-semibold text-ag-dark-text">Heuristics Detail</h3>
-            <p className="text-sm text-ag-dark-text-secondary mt-1">
-              Agent: <span className="font-medium">{heuristicsItem.agent}</span> | 
-              Procedure: <span className="font-medium">{heuristicsItem.procedure}</span>
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={isSaving}
-            className="text-ag-dark-text-secondary hover:text-ag-dark-text transition-colors disabled:opacity-50"
-          >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60">
+      <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 w-[96vw] max-w-[1500px] max-h-[95vh] flex flex-col">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-semibold text-ag-dark-text">Heuristic Rules - {agentName}</h3>
+          <button onClick={onClose} disabled={saving} className="text-ag-dark-text-secondary hover:text-ag-dark-text">
             <X className="w-6 h-6" />
           </button>
         </div>
 
-        {/* Content - Scrollable */}
-        <div className="flex-1 overflow-y-auto mb-6">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-ag-dark-text-secondary">Loading...</div>
-            </div>
-          ) : (
-            <>
-              {/* Instructional Text */}
-              <div className="mb-4 p-4 bg-ag-dark-bg border border-ag-dark-border rounded">
-                <p className="text-sm text-ag-dark-text-secondary">
-                  <span className="font-medium text-ag-dark-text">First column (Then):</span> Header is the exact variable name being set. Values are what that variable is set to.
-                </p>
-                <p className="text-sm text-ag-dark-text-secondary mt-2">
-                  <span className="font-medium text-ag-dark-text">Second column (If):</span> Contains the condition statements that trigger the rule.
-                </p>
-              </div>
-
-              {/* Column Headers */}
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-ag-dark-text">
-                    Column Names <span className="text-ag-dark-error">*</span>
-                  </label>
-                  <button
-                    onClick={handleAddRow}
-                    disabled={isSaving}
-                    className="px-3 py-1 text-sm bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50"
-                  >
-                    + Add Row
-                  </button>
-                </div>
-                <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                  <div>
-                    <label className="block text-xs text-ag-dark-text-secondary mb-1">
-                      Then (Variable to Set)
-                    </label>
-                    <input
-                      type="text"
-                      value={columnNames[0] || ''}
-                      onChange={(e) => handleColumnNameChange(0, e.target.value)}
-                      placeholder="Enter variable name"
-                      disabled={isSaving}
-                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-ag-dark-text-secondary mb-1">
-                      If (Condition)
-                    </label>
-                    <input
-                      type="text"
-                      value="If"
-                      readOnly
-                      disabled
-                      className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-90 cursor-not-allowed"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Data Rows */}
-              <div className="mb-4">
-                <div className="border border-ag-dark-border rounded overflow-hidden">
-                  {/* Header Row */}
-                  <div 
-                    className="grid gap-2 p-2 bg-ag-dark-bg border-b border-ag-dark-border font-medium text-sm text-ag-dark-text"
-                    style={{ gridTemplateColumns: '40px repeat(2, 1fr)' }}
-                  >
-                    <div className="text-center">#</div>
-                    <div className="px-2">
-                      {columnNames[0] || 'Column 1 (Then)'}
-                    </div>
-                    <div className="px-2">
-                      {columnNames[1] || 'If'}
-                    </div>
-                  </div>
-
-                  {/* Data Rows */}
-                  <div className="max-h-[500px] overflow-y-auto">
-                    {rows.map((row, rowIndex) => (
-                      <div
-                        key={rowIndex}
-                        className="grid gap-2 p-2 border-b border-ag-dark-border hover:bg-ag-dark-bg/50"
-                        style={{ gridTemplateColumns: '40px repeat(2, 1fr)' }}
-                      >
-                        <div className="flex items-center justify-center text-sm text-ag-dark-text-secondary">
-                          {rowIndex + 1}
-                        </div>
-                        <input
-                          type="text"
-                          value={row[0] || ''}
-                          onChange={(e) => handleCellChange(rowIndex, 0, e.target.value)}
-                          onPaste={(e) => handlePaste(e, rowIndex, 0)}
-                          disabled={isSaving}
-                          className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                          placeholder={`Enter ${columnNames[0] || 'column 1'} value`}
-                        />
-                        <input
-                          type="text"
-                          value={row[1] || ''}
-                          onChange={(e) => handleCellChange(rowIndex, 1, e.target.value)}
-                          onPaste={(e) => handlePaste(e, rowIndex, 1)}
-                          disabled={isSaving}
-                          className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                          placeholder={`Enter ${columnNames[1] || 'column 2'} value`}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
+        <div className="flex items-center justify-end mb-3">
+          <button onClick={addRow} className="px-3 py-1 text-sm bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover">+ Add Row</button>
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-900 bg-opacity-20 border border-red-500 rounded text-red-400 text-sm flex-shrink-0">
-            {error}
-          </div>
-        )}
+        <div className="flex-1 overflow-auto border border-ag-dark-border rounded">
+          <div className="min-w-[1100px]">
+            <div className="grid" style={{ gridTemplateColumns: `40px repeat(${thenColumns.length}, minmax(160px,1fr)) repeat(${ifColumns.length}, minmax(160px,1fr))` }}>
+              <div className="p-2 border-b border-ag-dark-border bg-ag-dark-bg" />
+              <div className="p-2 border-b border-ag-dark-border bg-ag-dark-bg text-center font-semibold text-ag-dark-text" style={{ gridColumn: `span ${thenColumns.length}` }}>THEN</div>
+              <div className="p-2 border-b border-ag-dark-border bg-ag-dark-bg text-center font-semibold text-ag-dark-text" style={{ gridColumn: `span ${ifColumns.length}` }}>IF</div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 flex-shrink-0 border-t border-ag-dark-border pt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-surface transition-colors disabled:opacity-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            <Save className="w-4 h-4" />
-            {isSaving ? 'Saving...' : 'Save Changes'}
+              <div className="p-2 border-b border-ag-dark-border bg-ag-dark-bg text-center text-ag-dark-text">#</div>
+              {thenColumns.map((c) => (
+                <div key={c.id} className="p-2 border-b border-r border-ag-dark-border bg-ag-dark-bg text-sm font-medium text-ag-dark-text">{c.label}</div>
+              ))}
+              {ifColumns.map((c) => (
+                <div key={c.id} className="p-2 border-b border-r border-ag-dark-border bg-ag-dark-bg text-sm font-medium text-ag-dark-text">{c.label}</div>
+              ))}
+
+              {draftRows.map((row, idx) => (
+                <React.Fragment key={row.id}>
+                  <div className="p-2 border-b border-r border-ag-dark-border text-center text-ag-dark-text-secondary">{idx + 1}</div>
+                  {thenColumns.map((c, ci) => (
+                    <input
+                      key={`${row.id}-${c.id}`}
+                      value={row.then?.[c.id] || ''}
+                      onChange={(e) => updateThen(idx, c.id, e.target.value)}
+                      onPaste={(e) => handlePaste(e, idx, ci)}
+                      className="p-2 border-b border-r border-ag-dark-border bg-ag-dark-surface text-ag-dark-text outline-none focus:ring-1 focus:ring-ag-dark-accent"
+                    />
+                  ))}
+                  {ifColumns.map((c, ci) => (
+                    <input
+                      key={`${row.id}-${c.id}`}
+                      value={row.if?.[c.id] || ''}
+                      onChange={(e) => updateIf(idx, c.id, e.target.value)}
+                      onPaste={(e) => handlePaste(e, idx, thenColumns.length + ci)}
+                      className="p-2 border-b border-r border-ag-dark-border bg-ag-dark-surface text-ag-dark-text outline-none focus:ring-1 focus:ring-ag-dark-accent"
+                    />
+                  ))}
+                  {errors[row.id] && (
+                    <div className="col-span-full p-2 text-xs text-red-400 border-b border-ag-dark-border bg-red-900/10">Row {idx + 1}: {errors[row.id]}</div>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-3">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text">Cancel</button>
+          <button onClick={onSaveClick} disabled={saving} className="px-4 py-2 bg-ag-dark-accent text-white rounded flex items-center gap-2">
+            <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>
     </div>
   );
 };
-

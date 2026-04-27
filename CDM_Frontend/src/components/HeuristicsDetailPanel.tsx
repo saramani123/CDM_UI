@@ -1,321 +1,325 @@
-import React, { useState, useEffect } from 'react';
-import { Save, Plus } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Grid2X2, Save } from 'lucide-react';
 import { HeuristicsData } from '../hooks/useHeuristics';
 import { apiService } from '../services/api';
-import { HeuristicsTrainingDataModal } from './HeuristicsTrainingDataModal';
 import { useDrivers } from '../hooks/useDrivers';
+import { HeuristicsDetailModal, HeuroColumnDef, HeuroRuleRow } from './HeuristicsDetailModal';
 
 interface HeuristicsDetailPanelProps {
   heuristicsItem: HeuristicsData | null;
   onSave: () => void;
   onClose?: () => void;
+  onUnsavedChange?: (hasUnsaved: boolean) => void;
 }
 
-interface PanelData {
-  columns: string[];
-  rows: string[][];
+function buildColumns(prefix: 'if' | 'then', labels: string[]): HeuroColumnDef[] {
+  return labels.map((label, idx) => ({ id: `${prefix}_${idx + 1}`, label: label.trim(), order: idx + 1 }));
+}
+
+function parseDetailDataForUi(raw: any): { ifColumns: HeuroColumnDef[]; thenColumns: HeuroColumnDef[]; rows: HeuroRuleRow[] } {
+  if (!raw) return { ifColumns: [], thenColumns: [], rows: [] };
+
+  let detail = raw;
+  if (typeof detail === 'string') {
+    try {
+      detail = JSON.parse(detail);
+    } catch {
+      return { ifColumns: [], thenColumns: [], rows: [] };
+    }
+  }
+
+  if (!detail || typeof detail !== 'object') return { ifColumns: [], thenColumns: [], rows: [] };
+
+  const ifColumns = Array.isArray((detail as any).ifColumns) ? (detail as any).ifColumns : [];
+  const thenColumns = Array.isArray((detail as any).thenColumns) ? (detail as any).thenColumns : [];
+  const rawRows = Array.isArray((detail as any).rows)
+    ? (detail as any).rows
+    : Array.isArray((detail as any).rules)
+      ? (detail as any).rules
+      : [];
+
+  const rows: HeuroRuleRow[] = rawRows.map((r: any) => {
+    const ifMap: Record<string, string> =
+      typeof r?.if === 'object' && r.if
+        ? r.if
+        : r?.if_condition
+          ? { [String(r.if_condition)]: String(r.if_value || '') }
+          : {};
+    return {
+      id: String(r?.id || `rule_${crypto.randomUUID()}`),
+      if: ifMap,
+      then: typeof r?.then === 'object' && r.then ? r.then : {},
+    };
+  });
+
+  return { ifColumns, thenColumns, rows };
 }
 
 export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   heuristicsItem,
   onSave,
-  onClose
+  onUnsavedChange,
 }) => {
   const { drivers: driversData, loading: driversLoading } = useDrivers();
-  const [columnNames, setColumnNames] = useState<string[]>(['', 'If']);
-  const [rows, setRows] = useState<string[][]>(Array(20).fill(null).map(() => ['', '']));
-  const [sector, setSector] = useState<string>('');
-  const [domain, setDomain] = useState<string>('');
-  const [country, setCountry] = useState<string>('');
-  const [agent, setAgent] = useState<string>('');
-  const [procedure, setProcedure] = useState<string>('');
-  const [is_hero, setIsHero] = useState<boolean>(true);
-  const [documentation, setDocumentation] = useState<string>('');
+
+  const [sector, setSector] = useState('ALL');
+  const [domain, setDomain] = useState('ALL');
+  const [country, setCountry] = useState('ALL');
+  const [agent, setAgent] = useState('');
+  const [procedure, setProcedure] = useState('');
+  const [isHeuro, setIsHeuro] = useState(true);
+  const [documentation, setDocumentation] = useState('');
+
+  const [savedDefinition, setSavedDefinition] = useState<{ ifColumns: HeuroColumnDef[]; thenColumns: HeuroColumnDef[] }>({
+    ifColumns: [],
+    thenColumns: [],
+  });
+  const [savedRows, setSavedRows] = useState<HeuroRuleRow[]>([]);
+  const [localDefinition, setLocalDefinition] = useState<{ ifColumns: HeuroColumnDef[]; thenColumns: HeuroColumnDef[] }>({
+    ifColumns: [],
+    thenColumns: [],
+  });
+  const [localRows, setLocalRows] = useState<HeuroRuleRow[]>([]);
+  const [hiddenIfColumns, setHiddenIfColumns] = useState<HeuroColumnDef[]>([]);
+  const [hiddenThenColumns, setHiddenThenColumns] = useState<HeuroColumnDef[]>([]);
+
+  const [legacyNotice, setLegacyNotice] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isTrainingDataModalOpen, setIsTrainingDataModalOpen] = useState(false);
-  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
-  const [existingTrainingData, setExistingTrainingData] = useState<any>(null);
+  const [isGridOpen, setIsGridOpen] = useState(false);
+  const [pendingSaveConfirm, setPendingSaveConfirm] = useState<{
+    title: string;
+    body: string;
+    deletedIfIds: string[];
+    deletedThenIds: string[];
+  } | null>(null);
 
-  // Get distinct values from drivers
-  const sectors = driversData?.sectors || [];
-  const domains = driversData?.domains || [];
-  const countries = driversData?.countries || [];
+  const sectorOptions = ['ALL', ...(driversData?.sectors || []).filter((s) => s !== 'ALL' && s !== 'All')];
+  const domainOptions = ['ALL', ...(driversData?.domains || []).filter((d) => d !== 'ALL' && d !== 'All')];
+  const countryOptions = ['ALL', ...(driversData?.countries || []).filter((c) => c !== 'ALL' && c !== 'All')];
 
-  // Include "ALL" as first option, then distinct values from drivers (excluding "ALL" if it exists)
-  const sectorOptions = ['ALL', ...sectors.filter(s => s !== 'ALL' && s !== 'All')];
-  const domainOptions = ['ALL', ...domains.filter(d => d !== 'ALL' && d !== 'All')];
-  const countryOptions = ['ALL', ...countries.filter(c => c !== 'ALL' && c !== 'All')];
+  const ifColumns = localDefinition.ifColumns;
+  const thenColumns = localDefinition.thenColumns;
 
-  // Load existing data when heuristicsItem changes
+  const normalizedSavedDefinition = useMemo(
+    () => ({
+      ifColumns: savedDefinition.ifColumns.map((c) => ({ id: c.id, label: c.label.trim(), order: c.order })),
+      thenColumns: savedDefinition.thenColumns.map((c) => ({ id: c.id, label: c.label.trim(), order: c.order })),
+    }),
+    [savedDefinition]
+  );
+  const normalizedLocalDefinition = useMemo(
+    () => ({
+      ifColumns: localDefinition.ifColumns.map((c) => ({ id: c.id, label: c.label.trim(), order: c.order })),
+      thenColumns: localDefinition.thenColumns.map((c) => ({ id: c.id, label: c.label.trim(), order: c.order })),
+    }),
+    [localDefinition]
+  );
+  const normalizeRowsForCompare = (rows: HeuroRuleRow[]) =>
+    rows
+      .map((r) => ({
+        id: r.id,
+        if: Object.keys(r.if || {})
+          .sort()
+          .reduce((acc, key) => ({ ...acc, [key]: String(r.if?.[key] || '').trim() }), {}),
+        then: Object.keys(r.then || {})
+          .sort()
+          .reduce((acc, key) => ({ ...acc, [key]: String(r.then[key] || '').trim() }), {}),
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+  const hasUnsavedChanges = useMemo(() => {
+    return (
+      JSON.stringify(normalizedSavedDefinition) !== JSON.stringify(normalizedLocalDefinition) ||
+      JSON.stringify(normalizeRowsForCompare(savedRows)) !== JSON.stringify(normalizeRowsForCompare(localRows))
+    );
+  }, [normalizedSavedDefinition, normalizedLocalDefinition, savedRows, localRows]);
+
+  const isDefinitionValid = useMemo(() => {
+    const ifLabels = ifColumns.map((c) => c.label.trim());
+    const thenLabels = thenColumns.map((c) => c.label.trim());
+    if (ifLabels.length === 0 || thenLabels.length === 0) return false;
+    if (ifLabels.some((v) => !v) || thenLabels.some((v) => !v)) return false;
+    if (new Set(ifLabels.map((v) => v.toLowerCase())).size !== ifLabels.length) return false;
+    if (new Set(thenLabels.map((v) => v.toLowerCase())).size !== thenLabels.length) return false;
+    return true;
+  }, [ifColumns, thenColumns]);
+
   useEffect(() => {
-    if (heuristicsItem) {
-      // Initialize editable fields from heuristicsItem
-      setSector(heuristicsItem.sector || 'ALL');
-      setDomain(heuristicsItem.domain || 'ALL');
-      setCountry(heuristicsItem.country || 'ALL');
-      setAgent(heuristicsItem.agent || '');
-      setProcedure(heuristicsItem.procedure || '');
-      setIsHero(heuristicsItem.is_hero !== false);
-      setDocumentation(heuristicsItem.documentation ?? '');
-      
-      loadHeuristicsDetail();
-    }
-  }, [heuristicsItem]);
-
-  const loadHeuristicsDetail = async () => {
     if (!heuristicsItem) return;
-    
+    setSector(heuristicsItem.sector || 'ALL');
+    setDomain(heuristicsItem.domain || 'ALL');
+    setCountry(heuristicsItem.country || 'ALL');
+    setAgent(heuristicsItem.agent || '');
+    setProcedure(heuristicsItem.procedure || '');
+    setIsHeuro(heuristicsItem.is_heuro !== false);
+    setDocumentation(heuristicsItem.documentation ?? '');
+    loadHeuristic();
+  }, [heuristicsItem?.id]);
+
+  const loadHeuristic = async () => {
+    if (!heuristicsItem) return;
     setIsLoading(true);
     setError(null);
-    
     try {
-      const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      const itemAny = item as any;
-      setIsHero(itemAny.is_hero !== false);
-      setDocumentation(itemAny.documentation ?? '');
-      
-      let detailData = itemAny.detailData;
-      
-      // Parse if it's a string
-      if (typeof detailData === 'string') {
-        try {
-          detailData = JSON.parse(detailData);
-        } catch (e) {
-          console.error('Error parsing detailData:', e);
-          detailData = null;
-        }
-      }
-      
-      if (detailData && typeof detailData === 'object') {
-        // Ensure we have exactly 2 columns; second column is always "If" (fixed)
-        const loadedColumns = detailData.columns || ['', 'If'];
-        setColumnNames([loadedColumns[0] || '', 'If']);
-        // If rows exist, use them; otherwise create 20 empty rows
-        const loadedRows = detailData.rows || [];
-        // Ensure rows have exactly 2 columns
-        const normalizedRows = loadedRows.map((row: string[]) => [
-          row[0] || '',
-          row[1] || ''
-        ]);
-        // Ensure at least 20 rows
-        if (normalizedRows.length < 20) {
-          const emptyRows = Array(20 - normalizedRows.length).fill(null).map(() => ['', '']);
-          setRows([...normalizedRows, ...emptyRows]);
-        } else {
-          setRows(normalizedRows);
-        }
-      } else {
-        // Initialize with default values - create 20 empty rows with 2 columns; second column is always "If"
-        setColumnNames(['', 'If']);
-        setRows(Array(20).fill(null).map(() => ['', '']));
-      }
+      const item: any = await apiService.getHeuristicItem(heuristicsItem.id);
+      setIsHeuro(item.is_heuro !== false);
+      setDocumentation(item.documentation ?? '');
+      setLegacyNotice(Boolean(item.has_legacy_detail_data));
+
+      const parsedFromTopLevel = {
+        ifColumns: Array.isArray(item.ifColumns) ? item.ifColumns : [],
+        thenColumns: Array.isArray(item.thenColumns) ? item.thenColumns : [],
+        rows: Array.isArray(item.rules)
+          ? item.rules.map((r: any) => ({
+              id: String(r.id || `rule_${crypto.randomUUID()}`),
+              if:
+                typeof r.if === 'object' && r.if
+                  ? r.if
+                  : r.if_condition
+                    ? { [String(r.if_condition)]: String(r.if_value || '') }
+                    : {},
+              then: typeof r.then === 'object' && r.then ? r.then : {},
+            }))
+          : [],
+      };
+      const parsedFromDetail = parseDetailDataForUi(item.detailData);
+
+      const loadedIf: HeuroColumnDef[] =
+        parsedFromTopLevel.ifColumns.length > 0 ? parsedFromTopLevel.ifColumns : parsedFromDetail.ifColumns;
+      const loadedThen: HeuroColumnDef[] =
+        parsedFromTopLevel.thenColumns.length > 0 ? parsedFromTopLevel.thenColumns : parsedFromDetail.thenColumns;
+      const loadedRules: HeuroRuleRow[] =
+        parsedFromTopLevel.rows.length > 0 ? parsedFromTopLevel.rows : parsedFromDetail.rows;
+
+      const safeIf = loadedIf.length > 0 ? loadedIf : [{ id: 'if_1', label: '', order: 1 }];
+      const safeThen = loadedThen.length > 0 ? loadedThen : [{ id: 'then_1', label: '', order: 1 }];
+      const definition = { ifColumns: safeIf, thenColumns: safeThen };
+
+      setSavedDefinition(definition);
+      setSavedRows(loadedRules);
+      setLocalDefinition(definition);
+      setLocalRows(loadedRules);
+      setHiddenIfColumns([]);
+      setHiddenThenColumns([]);
     } catch (err) {
-      console.error('Error loading heuristics detail:', err);
-      // Initialize with defaults on error - 20 empty rows with 2 columns
-      setColumnNames(['', 'If']);
-      setRows(Array(20).fill(null).map(() => ['', '']));
+      setError(err instanceof Error ? err.message : 'Failed to load heuristic detail');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleColumnNameChange = (index: number, value: string) => {
-    // Second column (index 1) is always "If" and cannot be changed
-    if (index === 1) return;
-    const newColumns = [...columnNames];
-    newColumns[index] = value;
-    setColumnNames(newColumns);
-  };
-
-  const handleCellChange = (rowIndex: number, colIndex: number, value: string) => {
-    const newRows = [...rows];
-    if (!newRows[rowIndex]) {
-      newRows[rowIndex] = ['', ''];
-    }
-    newRows[rowIndex][colIndex] = value;
-    setRows(newRows);
-  };
-
-  const handleAddRow = () => {
-    setRows([...rows, ['', '']]);
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>, startRowIndex: number, startColIndex: number) => {
-    e.preventDefault();
-    
-    const pastedData = e.clipboardData.getData('text');
-    if (!pastedData) return;
-
-    // Parse the pasted data - Excel uses tabs for columns and newlines for rows
-    const lines = pastedData.split(/\r?\n/).filter(line => line.trim() !== '');
-    const parsedData: string[][] = lines.map(line => 
-      line.split('\t').map(cell => cell.trim())
-    );
-
-    if (parsedData.length === 0) return;
-
-    // Update rows starting from the clicked cell
-    const newRows = [...rows];
-    
-    parsedData.forEach((pastedRow, rowOffset) => {
-      const targetRowIndex = startRowIndex + rowOffset;
-      
-      // Ensure we have enough rows
-      while (targetRowIndex >= newRows.length) {
-        newRows.push(['', '']);
-      }
-
-      // Update cells in this row (limit to 2 columns)
-      pastedRow.forEach((cellValue, colOffset) => {
-        const targetColIndex = startColIndex + colOffset;
-        if (targetColIndex < 2) {
-          if (!newRows[targetRowIndex]) {
-            newRows[targetRowIndex] = ['', ''];
-          }
-          newRows[targetRowIndex][targetColIndex] = cellValue;
-        }
-      });
-    });
-
-    setRows(newRows);
-  };
-
-  const handleAddDataClick = async (rowIndex: number) => {
-    setSelectedRowIndex(rowIndex);
-    // Load existing training data for this rule
-    const existing = await getExistingTrainingData(rowIndex);
-    setExistingTrainingData(existing);
-    setIsTrainingDataModalOpen(true);
-  };
-
-  const getExistingTrainingData = async (rowIndex: number): Promise<any> => {
-    if (!heuristicsItem) return null;
-    
-    try {
-      const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      let detailData = (item as any).detailData;
-      
-      if (typeof detailData === 'string') {
-        try {
-          detailData = JSON.parse(detailData);
-        } catch (e) {
-          console.error('Error parsing detailData when loading training data:', e);
-          return null;
-        }
-      }
-
-      console.log('Loading training data for rule:', rowIndex, 'detailData:', detailData);
-      if (detailData && typeof detailData === 'object' && detailData.trainingData) {
-        const trainingData = detailData.trainingData[`rule_${rowIndex}`];
-        console.log('Found training data:', trainingData);
-        return trainingData || null;
-      }
-      
-      console.log('No training data found');
-      return null;
-    } catch (err) {
-      console.error('Error loading training data:', err);
-      return null;
-    }
-  };
-
-  const handleSaveTrainingData = async (trainingData: any) => {
-    if (!heuristicsItem || selectedRowIndex === null) return;
-
-    try {
-      console.log('Saving training data for rule:', selectedRowIndex, trainingData);
-      // Get existing detailData
-      const item = await apiService.getHeuristicItem(heuristicsItem.id);
-      let detailData = (item as any).detailData;
-      
-      if (typeof detailData === 'string') {
-        try {
-          detailData = JSON.parse(detailData);
-        } catch (e) {
-          console.error('Error parsing detailData:', e);
-          detailData = { columns: columnNames, rows: rows, trainingData: {} };
-        }
-      }
-
-      if (!detailData || typeof detailData !== 'object') {
-        detailData = { columns: [columnNames[0] || '', 'If'], rows: rows, trainingData: {} };
-      }
-
-      // Ensure columns are correct (second column is always "If")
-      detailData.columns = [columnNames[0] || '', 'If'];
-
-      // Initialize trainingData if it doesn't exist
-      if (!detailData.trainingData) {
-        detailData.trainingData = {};
-      }
-
-      // Store training data for this rule (row index)
-      // Key format: "rule_{rowIndex}" to make it clear it's training data for a specific rule
-      detailData.trainingData[`rule_${selectedRowIndex}`] = trainingData;
-      console.log('Updated detailData with training data:', detailData);
-
-      // Save updated detailData to backend
-      const result = await apiService.updateHeuristicItem(heuristicsItem.id, {
-        detailData: JSON.stringify(detailData)
-      });
-      console.log('Save result:', result);
-
-      // Refresh
-      await loadHeuristicsDetail();
-    } catch (err) {
-      console.error('Error saving training data:', err);
-      throw new Error(err instanceof Error ? err.message : 'Failed to save training data');
-    }
-  };
-
-  const handleSave = async () => {
+  useEffect(() => {
     if (!heuristicsItem) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedChanges) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [hasUnsavedChanges, heuristicsItem]);
 
+  useEffect(() => {
+    onUnsavedChange?.(hasUnsavedChanges);
+    return () => onUnsavedChange?.(false);
+  }, [hasUnsavedChanges, onUnsavedChange]);
+
+  const updateLabelAt = (kind: 'if' | 'then', idx: number, value: string) => {
+    setLocalDefinition((prev) => {
+      const key = kind === 'if' ? 'ifColumns' : 'thenColumns';
+      const cols = [...prev[key]];
+      if (!cols[idx]) return prev;
+      cols[idx] = { ...cols[idx], label: value };
+      return { ...prev, [key]: cols };
+    });
+  };
+
+  const setCountWithSafety = (kind: 'if' | 'then', nextCount: number) => {
+    setError(null);
+    const max = kind === 'if' ? 10 : 4;
+    const next = Math.min(max, Math.max(1, nextCount));
+    const key = kind === 'if' ? 'ifColumns' : 'thenColumns';
+
+    const currentCols = [...localDefinition[key]];
+    const hiddenCols = kind === 'if' ? [...hiddenIfColumns] : [...hiddenThenColumns];
+    const currentCount = currentCols.length;
+
+    if (next === currentCount) return;
+
+    if (next < currentCount) {
+      const removed = currentCols.slice(next);
+      const kept = currentCols.slice(0, next);
+      setLocalDefinition((prev) => ({ ...prev, [key]: kept }));
+      if (kind === 'if') setHiddenIfColumns((prev) => [...removed, ...prev]);
+      else setHiddenThenColumns((prev) => [...removed, ...prev]);
+      return;
+    }
+
+    const needed = next - currentCount;
+    const restored = hiddenCols.slice(0, needed);
+    const remainingHidden = hiddenCols.slice(restored.length);
+
+    const maxOrder = [...currentCols, ...restored, ...(kind === 'if' ? hiddenIfColumns : hiddenThenColumns)]
+      .map((c) => c.order || 0)
+      .reduce((a, b) => Math.max(a, b), 0);
+
+    const created: HeuroColumnDef[] = [];
+    for (let i = 1; i <= needed - restored.length; i++) {
+      const order = maxOrder + i;
+      created.push({
+        id: `${kind}_${order}`,
+        label: '',
+        order,
+      });
+    }
+
+    setLocalDefinition((prev) => ({ ...prev, [key]: [...currentCols, ...restored, ...created] }));
+    if (kind === 'if') setHiddenIfColumns(remainingHidden);
+    else setHiddenThenColumns(remainingHidden);
+  };
+
+  const validateDefinition = (): boolean => {
+    const trimmedIf = ifColumns.map((c) => c.label.trim());
+    const trimmedThen = thenColumns.map((c) => c.label.trim());
+    if (trimmedIf.some((v) => !v)) {
+      setError('Please fill in all IF condition fields before saving.');
+      return false;
+    }
+    if (trimmedThen.some((v) => !v)) {
+      setError('Please fill in all output fields before saving.');
+      return false;
+    }
+    if (new Set(trimmedIf.map((x) => x.toLowerCase())).size !== trimmedIf.length) {
+      setError('IF labels must be unique.');
+      return false;
+    }
+    if (new Set(trimmedThen.map((x) => x.toLowerCase())).size !== trimmedThen.length) {
+      setError('THEN labels must be unique.');
+      return false;
+    }
+    return true;
+  };
+
+  const getDefinitionReduction = () => {
+    const savedIfIds = savedDefinition.ifColumns.map((c) => c.id);
+    const localIfIds = localDefinition.ifColumns.map((c) => c.id);
+    const deletedIfIds = savedIfIds.filter((id) => !localIfIds.includes(id));
+    const savedThenIds = savedDefinition.thenColumns.map((c) => c.id);
+    const localThenIds = localDefinition.thenColumns.map((c) => c.id);
+    const deletedThenIds = savedThenIds.filter((id) => !localThenIds.includes(id));
+    return { deletedIfIds, deletedThenIds };
+  };
+
+  const persistPanel = async (deletedIfIds: string[], deletedThenIds: string[]) => {
+    if (!heuristicsItem) return;
+    if (!validateDefinition()) return;
     setIsSaving(true);
     setError(null);
-
     try {
-      if (is_hero) {
-        // RCPO agent: require detailData (can be empty structure)
-        const item = await apiService.getHeuristicItem(heuristicsItem.id);
-        let existingDetailData = (item as any).detailData;
-        if (typeof existingDetailData === 'string') {
-          try {
-            existingDetailData = JSON.parse(existingDetailData);
-          } catch (e) {
-            existingDetailData = {};
-          }
-        }
-        if (!existingDetailData || typeof existingDetailData !== 'object') {
-          existingDetailData = {};
-        }
-        const nonEmptyRows = rows.filter(row => row.some(cell => cell.trim() !== ''));
-        const detailData: any = {
-          columns: [columnNames[0] || '', 'If'],
-          rows: nonEmptyRows
-        };
-        if (existingDetailData.trainingData) {
-          detailData.trainingData = existingDetailData.trainingData;
-        }
-        const rowCount = nonEmptyRows.length.toString();
-        await apiService.updateHeuristicItem(heuristicsItem.id, {
-          sector,
-          domain,
-          country,
-          agent,
-          procedure,
-          rules: rowCount,
-          detailData: JSON.stringify(detailData),
-          is_hero: true,
-        });
-      } else {
-        // Non-RCPO: require non-empty documentation
-        const docTrimmed = (documentation ?? '').trim();
-        if (!docTrimmed) {
-          setError('Documentation is required when Is HERO is FALSE.');
-          setIsSaving(false);
+      if (!isHeuro) {
+        if (!documentation.trim()) {
+          setError('Documentation is required when Is HEURO is FALSE.');
           return;
         }
         await apiService.updateHeuristicItem(heuristicsItem.id, {
@@ -324,329 +328,269 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           country,
           agent,
           procedure,
-          is_hero: false,
-          documentation: documentation,
+          is_heuro: false,
+          documentation,
         });
+      } else {
+        const activeThenIds = new Set(localDefinition.thenColumns.map((c) => c.id));
+        const activeIfIds = new Set(localDefinition.ifColumns.map((c) => c.id));
+        let rowsToPersist = [...localRows];
+        if (deletedIfIds.length > 0) {
+          rowsToPersist = rowsToPersist.map((r) => ({
+            ...r,
+            if: Object.fromEntries(
+              Object.entries(r.if || {}).filter(([k]) => activeIfIds.has(k))
+            ),
+          }));
+        }
+        rowsToPersist = rowsToPersist.map((r) => {
+          const keptThen = Object.fromEntries(
+            Object.entries(r.then || {}).filter(([k]) => activeThenIds.has(k))
+          );
+          for (const c of localDefinition.thenColumns) {
+            if (!(c.id in keptThen)) keptThen[c.id] = '';
+          }
+          return {
+            ...r,
+            if: Object.fromEntries(
+              localDefinition.ifColumns.map((c) => [c.id, String(r.if?.[c.id] || '')])
+            ),
+            then: keptThen,
+          };
+        });
+
+        const detailData = {
+          schemaVersion: 2,
+          ifColumns: localDefinition.ifColumns.map((c) => ({ ...c, label: c.label.trim() })),
+          thenColumns: localDefinition.thenColumns.map((c) => ({ ...c, label: c.label.trim() })),
+          rows: rowsToPersist,
+        };
+
+        await apiService.updateHeuristicItem(heuristicsItem.id, {
+          sector,
+          domain,
+          country,
+          agent,
+          procedure,
+          is_heuro: true,
+          detailData: JSON.stringify(detailData),
+        });
+
+        setLocalRows(rowsToPersist);
       }
-      onSave();
+
+      await onSave();
+      await loadHeuristic();
+      setPendingSaveConfirm(null);
+      if (deletedThenIds.length > 0) {
+        setHiddenThenColumns([]);
+      }
+      if (deletedIfIds.length > 0) {
+        setHiddenIfColumns([]);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save heuristics detail');
+      setError(err instanceof Error ? err.message : 'Failed to save heuristic detail');
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Get populated rows (rows that have data in either column)
-  const getPopulatedRows = (): number[] => {
-    return rows
-      .map((row, index) => ({ row, index }))
-      .filter(({ row }) => row[0]?.trim() || row[1]?.trim())
-      .map(({ index }) => index);
+  const saveConfig = async () => {
+    if (!heuristicsItem) return;
+    const { deletedIfIds, deletedThenIds } = getDefinitionReduction();
+
+    if ((deletedIfIds.length > 0 || deletedThenIds.length > 0) && isHeuro) {
+      const removedIfLabels = savedDefinition.ifColumns
+        .filter((c) => deletedIfIds.includes(c.id))
+        .map((c) => c.label || c.id);
+      const removedThenLabels = savedDefinition.thenColumns
+        .filter((c) => deletedThenIds.includes(c.id))
+        .map((c) => c.label || c.id);
+      const ifReductionText =
+        deletedIfIds.length > 0
+          ? `You are reducing from ${savedDefinition.ifColumns.length} to ${localDefinition.ifColumns.length} IF conditions. This will permanently delete condition ${removedIfLabels.join(', ')} and all rule rows that use ${removedIfLabels.length > 1 ? 'them' : 'it'}.`
+          : '';
+      const thenReductionText =
+        deletedThenIds.length > 0
+          ? `You are reducing from ${savedDefinition.thenColumns.length} to ${localDefinition.thenColumns.length} THEN outputs. This will permanently delete output column ${removedThenLabels.join(', ')} from saved rules.`
+          : '';
+      setPendingSaveConfirm({
+        title: deletedIfIds.length > 0 ? 'Remove heuristic conditions?' : 'Remove heuristic outputs?',
+        body: `${ifReductionText}${ifReductionText && thenReductionText ? ' ' : ''}${thenReductionText} This cannot be undone after saving.`,
+        deletedIfIds,
+        deletedThenIds,
+      });
+      return;
+    }
+
+    await persistPanel([], []);
+  };
+
+  const saveRowsFromModal = async (rows: HeuroRuleRow[]) => {
+    setLocalRows(rows);
   };
 
   if (!heuristicsItem) return null;
 
   return (
-    <div className="bg-ag-dark-surface border-l border-ag-dark-border h-full flex flex-col overflow-hidden">
-      {/* Header */}
+    <div className="bg-ag-dark-surface border-l border-ag-dark-border rounded-lg h-full flex flex-col overflow-hidden">
       <div className="px-6 py-4 border-b border-ag-dark-border flex-shrink-0">
         <h3 className="text-lg font-semibold text-ag-dark-text mb-4">Heuristics Detail</h3>
-        
-        {/* Sector, Domain, Country - Side by side */}
+
         <div className="grid grid-cols-3 gap-4 mb-4">
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Sector
-            </label>
-            <select
-              value={sector}
-              onChange={(e) => setSector(e.target.value)}
-              disabled={isSaving || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            >
-              {sectorOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Sector</label>
+            <select value={sector} onChange={(e) => setSector(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
+              {sectorOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Domain
-            </label>
-            <select
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              disabled={isSaving || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            >
-              {domainOptions.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Domain</label>
+            <select value={domain} onChange={(e) => setDomain(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
+              {domainOptions.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Country
-            </label>
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              disabled={isSaving || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            >
-              {countryOptions.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Country</label>
+            <select value={country} onChange={(e) => setCountry(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
+              {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
         </div>
 
-        {/* Agent and Procedure - plain text so agent name can be typed/edited */}
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Agent
-            </label>
-            <input
-              type="text"
-              value={agent}
-              onChange={(e) => setAgent(e.target.value)}
-              placeholder="Enter agent name"
-              disabled={isSaving}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            />
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Agent</label>
+            <input value={agent} onChange={(e) => setAgent(e.target.value)} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text" />
           </div>
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Procedure
-            </label>
-            <input
-              type="text"
-              value={procedure}
-              onChange={(e) => setProcedure(e.target.value)}
-              placeholder="Enter procedure name"
-              disabled={isSaving}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-            />
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Procedure</label>
+            <input value={procedure} onChange={(e) => setProcedure(e.target.value)} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text" />
           </div>
-          {/* Is HERO - Toggle */}
           <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">
-              Is HERO
-            </label>
-            <div className="flex items-center">
+            <label className="block text-xs text-ag-dark-text-secondary mb-1">Is HEURO</label>
+            <button type="button" role="switch" aria-checked={isHeuro} onClick={() => setIsHeuro((v) => !v)} className={`relative inline-flex h-6 w-11 items-center rounded-full ${isHeuro ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'}`}>
+              <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${isHeuro ? 'translate-x-5' : 'translate-x-1'}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex-1 px-6 py-4 pb-6 min-h-0 overflow-y-auto">
+        {isLoading ? (
+          <div className="text-ag-dark-text-secondary">Loading...</div>
+        ) : !isHeuro ? (
+          <div className="flex flex-col gap-2 h-full">
+            <label className="text-sm font-medium text-ag-dark-text">Documentation</label>
+            <textarea value={documentation} onChange={(e) => setDocumentation(e.target.value)} className="w-full flex-1 min-h-[220px] px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text" />
+          </div>
+        ) : (
+          <>
+            {legacyNotice && (
+              <div className="mb-4 p-3 bg-yellow-900/20 border border-yellow-500 rounded text-yellow-300 text-sm">
+                This agent has legacy rule data that cannot be displayed. Please re-enter rules using the new format.
+              </div>
+            )}
+
+            <div className="mb-4 flex items-center justify-between">
+              <div className="font-semibold text-ag-dark-text">HEURISTICS <span className="text-xs font-normal text-ag-dark-text-secondary">({localRows.length} rules)</span></div>
               <button
                 type="button"
-                role="switch"
-                aria-checked={is_hero}
-                onClick={() => setIsHero(!is_hero)}
-                disabled={isSaving}
-                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-ag-dark-accent focus:ring-offset-2 focus:ring-offset-ag-dark-surface disabled:opacity-50 ${
-                  is_hero ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'
-                }`}
+                onClick={() => setIsGridOpen(true)}
+                disabled={!isDefinitionValid || legacyNotice}
+                title={!isDefinitionValid ? 'Complete IF/THEN fields first' : ''}
+                className={`inline-flex items-center gap-2 px-3 py-2 rounded text-sm ${!isDefinitionValid || legacyNotice ? 'bg-ag-dark-border text-ag-dark-text-secondary cursor-not-allowed' : 'bg-ag-dark-accent text-white hover:bg-ag-dark-accent-hover'}`}
               >
-                <span
-                  className={`pointer-events-none block h-5 w-5 shrink-0 rounded-full bg-white shadow ring-0 transition ${
-                    is_hero ? 'translate-x-5' : 'translate-x-1'
-                  }`}
-                />
+                <Grid2X2 className="w-4 h-4" />
+                Grid
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <div className="font-semibold text-ag-dark-text">IF</div>
+              <div className="text-xs text-ag-dark-text-secondary mb-2">Define the heuristic conditions the LLM will evaluate</div>
+              <div className="flex items-center gap-3 mb-2">
+                <label className="text-sm font-medium text-ag-dark-text">Number of heuristics</label>
+                <select value={ifColumns.length} onChange={(e) => setCountWithSafety('if', Number(e.target.value))} className="w-28 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                {ifColumns.map((col, i) => (
+                  <div key={col.id} className="flex items-center gap-2">
+                    <span className="text-sm text-ag-dark-text-secondary w-5">{i + 1}.</span>
+                    <input value={col.label || ''} onChange={(e) => updateLabelAt('if', i, e.target.value)} className="flex-1 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <div className="font-semibold text-ag-dark-text">THEN</div>
+              <div className="text-xs text-ag-dark-text-secondary mb-2">Define the output values the LLM will select</div>
+              <div className="flex items-center gap-3 mb-2">
+                <label className="text-sm font-medium text-ag-dark-text">Number of outputs</label>
+                <select value={thenColumns.length} onChange={(e) => setCountWithSafety('then', Number(e.target.value))} className="w-28 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
+                  {Array.from({ length: 4 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                {thenColumns.map((col, i) => (
+                  <div key={col.id} className="flex items-center gap-2">
+                    <span className="text-sm text-ag-dark-text-secondary w-5">{i + 1}.</span>
+                    <input value={col.label || ''} onChange={(e) => updateLabelAt('then', i, e.target.value)} className="flex-1 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {error && <div className="mt-3 p-3 bg-red-900/20 border border-red-500 rounded text-red-400 text-sm">{error}</div>}
+      </div>
+
+      <div className="px-6 py-4 border-t border-ag-dark-border flex-shrink-0 bg-ag-dark-surface">
+        {hasUnsavedChanges && (
+          <div className="mb-2 text-xs text-yellow-300">Unsaved changes</div>
+        )}
+        <button onClick={saveConfig} disabled={isSaving || isLoading} className="w-full bg-ag-dark-accent text-white py-2 px-4 rounded flex items-center justify-center gap-2">
+          <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </div>
+
+      <HeuristicsDetailModal
+        isOpen={isGridOpen}
+        onClose={() => setIsGridOpen(false)}
+        agentName={agent || heuristicsItem.agent || ''}
+        ifColumns={ifColumns}
+        thenColumns={thenColumns}
+        rows={localRows}
+        onSave={saveRowsFromModal}
+      />
+      {pendingSaveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-[560px] max-w-[90vw] rounded-lg border border-ag-dark-border bg-ag-dark-surface p-5">
+            <div className="text-lg font-semibold text-ag-dark-text mb-2">{pendingSaveConfirm.title}</div>
+            <div className="text-sm text-ag-dark-text-secondary mb-4">{pendingSaveConfirm.body}</div>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingSaveConfirm(null)}
+                className="px-3 py-2 rounded border border-ag-dark-border text-ag-dark-text"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => persistPanel(pendingSaveConfirm.deletedIfIds, pendingSaveConfirm.deletedThenIds)}
+                className="px-3 py-2 rounded bg-ag-dark-accent text-white"
+              >
+                Confirm and Save
               </button>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Content - Scrollable (flex column when documentation so textarea can fill) */}
-      <div className={`flex-1 px-6 py-4 pb-6 min-h-0 flex flex-col ${!is_hero && !isLoading ? 'overflow-hidden' : 'overflow-y-auto'}`}>
-        {isLoading ? (
-          <div className="flex items-center justify-center h-64">
-            <div className="text-ag-dark-text-secondary">Loading...</div>
-          </div>
-        ) : is_hero ? (
-          <>
-            {/* Instructional Text */}
-            <div className="mb-4 p-4 bg-ag-dark-bg border border-ag-dark-border rounded">
-              <p className="text-sm text-ag-dark-text-secondary">
-                <span className="font-medium text-ag-dark-text">First column (Then):</span> Header is the exact variable name being set. Values are what that variable is set to.
-              </p>
-              <p className="text-sm text-ag-dark-text-secondary mt-2">
-                <span className="font-medium text-ag-dark-text">Second column (If):</span> Contains the condition statements that trigger the rule.
-              </p>
-            </div>
-
-            {/* Column Headers */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-ag-dark-text">
-                  Column Names <span className="text-ag-dark-error">*</span>
-                </label>
-                <button
-                  onClick={handleAddRow}
-                  disabled={isSaving}
-                  className="px-3 py-1 text-sm bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50"
-                >
-                  + Add Row
-                </button>
-              </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
-                <div>
-                  <label className="block text-xs text-ag-dark-text-secondary mb-1">
-                    Then (Variable to Set)
-                  </label>
-                  <input
-                    type="text"
-                    value={columnNames[0] || ''}
-                    onChange={(e) => handleColumnNameChange(0, e.target.value)}
-                    placeholder="Enter variable name"
-                    disabled={isSaving}
-                    className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-ag-dark-text-secondary mb-1">
-                    If (Condition)
-                  </label>
-                  <input
-                    type="text"
-                    value="If"
-                    readOnly
-                    disabled
-                    className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text opacity-90 cursor-not-allowed"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Data Rows */}
-            <div className="mb-4">
-              <div className="border border-ag-dark-border rounded overflow-hidden">
-                {/* Header Row */}
-                <div 
-                  className="grid gap-2 p-2 bg-ag-dark-bg border-b border-ag-dark-border font-medium text-sm text-ag-dark-text"
-                  style={{ gridTemplateColumns: '40px 1.2fr 1.8fr 60px' }}
-                >
-                  <div className="text-center">#</div>
-                  <div className="px-2">
-                    {columnNames[0] || 'Column 1 (Then)'}
-                  </div>
-                  <div className="px-2">
-                    {columnNames[1] || 'If'}
-                  </div>
-                  <div className="px-2 text-center">Data</div>
-                </div>
-
-                {/* Data Rows */}
-                <div className="max-h-[500px] overflow-y-auto">
-                  {rows.map((row, rowIndex) => (
-                    <div
-                      key={rowIndex}
-                      className="grid gap-2 p-2 border-b border-ag-dark-border hover:bg-ag-dark-bg/50"
-                      style={{ gridTemplateColumns: '40px 1.2fr 1.8fr 60px' }}
-                    >
-                      <div className="flex items-center justify-center text-sm text-ag-dark-text-secondary">
-                        {rowIndex + 1}
-                      </div>
-                      <input
-                        type="text"
-                        value={row[0] || ''}
-                        onChange={(e) => handleCellChange(rowIndex, 0, e.target.value)}
-                        onPaste={(e) => handlePaste(e, rowIndex, 0)}
-                        disabled={isSaving}
-                        className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                        placeholder={`Enter ${columnNames[0] || 'column 1'} value`}
-                      />
-                      <input
-                        type="text"
-                        value={row[1] || ''}
-                        onChange={(e) => handleCellChange(rowIndex, 1, e.target.value)}
-                        onPaste={(e) => handlePaste(e, rowIndex, 1)}
-                        disabled={isSaving}
-                        className="px-2 py-1 bg-ag-dark-surface border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
-                        placeholder={`Enter ${columnNames[1] || 'column 2'} value`}
-                      />
-                      <div className="flex items-center justify-center">
-                        <button
-                          type="button"
-                          onClick={() => handleAddDataClick(rowIndex)}
-                          disabled={isSaving || !row[0]?.trim()}
-                          className="w-6 h-6 flex items-center justify-center bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Add training data"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Error Message */}
-            {error && (
-              <div className="mb-4 p-3 bg-red-900 bg-opacity-20 border border-red-500 rounded text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-          </>
-        ) : (
-          /* Non-RCPO: documentation textarea extends to bottom, scroll inside */
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2 flex-shrink-0">
-              Documentation
-            </label>
-            <textarea
-              value={documentation}
-              onChange={(e) => setDocumentation(e.target.value)}
-              placeholder="Enter documentation (prompts, scripts, or procedural notes)..."
-              disabled={isSaving}
-              className="w-full flex-1 min-h-0 px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 resize-none overflow-y-auto"
-            />
-            {error && (
-              <div className="mt-4 p-3 bg-red-900 bg-opacity-20 border border-red-500 rounded text-red-400 text-sm flex-shrink-0">
-                {error}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Footer - Fixed at bottom */}
-      <div className="px-6 py-4 border-t border-ag-dark-border flex-shrink-0 bg-ag-dark-surface">
-        <button
-          onClick={handleSave}
-          disabled={isSaving || isLoading}
-          className="w-full bg-ag-dark-accent text-white py-2 px-4 rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <Save className="w-4 h-4" />
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </button>
-      </div>
-
-      {/* Training Data Modal */}
-      {selectedRowIndex !== null && (
-        <HeuristicsTrainingDataModal
-          isOpen={isTrainingDataModalOpen}
-          onClose={() => {
-            setIsTrainingDataModalOpen(false);
-            setSelectedRowIndex(null);
-            setExistingTrainingData(null);
-          }}
-          onSave={handleSaveTrainingData}
-          thenColumnName={columnNames[0] || 'Then'}
-          thenColumnValue={rows[selectedRowIndex]?.[0] || ''}
-          ifColumnValue={rows[selectedRowIndex]?.[1] || ''}
-          ruleNumber={selectedRowIndex + 1}
-          populatedRows={getPopulatedRows()}
-          existingTrainingData={existingTrainingData}
-        />
       )}
     </div>
   );
 };
-

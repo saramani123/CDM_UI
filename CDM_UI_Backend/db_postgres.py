@@ -148,6 +148,36 @@ def init_db():
                 except Exception as e:
                     # Column may already exist or table may not exist yet
                     print(f"Migration note: {e}")
+            # One-time data reset migration for heuristics detail schema V2 rollout.
+            # Keeps rows/metadata intact while wiping incompatible legacy rule payloads.
+            try:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE IF NOT EXISTS app_migrations (
+                            name VARCHAR PRIMARY KEY,
+                            applied_at TIMESTAMP DEFAULT NOW()
+                        )
+                        """
+                    )
+                )
+                conn.commit()
+                migration_name = "2026_04_27_reset_heuristics_detaildata_to_null"
+                exists = conn.execute(
+                    text("SELECT 1 FROM app_migrations WHERE name = :name LIMIT 1"),
+                    {"name": migration_name},
+                ).first()
+                if not exists:
+                    conn.execute(text("UPDATE heuristics SET detailData = NULL"))
+                    conn.execute(
+                        text("INSERT INTO app_migrations(name) VALUES (:name)"),
+                        {"name": migration_name},
+                    )
+                    conn.commit()
+                    print("✅ Applied migration: reset heuristics.detailData to NULL")
+            except Exception as e:
+                conn.rollback()
+                print(f"Migration note: heuristics detail reset skipped: {e}")
         
         # Create session factory
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

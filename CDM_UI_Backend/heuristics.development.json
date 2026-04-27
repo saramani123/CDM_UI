@@ -7,7 +7,8 @@
     "agent": "Metadata Analyzer",
     "procedure": "Identify Source Format",
     "rules": "11",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "2",
@@ -17,7 +18,8 @@
     "agent": "Key Finder",
     "procedure": "Identify Keys from Metadata or Documentation",
     "rules": "7",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "3",
@@ -27,7 +29,8 @@
     "agent": "Key Finder",
     "procedure": "Identify Keys from Metadata Metrics",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "5",
@@ -37,7 +40,8 @@
     "agent": "Format Converter",
     "procedure": "Classify Format-V-I into Format-V-II using these rules",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "6",
@@ -48,17 +52,7 @@
     "procedure": "Classify Source Tables into Tiers for Databases",
     "rules": "24",
     "best": "",
-    "detailData": "{\"columns\":[\"Tier\",\"If\"],\"rows\":[[\"Anchor\",\"File name matches Avatar Meme in CDM\"],[\"Anchor\",\"File name matches Avatar Variant in CDM\"],[\"Anchor\",\"File name matches synonym of Meme or Variant\"],[\"Anchor\",\"File name is a common business noun\"],[\"Anchor\",\"File header matches Avatar Meme in CDM\"],[\"Anchor\",\"File header matches Avatar Variant in CDM\"],[\"Anchor\",\"File header matches synonym of Meme or Variant\"],[\"Anchor\",\"File header is a common business noun\"],[\"Anchor\",\"Focus name matches Avatar Meme in CDM\"],[\"Anchor\",\"Focus name matches Avatar Variant in CDM\"],[\"Anchor\",\"Focus name matches synonym of Meme or Variant\"],[\"Anchor\",\"Focus name is a common business noun\"],[\"Anchor\",\"Column Format-V is ID\"],[\"Anchor\",\"Column name matches Avatar Meme in CDM\"],[\"Anchor\",\"Column name matches Avatar Variant in CDM\"],[\"Anchor\",\"Column name matches synonym of Meme or Variant\"],[\"Anchor\",\"Column name is a common business noun\"],[\"Auxiliary\",\"Column name includes name of Anchor\"],[\"Auxiliary\",\"Column name includes Meme of Subordinate in CDM\"],[\"Auxiliary\",\"Column name includes Variant of Subordinate in CDM\"],[\"Auxiliary\",\"Column name contains a component word (Address, Email)\"],[\"Auxiliary\",\"Column name cotains a detail word (Info, History)\"],[\"Auxiliary\",\"Column name has 2 nouns (CustomerContact)\"],[\"Auxiliary\",\"Column name contains a noun and qualifier (OrderLine)\"]],\"trainingData\":{\"rule_0\":{\"numberOfColumns\":4,\"columns\":[\"Tier\",\"Rule\",\"Depth\",\"Breadth\",\"Card\",\"Width\"],\"rows\":[[\"Anchor\",\"1\",\"1\",\"1\",\"10000\",\"10000\"],[\"Anchor\",\"1\",\"0.95\",\"0.02\",\"3\",\"10000\"],[\"Anchor\",\"1\",\"1\",\"1\",\"50000\",\"50000\"],[\"Anchor\",\"1\",\"1\",\"0.001\",\"2\",\"50000\"],[\"Anchor\",\"1\",\"1\",\"0.6\",\"3000\",\"5000\"],[\"Anchor\",\"1\",\"1\",\"0.05\",\"3\",\"5000\"],[\"Anchor\",\"1\",\"0.99\",\"0.98\",\"15000\",\"15000\"],[\"Anchor\",\"1\",\"1\",\"0.95\",\"1800\",\"2000\"],[\"Anchor\",\"1\",\"1\",\"1\",\"10000\",\"10000\"],[\"Anchor\",\"1\",\"0.99\",\"0.02\",\"10\",\"10000\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"],[\"Anchor\",\"1\",\"\",\"\",\"\",\"\"]]}}}"
-  },
-  {
-    "id": "7",
-    "sector": "All",
-    "domain": "All",
-    "country": "All",
-    "agent": "Table Organizer",
-    "procedure": "Identify and Classify Apparent tables within Files",
-    "rules": "",
-    "best": ""
+    "detailData": null
   },
   {
     "id": "9",
@@ -68,7 +62,8 @@
     "agent": "Object Modeler",
     "procedure": "Organize Auxiliaries into Subordinates and map them to their LOM Objects",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "10",
@@ -78,7 +73,8 @@
     "agent": "Object Modeler",
     "procedure": "Map Orphans to best suitable Object",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "11",
@@ -88,7 +84,8 @@
     "agent": "Object Modeler",
     "procedure": "Organize actual and phantom Accessories into Supplements",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "12",
@@ -98,7 +95,8 @@
     "agent": "Object Modeler",
     "procedure": "Establish LOM Relationships",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "13",
@@ -108,7 +106,8 @@
     "agent": "Object Modeler",
     "procedure": "Establish Roles in Relationships",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "14",
@@ -118,7 +117,8 @@
     "agent": "Variable Modeler",
     "procedure": "Establish Logical Variable Model (LVM) for each Object from Source Columns",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "15",
@@ -128,7 +128,8 @@
     "agent": "Variable Modeler",
     "procedure": "Identify Group Type for each Variable",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "16",
@@ -138,7 +139,8 @@
     "agent": "Variable Modeler",
     "procedure": "Assign Tight Group Keys",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "17",
@@ -148,7 +150,8 @@
     "agent": "List Standardizer",
     "procedure": "Establish list names for Logical List Model (LIM)",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "18",
@@ -158,7 +161,8 @@
     "agent": "List Standardizer",
     "procedure": "Establish LIM list values for Variables with  Format-V-II = Static",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "19",
@@ -168,7 +172,8 @@
     "agent": "List Standardizer",
     "procedure": "Create temporary Lists for Variables with Format-V-II = Specific",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "20",
@@ -178,7 +183,8 @@
     "agent": "List Standardizer",
     "procedure": "Establish LIM list values for Reference lists",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "21",
@@ -188,7 +194,8 @@
     "agent": "List Standardizer",
     "procedure": "Establish LIM list values for Flag lists",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "22",
@@ -198,7 +205,8 @@
     "agent": "List Standardizer",
     "procedure": "Map Source List values to LIM List values",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": null
   },
   {
     "id": "1768143014220-ugh562gcq",
@@ -208,7 +216,8 @@
     "agent": "Format S Converter",
     "procedure": "Task",
     "rules": "",
-    "best": ""
+    "best": "",
+    "detailData": "{\"schemaVersion\":2,\"ifColumns\":[{\"id\":\"if_1\",\"label\":\"format s\",\"order\":1},{\"id\":\"if_2\",\"label\":\"source format\",\"order\":2},{\"id\":\"if_3\",\"label\":\"column contains\",\"order\":3},{\"id\":\"if_4\",\"label\":\"llm knowledge\",\"order\":4}],\"thenColumns\":[{\"id\":\"then_1\",\"label\":\"format vi\",\"order\":1},{\"id\":\"then_2\",\"label\":\"format vii\",\"order\":2}],\"rows\":[{\"id\":\"rule_9003c589-2b4b-47ad-8f7a-3bba7e72cfb9\",\"if\":{\"if_1\":\"Date\",\"if_2\":\"\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"DateTime\",\"then_2\":\"Date\"}},{\"id\":\"rule_c7d6bacf-622a-4957-918f-ac075d080693\",\"if\":{\"if_1\":\"Date\",\"if_2\":\"Time, DateTime, Timestamp\",\"if_3\":\"\",\"if_4\":\"/= 0:00\"},\"then\":{\"then_1\":\"DateTime\",\"then_2\":\"Time\"}},{\"id\":\"rule_4e625ea0-97e2-4374-859a-702c64111587\",\"if\":{\"if_1\":\"Decimal\",\"if_2\":\"Numeric\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Number\",\"then_2\":\"Decimal\"}},{\"id\":\"rule_12660ccd-9865-4424-8fbb-f5cbff7f8952\",\"if\":{\"if_1\":\"Decimal\",\"if_2\":\"\",\"if_3\":\"Amount, Fee, Balance, Total\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Number\",\"then_2\":\"Currency\"}},{\"id\":\"rule_64317783-b93e-4cce-82a5-5119737b86c4\",\"if\":{\"if_1\":\"Decimal\",\"if_2\":\"\",\"if_3\":\"Percent, Rate\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Number\",\"then_2\":\"Percent\"}},{\"id\":\"rule_404add0e-c06b-4e3b-926f-683e6953d112\",\"if\":{\"if_1\":\"Integer\",\"if_2\":\"\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Number\",\"then_2\":\"Integer\"}},{\"id\":\"rule_be14ca12-0fee-4f29-9dca-37cfde873343\",\"if\":{\"if_1\":\"Integer\",\"if_2\":\"UUID, GUID, Key, ID, Unsigned\",\"if_3\":\"\",\"if_4\":\">0\"},\"then\":{\"then_1\":\"ID\",\"then_2\":\"ID\"}},{\"id\":\"rule_a757c852-78ac-40e1-bad0-a762eaf18d6b\",\"if\":{\"if_1\":\"String\",\"if_2\":\"ID, Alphanumeric\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"ID\",\"then_2\":\"ID\"}},{\"id\":\"rule_9137a7b1-5ed8-4560-8c74-48b33cec1d9a\",\"if\":{\"if_1\":\"String\",\"if_2\":\"Text, Char, VarChar\",\"if_3\":\"Name\",\"if_4\":\"\"},\"then\":{\"then_1\":\"ID\",\"then_2\":\"Name\"}},{\"id\":\"rule_45443088-a963-482f-90ec-40641879eb41\",\"if\":{\"if_1\":\"Integer\",\"if_2\":\"SmallInt\",\"if_3\":\"CLM List Name\",\"if_4\":\"\"},\"then\":{\"then_1\":\"List\",\"then_2\":\"Static\"}},{\"id\":\"rule_43c7fecf-5081-4222-bbfc-31f244c8400b\",\"if\":{\"if_1\":\"String\",\"if_2\":\"Enum\",\"if_3\":\"CLM List Name\",\"if_4\":\"\"},\"then\":{\"then_1\":\"List\",\"then_2\":\"Static\"}},{\"id\":\"rule_2e8897aa-ee15-4622-ba8f-b5d09189c100\",\"if\":{\"if_1\":\"String\",\"if_2\":\"Enum\",\"if_3\":\"Lookup\",\"if_4\":\"\"},\"then\":{\"then_1\":\"List\",\"then_2\":\"Specific\"}},{\"id\":\"rule_b2954ed5-937a-4017-802e-aac976164f80\",\"if\":{\"if_1\":\"Boolean\",\"if_2\":\"Bool\",\"if_3\":\"Is, Has, *ed, Flag\",\"if_4\":\"\"},\"then\":{\"then_1\":\"List\",\"then_2\":\"Flag\"}},{\"id\":\"rule_dd5245fe-d1bd-4357-bd12-6ff4e748f843\",\"if\":{\"if_1\":\"String\",\"if_2\":\"\",\"if_3\":\"Phone\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Special\",\"then_2\":\"Phone\"}},{\"id\":\"rule_95133530-1f94-4d09-ad12-29753bf847e5\",\"if\":{\"if_1\":\"String\",\"if_2\":\"\",\"if_3\":\"Email\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Special\",\"then_2\":\"Email\"}},{\"id\":\"rule_2cd2c3a0-5d50-4ae5-977a-b07de416f884\",\"if\":{\"if_1\":\"String\",\"if_2\":\"\",\"if_3\":\"URL, Link, Website, Handle\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Special\",\"then_2\":\"URL\"}},{\"id\":\"rule_61a7ac52-212a-4d5d-b7c8-cbeb9a533d6c\",\"if\":{\"if_1\":\"String\",\"if_2\":\"\",\"if_3\":\"Zip, Postal Code\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Special\",\"then_2\":\"Zip\"}},{\"id\":\"rule_11cbefbc-e105-4026-830b-81bdeed283af\",\"if\":{\"if_1\":\"String\",\"if_2\":\"Text, Char, VarChar\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Free\",\"then_2\":\"Text\"}},{\"id\":\"rule_60d97887-4f93-4bf6-84b9-3371ebb05acc\",\"if\":{\"if_1\":\"String\",\"if_2\":\"\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Free\",\"then_2\":\"JSON\"}},{\"id\":\"rule_99b93ecb-0007-4135-b46d-dfb6a42ea40b\",\"if\":{\"if_1\":\"String\",\"if_2\":\"Binary, Blob, Array, Map\",\"if_3\":\"\",\"if_4\":\"\"},\"then\":{\"then_1\":\"Free\",\"then_2\":\"Free\"}}]}"
   },
   {
     "id": "1771274239574-lp9fqnw4h",

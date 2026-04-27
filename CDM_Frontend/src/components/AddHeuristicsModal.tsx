@@ -11,7 +11,7 @@ interface AddHeuristicsModalProps {
     country: string;
     agent: string;
     procedure: string;
-    is_hero: boolean;
+    is_heuro: boolean;
   }) => Promise<void>;
 }
 
@@ -27,7 +27,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
     country: '',
     agent: '',
     procedure: '',
-    is_hero: false  // Default FALSE = non-RCPO (documentation-only)
+    is_heuro: false  // Default FALSE = non-HEURO (documentation-only)
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   };
 
   const handleToggleIsHero = () => {
-    setFormData(prev => ({ ...prev, is_hero: !prev.is_hero }));
+    setFormData(prev => ({ ...prev, is_heuro: !prev.is_heuro }));
     setError(null);
   };
 
@@ -72,11 +72,11 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
         country: formData.country,
         agent: formData.agent,
         procedure: formData.procedure.trim(),
-        is_hero: formData.is_hero
+        is_heuro: formData.is_heuro
       });
       
       // Reset form and close
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_hero: false });
+      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_heuro: false });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add heuristic item');
@@ -87,7 +87,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
   const handleClose = () => {
     if (!isSubmitting) {
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_hero: false });
+      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_heuro: false });
       setError(null);
       onClose();
     }
@@ -205,25 +205,25 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
             />
           </div>
 
-          {/* Is HERO Field - Toggle */}
+          {/* Is HEURO Field - Toggle */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Is HERO <span className="text-ag-dark-error">*</span>
+              Is HEURO <span className="text-ag-dark-error">*</span>
             </label>
             <div className="flex items-center">
               <button
                 type="button"
                 role="switch"
-                aria-checked={formData.is_hero}
+                aria-checked={formData.is_heuro}
                 onClick={handleToggleIsHero}
                 disabled={isSubmitting}
                 className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-ag-dark-accent focus:ring-offset-2 focus:ring-offset-ag-dark-surface disabled:opacity-50 ${
-                  formData.is_hero ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'
+                  formData.is_heuro ? 'bg-ag-dark-accent' : 'bg-ag-dark-border'
                 }`}
               >
                 <span
                   className={`pointer-events-none block h-5 w-5 shrink-0 rounded-full bg-white shadow ring-0 transition ${
-                    formData.is_hero ? 'translate-x-5' : 'translate-x-1'
+                    formData.is_heuro ? 'translate-x-5' : 'translate-x-1'
                   }`}
                 />
               </button>

@@ -292,6 +292,7 @@ function App() {
   
   // Heuristics tab state
   const [selectedHeuristicsRow, setSelectedHeuristicsRow] = useState<HeuristicsData | null>(null);
+  const [heuristicsPanelHasUnsaved, setHeuristicsPanelHasUnsaved] = useState(false);
   const [isAddHeuristicsOpen, setIsAddHeuristicsOpen] = useState(false);
   // Heuristics row order (UI only, persisted in localStorage; not sent to backend)
   const [heuristicsOrder, setHeuristicsOrder] = useState<string[] | null>(() => {
@@ -492,26 +493,26 @@ function App() {
       )
     },
     {
-      key: 'is_hero',
-      title: 'Is HERO',
+      key: 'is_heuro',
+      title: 'Is HEURO',
       sortable: true,
       filterable: true,
       width: '90px',
       render: (row: HeuristicsData) => (
-        <span className={row.is_hero !== false ? 'text-ag-dark-accent' : 'text-ag-dark-text-secondary'}>
-          {row.is_hero !== false ? 'Yes' : 'No'}
+        <span className={row.is_heuro !== false ? 'text-ag-dark-accent' : 'text-ag-dark-text-secondary'}>
+          {row.is_heuro !== false ? 'Yes' : 'No'}
         </span>
       )
     },
     {
-      key: 'rules',
+      key: 'rules_count',
       title: 'Rules',
       sortable: true,
       filterable: true,
       width: '120px',
       render: (row: HeuristicsData) =>
-        row.is_hero !== false ? (
-          <span>{row.rules || '0'}</span>
+        row.is_heuro !== false ? (
+          <span>{Array.isArray(row.rules) ? row.rules.length : (row.rules_count ?? row.rules ?? '0')}</span>
         ) : (
           <span className="text-ag-dark-text-secondary">Documentation</span>
         )
@@ -5141,7 +5142,7 @@ function App() {
     country: string;
     agent: string;
     procedure: string;
-    is_hero: boolean;
+    is_heuro: boolean;
   }) => {
     try {
       // Check for uniqueness: S + D + C + Agent + Procedure combination must be unique
@@ -5160,7 +5161,7 @@ function App() {
       // Generate a unique ID
       const newId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      // Create heuristic item via API; is_hero defaults to false in Add modal
+      // Create heuristic item via API; is_heuro defaults to false in Add modal
       await createHeuristicItem({
         id: newId,
         sector: heuristicsData.sector,
@@ -5170,7 +5171,7 @@ function App() {
         procedure: heuristicsData.procedure,
         rules: '',
         best: '',
-        is_hero: heuristicsData.is_hero
+        is_heuro: heuristicsData.is_heuro
       });
       
       // Note: createHeuristicItem already updates the state optimistically
@@ -5258,8 +5259,16 @@ function App() {
     reorderMetadata(metadataArray);
   };
 
+  const confirmLeaveHeuristicsPanel = () => {
+    if (!heuristicsPanelHasUnsaved) return true;
+    return window.confirm('You have unsaved changes. Leave without saving?');
+  };
+
   const handleHeuristicsRowClick = (row: HeuristicsData) => {
+    if (selectedHeuristicsRow?.id === row.id) return;
+    if (!confirmLeaveHeuristicsPanel()) return;
     setSelectedHeuristicsRow(row);
+    setHeuristicsPanelHasUnsaved(false);
   };
 
   const handleAddList = async (newListData: ListData) => {
@@ -6201,7 +6210,9 @@ function App() {
                         if (rows.length > 0) {
                           handleHeuristicsRowClick(rows[0] as HeuristicsData);
                         } else {
+                          if (!confirmLeaveHeuristicsPanel()) return;
                           setSelectedHeuristicsRow(null);
+                          setHeuristicsPanelHasUnsaved(false);
                         }
                       }}
                       onReorder={(newData) => {
@@ -6237,8 +6248,14 @@ function App() {
                     heuristicsItem={orderedHeuristics.find(h => h.id === selectedHeuristicsRow?.id) ?? selectedHeuristicsRow}
                     onSave={async () => {
                       await fetchHeuristics();
+                      setHeuristicsPanelHasUnsaved(false);
                     }}
-                    onClose={() => setSelectedHeuristicsRow(null)}
+                    onClose={() => {
+                      if (!confirmLeaveHeuristicsPanel()) return;
+                      setSelectedHeuristicsRow(null);
+                      setHeuristicsPanelHasUnsaved(false);
+                    }}
+                    onUnsavedChange={setHeuristicsPanelHasUnsaved}
                   />
                 </div>
               </div>
