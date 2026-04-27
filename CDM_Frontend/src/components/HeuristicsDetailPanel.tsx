@@ -55,6 +55,12 @@ function parseDetailDataForUi(raw: any): { ifColumns: HeuroColumnDef[]; thenColu
   return { ifColumns, thenColumns, rows };
 }
 
+function resolveIsHeuroFlag(item: any): boolean {
+  if (item?.is_heuro !== undefined && item?.is_heuro !== null) return item.is_heuro !== false;
+  if (item?.is_hero !== undefined && item?.is_hero !== null) return item.is_hero !== false;
+  return true;
+}
+
 export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   heuristicsItem,
   onSave,
@@ -152,7 +158,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     setCountry(heuristicsItem.country || 'ALL');
     setAgent(heuristicsItem.agent || '');
     setProcedure(heuristicsItem.procedure || '');
-    setIsHeuro(heuristicsItem.is_heuro !== false);
+    setIsHeuro(resolveIsHeuroFlag(heuristicsItem));
     setDocumentation(heuristicsItem.documentation ?? '');
     loadHeuristic();
   }, [heuristicsItem?.id]);
@@ -163,7 +169,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     setError(null);
     try {
       const item: any = await apiService.getHeuristicItem(heuristicsItem.id);
-      setIsHeuro(item.is_heuro !== false);
+      setIsHeuro(resolveIsHeuroFlag(item));
       setDocumentation(item.documentation ?? '');
       setLegacyNotice(Boolean(item.has_legacy_detail_data));
 
@@ -313,7 +319,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
 
   const persistPanel = async (deletedIfIds: string[], deletedThenIds: string[]) => {
     if (!heuristicsItem) return;
-    if (!validateDefinition()) return;
+    if (isHeuro && !validateDefinition()) return;
     setIsSaving(true);
     setError(null);
     try {
@@ -328,6 +334,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           country,
           agent,
           procedure,
+          is_hero: false as any,
           is_heuro: false,
           documentation,
         });
@@ -372,6 +379,7 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           country,
           agent,
           procedure,
+          is_hero: true as any,
           is_heuro: true,
           detailData: JSON.stringify(detailData),
         });
