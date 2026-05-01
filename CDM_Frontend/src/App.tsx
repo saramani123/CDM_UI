@@ -479,17 +479,26 @@ function App() {
         }}>{row.country === 'All' || row.country === 'all' ? 'ALL' : row.country}</span>
       )
     },
-    { key: 'agent', title: 'Agent', sortable: true, filterable: true, width: '200px' },
-    { 
-      key: 'procedure', 
-      title: 'Procedure', 
-      sortable: true, 
-      filterable: true, 
+    {
+      key: 'agent',
+      title: 'Agent',
+      sortable: true,
+      filterable: true,
+      width: '200px',
+      render: (row: HeuristicsData) => (
+        <span className="font-bold text-xl leading-snug" style={{ color: '#FFA500' }}>
+          {row.agent || '-'}
+        </span>
+      )
+    },
+    {
+      key: 'procedure',
+      title: 'Procedure',
+      sortable: true,
+      filterable: true,
       width: '300px',
       render: (row: HeuristicsData) => (
-        <span className="font-bold" style={{ color: '#FFA500' }}>
-          {row.procedure || '-'}
-        </span>
+        <span className="text-base font-normal leading-snug">{row.procedure || '-'}</span>
       )
     },
     {
