@@ -1,14 +1,13 @@
-// Utility functions for managing driver abbreviations
-// Abbreviations are stored in localStorage (frontend-only, not persisted to Neo4j)
-// 
-// IMPORTANT: This storage key MUST NEVER change to ensure abbreviations persist across deployments.
-// Changing this key would cause all user abbreviations to be lost.
-// Abbreviations are stored per-browser and persist automatically across deployments.
+// Utility functions for reading driver abbreviations.
+//
+// Abbreviations are OPTIONAL properties stored on the Sector/Domain/Country nodes
+// in Neo4j (the source of truth). They are loaded into an in-memory cache at app
+// startup (and refreshed after edits) so the grids can resolve them synchronously.
+// When an abbreviation exists for a given value it is what the S/D/C columns show.
 
 import { ColumnType } from '../data/driversData';
 import { getDriversData } from '../data/mockData';
-
-const STORAGE_KEY = 'cdm_driver_abbreviations';
+import { apiService } from '../services/api';
 
 export interface DriverAbbreviations {
   sectors: Record<string, string>; // { "Transportation": "Transp.", ... }
@@ -16,36 +15,52 @@ export interface DriverAbbreviations {
   countries: Record<string, string>;
 }
 
-// Get all abbreviations from localStorage
+// In-memory cache, populated from the backend node properties.
+let abbreviationCache: DriverAbbreviations = {
+  sectors: {},
+  domains: {},
+  countries: {}
+};
+
+// Get all abbreviations from the in-memory cache.
 export const getDriverAbbreviations = (): DriverAbbreviations => {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        sectors: parsed.sectors || {},
-        domains: parsed.domains || {},
-        countries: parsed.countries || {}
-      };
-    }
-  } catch (error) {
-    console.error('Error loading driver abbreviations:', error);
-  }
-  
   return {
-    sectors: {},
-    domains: {},
-    countries: {}
+    sectors: { ...abbreviationCache.sectors },
+    domains: { ...abbreviationCache.domains },
+    countries: { ...abbreviationCache.countries }
   };
 };
 
-// Save abbreviations to localStorage
+// Replace the in-memory cache (used internally after loading from backend).
 export const saveDriverAbbreviations = (abbreviations: DriverAbbreviations): void => {
+  abbreviationCache = {
+    sectors: { ...(abbreviations.sectors || {}) },
+    domains: { ...(abbreviations.domains || {}) },
+    countries: { ...(abbreviations.countries || {}) }
+  };
+};
+
+// Load abbreviations from the Neo4j-backed driver nodes into the cache.
+export const loadDriverAbbreviationsFromBackend = async (): Promise<DriverAbbreviations> => {
+  const next: DriverAbbreviations = { sectors: {}, domains: {}, countries: {} };
+  const types: ColumnType[] = ['sectors', 'domains', 'countries'];
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(abbreviations));
+    const results = await Promise.all(
+      types.map(t => apiService.getDriverDetails(t).catch(() => []))
+    );
+    types.forEach((type, i) => {
+      const list = Array.isArray(results[i]) ? (results[i] as any[]) : [];
+      list.forEach(item => {
+        if (item && item.name && item.abbreviation) {
+          (next as any)[type][item.name] = item.abbreviation;
+        }
+      });
+    });
   } catch (error) {
-    console.error('Error saving driver abbreviations:', error);
+    console.error('Error loading driver abbreviations from backend:', error);
   }
+  abbreviationCache = next;
+  return getDriverAbbreviations();
 };
 
 // Get abbreviation for a specific driver

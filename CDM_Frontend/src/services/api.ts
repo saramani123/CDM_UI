@@ -2,7 +2,7 @@
 
 // Determine API base URL based on environment
 const getApiBaseUrl = () => {
-  // In production (Vercel), use the backend URL from environment
+  // In production (Render), use the backend URL from environment
   if (import.meta.env.PROD) {
     return import.meta.env.VITE_API_BASE_URL || 'https://cdm-backend.onrender.com/api/v1';
   }
@@ -773,6 +773,10 @@ class ApiService {
   // Drivers API
   async getDrivers(type: string) {
     return this.request(`/drivers/${type}`);
+  }
+
+  async getDriverDetails(type: string) {
+    return this.request(`/drivers/${type}/details`);
   }
 
   async createDriver(type: string, driverData: any) {

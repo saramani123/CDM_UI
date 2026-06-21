@@ -63,6 +63,48 @@ class DeleteAdditionalForTargetsRequest(BaseModel):
 
 router = APIRouter()
 
+
+def get_existing_driver_names(session) -> Dict[str, set]:
+    """Return the set of defined driver values per dimension from Neo4j nodes."""
+    return {
+        "sector": {r["name"] for r in session.run("MATCH (s:Sector) RETURN s.name as name") if r.get("name")},
+        "domain": {r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name as name") if r.get("name")},
+        "country": {r["name"] for r in session.run("MATCH (c:Country) RETURN c.name as name") if r.get("name")},
+    }
+
+
+def find_undefined_drivers(session, sectors, domains, countries) -> Dict[str, List[str]]:
+    """
+    Return a map of {dimension: [undefined values]} for any non-ALL driver value
+    that is not already defined as a Neo4j node. 'ALL' is a UI convenience and is
+    always allowed. Drivers are defined exclusively via the Metadata Drivers editor;
+    they are never auto-created here.
+    """
+    existing = get_existing_driver_names(session)
+    missing: Dict[str, List[str]] = {}
+    for dim, values in (("sector", sectors), ("domain", domains), ("country", countries)):
+        bad = [
+            v for v in (values or [])
+            if v and v != "ALL" and v not in existing[dim]
+        ]
+        if bad:
+            missing[dim] = bad
+    return missing
+
+
+def _format_undefined_driver_error(missing: Dict[str, List[str]]) -> str:
+    parts = []
+    label = {"sector": "Sector", "domain": "Domain", "country": "Country"}
+    for dim in ("sector", "domain", "country"):
+        if missing.get(dim):
+            parts.append(f"{label[dim]}: {', '.join(missing[dim])}")
+    return (
+        "The following driver value(s) are not defined in the Metadata Drivers editor: "
+        + "; ".join(parts)
+        + ". Please add them in the Metadata tab before using them."
+    )
+
+
 def _parse_driver_string_by_scope(session, driver_string: str) -> Dict[str, List[str]]:
     """Parse driver string into Sector/Domain/Country token buckets."""
     tokens = [t.strip() for t in (driver_string or "").split(",") if t.strip()]
@@ -106,66 +148,33 @@ def create_default_relationships_for_object(session, source_object_id: str, sour
     - Frequency = Possible
     - Role = source object name (default role word)
     """
-    # Get all existing objects
-    result = session.run("""
-        MATCH (o:Object)
-        RETURN o.id as id, o.object as object, o.being as being, o.avatar as avatar
-    """)
-    
-    all_objects = [record for record in result]
-    
-    relationships_created = 0
-    
-    for target_obj in all_objects:
-        target_id = target_obj["id"]
-        target_being = target_obj.get("being", "ALL")
-        target_avatar = target_obj.get("avatar", "ALL")
-        target_object_name = target_obj.get("object", "ALL")
-        
-        # Determine relationship type
-        is_self = source_object_id == target_id
-        relationship_type = "Intra-Table" if is_self else "Inter-Table"
-        frequency = "Possible"
-        role = source_object_name  # Default role word is source object name
-        
-        # Check if relationship already exists (shouldn't for new objects, but be safe)
-        existing_check = session.run("""
-            MATCH (source:Object {id: $source_id})-[r:RELATES_TO]->(target:Object {id: $target_id})
-            WHERE r.role = $role
-            RETURN count(r) as count
-        """, source_id=source_object_id, target_id=target_id, role=role).single()
-        
-        if existing_check and existing_check["count"] > 0:
-            continue  # Skip if already exists
-        
-        # Create default relationship
-        relationship_id = str(uuid.uuid4())
-        session.run("""
-            MATCH (source:Object {id: $source_id})
-            MATCH (target:Object {id: $target_id})
-            CREATE (source)-[:RELATES_TO {
-                id: $relationship_id,
-                type: $relationship_type,
-                role: $role,
-                frequency: $frequency,
-                toBeing: $to_being,
-                toAvatar: $to_avatar,
-                toObject: $to_object
-            }]->(target)
-        """, 
-            source_id=source_object_id,
-            target_id=target_id,
-            relationship_id=relationship_id,
-            relationship_type=relationship_type,
-            role=role,
-            frequency=frequency,
-            to_being=target_being,
-            to_avatar=target_avatar,
-            to_object=target_object_name
-        )
-        relationships_created += 1
-    
-    return relationships_created
+    # Create all default edges (source -> every object, including itself) in a SINGLE
+    # Cypher statement. The previous implementation issued an existence check + a create
+    # per target object, which is O(N) round trips per new object and O(N^2) for a CSV
+    # import -- the cause of CSV upload timeouts. Doing it server-side is one round trip.
+    result = session.run(
+        """
+        MATCH (source:Object {id: $source_id})
+        MATCH (target:Object)
+        OPTIONAL MATCH (source)-[existing:RELATES_TO {role: $role}]->(target)
+        WITH source, target, existing
+        WHERE existing IS NULL
+        CREATE (source)-[:RELATES_TO {
+            id: randomUUID(),
+            type: CASE WHEN target.id = $source_id THEN 'Intra-Table' ELSE 'Inter-Table' END,
+            role: $role,
+            frequency: 'Possible',
+            toBeing: coalesce(target.being, 'ALL'),
+            toAvatar: coalesce(target.avatar, 'ALL'),
+            toObject: coalesce(target.object, 'ALL')
+        }]->(target)
+        RETURN count(*) as created
+        """,
+        source_id=source_object_id,
+        role=source_object_name,
+    ).single()
+
+    return int(result["created"]) if result and result["created"] is not None else 0
 
 
 def get_additional_relationship_count(session, object_id: str) -> int:
@@ -681,6 +690,14 @@ async def create_object(object_data: ObjectCreateRequest):
             country_str = "ALL" if "ALL" in object_data.country else ", ".join(object_data.country)
             clarifier_str = "None"
             driver_string = f"{sector_str}, {domain_str}, {country_str}, {clarifier_str}"
+
+            # Hard validation: every non-ALL driver value must already be defined
+            # (as a Neo4j node) via the Metadata Drivers editor. Never auto-create.
+            missing = find_undefined_drivers(
+                session, object_data.sector, object_data.domain, object_data.country
+            )
+            if missing:
+                raise HTTPException(status_code=400, detail=_format_undefined_driver_error(missing))
             
             # Check for duplicate objects (same being, avatar, object, AND driver combination)
             existing = session.run("""
@@ -1231,6 +1248,18 @@ async def update_object(
             if has_driver:
                 print(f"DEBUG: Processing driver update")
                 driver_string = request_data.get('driver', '')
+
+                # Hard validation BEFORE mutating: every non-ALL driver value must
+                # already be defined as a Neo4j node via the Metadata Drivers editor.
+                _validation_buckets = _parse_driver_string_by_scope(session, driver_string)
+                _missing = find_undefined_drivers(
+                    session,
+                    _validation_buckets["sector"],
+                    _validation_buckets["domain"],
+                    _validation_buckets["country"],
+                )
+                if _missing:
+                    raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
                 
                 # Update the driver string on the object
                 session.run("""
@@ -2227,27 +2256,28 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     # Object Clarifier is no longer part of the model; tolerate legacy files silently.
                     legacy_object_clarifier = (row.get('Object Clarifier') or '').strip()
 
-                    # Validate driver values exist in database
-                    for sector_name in sector:
-                        if sector_name != "ALL":
-                            exists = session.run("MATCH (s:Sector {name: $name}) RETURN s", name=sector_name).single()
-                            if not exists:
-                                errors.append(f"Row {row_num}: Sector '{sector_name}' not found in drivers")
-                                continue
-
-                    for domain_name in domain:
-                        if domain_name != "ALL":
-                            exists = session.run("MATCH (d:Domain {name: $name}) RETURN d", name=domain_name).single()
-                            if not exists:
-                                errors.append(f"Row {row_num}: Domain '{domain_name}' not found in drivers")
-                                continue
-
-                    for country_name in country:
-                        if country_name != "ALL":
-                            exists = session.run("MATCH (c:Country {name: $name}) RETURN c", name=country_name).single()
-                            if not exists:
-                                errors.append(f"Row {row_num}: Country '{country_name}' not found in drivers")
-                                continue
+                    # Validate driver values against defined Neo4j nodes.
+                    # Undefined values do NOT create nodes and do NOT reject the row:
+                    # the affected dimension falls back to "ALL" and a warning is recorded.
+                    undefined = find_undefined_drivers(session, sector, domain, country)
+                    if undefined.get("sector"):
+                        errors.append(
+                            f"Row {row_num}: Sector value(s) {', '.join(undefined['sector'])} are not defined "
+                            f"in the Metadata Drivers editor - defaulting Sector to 'ALL'."
+                        )
+                        sector = ["ALL"]
+                    if undefined.get("domain"):
+                        errors.append(
+                            f"Row {row_num}: Domain value(s) {', '.join(undefined['domain'])} are not defined "
+                            f"in the Metadata Drivers editor - defaulting Domain to 'ALL'."
+                        )
+                        domain = ["ALL"]
+                    if undefined.get("country"):
+                        errors.append(
+                            f"Row {row_num}: Country value(s) {', '.join(undefined['country'])} are not defined "
+                            f"in the Metadata Drivers editor - defaulting Country to 'ALL'."
+                        )
+                        country = ["ALL"]
 
                     # Check for duplicate objects (full combination check)
                     # First, get the driver string to check for exact duplicates

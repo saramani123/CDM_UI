@@ -68,7 +68,7 @@ The backend uses `db.py` which:
 - Then it creates new relationships using `MERGE` (which prevents duplicates)
 - This means running it multiple times won't create duplicate relationships
 
-**Option A: Via API Endpoint (Recommended)**
+**Via API Endpoint (Recommended)**
 ```bash
 curl -X POST https://your-backend-url.onrender.com/api/v1/variables/backfill-driver-relationships
 ```
@@ -86,14 +86,6 @@ curl -X POST https://your-backend-url.onrender.com/api/v1/variables/backfill-dri
 }
 ```
 
-**Option B: Via Render Shell**
-1. Render Dashboard → `cdm-backend` → **Shell** tab
-2. Run:
-   ```bash
-   python migrate_variable_driver_relationships.py
-   ```
-3. Type `yes` when prompted
-
 **Why It's Safe to Run Multiple Times:**
 - The function `create_driver_relationships` in `routes/variables.py` first deletes ALL existing `IS_RELEVANT_TO` relationships for each variable (lines 28-49)
 - Then it creates new relationships using `MERGE`, which prevents duplicates
@@ -106,7 +98,7 @@ curl -X POST https://your-backend-url.onrender.com/api/v1/variables/backfill-dri
 
 ### Step 4: Deploy Frontend (CDM_Frontend)
 
-1. Go to Render Dashboard → `cdm-frontend` service (or Vercel if using Vercel)
+1. Go to Render Dashboard → `cdm-frontend` service
 2. Click **"Manual Deploy"** → **"Deploy latest commit"**
 3. Select the latest commit from `main` branch (commit: `bb9e5a5`)
 4. Wait for deployment to complete

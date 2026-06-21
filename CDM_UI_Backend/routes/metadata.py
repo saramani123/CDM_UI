@@ -253,6 +253,87 @@ def normalize_concept_name(concept: str) -> str:
     """Normalize concept name to handle variations"""
     return CONCEPT_NAME_MAP.get(concept, concept)
 
+# ---------------------------------------------------------------------------
+# Driver concepts (Sector / Domain / Country)
+#
+# These three metadata rows are special: their VALUES live exclusively as
+# Neo4j nodes (labels Sector/Domain/Country) so Objects/Variables/Lists can
+# have relationships to them. They are surfaced in the Metadata tab as
+# synthetic rows but are NEVER persisted to PostgreSQL/JSON. Editing happens
+# through the /drivers endpoints, not through the metadata store.
+# ---------------------------------------------------------------------------
+DRIVER_CONCEPTS = [
+    {"id": "drivers-sector", "concept": "Sector", "label": "Sector", "driverType": "sectors"},
+    {"id": "drivers-domain", "concept": "Domain", "label": "Domain", "driverType": "domains"},
+    {"id": "drivers-country", "concept": "Country", "label": "Country", "driverType": "countries"},
+]
+DRIVER_LAYER = "Drivers"
+DRIVER_CONCEPT_IDS = {dc["id"] for dc in DRIVER_CONCEPTS}
+DRIVER_CONCEPT_NAMES = {dc["concept"] for dc in DRIVER_CONCEPTS}
+
+
+def is_driver_metadata_id(item_id: str) -> bool:
+    """True if the given metadata id is one of the synthetic driver concept rows."""
+    return item_id in DRIVER_CONCEPT_IDS
+
+
+def get_driver_metadata_rows() -> List[dict]:
+    """
+    Build the three synthetic Sector/Domain/Country metadata rows from Neo4j.
+
+    The values shown in the detail modal (column 1) come straight from the
+    Neo4j driver nodes; column 2 (Abbreviation) is left blank here because
+    abbreviations are stored client-side (localStorage). These rows are
+    returned to the client for display but are never written to Postgres/JSON.
+    """
+    label_map = {"sectors": "Sector", "domains": "Domain", "countries": "Country"}
+    driver = get_driver()
+    rows: List[dict] = []
+
+    for dc in DRIVER_CONCEPTS:
+        items: List[tuple] = []  # (name, abbreviation)
+        if driver:
+            try:
+                label = label_map[dc["driverType"]]
+                with driver.session() as session:
+                    result = session.run(
+                        f"MATCH (d:{label}) "
+                        f"RETURN d.name as name, coalesce(d.abbreviation, '') as abbreviation "
+                        f"ORDER BY COALESCE(d.order, 999999), d.name"
+                    )
+                    items = [
+                        (r["name"], r["abbreviation"] or "")
+                        for r in result
+                        if r.get("name") and r["name"] != "ALL"
+                    ]
+            except Exception as e:
+                print(f"Error loading driver values for {dc['driverType']}: {e}")
+                items = []
+
+        names = [name for name, _ in items]
+        detail_data = {
+            "levels": 2,
+            "columns": [dc["label"], "Abbreviation"],
+            "rows": [[name, abbr] for name, abbr in items],
+        }
+
+        rows.append({
+            "id": dc["id"],
+            "layer": DRIVER_LAYER,
+            "concept": dc["concept"],
+            "sector": "",
+            "domain": "",
+            "country": "",
+            "number": str(len(names)),
+            "examples": ", ".join(names),
+            "isRequired": True,
+            "isDriverConcept": True,
+            "driverType": dc["driverType"],
+            "detailData": json.dumps(detail_data),
+        })
+
+    return rows
+
 def ensure_required_metadata_rows():
     """Ensure all required metadata rows exist with proper configuration"""
     # Load metadata without calling ensure_required_metadata_rows to avoid recursion
@@ -448,8 +529,14 @@ def load_metadata() -> List[dict]:
     else:
         metadata = load_metadata_json()
     
-    # Ensure required rows exist
-    return ensure_required_metadata_rows()
+    # Ensure required rows exist (persisted concepts only)
+    metadata = ensure_required_metadata_rows()
+
+    # Surface the synthetic Sector/Domain/Country driver rows (Neo4j-backed,
+    # never persisted to Postgres/JSON). Guard against any stale persisted
+    # copies that may exist from earlier states.
+    metadata = [m for m in metadata if m.get("id") not in DRIVER_CONCEPT_IDS]
+    return get_driver_metadata_rows() + metadata
 
 @router.get("/metadata")
 async def get_metadata():
@@ -884,6 +971,13 @@ async def get_grouping_values():
 async def get_metadata_item(item_id: str):
     """Get a specific metadata item by ID"""
     try:
+        # Driver concept rows are synthetic and Neo4j-backed (not in Postgres/JSON).
+        if is_driver_metadata_id(item_id):
+            row = next((r for r in get_driver_metadata_rows() if r["id"] == item_id), None)
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Metadata item with id {item_id} not found")
+            return row
+
         if POSTGRES_AVAILABLE:
             db = get_db_session()
             if db:
@@ -1008,6 +1102,14 @@ async def create_metadata_item(item: MetadataItem):
 async def update_metadata_item(item_id: str, update: MetadataUpdateRequest):
     """Update a metadata item by ID"""
     try:
+        # Driver concept rows are not editable through the metadata store;
+        # their values are managed via the /drivers endpoints (Neo4j nodes).
+        if is_driver_metadata_id(item_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Sector/Domain/Country values are managed via the Drivers editor and are not stored in metadata.",
+            )
+
         if POSTGRES_AVAILABLE:
             db = get_db_session()
             if db:
@@ -1084,6 +1186,13 @@ def is_required_metadata_item(layer: str, concept: str) -> bool:
 async def delete_metadata_item(item_id: str):
     """Delete a metadata item by ID - prevents deletion of required items"""
     try:
+        # Driver concept rows are required and cannot be deleted.
+        if is_driver_metadata_id(item_id):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete required metadata item. Sector/Domain/Country are managed via the Drivers editor.",
+            )
+
         if POSTGRES_AVAILABLE:
             db = get_db_session()
             if db:

@@ -98,6 +98,267 @@
       "domain": "Business Intelligence",
       "country": "France",
       "is_preset": false
+    },
+    {
+      "id": "src-preset-sap_s4hana",
+      "source_key": "sap_s4hana",
+      "name": "SAP S/4HANA",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-dynamics_365_finance",
+      "source_key": "dynamics_365_finance",
+      "name": "Microsoft Dynamics 365 Finance",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-sage_intacct",
+      "source_key": "sage_intacct",
+      "name": "Sage Intacct",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-sap_ecc",
+      "source_key": "sap_ecc",
+      "name": "SAP ECC",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-salesforce",
+      "source_key": "salesforce",
+      "name": "Salesforce",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-hubspot",
+      "source_key": "hubspot",
+      "name": "HubSpot",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-adyen",
+      "source_key": "adyen",
+      "name": "Adyen",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-paypal",
+      "source_key": "paypal",
+      "name": "PayPal",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-workiva",
+      "source_key": "workiva",
+      "name": "Workiva",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-active_disclosure",
+      "source_key": "active_disclosure",
+      "name": "Active Disclosure (Thomson Reuters)",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-blackline",
+      "source_key": "blackline",
+      "name": "BlackLine",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-coupa",
+      "source_key": "coupa",
+      "name": "Coupa",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-bill_com",
+      "source_key": "bill_com",
+      "name": "Bill.com",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-bloomberg",
+      "source_key": "bloomberg",
+      "name": "Bloomberg",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-blackrock_aladdin",
+      "source_key": "blackrock_aladdin",
+      "name": "BlackRock Aladdin",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-morningstar_direct",
+      "source_key": "morningstar_direct",
+      "name": "Morningstar Direct",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-factset",
+      "source_key": "factset",
+      "name": "FactSet",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-guidewire",
+      "source_key": "guidewire",
+      "name": "Guidewire",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-duck_creek",
+      "source_key": "duck_creek",
+      "name": "Duck Creek",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-cority",
+      "source_key": "cority",
+      "name": "Cority",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-metricstream",
+      "source_key": "metricstream",
+      "name": "MetricStream",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-energysys",
+      "source_key": "energysys",
+      "name": "EnergySys",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-energy_components",
+      "source_key": "energy_components",
+      "name": "Energy Components",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-cority_iir",
+      "source_key": "cority_iir",
+      "name": "Cority II&R",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-synergi",
+      "source_key": "synergi",
+      "name": "Synergi",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-prometheus_suite",
+      "source_key": "prometheus_suite",
+      "name": "Prometheus Suite",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-prometheus_pm",
+      "source_key": "prometheus_pm",
+      "name": "Prometheus PM",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-prometheus_scheduler",
+      "source_key": "prometheus_scheduler",
+      "name": "Prometheus Scheduler",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
+    },
+    {
+      "id": "src-preset-docuflow",
+      "source_key": "docuflow",
+      "name": "DocuFlow",
+      "sector": "",
+      "domain": "",
+      "country": "",
+      "is_preset": true
     }
   ],
   "ldm_rows": [

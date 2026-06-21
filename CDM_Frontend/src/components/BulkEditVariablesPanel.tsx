@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, ChevronDown, Database, Users, Key, Network, ArrowUpAZ, ArrowDownZA, Grid3x3, Copy } from 'lucide-react';
-import { getDriversData, concatenateDrivers } from '../data/mockData';
+import { concatenateDrivers } from '../data/mockData';
+import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
@@ -69,7 +70,8 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   }]);
   const [validationError, setValidationError] = useState<string>('');
 
-  const driversData = getDriversData();
+  // Live drivers source: reflects edits made in the Metadata Drivers editor immediately.
+  const { drivers: driversData } = useDrivers();
 
   
   // Modal state for add section value

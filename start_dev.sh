@@ -5,14 +5,6 @@
 
 echo "🔧 Starting CDM Platform Development Environment..."
 
-# Check if we're on dev branch
-current_branch=$(git branch --show-current)
-if [ "$current_branch" != "dev" ]; then
-    echo "⚠️  Warning: You're not on the 'dev' branch"
-    echo "Current branch: $current_branch"
-    echo "For development, run: git checkout dev"
-fi
-
 echo "✅ Starting development servers..."
 
 # Start Backend (in background)
@@ -47,8 +39,8 @@ echo ""
 echo "📝 Development Workflow:"
 echo "   1. Make changes in your code"
 echo "   2. Test locally"
-echo "   3. When ready: git checkout main && git merge dev"
-echo "   4. Deploy: ./deploy_to_production.sh"
+echo "   3. When ready: git add -A && git commit && git push origin main"
+echo "   4. Render auto-deploys both services from main"
 
 # Keep script running
 wait

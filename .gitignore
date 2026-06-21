@@ -30,6 +30,10 @@ venv_neo4j/
 *.log
 logs/
 
+# Backups
+*.backup
+*.bak
+
 # IDE
 .vscode/
 .idea/

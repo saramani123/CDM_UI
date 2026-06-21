@@ -22,7 +22,7 @@ def get_driver_label(driver_type: DriverType) -> str:
 async def get_drivers(driver_type: DriverType):
     """
     Get all drivers of a specific type.
-    Returns list of driver names.
+    Returns list of driver names (used to populate dropdowns).
     """
     driver = get_driver()
     if not driver:
@@ -40,6 +40,35 @@ async def get_drivers(driver_type: DriverType):
         print(f"Error querying {driver_type}: {e}")
         return []
 
+@router.get("/drivers/{driver_type}/details")
+async def get_driver_details(driver_type: DriverType):
+    """
+    Get all drivers of a specific type with their abbreviations.
+    Abbreviation is an optional property stored on the driver node; when present
+    it is what the grids display for that Sector/Domain/Country value.
+    Returns: [{ "name": str, "abbreviation": str }]
+    """
+    driver = get_driver()
+    if not driver:
+        return []
+
+    try:
+        label = get_driver_label(driver_type)
+        with driver.session() as session:
+            result = session.run(
+                f"MATCH (d:{label}) "
+                f"RETURN d.name as name, coalesce(d.abbreviation, '') as abbreviation, d.order as order "
+                f"ORDER BY COALESCE(d.order, 999999), d.name"
+            )
+            return [
+                {"name": r["name"], "abbreviation": r["abbreviation"] or ""}
+                for r in result
+                if r.get("name")
+            ]
+    except Exception as e:
+        print(f"Error querying {driver_type} details: {e}")
+        return []
+
 @router.post("/drivers/{driver_type}")
 async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
     """
@@ -54,6 +83,7 @@ async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
     name = driver_data.get("name", "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Driver name is required")
+    abbreviation = (driver_data.get("abbreviation") or "").strip()
     
     try:
         label = get_driver_label(driver_type)
@@ -68,11 +98,11 @@ async def create_driver(driver_type: DriverType, driver_data: Dict[str, Any]):
                 f"""
                 OPTIONAL MATCH (existing:{label})
                 WITH coalesce(max(existing.order), -1) + 1 as next_order
-                CREATE (d:{label} {{name: $name, order: next_order}})
+                CREATE (d:{label} {{name: $name, order: next_order, abbreviation: $abbreviation}})
                 """,
-                name=name
+                name=name, abbreviation=abbreviation
             )
-            return {"message": f"{label} '{name}' created successfully", "name": name}
+            return {"message": f"{label} '{name}' created successfully", "name": name, "abbreviation": abbreviation}
             
     except HTTPException:
         raise
@@ -118,11 +148,13 @@ async def update_driver(driver_type: DriverType, old_name: str, driver_data: Dic
     if not driver:
         raise HTTPException(status_code=503, detail="Neo4j connection not available")
     
-    new_name = driver_data.get("name", "").strip()
-    if not new_name:
-        raise HTTPException(status_code=400, detail="New driver name is required")
-    
-    if new_name == old_name:
+    # Name is optional: an abbreviation-only update keeps the existing name.
+    new_name = (driver_data.get("name") or "").strip() or old_name
+    abbreviation_provided = "abbreviation" in driver_data
+    abbreviation = (driver_data.get("abbreviation") or "").strip() if abbreviation_provided else None
+    renamed = new_name != old_name
+
+    if not renamed and not abbreviation_provided:
         return {"message": "No changes made", "name": new_name}
     
     try:
@@ -132,7 +164,17 @@ async def update_driver(driver_type: DriverType, old_name: str, driver_data: Dic
             old_driver = session.run(f"MATCH (d:{label} {{name: $old_name}}) RETURN d", old_name=old_name)
             if not old_driver.single():
                 raise HTTPException(status_code=404, detail=f"{label} '{old_name}' not found")
-            
+
+            # Apply abbreviation update (matched on the current/old name).
+            if abbreviation_provided:
+                session.run(
+                    f"MATCH (d:{label} {{name: $old_name}}) SET d.abbreviation = $abbreviation",
+                    old_name=old_name, abbreviation=abbreviation,
+                )
+
+            if not renamed:
+                return {"message": f"{label} '{old_name}' updated", "name": new_name, "abbreviation": abbreviation}
+
             # Check if new name already exists
             existing = session.run(f"MATCH (d:{label} {{name: $new_name}}) RETURN d", new_name=new_name)
             if existing.single():
@@ -215,7 +257,7 @@ async def update_driver(driver_type: DriverType, old_name: str, driver_data: Dic
                 """
             )
             
-            return {"message": f"{label} renamed from '{old_name}' to '{new_name}'", "name": new_name}
+            return {"message": f"{label} renamed from '{old_name}' to '{new_name}'", "name": new_name, "abbreviation": abbreviation}
             
     except HTTPException:
         raise
@@ -380,134 +422,127 @@ async def delete_driver(driver_type: DriverType, name: str):
             
             print(f"DEBUG: About to delete driver and update {len(affected_objects)} objects and {len(affected_variables)} variables")
             
-            # Check for potential duplicates after deletion
-            # This will help identify objects that might become duplicates
-            potential_duplicates = []
-            for obj in affected_objects:
-                current_driver = obj["driver"] or ""
-                if current_driver:
-                    # Parse the driver string and simulate removal of the deleted driver
-                    parts = [part.strip() for part in current_driver.split(',')]
-                    if len(parts) >= 4:
-                        if driver_type == "sectors":
-                            parts[0] = ""  # Clear sector
-                        elif driver_type == "domains":
-                            parts[1] = ""  # Clear domain
-                        elif driver_type == "countries":
-                            parts[2] = ""  # Clear country
-                    
-                    # Create the new driver string after removal
-                    new_driver = ", ".join([part for part in parts if part])
-                    
-                    # Check if any other object would have the same driver string after this change
-                    duplicate_check = session.run("""
-                        MATCH (o:Object)
-                        WHERE o.driver = $new_driver AND o.id <> $obj_id
-                        RETURN o.id as id, o.driver as driver, o.being as being,
-                               o.avatar as avatar, o.object as object
-                    """, new_driver=new_driver, obj_id=obj["id"])
-                    
-                    duplicates = list(duplicate_check)
-                    if duplicates:
-                        potential_duplicates.append({
-                            "original": obj,
-                            "new_driver": new_driver,
-                            "duplicates": duplicates
-                        })
-                        print(f"DEBUG: Object {obj['id']} would become duplicate with {len(duplicates)} other objects")
-            
-            print(f"DEBUG: Found {len(potential_duplicates)} objects that would become duplicates")
-            
+            # Sector/Domain/Country are REQUIRED on every Object/Variable/List (each must
+            # have at least one value). Before removing this driver value, any entity whose
+            # ONLY value in this dimension is the one being deleted must default to ALL --
+            # i.e. be connected to every remaining driver node of this type. Entities that
+            # still have another value in this dimension simply lose this one when the node
+            # is detached. (Clarifiers are single-value and handled by the denormalized
+            # string recompute below, which falls back to "None".)
+            defaulted_to_all = 0
+            if driver_type in ("sectors", "domains", "countries"):
+                # Objects: (driver)-[:RELEVANT_TO]->(Object)
+                rec = session.run(f"""
+                    MATCH (x:{label} {{name: $name}})-[:RELEVANT_TO]->(o:Object)
+                    OPTIONAL MATCH (other:{label})-[:RELEVANT_TO]->(o)
+                    WHERE other.name <> $name
+                    WITH o, count(other) AS others
+                    WHERE others = 0
+                    WITH DISTINCT o
+                    MATCH (rem:{label}) WHERE rem.name <> $name
+                    MERGE (rem)-[:RELEVANT_TO]->(o)
+                    RETURN count(DISTINCT o) AS c
+                """, name=name).single()
+                defaulted_to_all += int(rec["c"]) if rec and rec["c"] is not None else 0
+
+                # Variables: (driver)-[:IS_RELEVANT_TO]->(Variable)
+                rec = session.run(f"""
+                    MATCH (x:{label} {{name: $name}})-[:IS_RELEVANT_TO]->(v:Variable)
+                    OPTIONAL MATCH (other:{label})-[:IS_RELEVANT_TO]->(v)
+                    WHERE other.name <> $name
+                    WITH v, count(other) AS others
+                    WHERE others = 0
+                    WITH DISTINCT v
+                    MATCH (rem:{label}) WHERE rem.name <> $name
+                    MERGE (rem)-[:IS_RELEVANT_TO]->(v)
+                    RETURN count(DISTINCT v) AS c
+                """, name=name).single()
+                defaulted_to_all += int(rec["c"]) if rec and rec["c"] is not None else 0
+
+                # Lists: (driver)-[:IS_RELEVANT_TO]->(List)
+                rec = session.run(f"""
+                    MATCH (x:{label} {{name: $name}})-[:IS_RELEVANT_TO]->(l:List)
+                    OPTIONAL MATCH (other:{label})-[:IS_RELEVANT_TO]->(l)
+                    WHERE other.name <> $name
+                    WITH l, count(other) AS others
+                    WHERE others = 0
+                    WITH DISTINCT l
+                    MATCH (rem:{label}) WHERE rem.name <> $name
+                    MERGE (rem)-[:IS_RELEVANT_TO]->(l)
+                    RETURN count(DISTINCT l) AS c
+                """, name=name).single()
+                defaulted_to_all += int(rec["c"]) if rec and rec["c"] is not None else 0
+
+            print(f"DEBUG: Defaulted {defaulted_to_all} entities to ALL for {label} '{name}'")
+
             # Delete the driver node and all its relationships
             session.run(f"MATCH (d:{label} {{name: $name}}) DETACH DELETE d", name=name)
             
-            # Update affected Objects to remove the driver from their driver string
-            for obj in affected_objects:
-                current_driver = obj["driver"] or ""
-                if current_driver:
-                    # Parse the driver string and remove the deleted driver
-                    parts = [part.strip() for part in current_driver.split(',')]
-                    print(f"DEBUG: Original driver: '{current_driver}', parts: {parts}, len: {len(parts)}")
-                    if len(parts) >= 4:
-                        if driver_type == "sectors":
-                            parts[0] = ""  # Clear sector when deleted
-                            print(f"DEBUG: Cleared sector, parts now: {parts}")
-                        elif driver_type == "domains":
-                            parts[1] = ""  # Clear domain when deleted
-                            print(f"DEBUG: Cleared domain, parts now: {parts}")
-                        elif driver_type == "countries":
-                            parts[2] = ""  # Clear country when deleted
-                            print(f"DEBUG: Cleared country, parts now: {parts}")
-                        elif driver_type == "objectClarifiers":
-                            parts[3] = ""  # Clear object clarifier when deleted
-                            print(f"DEBUG: Cleared object clarifier, parts now: {parts}")
-                        
-                        # Ensure we have exactly 4 parts, but preserve empty fields
-                        while len(parts) < 4:
-                            if len(parts) == 0:
-                                parts.append("")  # sector
-                            elif len(parts) == 1:
-                                parts.append("")  # domain
-                            elif len(parts) == 2:
-                                parts.append("")  # country
-                            elif len(parts) == 3:
-                                parts.append("")  # object clarifier
-                        
-                        # Ensure we always have exactly 4 parts for objects
-                        while len(parts) < 4:
-                            parts.append("")  # Add empty string for missing parts
-                        
-                        # Join parts but handle empty fields properly
-                        # Replace empty strings with "-" for display
-                        display_parts = [part if part else "-" for part in parts]
-                        new_driver = ", ".join(display_parts)
-                        session.run("""
-                            MATCH (o:Object {id: $id})
-                            SET o.driver = $driver
-                        """, id=obj["id"], driver=new_driver)
-            
-            # Update affected Variables to remove the driver from their driver string
-            for var in affected_variables:
-                current_driver = var["driver"] or ""
-                if current_driver:
-                    # Parse the driver string and remove the deleted driver
-                    parts = [part.strip() for part in current_driver.split(',')]
-                    if len(parts) >= 3:  # Variables have 3 parts: sector, domain, country
-                        if driver_type == "sectors":
-                            parts[0] = ""  # Clear sector when deleted
-                        elif driver_type == "domains":
-                            parts[1] = ""  # Clear domain when deleted
-                        elif driver_type == "countries":
-                            parts[2] = ""  # Clear country when deleted
-                        
-                        # Ensure we have exactly 3 parts for variables, but preserve empty fields
-                        while len(parts) < 3:
-                            if len(parts) == 0:
-                                parts.append("")  # sector
-                            elif len(parts) == 1:
-                                parts.append("")  # domain
-                            elif len(parts) == 2:
-                                parts.append("")  # country
-                        
-                        # Ensure we always have exactly 3 parts for variables
-                        while len(parts) < 3:
-                            parts.append("")  # Add empty string for missing parts
-                        
-                        # Join parts but handle empty fields properly
-                        # Replace empty strings with "-" for display
-                        display_parts = [part if part else "-" for part in parts]
-                        new_driver = ", ".join(display_parts)
-                        session.run("""
-                            MATCH (v:Variable {id: $id})
-                            SET v.driver = $driver
-                        """, id=var["id"], driver=new_driver)
+            # Recompute denormalized driver strings from the (now-corrected) relationships
+            # so multi-value selections and ALL defaults are reflected consistently.
+            # Object driver string format: "Sector, Domain, Country, ObjectClarifier"
+            session.run(
+                """
+                MATCH (o:Object)
+                OPTIONAL MATCH (sec:Sector)-[:RELEVANT_TO]->(o)
+                WITH o, [n IN collect(DISTINCT sec.name) WHERE n IS NOT NULL] AS sectors
+                OPTIONAL MATCH (dom:Domain)-[:RELEVANT_TO]->(o)
+                WITH o, sectors, [n IN collect(DISTINCT dom.name) WHERE n IS NOT NULL] AS domains
+                OPTIONAL MATCH (cty:Country)-[:RELEVANT_TO]->(o)
+                WITH o, sectors, domains, [n IN collect(DISTINCT cty.name) WHERE n IS NOT NULL] AS countries
+                OPTIONAL MATCH (oc:ObjectClarifier)-[:RELEVANT_TO]->(o)
+                WITH
+                    o, sectors, domains, countries,
+                    coalesce(head([n IN collect(DISTINCT oc.name) WHERE n IS NOT NULL]), 'None') AS object_clarifier
+                WITH
+                    o,
+                    CASE WHEN size(sectors) = 0 OR 'ALL' IN sectors THEN 'ALL'
+                        ELSE reduce(t = '', n IN sectors | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS sector_display,
+                    CASE WHEN size(domains) = 0 OR 'ALL' IN domains THEN 'ALL'
+                        ELSE reduce(t = '', n IN domains | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS domain_display,
+                    CASE WHEN size(countries) = 0 OR 'ALL' IN countries THEN 'ALL'
+                        ELSE reduce(t = '', n IN countries | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS country_display,
+                    object_clarifier
+                SET o.driver = sector_display + ', ' + domain_display + ', ' + country_display + ', ' + object_clarifier
+                """
+            )
+
+            # Variable driver string format: "Sector, Domain, Country, VariableClarifier"
+            session.run(
+                """
+                MATCH (v:Variable)
+                OPTIONAL MATCH (sec:Sector)-[:IS_RELEVANT_TO]->(v)
+                WITH v, [n IN collect(DISTINCT sec.name) WHERE n IS NOT NULL] AS sectors
+                OPTIONAL MATCH (dom:Domain)-[:IS_RELEVANT_TO]->(v)
+                WITH v, sectors, [n IN collect(DISTINCT dom.name) WHERE n IS NOT NULL] AS domains
+                OPTIONAL MATCH (cty:Country)-[:IS_RELEVANT_TO]->(v)
+                WITH v, sectors, domains, [n IN collect(DISTINCT cty.name) WHERE n IS NOT NULL] AS countries
+                OPTIONAL MATCH (vc:VariableClarifier)-[:IS_RELEVANT_TO]->(v)
+                WITH
+                    v, sectors, domains, countries,
+                    coalesce(head([n IN collect(DISTINCT vc.name) WHERE n IS NOT NULL]), 'None') AS variable_clarifier
+                WITH
+                    v,
+                    CASE WHEN size(sectors) = 0 OR 'ALL' IN sectors THEN 'ALL'
+                        ELSE reduce(t = '', n IN sectors | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS sector_display,
+                    CASE WHEN size(domains) = 0 OR 'ALL' IN domains THEN 'ALL'
+                        ELSE reduce(t = '', n IN domains | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS domain_display,
+                    CASE WHEN size(countries) = 0 OR 'ALL' IN countries THEN 'ALL'
+                        ELSE reduce(t = '', n IN countries | t + CASE WHEN t = '' THEN '' ELSE ', ' END + n) END AS country_display,
+                    variable_clarifier
+                SET v.driver = sector_display + ', ' + domain_display + ', ' + country_display + ', ' + variable_clarifier
+                """
+            )
+            # Lists derive Sector/Domain/Country from relationships at read time, so no
+            # denormalized update is required for them.
             
             return {
                 "message": f"{label} '{name}' deleted successfully",
                 "affected_objects": affected_objects,
                 "affected_variables": affected_variables,
                 "affected_objects_count": len(affected_objects),
-                "affected_variables_count": len(affected_variables)
+                "affected_variables_count": len(affected_variables),
+                "defaulted_to_all_count": defaulted_to_all
             }
             
     except HTTPException:

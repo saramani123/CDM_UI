@@ -15,6 +15,7 @@ import { BulkListUploadModal } from './components/BulkListUploadModal';
 import { AddListPanel } from './components/AddListPanel';
 import { AddMetadataModal } from './components/AddMetadataModal';
 import { MetadataDetailModal } from './components/MetadataDetailModal';
+import { DriverConceptModal } from './components/DriverConceptModal';
 import { AddHeuristicsModal } from './components/AddHeuristicsModal';
 import { HeuristicsDetailPanel } from './components/HeuristicsDetailPanel';
 import { AddSourceCatalogModal } from './components/AddSourceCatalogModal';
@@ -28,7 +29,7 @@ import { mockObjectData, objectColumns, metadataFields, parseDriverField, parseD
 import { mockVariableData, variableColumns, variableMetadataFields, type VariableData } from './data/variablesData';
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
-import { removeDriverAbbreviation } from './utils/driverAbbreviations';
+import { removeDriverAbbreviation, loadDriverAbbreviationsFromBackend } from './utils/driverAbbreviations';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
@@ -44,8 +45,6 @@ import {
 import { parseSourceLdmCsvText } from './utils/sourceLdmCsv';
 import { normalizeOntologyType } from './constants/ontologyTypes';
 import { apiService } from './services/api';
-import { DriversColumn } from './components/DriversColumn';
-import { DriversMetadataPanel } from './components/DriversMetadataPanel';
 import { ListMetadataPanel } from './components/ListMetadataPanel';
 import { DriverDeleteModal } from './components/DriverDeleteModal';
 import { CustomSortModal } from './components/CustomSortModal';
@@ -193,6 +192,22 @@ function App() {
   
   // Use API hook for drivers data
   const { drivers: apiDrivers, loading: driversLoading, error: driversError, createDriver, updateDriver, deleteDriver } = useDrivers();
+
+  // Bumped whenever driver abbreviations are (re)loaded from the backend so grids
+  // re-render and pick up node-property abbreviations from the in-memory cache.
+  const [driverAbbrevVersion, setDriverAbbrevVersion] = useState(0);
+  const refreshDriverAbbreviations = React.useCallback(async () => {
+    await loadDriverAbbreviationsFromBackend();
+    setDriverAbbrevVersion((v) => v + 1);
+  }, []);
+  useEffect(() => {
+    // Load abbreviations once the backend has returned driver values.
+    if (!driversLoading) {
+      refreshDriverAbbreviations();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driversLoading]);
+  void driverAbbrevVersion;
   
   // Use API hook for variables data
   const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
@@ -288,6 +303,7 @@ function App() {
   // Metadata tab state
   const [isAddMetadataOpen, setIsAddMetadataOpen] = useState(false);
   const [isMetadataDetailModalOpen, setIsMetadataDetailModalOpen] = useState(false);
+  const [isDriverConceptModalOpen, setIsDriverConceptModalOpen] = useState(false);
   const [selectedMetadataRow, setSelectedMetadataRow] = useState<MetadataData | null>(null);
   
   // Heuristics tab state
@@ -342,7 +358,7 @@ function App() {
   }, [sourceMapSlots.source, sourceMapSlots.target]);
 
   // Required metadata concepts - handle both "Group-Type" and "G-Type", "List Set" and "Set", "List Grouping" and "Grouping"
-  const REQUIRED_METADATA_CONCEPTS = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping'];
+  const REQUIRED_METADATA_CONCEPTS = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping', 'Sector', 'Domain', 'Country'];
   const isRequiredMetadataItem = (concept: string) => {
     // Handle variations in concept names
     if (concept === 'Group-Type') return true;  // Also accept Group-Type
@@ -351,47 +367,13 @@ function App() {
     return REQUIRED_METADATA_CONCEPTS.includes(concept);
   };
 
+  // Driver concept rows (Sector/Domain/Country) are edited via a dedicated modal
+  // that writes to the Neo4j-backed /drivers endpoints, not the metadata store.
+  const isDriverConceptRow = (row: any) =>
+    !!row && (row.isDriverConcept === true || (row.layer === 'Drivers' && ['Sector', 'Domain', 'Country'].includes(row.concept)));
+
   // Metadata tab columns - larger widths for better visibility
   const metadataColumns = [
-    { 
-      key: 'sector', 
-      title: 'S', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: MetadataData) => {
-        const sector = (row as any).sector || '';
-        // Check for ALL in any case variation
-        const isAll = sector.toUpperCase() === 'ALL';
-        return <span>{isAll ? 'ALL' : sector || '-'}</span>;
-      }
-    },
-    { 
-      key: 'domain', 
-      title: 'D', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: MetadataData) => {
-        const domain = (row as any).domain || '';
-        // Check for ALL in any case variation
-        const isAll = domain.toUpperCase() === 'ALL';
-        return <span>{isAll ? 'ALL' : domain || '-'}</span>;
-      }
-    },
-    { 
-      key: 'country', 
-      title: 'C', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: MetadataData) => {
-        const country = (row as any).country || '';
-        // Check for ALL in any case variation
-        const isAll = country.toUpperCase() === 'ALL';
-        return <span>{isAll ? 'ALL' : country || '-'}</span>;
-      }
-    },
     { key: 'layer', title: 'Layer', sortable: true, filterable: true, width: '250px' },
     { 
       key: 'concept', 
@@ -415,16 +397,29 @@ function App() {
       render: (row: MetadataData) => {
         const examples = (row as any).examples || '';
         if (!examples || examples === '-') return <span>-</span>;
-        
-        // Split by comma and trim each value
-        const values = examples.split(',').map((v: string) => v.trim()).filter((v: string) => v);
-        
-        // Limit to 3 values
-        const displayValues = values.slice(0, 3);
-        const displayText = displayValues.join(', ');
-        
-        // Add ellipsis if there are more than 3 values
-        return <span>{displayText}{values.length > 3 ? '...' : ''}</span>;
+
+        // Show as many examples as fit in the (resizable) column; CSS adds an
+        // ellipsis only when the text overflows the available width.
+        const fullText = examples
+          .split(',')
+          .map((v: string) => v.trim())
+          .filter((v: string) => v)
+          .join(', ');
+
+        return (
+          <span
+            title={fullText}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {fullText}
+          </span>
+        );
       }
     }
   ];
@@ -1248,14 +1243,15 @@ function App() {
 
   // Dynamic tabs with calculated counts
   const dynamicTabs = useMemo(() => [
-    { id: 'drivers', label: 'Drivers', count: driversCount },
+    // Drivers (Sector/Domain/Country) are now managed from the Metadata tab; the
+    // standalone Drivers tab has been deprecated.
     { id: 'metadata', label: 'Metadata' },
     { id: 'objects', label: 'Objects', count: objectsCount },
     { id: 'variables', label: 'Variables', count: variablesCount },
     { id: 'lists', label: 'Lists', count: 45 }, // Keep lists as static for now
     { id: 'heuristics', label: 'Heuristics' },
     { id: 'sources', label: 'Sources' }
-  ], [driversCount, objectsCount, variablesCount]);
+  ], [objectsCount, variablesCount]);
   const [selectedItem, setSelectedItem] = useState<string | undefined>();
 
   // Sync API objects data with local state
@@ -5045,6 +5041,48 @@ function App() {
 
   const handleBulkListUpload = async (lists: ListData[]) => {
     try {
+      // Drivers are defined exclusively via the Metadata Drivers editor. For CSV
+      // uploads, any undefined Sector/Domain/Country value is defaulted to "ALL"
+      // (with a warning) rather than implicitly creating a new driver node.
+      const definedSectors = new Set((apiDrivers?.sectors || []).filter(v => v !== 'ALL'));
+      const definedDomains = new Set((apiDrivers?.domains || []).filter(v => v !== 'ALL'));
+      const definedCountries = new Set((apiDrivers?.countries || []).filter(v => v !== 'ALL'));
+      const driverWarnings: string[] = [];
+
+      const normalizeDimension = (
+        rowLabel: string,
+        dimLabel: string,
+        raw: string[] | string | undefined,
+        defined: Set<string>,
+      ): string[] => {
+        const values = Array.isArray(raw) ? raw : [raw || 'ALL'];
+        if (values.length === 1 && values[0] === 'ALL') return ['ALL'];
+        const bad = values.filter(v => v && v !== 'ALL' && !defined.has(v));
+        if (bad.length > 0) {
+          driverWarnings.push(
+            `${rowLabel}: ${dimLabel} value(s) ${bad.join(', ')} are not defined in the Metadata Drivers editor - defaulting ${dimLabel} to "ALL".`,
+          );
+          return ['ALL'];
+        }
+        return values;
+      };
+
+      lists.forEach((listData, idx) => {
+        const rowLabel = `List "${listData.list || `row ${idx + 1}`}"`;
+        (listData as any).sector = normalizeDimension(rowLabel, 'Sector', listData.sector as any, definedSectors);
+        (listData as any).domain = normalizeDimension(rowLabel, 'Domain', listData.domain as any, definedDomains);
+        (listData as any).country = normalizeDimension(rowLabel, 'Country', listData.country as any, definedCountries);
+      });
+
+      if (driverWarnings.length > 0) {
+        const preview = driverWarnings.slice(0, 8);
+        const remaining = Math.max(0, driverWarnings.length - preview.length);
+        alert(
+          `Some driver values were not defined and have been defaulted to "ALL":\n\n- ${preview.join('\n- ')}` +
+            (remaining > 0 ? `\n- ...and ${remaining} more` : ''),
+        );
+      }
+
       // Create each list via API
       const firstListInfo = lists.length > 0 ? {
         sector: Array.isArray(lists[0].sector) 
@@ -5242,7 +5280,11 @@ function App() {
 
   const handleMetadataRowClick = (row: MetadataData) => {
     setSelectedMetadataRow(row);
-    setIsMetadataDetailModalOpen(true);
+    if (isDriverConceptRow(row)) {
+      setIsDriverConceptModalOpen(true);
+    } else {
+      setIsMetadataDetailModalOpen(true);
+    }
   };
 
   const handleDeleteMetadata = async (id: string) => {
@@ -6562,56 +6604,6 @@ function App() {
               </div>
             )}
           </div>
-        ) : activeTab === 'drivers' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-            {/* Drivers Columns */}
-            <div className="lg:col-span-3 flex flex-col h-full bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 flex-1 min-h-0 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-                <DriversColumn
-                  title="Sector"
-                  items={driversState.sectors}
-                  onHeaderClick={() => handleColumnHeaderClick('sectors')}
-                  onItemClick={(item) => handleItemClick('sectors', item)}
-                  onReorder={(newOrder) => handleDriversReorder('sectors', newOrder)}
-                  selectedItem={selectedColumn === 'sectors' ? selectedItem : undefined}
-                  canAddNew={true}
-                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'sectors')}
-                />
-                <DriversColumn
-                  title="Domain"
-                  items={driversState.domains}
-                  onHeaderClick={() => handleColumnHeaderClick('domains')}
-                  onItemClick={(item) => handleItemClick('domains', item)}
-                  onReorder={(newOrder) => handleDriversReorder('domains', newOrder)}
-                  selectedItem={selectedColumn === 'domains' ? selectedItem : undefined}
-                  canAddNew={true}
-                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'domains')}
-                />
-                <DriversColumn
-                  title="Country"
-                  items={driversState.countries}
-                  onHeaderClick={() => handleColumnHeaderClick('countries')}
-                  onItemClick={(item) => handleItemClick('countries', item)}
-                  onReorder={(newOrder) => handleDriversReorder('countries', newOrder)}
-                  selectedItem={selectedColumn === 'countries' ? selectedItem : undefined}
-                  canAddNew={true}
-                  onDeleteItem={(item) => handleDriverDeleteClick(item, 'countries')}
-                />
-              </div>
-            </div>
-
-            {/* Drivers Metadata Panel */}
-            <div className="lg:col-span-1 bg-ag-dark-bg" style={{backgroundColor: '#1a1d23'}}>
-              <DriversMetadataPanel
-                title={selectedColumn ? `${columnLabels[selectedColumn]} Metadata` : 'Metadata'}
-                selectedColumn={selectedColumn}
-                selectedItem={selectedItem}
-                onSave={handleDriversSave}
-                onAddNew={handleDriversAddNew}
-                canAddNew={true}
-              />
-            </div>
-          </div>
         ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 relative" style={{ height: '100%' }}>
           {/* Data Grid */}
@@ -7539,6 +7531,20 @@ function App() {
         }}
         metadataItem={selectedMetadataRow}
         onSave={async () => {
+          await fetchMetadata();
+        }}
+      />
+
+      {/* Driver Concept Modal (Sector / Domain / Country) */}
+      <DriverConceptModal
+        isOpen={isDriverConceptModalOpen}
+        onClose={() => {
+          setIsDriverConceptModalOpen(false);
+          setSelectedMetadataRow(null);
+        }}
+        metadataItem={selectedMetadataRow}
+        onSaved={async () => {
+          await refreshDriverAbbreviations();
           await fetchMetadata();
         }}
       />

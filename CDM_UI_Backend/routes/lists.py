@@ -12,6 +12,45 @@ from ontology_type import normalize_ontology_type, DEFAULT_ONTOLOGY_TYPE
 
 router = APIRouter()
 
+
+def get_existing_driver_names(session) -> Dict[str, set]:
+    """Return the set of defined driver values per dimension from Neo4j nodes."""
+    return {
+        "sector": {r["name"] for r in session.run("MATCH (s:Sector) RETURN s.name as name") if r.get("name")},
+        "domain": {r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name as name") if r.get("name")},
+        "country": {r["name"] for r in session.run("MATCH (c:Country) RETURN c.name as name") if r.get("name")},
+    }
+
+
+def _split_driver_str(value: str) -> List[str]:
+    if not value:
+        return []
+    if value.strip() == "ALL":
+        return ["ALL"]
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
+def find_undefined_list_drivers(session, sector_str: str, domain_str: str, country_str: str) -> Dict[str, List[str]]:
+    """Return {dimension: [undefined values]} for non-ALL driver values not defined as nodes."""
+    existing = get_existing_driver_names(session)
+    missing: Dict[str, List[str]] = {}
+    for dim, raw in (("sector", sector_str), ("domain", domain_str), ("country", country_str)):
+        bad = [v for v in _split_driver_str(raw) if v and v not in ("ALL", "None") and v not in existing[dim]]
+        if bad:
+            missing[dim] = bad
+    return missing
+
+
+def _format_undefined_driver_error(missing: Dict[str, List[str]]) -> str:
+    label = {"sector": "Sector", "domain": "Domain", "country": "Country"}
+    parts = [f"{label.get(dim, dim)}: {', '.join(vals)}" for dim, vals in missing.items() if vals]
+    return (
+        "The following driver value(s) are not defined in the Metadata Drivers editor: "
+        + "; ".join(parts)
+        + ". Please add them in the Metadata tab before using them."
+    )
+
+
 class ListValueRequest(BaseModel):
     id: Optional[str] = None
     value: str
@@ -314,8 +353,7 @@ async def create_list_driver_relationships(session, list_id: str, sector_str: st
             for sector in sectors:
                 if sector and sector != "None":
                     result = session.run("""
-                        MERGE (s:Sector {name: $sector})
-                        WITH s
+                        MATCH (s:Sector {name: $sector})
                         MATCH (l:List {id: $list_id})
                         MERGE (s)-[:IS_RELEVANT_TO]->(l)
                         RETURN s.name as sector
@@ -341,8 +379,7 @@ async def create_list_driver_relationships(session, list_id: str, sector_str: st
             for domain in domains:
                 if domain and domain != "None":
                     result = session.run("""
-                        MERGE (d:Domain {name: $domain})
-                        WITH d
+                        MATCH (d:Domain {name: $domain})
                         MATCH (l:List {id: $list_id})
                         MERGE (d)-[:IS_RELEVANT_TO]->(l)
                         RETURN d.name as domain
@@ -368,8 +405,7 @@ async def create_list_driver_relationships(session, list_id: str, sector_str: st
             for country in countries:
                 if country and country != "None":
                     result = session.run("""
-                        MERGE (c:Country {name: $country})
-                        WITH c
+                        MATCH (c:Country {name: $country})
                         MATCH (l:List {id: $list_id})
                         MERGE (c)-[:IS_RELEVANT_TO]->(l)
                         RETURN c.name as country
@@ -1397,6 +1433,14 @@ async def create_list(list_data: ListCreateRequest):
 
     try:
         with driver.session() as session:
+            # Hard validation: every non-ALL driver value must already be defined
+            # as a Neo4j node via the Metadata Drivers editor. Never auto-create.
+            _missing = find_undefined_list_drivers(
+                session, list_data.sector, list_data.domain, list_data.country
+            )
+            if _missing:
+                raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
+
             # Generate unique ID
             list_id = str(uuid.uuid4())
             
@@ -2269,7 +2313,13 @@ async def update_list(list_id: str, request: Request):
                     sector_str = list_data.sector if list_data.sector is not None else "ALL"
                     domain_str = list_data.domain if list_data.domain is not None else "ALL"
                     country_str = list_data.country if list_data.country is not None else "ALL"
-                
+
+                # Hard validation: every non-ALL driver value must already be defined
+                # as a Neo4j node via the Metadata Drivers editor. Never auto-create.
+                _missing = find_undefined_list_drivers(session, sector_str, domain_str, country_str)
+                if _missing:
+                    raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
+
                 await create_list_driver_relationships(session, list_id, sector_str, domain_str, country_str)
             
             # Cascade changes to child lists (tier lists) if any relevant fields changed

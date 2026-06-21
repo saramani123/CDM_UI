@@ -60,6 +60,98 @@ class BulkUploadVariablesChunkRequest(BaseModel):
 
 router = APIRouter()
 
+
+def get_existing_driver_names(session) -> Dict[str, set]:
+    """Return the set of defined driver values per dimension from Neo4j nodes."""
+    return {
+        "sector": {r["name"] for r in session.run("MATCH (s:Sector) RETURN s.name as name") if r.get("name")},
+        "domain": {r["name"] for r in session.run("MATCH (d:Domain) RETURN d.name as name") if r.get("name")},
+        "country": {r["name"] for r in session.run("MATCH (c:Country) RETURN c.name as name") if r.get("name")},
+    }
+
+
+def find_undefined_drivers(session, sectors, domains, countries) -> Dict[str, List[str]]:
+    """
+    Return {dimension: [undefined values]} for non-ALL driver values that are not
+    defined as Neo4j nodes. 'ALL'/'None'/'' are ignored. Drivers are defined only
+    via the Metadata Drivers editor and are never auto-created here.
+    """
+    existing = get_existing_driver_names(session)
+    missing: Dict[str, List[str]] = {}
+    for dim, values in (("sector", sectors), ("domain", domains), ("country", countries)):
+        bad = [
+            v for v in (values or [])
+            if v and v not in ("ALL", "None") and v not in existing[dim]
+        ]
+        if bad:
+            missing[dim] = bad
+    return missing
+
+
+def find_undefined_drivers_in_string(session, driver_string: str) -> Dict[str, List[str]]:
+    """Validate the comma-joined driver string ('Sector, Domain, Country, None')."""
+    tokens = [t.strip() for t in (driver_string or "").split(",") if t.strip()]
+    if tokens and tokens[-1].lower() == "none":
+        tokens = tokens[:-1]
+    existing = get_existing_driver_names(session)
+
+    def split_bucket(raw: str) -> List[str]:
+        return [v.strip() for v in raw.split(",") if v.strip()] if raw else []
+
+    # The string is positional: Sector, Domain, Country (each may itself be comma
+    # joined, but that re-joins into the same flat token list). We validate every
+    # token against the union of all defined names to avoid positional ambiguity,
+    # then attribute unknowns by checking each dimension membership.
+    all_defined = existing["sector"] | existing["domain"] | existing["country"]
+    unknown = [t for t in tokens if t and t != "ALL" and t not in all_defined]
+    return {"unknown": unknown} if unknown else {}
+
+
+def _format_undefined_driver_error(missing: Dict[str, List[str]]) -> str:
+    label = {"sector": "Sector", "domain": "Domain", "country": "Country", "unknown": "Driver"}
+    parts = [f"{label.get(dim, dim)}: {', '.join(vals)}" for dim, vals in missing.items() if vals]
+    return (
+        "The following driver value(s) are not defined in the Metadata Drivers editor: "
+        + "; ".join(parts)
+        + ". Please add them in the Metadata tab before using them."
+    )
+
+
+def load_existing_driver_names() -> Dict[str, set]:
+    """Open a short session to fetch defined driver names (for CSV pre-validation)."""
+    drv = get_driver()
+    if not drv:
+        return {"sector": set(), "domain": set(), "country": set()}
+    try:
+        with drv.session() as session:
+            return get_existing_driver_names(session)
+    except Exception as e:
+        print(f"Error loading existing driver names: {e}")
+        return {"sector": set(), "domain": set(), "country": set()}
+
+
+def apply_csv_driver_fallback(row_num, sector, domain, country, existing_names, errors):
+    """
+    For CSV rows: any dimension that contains a value not defined in the Metadata
+    Drivers editor is reset to ['ALL'] and a warning is appended. Never creates nodes.
+    Returns the (possibly modified) sector/domain/country lists.
+    """
+    def check(dim_label, values, allowed):
+        bad = [v for v in (values or []) if v and v not in ("ALL", "None") and v not in allowed]
+        if bad:
+            errors.append(
+                f"Row {row_num}: {dim_label} value(s) {', '.join(bad)} are not defined in the "
+                f"Metadata Drivers editor - defaulting {dim_label} to 'ALL'."
+            )
+            return ['ALL']
+        return values
+
+    sector = check("Sector", sector, existing_names["sector"])
+    domain = check("Domain", domain, existing_names["domain"])
+    country = check("Country", country, existing_names["country"])
+    return sector, domain, country
+
+
 IS_GROUP_KEY_PROP = "`Is Group Key`"
 GROUP_KEY_PROP = "`Group Key`"
 
@@ -401,8 +493,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             for sector in sector_values:
                 if sector and sector != "None":  # Skip empty or None sectors
                     result = session.run("""
-                        MERGE (s:Sector {name: $sector})
-                        WITH s
+                        MATCH (s:Sector {name: $sector})
                         MATCH (v:Variable {id: $variable_id})
                         MERGE (s)-[:IS_RELEVANT_TO]->(v)
                         RETURN s.name as sector
@@ -430,8 +521,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             for domain in domain_values:
                 if domain and domain != "None":  # Skip empty or None domains
                     result = session.run("""
-                        MERGE (d:Domain {name: $domain})
-                        WITH d
+                        MATCH (d:Domain {name: $domain})
                         MATCH (v:Variable {id: $variable_id})
                         MERGE (d)-[:IS_RELEVANT_TO]->(v)
                         RETURN d.name as domain
@@ -459,8 +549,7 @@ async def create_driver_relationships(session, variable_id: str, driver_string: 
             for country in country_values:
                 if country and country != "None":  # Skip empty or None countries
                     result = session.run("""
-                        MERGE (c:Country {name: $country})
-                        WITH c
+                        MATCH (c:Country {name: $country})
                         MATCH (v:Variable {id: $variable_id})
                         MERGE (c)-[:IS_RELEVANT_TO]->(v)
                         RETURN c.name as country
@@ -984,6 +1073,14 @@ async def create_variable(request: Request):
 
     try:
         with driver.session() as session:
+            # Hard validation: every non-ALL driver value must already be defined
+            # as a Neo4j node via the Metadata Drivers editor. Never auto-create.
+            _missing = find_undefined_drivers_in_string(
+                session, variable_data.driver or "ALL, ALL, ALL, None"
+            )
+            if _missing:
+                raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
+
             variable_id = str(uuid.uuid4())
 
             group_id = merge_part_section_group(
@@ -1251,6 +1348,13 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
         print(f"DEBUG: Bulk update - shouldAppendValidations: {bulk_data.shouldAppendValidations}", flush=True)
         
         with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            # Hard validation: if a driver string is being applied to all selected
+            # variables, validate it once up front so we don't partially mutate.
+            if bulk_data.driver is not None and bulk_data.driver.strip() not in ("", "Keep Current"):
+                _missing = find_undefined_drivers_in_string(session, bulk_data.driver)
+                if _missing:
+                    raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
+
             for variable_id in valid_variable_ids:
                 try:
                     variable_id_str = str(variable_id).strip()
@@ -1607,6 +1711,14 @@ async def update_variable(variable_id: str, request: Request):
             if not current_rows:
                 print(f"DEBUG: ERROR - Variable {variable_id} not found or has no Part/Section/Group linkage!", flush=True)
                 raise HTTPException(status_code=404, detail="Variable not found")
+
+            # Hard validation: if a driver string is provided, every non-ALL value
+            # must already be defined as a Neo4j node (Metadata Drivers editor).
+            if getattr(variable_data, "driver", None) is not None:
+                _missing = find_undefined_drivers_in_string(session, variable_data.driver)
+                if _missing:
+                    raise HTTPException(status_code=400, detail=_format_undefined_driver_error(_missing))
+
             current_record = current_rows[0]
             print(f"DEBUG: Loaded variable {variable_id} for update (taxonomy rows collapsed to one)", flush=True)
 
@@ -2781,6 +2893,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
     variables = []
     errors = list(parse_errors)  # Carry over any CSV parse errors
     seen_taxonomy_keys: set = set()
+    existing_driver_names = load_existing_driver_names()
 
     print(f"CSV Headers found: {headers}")
     print(f"First few rows sample: {rows[:3] if len(rows) >= 3 else rows}")
@@ -2822,7 +2935,12 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
             sector = ['ALL'] if row['Sector'].strip() == 'ALL' else [s.strip() for s in row['Sector'].split(',') if s.strip()]
             domain = ['ALL'] if row['Domain'].strip() == 'ALL' else [d.strip() for d in row['Domain'].split(',') if d.strip()]
             country = ['ALL'] if row['Country'].strip() == 'ALL' else [c.strip() for c in row['Country'].split(',') if c.strip()]
-            
+
+            # Undefined driver values do not create nodes; default that dimension to ALL + warn.
+            sector, domain, country = apply_csv_driver_fallback(
+                row_num, sector, domain, country, existing_driver_names, errors
+            )
+
             # Create driver string
             sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
             domain_str = 'ALL' if 'ALL' in domain else ', '.join(domain)
@@ -2886,6 +3004,7 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
     start = body.start_row_index
     required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type']
     seen_chunk: set = set()
+    existing_driver_names = load_existing_driver_names()
 
     for i, row in enumerate(body.rows):
         row_num = start + i
@@ -2916,6 +3035,9 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
         sector = ['ALL'] if (row.get('Sector') or '').strip() == 'ALL' else [s.strip() for s in (row.get('Sector') or '').split(',') if s.strip()]
         domain = ['ALL'] if (row.get('Domain') or '').strip() == 'ALL' else [d.strip() for d in (row.get('Domain') or '').split(',') if d.strip()]
         country = ['ALL'] if (row.get('Country') or '').strip() == 'ALL' else [c.strip() for c in (row.get('Country') or '').split(',') if c.strip()]
+        sector, domain, country = apply_csv_driver_fallback(
+            row_num, sector, domain, country, existing_driver_names, errors
+        )
         sector_str = 'ALL' if 'ALL' in sector else ', '.join(sector)
         domain_str = 'ALL' if 'ALL' in domain else ', '.join(domain)
         country_str = 'ALL' if 'ALL' in country else ', '.join(country)
