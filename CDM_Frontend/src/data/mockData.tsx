@@ -40,18 +40,15 @@ export interface Variant {
 export const mockObjectData: ObjectData[] = [];
 
 export const objectColumns = [
-  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '140px' },
-  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '140px' },
-  { key: 'country', title: 'C', sortable: true, filterable: true, width: '140px' },
   { key: 'being', title: 'Being', sortable: true, filterable: true, width: '120px' },
   { key: 'avatar', title: 'Avatar', sortable: true, filterable: true, width: '180px' },
   { key: 'object', title: 'Object', sortable: true, filterable: true, width: '140px' },
   { key: 'ontologyType', title: 'Type', sortable: true, filterable: true, width: '120px' },
   { key: 'relationships', title: 'Relationships', sortable: true, filterable: false, width: '160px' },
-  { key: 'variants', title: 'Variants', sortable: true, filterable: false, width: '120px' },
+  { key: 'variants', title: 'Variations', sortable: true, filterable: false, width: '120px' },
   { 
     key: 'variantsEx', 
-    title: 'Variants ex.', 
+    title: 'Variations ex.', 
     sortable: true, 
     filterable: false, 
     width: '200px',
@@ -77,7 +74,10 @@ export const objectColumns = [
       return <span>{displayText}</span>;
     }
   },
-  { key: 'variables', title: 'Variables', sortable: true, filterable: false, width: '140px' }
+  { key: 'variables', title: 'Variables', sortable: true, filterable: false, width: '140px' },
+  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '140px' },
+  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '140px' },
+  { key: 'country', title: 'C', sortable: true, filterable: true, width: '140px' }
 ];
 
 // Helper function to parse driver field into metadata components

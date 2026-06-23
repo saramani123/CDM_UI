@@ -6,8 +6,6 @@ import { CsvUploadModal } from './CsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
 import { VariableListRelationshipModal } from './VariableListRelationshipModal';
-import { AddSetValueModal } from './AddSetValueModal';
-import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
 import { SingleListValuesModal, type SingleListDraftRow } from './SingleListValuesModal';
 import { apiService } from '../services/api';
@@ -104,44 +102,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
     return allGroupings;
   };
 
-  const handleAddSetValue = async (setValue: string) => {
-    try {
-      await apiService.addSetValue(setValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalSets(prev => {
-        if (!prev.includes(setValue)) {
-          return [...prev, setValue].sort();
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Set
-      handleChange('set', setValue);
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
-    try {
-      await apiService.addGroupingValue(set, groupingValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalGroupings(prev => {
-        const currentGroupings = prev[set] || [];
-        if (!currentGroupings.includes(groupingValue)) {
-          return {
-            ...prev,
-            [set]: [...currentGroupings, groupingValue].sort()
-          };
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Grouping
-      handleChange('grouping', groupingValue);
-    } catch (error) {
-      throw error;
-    }
-  };
-
   // Driver selections state - default to 'ALL' for sector, domain, and country
   const [driverSelections, setDriverSelections] = useState({
     sector: ['ALL'] as string[],
@@ -211,9 +171,7 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
   // CSV upload modal states
   const [isVariableAttachedUploadOpen, setIsVariableAttachedUploadOpen] = useState(false);
   
-  // Modal state for add set/grouping values
-  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
-  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
+  // Set/Grouping creation is centralized in the Metadata tab
   const [isVariationUploadOpen, setIsVariationUploadOpen] = useState(false);
   
   // Collapsible sections state
@@ -899,16 +857,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Set <span className="text-ag-dark-error">*</span>
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddSetValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Set value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.set}
@@ -935,17 +883,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Grouping <span className="text-ag-dark-error">*</span>
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddGroupingValueModalOpen(true);
-                }}
-                disabled={!formData.set}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Grouping value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.grouping}
@@ -1348,26 +1285,6 @@ export const AddListPanel: React.FC<AddListPanelProps> = ({
         onUpload={handleVariableAttachedCsvUpload}
       />
       
-      {/* Add Set Value Modal */}
-      <AddSetValueModal
-        isOpen={isAddSetValueModalOpen}
-        onClose={() => {
-          setIsAddSetValueModalOpen(false);
-        }}
-        onSave={handleAddSetValue}
-      />
-
-      {/* Add Grouping Value Modal */}
-      <AddGroupingValueModal
-        isOpen={isAddGroupingValueModalOpen}
-        onClose={() => {
-          setIsAddGroupingValueModalOpen(false);
-        }}
-        onSave={handleAddGroupingValue}
-        availableSets={getDistinctSets()}
-        defaultSet={formData.set || ''}
-      />
-
       <CsvUploadModal
         isOpen={isVariationUploadOpen}
         onClose={() => setIsVariationUploadOpen(false)}

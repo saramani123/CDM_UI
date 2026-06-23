@@ -7,8 +7,6 @@ import { RelationshipModal } from './RelationshipModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 import { useDrivers } from '../hooks/useDrivers';
 import { useVariables } from '../hooks/useVariables';
-import { AddBeingValueModal } from './AddBeingValueModal';
-import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { VariantsModal } from './VariantsModal';
 import { VariableData } from '../data/variablesData';
 import { apiService } from '../services/api';
@@ -346,8 +344,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
   });
 
   // State for add being/avatar value modals
-  const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
-  const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
   const [beingAvatarUpdateTrigger, setBeingAvatarUpdateTrigger] = useState(0);
 
   // Storage keys for Being and Avatar values
@@ -406,11 +402,20 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     }
   };
 
+  // Beings defined in Neo4j (source of truth, includes ones with no objects yet)
+  const [backendBeings, setBackendBeings] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    apiService.getBeings()
+      .then(b => setBackendBeings(Array.isArray(b) ? (b as string[]) : []))
+      .catch(() => {});
+  }, [isOpen]);
+
   // Get distinct values from data for relationships
   const getDistinctBeings = () => {
     const beingsFromData = [...new Set(allData.map(item => item.being))];
     const beingsFromStorage = getBeingValues();
-    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage])];
+    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage, ...backendBeings])];
     return ['ALL', ...allBeings];
   };
 
@@ -454,42 +459,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
     const avatarsFromStorage = associations[being] || [];
     const allAvatars = [...new Set([...avatarsFromData, ...avatarsFromStorage])];
     return ['ALL', ...allAvatars];
-  };
-
-  // Handlers for adding Being and Avatar values
-  const handleAddBeingValue = async (value: string): Promise<void> => {
-    saveBeingValue(value);
-    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
-  };
-
-  const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
-    if (!being || !being.trim()) {
-      throw new Error('Please select a Being first');
-    }
-    
-    if (!avatar || !avatar.trim()) {
-      throw new Error('Please enter an Avatar name');
-    }
-    
-    try {
-      // Call backend API to create avatar
-      await apiService.createAvatar(being.trim(), avatar.trim());
-      
-      // Also save to localStorage for backward compatibility
-      saveBeingAvatarAssociation(being.trim(), avatar.trim());
-      
-      // Refresh avatars for this being
-      const avatars = await apiService.getAvatars(being.trim());
-      setAvatarsForBeing(prev => ({ ...prev, [being.trim()]: avatars }));
-      
-      setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create avatar';
-      if (errorMessage.includes('already exists')) {
-        throw new Error(`Avatar '${avatar}' already exists for Being '${being}'. Please use a different name.`);
-      }
-      throw error;
-    }
   };
 
   // Reset to defaults when panel opens
@@ -908,16 +877,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Being <span className="text-ag-dark-error">*</span>
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddBeingValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Being value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.being}
@@ -950,16 +909,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Avatar <span className="text-ag-dark-error">*</span>
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddAvatarValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Avatar value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.avatar}
@@ -1202,7 +1151,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
 
       {/* Variants Section */}
       <CollapsibleSection 
-        title="Variants" 
+        title="Variations" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
         isExpanded={expandedSections.variants}
@@ -1212,7 +1161,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
             <button
               onClick={() => setIsVariantsModalOpen(true)}
               className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="View and manage variants"
+              title="View and manage variations"
             >
               <Grid3x3 className="w-5 h-5" />
             </button>
@@ -1223,7 +1172,7 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
         <div className="mb-6">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Variants management:</span> Click the grid icon above to view and manage variants.
+              <span className="font-medium">Variations management:</span> Click the grid icon above to view and manage variations.
             </div>
           </div>
         </div>
@@ -1244,25 +1193,6 @@ export const AddObjectPanel: React.FC<AddObjectPanelProps> = ({
           Add Object
         </button>
       </div>
-
-      {/* Add Being Value Modal */}
-      <AddBeingValueModal
-        isOpen={isAddBeingValueModalOpen}
-        onClose={() => {
-          setIsAddBeingValueModalOpen(false);
-        }}
-        onSave={handleAddBeingValue}
-      />
-
-      {/* Add Avatar Value Modal */}
-      <AddAvatarValueModal
-        isOpen={isAddAvatarValueModalOpen}
-        onClose={() => {
-          setIsAddAvatarValueModalOpen(false);
-        }}
-        onSave={handleAddAvatarValue}
-        availableBeings={getDistinctBeings().filter(being => being !== 'ALL')}
-      />
 
       {/* Variants Modal */}
       <VariantsModal

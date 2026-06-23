@@ -442,7 +442,7 @@ async def create_value_variation(session, list_value: str, variation_value: str,
         query = f"""
             MATCH (lv:ListValue {{value: $list_value}})
             WHERE {where_clause}
-            MERGE (var:Variation {{name: $variation_value, valueVariation: true}})
+            MERGE (var:ListValueVariation {{name: $variation_value, valueVariation: true}})
             ON CREATE SET var.id = $variation_id, var.valueVariation = true
             MERGE (lv)-[:HAS_VALUE_VARIATION]->(var)
         """
@@ -727,7 +727,7 @@ async def dismantle_multi_level_list_structure(session, list_id: str) -> None:
     session.run("""
         MATCH (p:List {id: $id})-[rt:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tier:List)
         MATCH (tier)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:Variation)
+        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:ListValueVariation)
         DELETE rv, r
     """, id=list_id)
 
@@ -1173,7 +1173,7 @@ async def get_lists():
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
                 OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
-                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:ListVariation)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
                      collect(DISTINCT domain.name) as domains,
@@ -1707,7 +1707,7 @@ async def create_list(list_data: ListCreateRequest):
                     
                     # Check if variation already exists for this list (case-insensitive)
                     existing_variation_for_list = session.run("""
-                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:ListVariation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, list_id=list_id, variation_name=variation_name).single()
@@ -1718,7 +1718,7 @@ async def create_list(list_data: ListCreateRequest):
                     
                     # Check if variation exists globally (case-insensitive)
                     existing_variation = session.run("""
-                        MATCH (var:Variation)
+                        MATCH (var:ListVariation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, variation_name=variation_name).single()
@@ -1730,7 +1730,7 @@ async def create_list(list_data: ListCreateRequest):
                         
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             CREATE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
                     else:
@@ -1739,7 +1739,7 @@ async def create_list(list_data: ListCreateRequest):
                         print(f"DEBUG: Creating new variation '{variation_name}' for list {list_id}")
                         
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:ListVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -1747,13 +1747,13 @@ async def create_list(list_data: ListCreateRequest):
                         
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             CREATE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
 
             # Get variations count and list for the newly created list
             variations_result = session.run("""
-                MATCH (l:List {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (l:List {id: $id})-[:HAS_VARIATION]->(var:ListVariation)
                 RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
             """, {"id": list_id})
 
@@ -2245,7 +2245,7 @@ async def update_list(list_id: str, request: Request):
                     
                     # Check if variation already exists for this list (case-insensitive)
                     existing_variation_for_list = session.run("""
-                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:ListVariation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, list_id=list_id, variation_name=variation_name).single()
@@ -2256,7 +2256,7 @@ async def update_list(list_id: str, request: Request):
                     
                     # Check if variation exists globally (case-insensitive)
                     existing_variation = session.run("""
-                        MATCH (var:Variation)
+                        MATCH (var:ListVariation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, variation_name=variation_name).single()
@@ -2268,7 +2268,7 @@ async def update_list(list_id: str, request: Request):
                         
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             CREATE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
                     else:
@@ -2277,7 +2277,7 @@ async def update_list(list_id: str, request: Request):
                         print(f"DEBUG: Creating new variation '{variation_name}' for list {list_id}")
                         
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:ListVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -2285,7 +2285,7 @@ async def update_list(list_id: str, request: Request):
                         
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             CREATE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
             
@@ -2379,7 +2379,7 @@ async def update_list(list_id: str, request: Request):
                 OPTIONAL MATCH (d:Domain)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (c:Country)-[:IS_RELEVANT_TO]->(l)
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:ListVariation)
                 WITH l, 
                      collect(DISTINCT s.name) as sectors,
                      collect(DISTINCT d.name) as domains,
@@ -2506,6 +2506,130 @@ async def update_list(list_id: str, request: Request):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to update list: {str(e)}")
+
+@router.delete("/lists/set", response_model=Dict[str, Any])
+async def delete_set(name: str):
+    """
+    Delete a Set and cascade-delete its Groupings, as long as NO List is attached.
+    1. Blocked (409) if any List exists under Set→Grouping→List.
+    2. Otherwise, Groupings shared with other Sets are only unlinked; Groupings exclusive to this
+       Set are deleted; then the Set node is removed.
+    NOTE: declared before /lists/{list_id} so the path is not captured by that route.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Set name is required")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            cnt = session.run("""
+                MATCH (s:Set {name: $name})-[:HAS_GROUPING]->(:Grouping)-[:HAS_LIST]->(l:List)
+                RETURN count(DISTINCT l) AS c
+            """, name=name).single()
+            if cnt and cnt["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Set '{name}' was not able to be deleted because {cnt['c']} existing List(s) use "
+                        f"it. Please find the Lists with the '{name}' Set on the Lists grid and move them to "
+                        f"a new Set before deleting."
+                    ),
+                )
+
+            # Unlink groupings shared with other Sets (preserve the node for those Sets).
+            session.run("""
+                MATCH (s:Set {name: $name})-[r:HAS_GROUPING]->(g:Grouping)
+                WHERE EXISTS { MATCH (other:Set)-[:HAS_GROUPING]->(g) WHERE other.name <> $name }
+                DELETE r
+            """, name=name)
+            # Delete groupings exclusive to this Set.
+            session.run("""
+                MATCH (s:Set {name: $name})-[:HAS_GROUPING]->(g:Grouping)
+                WHERE NOT EXISTS { MATCH (other:Set)-[:HAS_GROUPING]->(g) WHERE other.name <> $name }
+                DETACH DELETE g
+            """, name=name)
+            session.run("MATCH (s:Set {name: $name}) DETACH DELETE s", name=name)
+            return {"success": True, "message": f"Set '{name}' and its Groupings deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting set: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete set: {str(e)}")
+
+
+@router.delete("/lists/grouping", response_model=Dict[str, Any])
+async def delete_grouping(set: str, grouping: str):
+    """
+    Delete a Grouping (scoped to a Set), as long as NO List is attached.
+    1. Blocked (409) if any List exists under this Set's Grouping→List.
+    2. If the Grouping node is shared with other Sets (legacy data), only unlink it from this Set;
+       otherwise remove the node.
+    NOTE: declared before /lists/{list_id} so the path is not captured by that route.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    set_name = (set or "").strip()
+    grouping_name = (grouping or "").strip()
+    if not set_name:
+        raise HTTPException(status_code=400, detail="Set is required")
+    if not grouping_name:
+        raise HTTPException(status_code=400, detail="Grouping is required")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            exists = session.run("""
+                MATCH (s:Set {name: $set})-[:HAS_GROUPING]->(g:Grouping {name: $grouping})
+                RETURN count(g) AS c
+            """, set=set_name, grouping=grouping_name).single()
+            if not exists or exists["c"] == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Grouping '{grouping_name}' not found for Set '{set_name}'.",
+                )
+
+            cnt = session.run("""
+                MATCH (s:Set {name: $set})-[:HAS_GROUPING]->(g:Grouping {name: $grouping})-[:HAS_LIST]->(l:List)
+                RETURN count(DISTINCT l) AS c
+            """, set=set_name, grouping=grouping_name).single()
+            if cnt and cnt["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Grouping '{grouping_name}' was not able to be deleted because {cnt['c']} existing "
+                        f"List(s) use it. Please find the Lists with the '{grouping_name}' Grouping on the "
+                        f"Lists grid and move them to a new Grouping before deleting."
+                    ),
+                )
+
+            # Shared grouping node (linked to other Sets): only unlink from this Set.
+            session.run("""
+                MATCH (s:Set {name: $set})-[r:HAS_GROUPING]->(g:Grouping {name: $grouping})
+                WHERE EXISTS { MATCH (other:Set)-[:HAS_GROUPING]->(g) WHERE other.name <> $set }
+                DELETE r
+            """, set=set_name, grouping=grouping_name)
+            # Exclusive grouping node: remove entirely.
+            session.run("""
+                MATCH (s:Set {name: $set})-[:HAS_GROUPING]->(g:Grouping {name: $grouping})
+                WHERE NOT EXISTS { MATCH (other:Set)-[:HAS_GROUPING]->(g) WHERE other.name <> $set }
+                DETACH DELETE g
+            """, set=set_name, grouping=grouping_name)
+            return {"success": True, "message": f"Grouping '{grouping_name}' deleted from Set '{set_name}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting grouping: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete grouping: {str(e)}")
+
 
 @router.delete("/lists/{list_id}")
 async def delete_list(list_id: str):
@@ -2733,7 +2857,7 @@ async def get_tiered_list_values(list_id: str):
                 if tier_list_id:
                     tier_values_query = """
                         MATCH (tier_list:List {id: $tier_list_id})-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                        OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                        OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                         WITH lv, collect(DISTINCT var.name) as variations
                         RETURN lv.value as value, variations
                     """
@@ -3010,7 +3134,7 @@ async def get_list(list_id: str):
                 vr = session.run("""
                     MATCH (l:List {id: $id})-[:HAS_LIST_VALUE]->(lv:ListValue)
                     WHERE lv.tier IS NULL OR lv.tier = 0
-                    OPTIONAL MATCH (lv)-[:HAS_VALUE_VARIATION]->(var:Variation)
+                    OPTIONAL MATCH (lv)-[:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                     RETURN lv.value as value, collect(DISTINCT var.name) as names
                 """, {"id": list_id})
                 for rec in vr:
@@ -3125,7 +3249,7 @@ async def sync_single_list_values(list_id: str, body: SyncSingleListValuesReques
 
                     tx.run("""
                         MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue {value: $value})
-                        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:Variation)
+                        OPTIONAL MATCH (lv)-[rv:HAS_VALUE_VARIATION]->(:ListValueVariation)
                         DELETE rv
                     """, list_id=list_id, value=val)
 
@@ -3134,7 +3258,7 @@ async def sync_single_list_values(list_id: str, body: SyncSingleListValuesReques
                             vid = str(uuid.uuid4())
                             tx.run("""
                                 MATCH (l:List {id: $list_id})-[:HAS_LIST_VALUE]->(lv:ListValue {value: $list_value})
-                                MERGE (var:Variation {name: $variation_value, valueVariation: true})
+                                MERGE (var:ListValueVariation {name: $variation_value, valueVariation: true})
                                 ON CREATE SET var.id = $variation_id, var.valueVariation = true
                                 MERGE (lv)-[:HAS_VALUE_VARIATION]->(var)
                             """,
@@ -3428,7 +3552,7 @@ async def get_list_variations(list_id: str):
 
             # Get variations
             variations_result = session.run("""
-                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:ListVariation)
                 RETURN var.id as id, var.name as name
                 ORDER BY var.name
             """, list_id=list_id)
@@ -3521,7 +3645,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
 
             # Get existing variations for this list to check for duplicates
             existing_variations_result = session.run("""
-                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:ListVariation)
                 RETURN var.name as name
             """, list_id=list_id)
             
@@ -3529,7 +3653,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
             
             # Get all global variations to check for existing ones
             global_variations_result = session.run("""
-                MATCH (var:Variation)
+                MATCH (var:ListVariation)
                 RETURN var.name as name, var.id as id
             """)
             
@@ -3569,7 +3693,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
                     
                     # Check if this variation is already connected to this list
                     already_connected = session.run("""
-                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:Variation {id: $variation_id})
+                        MATCH (l:List {id: $list_id})-[:HAS_VARIATION]->(var:ListVariation {id: $variation_id})
                         RETURN var.id as id
                     """, list_id=list_id, variation_id=variation_id).single()
                     
@@ -3577,7 +3701,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
                         # Connect existing variation to list (MERGE to avoid duplicate relationships)
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             MERGE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
                         
@@ -3598,7 +3722,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
                     try:
                         # Create variation node
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:ListVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -3607,7 +3731,7 @@ async def bulk_upload_list_variations(list_id: str, file: UploadFile = File(...)
                         # Connect variation to list
                         session.run("""
                             MATCH (l:List {id: $list_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:ListVariation {id: $variation_id})
                             CREATE (l)-[:HAS_VARIATION]->(var)
                         """, list_id=list_id, variation_id=variation_id)
                         

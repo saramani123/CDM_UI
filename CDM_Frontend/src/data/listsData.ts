@@ -200,16 +200,16 @@ export const mockListData: ListData[] = [
 ];
 
 export const listColumns = [
-  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '80px' },
-  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '80px' },
-  { key: 'country', title: 'C', sortable: true, filterable: true, width: '80px' },
   { key: 'set', title: 'Set', sortable: true, filterable: true, width: '140px' },
   { key: 'grouping', title: 'Grouping', sortable: true, filterable: true, width: '120px' },
   { key: 'list', title: 'List', sortable: true, filterable: true, width: '180px' },
   { key: 'tiers', title: 'Tiers', sortable: false, filterable: false, width: '200px' },
   { key: 'totalValuesCount', title: '# Values', sortable: true, filterable: false, width: '100px' },
   { key: 'sampleValues', title: 'Values', sortable: false, filterable: false, width: '200px' },
-  { key: 'ontologyType', title: 'Type', sortable: true, filterable: true, width: '120px' }
+  { key: 'ontologyType', title: 'Type', sortable: true, filterable: true, width: '120px' },
+  { key: 'sector', title: 'S', sortable: true, filterable: true, width: '80px' },
+  { key: 'domain', title: 'D', sortable: true, filterable: true, width: '80px' },
+  { key: 'country', title: 'C', sortable: true, filterable: true, width: '80px' }
 ];
 
 // Dropdown options for list fields

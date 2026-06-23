@@ -8,8 +8,6 @@ import { OntologyModal } from './OntologyModal';
 import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { CloneIdentifiersModal } from './CloneIdentifiersModal';
-import { AddBeingValueModal } from './AddBeingValueModal';
-import { AddAvatarValueModal } from './AddAvatarValueModal';
 import { VariantsModal } from './VariantsModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
@@ -231,8 +229,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   }, [selectedObject?.id, driversData]); // Reset when object changes or drivers data loads
 
   // State for add being/avatar value modals
-  const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
-  const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
   const [beingAvatarUpdateTrigger, setBeingAvatarUpdateTrigger] = useState(0);
 
   // Storage keys for Being and Avatar values
@@ -318,11 +314,19 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }
   }, [formData.being, allData]);
 
+  // Beings defined in Neo4j (source of truth, includes ones with no objects yet)
+  const [backendBeings, setBackendBeings] = useState<string[]>([]);
+  useEffect(() => {
+    apiService.getBeings()
+      .then(b => setBackendBeings(Array.isArray(b) ? (b as string[]) : []))
+      .catch(() => {});
+  }, [selectedObject]);
+
   // Use beingAvatarUpdateTrigger to force re-computation when values are added
   const getDistinctBeings = () => {
     const beingsFromData = [...new Set(allData.map(item => item.being))];
     const beingsFromStorage = getBeingValues();
-    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage])];
+    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage, ...backendBeings])];
     return ['ALL', ...allBeings];
   };
 
@@ -1635,46 +1639,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     }
   };
 
-  // Handlers for adding Being and Avatar values
-  const handleAddBeingValue = async (value: string): Promise<void> => {
-    saveBeingValue(value);
-    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render to update dropdowns
-    // Force component to re-render by updating state
-    window.dispatchEvent(new Event('storage')); // Trigger storage event for cross-component updates
-  };
-
-  const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
-    if (!being || !being.trim()) {
-      throw new Error('Please select a Being first');
-    }
-    
-    if (!avatar || !avatar.trim()) {
-      throw new Error('Please enter an Avatar name');
-    }
-    
-    try {
-      // Call backend API to create avatar
-      await apiService.createAvatar(being.trim(), avatar.trim());
-      
-      // Also save to localStorage for backward compatibility
-      saveBeingAvatarAssociation(being.trim(), avatar.trim());
-      
-      // Refresh avatars for this being
-      const avatars = await apiService.getAvatars(being.trim());
-      setAvatarsForBeing(prev => ({ ...prev, [being.trim()]: avatars }));
-      
-      setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render to update dropdowns
-      // Force component to re-render by updating state
-      window.dispatchEvent(new Event('storage')); // Trigger storage event for cross-component updates
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create avatar';
-      if (errorMessage.includes('already exists')) {
-        throw new Error(`Avatar '${avatar}' already exists for Being '${being}'. Please use a different name.`);
-      }
-      throw error;
-    }
-  };
-
   const handleSave = () => {
     console.log('🔴 MetadataPanel handleSave called');
     console.log('🔴 Current formData:', formData);
@@ -2183,17 +2147,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Being
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddBeingValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Being value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.being}
@@ -2229,17 +2182,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Avatar
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddAvatarValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Avatar value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.avatar}
@@ -2724,7 +2666,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
       {/* Variants Section */}
       <CollapsibleSection 
-        title="Variants" 
+        title="Variations" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="variants"
@@ -2738,8 +2680,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               }`}
               title={
                 selectedCount > 1 
-                  ? "Please select a single object to view variants" 
-                  : "View and manage variants"
+                  ? "Please select a single object to view variations" 
+                  : "View and manage variations"
               }
             >
               <Grid3x3 className="w-5 h-5" />
@@ -2751,7 +2693,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         <div className="mb-6">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Variants management:</span> Click the grid icon above to view and manage variants.
+              <span className="font-medium">Variations management:</span> Click the grid icon above to view and manage variations.
             </div>
           </div>
         </div>
@@ -2830,25 +2772,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         />
       )}
 
-      {/* Add Being Value Modal */}
-      <AddBeingValueModal
-        isOpen={isAddBeingValueModalOpen}
-        onClose={() => {
-          setIsAddBeingValueModalOpen(false);
-        }}
-        onSave={handleAddBeingValue}
-      />
-
-      {/* Add Avatar Value Modal */}
-      <AddAvatarValueModal
-        isOpen={isAddAvatarValueModalOpen}
-        onClose={() => {
-          setIsAddAvatarValueModalOpen(false);
-        }}
-        onSave={handleAddAvatarValue}
-        availableBeings={getDistinctBeings().filter(being => being !== 'ALL')}
-      />
-
       {/* Ontology Modal */}
       {ontologyModalOpen.isOpen && ontologyModalOpen.viewType && (selectedObject?.id || selectedObject?.object) && (
         <OntologyModal
@@ -2871,7 +2794,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
             ontologyModalOpen.viewType === 'identifiers' ? 'Identifiers' :
             ontologyModalOpen.viewType === 'relationships' ? 'Relationships' :
-            'Variants'
+            'Variations'
           }
           viewType={ontologyModalOpen.viewType}
         />

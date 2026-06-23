@@ -11,10 +11,6 @@ import { OntologyModal } from './OntologyModal';
 import { RelationshipModal } from './RelationshipModal';
 import { CloneRelationshipsModal } from './CloneRelationshipsModal';
 import { CloneIdentifiersModal } from './CloneIdentifiersModal';
-import { AddBeingValueModal } from './AddBeingValueModal';
-import { AddAvatarValueModal } from './AddAvatarValueModal';
-import { AddSetValueModal } from './AddSetValueModal';
-import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { VariantsModal } from './VariantsModal';
 import { apiService } from '../services/api';
 import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
@@ -129,14 +125,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   const [isVariationsGraphModalOpen, setIsVariationsGraphModalOpen] = useState(false);
 
   // State for add being/avatar value modals
-  const [isAddBeingValueModalOpen, setIsAddBeingValueModalOpen] = useState(false);
-  const [isAddAvatarValueModalOpen, setIsAddAvatarValueModalOpen] = useState(false);
   const [beingAvatarUpdateTrigger, setBeingAvatarUpdateTrigger] = useState(0);
   
-  // Modal state for add set/grouping values (lists)
-  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
-  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
-  
+  // Set/Grouping creation is centralized in the Metadata tab
+
   // Local state to track Sets and Groupings for lists (for immediate UI updates)
   const [localSets, setLocalSets] = useState<string[]>([]);
   const [localGroupings, setLocalGroupings] = useState<Record<string, string[]>>({});
@@ -384,11 +376,20 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     }
   };
 
+  // Beings defined in Neo4j (source of truth, includes ones with no objects yet)
+  const [backendBeings, setBackendBeings] = useState<string[]>([]);
+  useEffect(() => {
+    if (!isOpen) return;
+    apiService.getBeings()
+      .then(b => setBackendBeings(Array.isArray(b) ? (b as string[]) : []))
+      .catch(() => {});
+  }, [isOpen]);
+
   // Get distinct values from data for relationships
   const getDistinctBeings = () => {
     const beingsFromData = [...new Set(allData.map(item => item.being))];
     const beingsFromStorage = getBeingValues();
-    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage])];
+    const allBeings = [...new Set([...beingsFromData, ...beingsFromStorage, ...backendBeings])];
     return ['ALL', ...allBeings];
   };
 
@@ -432,42 +433,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     const avatarsFromStorage = associations[being] || [];
     const allAvatars = [...new Set([...avatarsFromData, ...avatarsFromStorage])];
     return ['ALL', ...allAvatars];
-  };
-
-  // Handlers for adding Being and Avatar values
-  const handleAddBeingValue = async (value: string): Promise<void> => {
-    saveBeingValue(value);
-    setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
-  };
-
-  const handleAddAvatarValue = async (being: string, avatar: string): Promise<void> => {
-    if (!being || !being.trim()) {
-      throw new Error('Please select a Being first');
-    }
-    
-    if (!avatar || !avatar.trim()) {
-      throw new Error('Please enter an Avatar name');
-    }
-    
-    try {
-      // Call backend API to create avatar
-      await apiService.createAvatar(being.trim(), avatar.trim());
-      
-      // Also save to localStorage for backward compatibility
-      saveBeingAvatarAssociation(being.trim(), avatar.trim());
-      
-      // Refresh avatars for this being
-      const avatars = await apiService.getAvatars(being.trim());
-      setAvatarsForBeing(prev => ({ ...prev, [being.trim()]: avatars }));
-      
-      setBeingAvatarUpdateTrigger(prev => prev + 1); // Trigger re-render
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create avatar';
-      if (errorMessage.includes('already exists')) {
-        throw new Error(`Avatar '${avatar}' already exists for Being '${being}'. Please use a different name.`);
-      }
-      throw error;
-    }
   };
 
   if (!isOpen) return null;
@@ -517,48 +482,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
     const groupingsFromLocal = localGroupings[set] || [];
     const allGroupings = [...new Set([...groupingsFromData, ...groupingsFromLocal])].sort();
     return allGroupings;
-  };
-
-  const handleAddSetValue = async (setValue: string) => {
-    try {
-      await apiService.addSetValue(setValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalSets(prev => {
-        if (!prev.includes(setValue)) {
-          return [...prev, setValue].sort();
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Set
-      if (activeTab === 'lists') {
-        handleChange('set', setValue);
-      }
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
-    try {
-      await apiService.addGroupingValue(set, groupingValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalGroupings(prev => {
-        const currentGroupings = prev[set] || [];
-        if (!currentGroupings.includes(groupingValue)) {
-          return {
-            ...prev,
-            [set]: [...currentGroupings, groupingValue].sort()
-          };
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Grouping
-      if (activeTab === 'lists') {
-        handleChange('grouping', groupingValue);
-      }
-    } catch (error) {
-      throw error;
-    }
   };
 
   const handleChange = (key: string, value: string) => {
@@ -734,15 +657,15 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             // Append to textarea
             const newLines = newVariants.map(v => v.name).join('\n');
             setVariantsText(prev => prev ? `${prev}\n${newLines}` : newLines);
-            alert(`Successfully added ${newVariants.length} variants from CSV`);
+            alert(`Successfully added ${newVariants.length} variations from CSV`);
           } else {
-            alert('No valid variants found in CSV');
+            alert('No valid variations found in CSV');
           }
         };
         reader.readAsText(data);
       } catch (error) {
         console.error('CSV variants upload failed:', error);
-        alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        alert(`Variations upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     } else {
       // Handle array of variants - append to textarea
@@ -880,7 +803,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         variantsList.findIndex(v => v.name.toLowerCase() === variant.name.toLowerCase()) !== index
       ).map(v => v.name);
       
-      alert(`Cannot save: Duplicate variant names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      alert(`Cannot save: Duplicate variation names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
       return;
     }
 
@@ -1235,7 +1158,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
       {/* Bulk Edit Mode Notice - Always Visible */}
       <div className="bg-ag-dark-bg rounded-lg border border-ag-dark-border p-4 mb-6">
         <div className="text-sm text-ag-dark-text">
-          <span className="font-semibold text-ag-dark-accent">Bulk Edit Mode:</span> Changes will be applied to all {selectedCount} selected {activeTab === 'lists' ? 'lists' : 'objects'}. {activeTab === 'lists' ? 'Setting any field to a different value will override existing values for those lists.' : 'New relationships and variants will be appended to existing ones.'}
+          <span className="font-semibold text-ag-dark-accent">Bulk Edit Mode:</span> Changes will be applied to all {selectedCount} selected {activeTab === 'lists' ? 'lists' : 'objects'}. {activeTab === 'lists' ? 'Setting any field to a different value will override existing values for those lists.' : 'New relationships and variations will be appended to existing ones.'}
         </div>
       </div>
 
@@ -1321,16 +1244,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   <label className="block text-sm font-medium text-ag-dark-text">
                     Set
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddSetValueModalOpen(true);
-                    }}
-                    className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                    title="Add new Set value"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
                 </div>
                 <select
                   value={listFormData.set}
@@ -1357,17 +1270,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                   <label className="block text-sm font-medium text-ag-dark-text">
                     Grouping
                   </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddGroupingValueModalOpen(true);
-                    }}
-                    disabled={!listFormData.set || listFormData.set.trim() === ''}
-                    className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Add new Grouping value"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
                 </div>
                 <select
                   value={listFormData.grouping}
@@ -1736,16 +1638,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Being
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddBeingValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Being value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.being}
@@ -1770,16 +1662,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Avatar
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddAvatarValueModalOpen(true);
-                }}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors"
-                title="Add new Avatar value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.avatar}
@@ -1952,7 +1834,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
 
       {/* Variants Section */}
       <CollapsibleSection 
-        title="New Variants" 
+        title="New Variations" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
         ontologyViewType="variants"
@@ -1961,7 +1843,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             <button
               onClick={() => setIsVariantsModalOpen(true)}
               className="p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg"
-              title="View and manage variants"
+              title="View and manage variations"
             >
               <Grid3x3 className="w-5 h-5" />
             </button>
@@ -1972,7 +1854,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
         <div className="mb-6">
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
-              <span className="font-medium">Bulk variants management:</span> Click the grid icon above to add variants. These variants will be appended to each selected object's existing variants.
+              <span className="font-medium">Bulk variations management:</span> Click the grid icon above to add variations. These variations will be appended to each selected object's existing variations.
             </div>
           </div>
         </div>
@@ -1990,45 +1872,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
           Apply to {selectedCount} {activeTab === 'lists' ? 'Lists' : 'Objects'}
         </button>
       </div>
-
-      {/* Add Being Value Modal */}
-      <AddBeingValueModal
-        isOpen={isAddBeingValueModalOpen}
-        onClose={() => {
-          setIsAddBeingValueModalOpen(false);
-        }}
-        onSave={handleAddBeingValue}
-      />
-
-      {/* Add Set Value Modal */}
-      <AddSetValueModal
-        isOpen={isAddSetValueModalOpen}
-        onClose={() => {
-          setIsAddSetValueModalOpen(false);
-        }}
-        onSave={handleAddSetValue}
-      />
-
-      {/* Add Grouping Value Modal */}
-      <AddGroupingValueModal
-        isOpen={isAddGroupingValueModalOpen}
-        onClose={() => {
-          setIsAddGroupingValueModalOpen(false);
-        }}
-        onSave={handleAddGroupingValue}
-        availableSets={getDistinctSets()}
-        defaultSet={listFormData.set || ''}
-      />
-
-      {/* Add Avatar Value Modal */}
-      <AddAvatarValueModal
-        isOpen={isAddAvatarValueModalOpen}
-        onClose={() => {
-          setIsAddAvatarValueModalOpen(false);
-        }}
-        onSave={handleAddAvatarValue}
-        availableBeings={getDistinctBeings().filter(being => being !== 'ALL')}
-      />
 
       {/* CSV Upload Modals */}
       <CsvUploadModal
@@ -2145,7 +1988,7 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
             ontologyModalOpen.viewType === 'ontology' ? 'Ontology' :
             ontologyModalOpen.viewType === 'identifiers' ? 'Identifiers' :
             ontologyModalOpen.viewType === 'relationships' ? 'Relationships' :
-            'Variants'
+            'Variations'
           }
           viewType={ontologyModalOpen.viewType}
           isBulkMode={true}

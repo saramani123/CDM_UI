@@ -7,8 +7,6 @@ import { VariableObjectRelationshipModal } from './VariableObjectRelationshipMod
 import { CsvUploadModal } from './CsvUploadModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
-import { AddPartValueModal } from './AddPartValueModal';
-import { AddSectionValueModal } from './AddSectionValueModal';
 import { OntologyModal } from './OntologyModal';
 import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 import { CloneVariableRelationshipsModal } from './CloneVariableRelationshipsModal';
@@ -105,11 +103,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
   // State for add group value modal
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
 
-  const [isAddPartModalOpen, setIsAddPartModalOpen] = useState(false);
-  
-  // State for add section value modal
-  const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
-  
 
   // Fetch field options from API on mount and when allData changes
   useEffect(() => {
@@ -230,38 +223,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         );
       }
       throw error;
-    }
-  };
-
-  const handleAddSectionValue = async (part: string, sectionValue: string) => {
-    try {
-      // Call API to add the section node under the selected part
-      await apiService.addVariableSection(part, sectionValue);
-      
-      // Update dynamic field options to include the new section
-      setDynamicFieldOptions(prev => ({
-        ...prev,
-        section: [...new Set([...prev.section, sectionValue])].sort()
-      }));
-      
-      // If the part matches the current form's part, reload sections and select the new one
-      if (formData.part === part) {
-        // Reload sections from API to include the new one
-        try {
-          const response = await apiService.getVariableSections(part) as { sections: string[] };
-          setSectionsList(response.sections || []);
-          // Also update the form data to select the newly added section
-          handleChange('section', sectionValue);
-        } catch (error) {
-          console.error('Error reloading sections:', error);
-          // Still update the form data even if API call fails
-          handleChange('section', sectionValue);
-        }
-      }
-    } catch (error) {
-      console.error('Error adding section:', error);
-      alert(`Failed to add section: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      throw error; // Re-throw so modal can handle it
     }
   };
 
@@ -744,13 +705,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
       return newData;
     });
   }, []);
-
-  const handleAddPart = async (name: string) => {
-    await apiService.createVariablePart(name);
-    const response = (await apiService.getVariableParts()) as { parts: string[] };
-    setPartsList(response.parts || []);
-    handleChange('part', name);
-  };
 
   const handleDriverSelectionChange = (field: 'sector' | 'domain' | 'country', value: string[]) => {
     setDriverSelections(prev => ({
@@ -1344,15 +1298,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Part
               </label>
-              <button
-                type="button"
-                onClick={() => setIsAddPartModalOpen(true)}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Part"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.part}
@@ -1389,17 +1334,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Section
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddSectionValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled || !formData.part}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={formData.part ? "Add new Section value" : "Please select a Part first"}
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.section}
@@ -2293,23 +2227,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
         availableSections={sectionsList}
         defaultPart={formData.part || ''}
         defaultSection={formData.section || ''}
-      />
-
-      <AddPartValueModal
-        isOpen={isAddPartModalOpen}
-        onClose={() => setIsAddPartModalOpen(false)}
-        onSave={handleAddPart}
-      />
-
-      {/* Add Section Value Modal */}
-      <AddSectionValueModal
-        isOpen={isAddSectionValueModalOpen}
-        onClose={() => {
-          setIsAddSectionValueModalOpen(false);
-        }}
-        onSave={handleAddSectionValue}
-        availableParts={getDistinctParts()}
-        defaultPart={formData.part || ''}
       />
 
       {/* Ontology Modal */}

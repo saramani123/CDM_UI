@@ -427,7 +427,7 @@ async def get_objects():
 
                 CALL {
                     WITH o
-                    OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                    OPTIONAL MATCH (o)-[:HAS_VARIATION]->(v:ObjectVariation)
                     RETURN collect(DISTINCT v.name) as variant_names
                 }
 
@@ -534,7 +534,7 @@ async def get_object(object_id: str):
 
             # Get variant count
             var_count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN count(v) as var_count
             """, object_id=object_id).single()
             
@@ -583,7 +583,7 @@ async def get_object(object_id: str):
 
             # Get variants
             variants_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN v.name as name
             """, object_id=object_id)
 
@@ -870,10 +870,10 @@ async def create_object(object_data: ObjectCreateRequest):
                 for variant_name in variants:
                     variant_id = str(uuid.uuid4())
                     session.run("""
-                        CREATE (v:Variant {id: $variant_id, name: $name})
+                        CREATE (v:ObjectVariation {id: $variant_id, name: $name})
                         WITH v
                         MATCH (o:Object {id: $object_id})
-                        CREATE (o)-[:HAS_VARIANT]->(v)
+                        CREATE (o)-[:HAS_VARIATION]->(v)
                     """, variant_id=variant_id, name=variant_name, object_id=new_id)
             
             # Create relationships if provided (exclude default-shaped edges — those are created below)
@@ -1597,7 +1597,7 @@ async def update_object(
                 # For 'variantsList' field (bulk edit), we append variants instead of replacing
                 if has_variants:
                     session.run("""
-                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                         DETACH DELETE v
                     """, object_id=object_id)
                 
@@ -1685,7 +1685,7 @@ async def update_object(
                     
                     # Get existing variants for this object to avoid duplicates
                     existing_variants_result = session.run("""
-                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                         RETURN toLower(v.name) as lower_name, v.id as id, v.name as name
                     """, object_id=object_id)
                     
@@ -1693,7 +1693,7 @@ async def update_object(
                     
                     # Get all existing global variants to reuse them
                     all_variants_result = session.run("""
-                        MATCH (v:Variant)
+                        MATCH (v:ObjectVariation)
                         RETURN toLower(v.name) as lower_name, v.id as id, v.name as name
                     """)
                     
@@ -1736,7 +1736,7 @@ async def update_object(
                         # Create all variants in a single query
                         session.run("""
                             UNWIND $variants AS variant
-                            CREATE (v:Variant {
+                            CREATE (v:ObjectVariation {
                                 id: variant.id,
                                 name: variant.name
                             })
@@ -1747,8 +1747,8 @@ async def update_object(
                         session.run("""
                             MATCH (o:Object {id: $object_id})
                             UNWIND $variant_ids AS variant_id
-                            MATCH (v:Variant {id: variant_id})
-                            CREATE (o)-[:HAS_VARIANT]->(v)
+                            MATCH (v:ObjectVariation {id: variant_id})
+                            CREATE (o)-[:HAS_VARIATION]->(v)
                         """, object_id=object_id, variant_ids=[v["id"] for v in variants_with_ids])
                     
                     # Connect existing global variants in bulk using UNWIND
@@ -1758,15 +1758,15 @@ async def update_object(
                         session.run("""
                             MATCH (o:Object {id: $object_id})
                             UNWIND $variant_ids AS variant_id
-                            MATCH (v:Variant {id: variant_id})
-                            WHERE NOT (o)-[:HAS_VARIANT]->(v)
-                            CREATE (o)-[:HAS_VARIANT]->(v)
+                            MATCH (v:ObjectVariation {id: variant_id})
+                            WHERE NOT (o)-[:HAS_VARIATION]->(v)
+                            CREATE (o)-[:HAS_VARIATION]->(v)
                         """, object_id=object_id, variant_ids=variant_ids_to_connect)
                     
                     # Update variant count after all variants are processed
                     if variants_to_create_new or variants_to_connect:
                         count_result = session.run("""
-                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                             RETURN count(v) as var_count
                         """, object_id=object_id).single()
                         
@@ -2004,7 +2004,7 @@ async def update_object(
                 session.run("""
                     MATCH (o:Object {id: $object_id})
                     SET o.relationships = $rel_count,
-                        o.variants = COUNT { (o)-[:HAS_VARIANT]->(:Variant) }
+                        o.variants = COUNT { (o)-[:HAS_VARIATION]->(:ObjectVariation) }
                 """, object_id=object_id, rel_count=additional_count)
                 
                 # Return the updated object data instead of just a message
@@ -2174,7 +2174,7 @@ async def delete_object(object_id: str):
                 # Then delete (can't return the node after deletion)
                 tx.run("""
                     MATCH (o:Object {id: $object_id})
-                    OPTIONAL MATCH (o)-[:HAS_VARIANT]->(v:Variant)
+                    OPTIONAL MATCH (o)-[:HAS_VARIATION]->(v:ObjectVariation)
                     DETACH DELETE v, o
                 """, {"object_id": object_id})
                 
@@ -2472,7 +2472,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                             
                             # Check if variant already exists globally (case-insensitive)
                             existing_variant = session.run("""
-                                MATCH (v:Variant)
+                                MATCH (v:ObjectVariation)
                                 WHERE toLower(v.name) = toLower($variant_name)
                                 RETURN v.id as id, v.name as name
                             """, variant_name=variant_name).single()
@@ -2484,15 +2484,15 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 
                                 # Check if already connected to avoid duplicates
                                 already_connected = session.run("""
-                                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                                    MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation {id: $variant_id})
                                     RETURN v.id as id
                                 """, object_id=new_id, variant_id=variant_id).single()
                                 
                                 if not already_connected:
                                     session.run("""
                                         MATCH (o:Object {id: $object_id})
-                                        MATCH (v:Variant {id: $variant_id})
-                                        CREATE (o)-[:HAS_VARIANT]->(v)
+                                        MATCH (v:ObjectVariation {id: $variant_id})
+                                        CREATE (o)-[:HAS_VARIATION]->(v)
                                     """, object_id=new_id, variant_id=variant_id)
                                     variants_created = True
                             else:
@@ -2501,7 +2501,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 print(f"DEBUG: Creating new variant '{variant_name}' for object {new_id}")
                                 
                                 session.run("""
-                                    CREATE (v:Variant {
+                                    CREATE (v:ObjectVariation {
                                         id: $variant_id,
                                         name: $variant_name
                                     })
@@ -2509,14 +2509,14 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                                 
                                 session.run("""
                                     MATCH (o:Object {id: $object_id})
-                                    MATCH (v:Variant {id: $variant_id})
-                                    CREATE (o)-[:HAS_VARIANT]->(v)
+                                    MATCH (v:ObjectVariation {id: $variant_id})
+                                    CREATE (o)-[:HAS_VARIATION]->(v)
                                 """, object_id=new_id, variant_id=variant_id)
                                 variants_created = True
                         
                         # Update variant count after creating all variants
                         var_count_result = session.run("""
-                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                             RETURN count(v) as var_count
                         """, object_id=new_id).single()
                         
@@ -2568,7 +2568,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
 
                     # Get variants for the newly created object (already retrieved above if variants were created)
                     variants_result = session.run("""
-                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                         RETURN v.name as name
                     """, object_id=new_id)
 
@@ -2582,7 +2582,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     # Get variant count (if not already set above when creating variants)
                     if not variants_created:
                         var_count_result = session.run("""
-                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                             RETURN count(v) as var_count
                         """, object_id=new_id).single()
                         
@@ -2596,7 +2596,7 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                     else:
                         # var_count was already set above when creating variants, just retrieve it
                         var_count_result = session.run("""
-                            MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                            MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                             RETURN count(v) as var_count
                         """, object_id=new_id).single()
                         var_count = var_count_result["var_count"] if var_count_result else 0
@@ -2864,6 +2864,190 @@ async def create_avatar(being: str = Body(...), avatar: str = Body(...)):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create avatar: {str(e)}")
+
+@router.post("/objects/taxonomy/beings", response_model=Dict[str, Any])
+async def create_being(being: str = Body(..., embed=True)):
+    """
+    Create a new Being node (not attached to any Avatar/Object by default).
+    Blocks creation if a Being with the same name already exists.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    if not being or not being.strip():
+        raise HTTPException(status_code=400, detail="Being name is required")
+
+    being = being.strip()
+
+    try:
+        with driver.session() as session:
+            existing = session.run(
+                "MATCH (b:Being {name: $being}) RETURN count(b) AS c",
+                being=being,
+            ).single()
+            if existing and existing["c"] > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Being '{being}' already exists. Please use a different name.",
+                )
+
+            being_id = str(uuid.uuid4())
+            session.run(
+                "CREATE (b:Being {id: $being_id, name: $being})",
+                being_id=being_id, being=being,
+            )
+            return {
+                "success": True,
+                "message": f"Being '{being}' created",
+                "being": being,
+                "being_id": being_id,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error creating being: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create being: {str(e)}")
+
+@router.delete("/objects/taxonomy/beings", response_model=Dict[str, Any])
+async def delete_being(name: str):
+    """
+    Delete a Being node and cascade-delete its Avatars, as long as NO Object is attached.
+    1. If any Object is reachable from this Being (Being-[:HAS_AVATAR]->Avatar-[:HAS_OBJECT]->Object),
+       deletion is blocked (409) so object data is never silently broken.
+    2. Otherwise, remove the Being's Avatars:
+       - Avatars shared with other Beings (legacy data) are only unlinked from this Being so the
+         other Beings keep them.
+       - Avatars exclusive to this Being are deleted.
+       Then the Being node itself is removed.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Being name is required")
+
+    try:
+        with driver.session() as session:
+            obj_count = session.run("""
+                MATCH (b:Being {name: $name})-[:HAS_AVATAR]->(:Avatar)-[:HAS_OBJECT]->(o:Object)
+                RETURN count(DISTINCT o) AS c
+            """, name=name).single()
+            if obj_count and obj_count["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Being '{name}' was not able to be deleted because {obj_count['c']} existing "
+                        f"Object(s) have this Being. Please find the Objects with the '{name}' Being on "
+                        f"the Objects grid and move them to a new Being before deleting."
+                    ),
+                )
+
+            # Unlink avatars shared with other Beings (preserve the node for those Beings).
+            session.run("""
+                MATCH (b:Being {name: $name})-[r:HAS_AVATAR]->(a:Avatar)
+                WHERE EXISTS {
+                    MATCH (other:Being)-[:HAS_AVATAR]->(a) WHERE other.name <> $name
+                }
+                DELETE r
+            """, name=name)
+
+            # Cascade-delete avatars exclusive to this Being (no objects, confirmed above).
+            session.run("""
+                MATCH (b:Being {name: $name})-[:HAS_AVATAR]->(a:Avatar)
+                WHERE NOT EXISTS {
+                    MATCH (other:Being)-[:HAS_AVATAR]->(a) WHERE other.name <> $name
+                }
+                DETACH DELETE a
+            """, name=name)
+
+            # Finally delete the Being node.
+            session.run("MATCH (b:Being {name: $name}) DETACH DELETE b", name=name)
+            return {"success": True, "message": f"Being '{name}' and its Avatars deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting being: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete being: {str(e)}")
+
+@router.delete("/objects/taxonomy/avatars", response_model=Dict[str, Any])
+async def delete_avatar(being: str, avatar: str):
+    """
+    Delete an Avatar (scoped to a specific Being). Safe-guards:
+    1. If any Object uses this Being+Avatar, deletion is blocked (409).
+    2. If the Avatar node is shared with other Beings (legacy data), only the HAS_AVATAR edge
+       from this Being is removed; the node is preserved for the other Beings.
+    3. Otherwise the Avatar node(s) for this Being are removed.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    being = (being or "").strip()
+    avatar = (avatar or "").strip()
+    if not being:
+        raise HTTPException(status_code=400, detail="Being name is required")
+    if not avatar:
+        raise HTTPException(status_code=400, detail="Avatar name is required")
+
+    try:
+        with driver.session() as session:
+            exists = session.run("""
+                MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                RETURN count(a) AS c
+            """, being=being, avatar=avatar).single()
+            if not exists or exists["c"] == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Avatar '{avatar}' not found for Being '{being}'.",
+                )
+
+            obj_count = session.run("""
+                MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})-[:HAS_OBJECT]->(o:Object)
+                RETURN count(DISTINCT o) AS c
+            """, being=being, avatar=avatar).single()
+            if obj_count and obj_count["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Avatar '{avatar}' was not able to be deleted because {obj_count['c']} existing "
+                        f"Object(s) have this Avatar. Please find the Objects with the '{avatar}' Avatar on "
+                        f"the Objects grid and move them to a new Avatar before deleting."
+                    ),
+                )
+
+            # Shared avatar node (linked to other Beings too): only detach from THIS Being.
+            session.run("""
+                MATCH (b:Being {name: $being})-[r:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                WHERE EXISTS {
+                    MATCH (other:Being)-[:HAS_AVATAR]->(a) WHERE other.name <> $being
+                }
+                DELETE r
+            """, being=being, avatar=avatar)
+
+            # Exclusive avatar node(s): remove entirely.
+            session.run("""
+                MATCH (b:Being {name: $being})-[:HAS_AVATAR]->(a:Avatar {name: $avatar})
+                WHERE NOT EXISTS {
+                    MATCH (other:Being)-[:HAS_AVATAR]->(a) WHERE other.name <> $being
+                }
+                DETACH DELETE a
+            """, being=being, avatar=avatar)
+
+            return {"success": True, "message": f"Avatar '{avatar}' deleted from Being '{being}'"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting avatar: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete avatar: {str(e)}")
 
 @router.get("/objects/taxonomy/objects", response_model=List[str])
 async def get_objects_by_taxonomy(being: Optional[str] = None, avatar: Optional[str] = None):
@@ -4154,7 +4338,7 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
         with driver.session() as session:
             # First check if variant already exists for this specific object (case-insensitive)
             existing_variant_for_object = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 WHERE toLower(v.name) = toLower($variant_name)
                 RETURN v.id as id, v.name as name
             """, object_id=object_id, variant_name=request.variant_name).single()
@@ -4164,7 +4348,7 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
             
             # Check if variant already exists globally (case-insensitive)
             existing_variant = session.run("""
-                MATCH (v:Variant)
+                MATCH (v:ObjectVariation)
                 WHERE toLower(v.name) = toLower($variant_name)
                 RETURN v.id as id, v.name as name
             """, variant_name=request.variant_name).single()
@@ -4176,8 +4360,8 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
                 # Connect existing variant to object
                 session.run("""
                     MATCH (o:Object {id: $object_id})
-                    MATCH (v:Variant {id: $variant_id})
-                    CREATE (o)-[:HAS_VARIANT]->(v)
+                    MATCH (v:ObjectVariation {id: $variant_id})
+                    CREATE (o)-[:HAS_VARIATION]->(v)
                 """, object_id=object_id, variant_id=variant_id)
             else:
                 # Create new variant
@@ -4185,7 +4369,7 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
                 
                 # Create variant node
                 session.run("""
-                    CREATE (v:Variant {
+                    CREATE (v:ObjectVariation {
                         id: $variant_id,
                         name: $variant_name
                     })
@@ -4194,13 +4378,13 @@ async def create_variant(object_id: str, request: VariantCreateRequest = Body(..
                 # Connect variant to object
                 session.run("""
                     MATCH (o:Object {id: $object_id})
-                    MATCH (v:Variant {id: $variant_id})
-                    CREATE (o)-[:HAS_VARIANT]->(v)
+                    MATCH (v:ObjectVariation {id: $variant_id})
+                    CREATE (o)-[:HAS_VARIATION]->(v)
                 """, object_id=object_id, variant_id=variant_id)
             
             # Update variant count
             count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN count(v) as var_count
             """, object_id=object_id).single()
             
@@ -4230,13 +4414,13 @@ async def delete_variant(object_id: str, variant_id: str):
         with driver.session() as session:
             # Delete the variant
             session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation {id: $variant_id})
                 DETACH DELETE v
             """, object_id=object_id, variant_id=variant_id)
             
             # Update variant count
             count_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN count(v) as var_count
             """, object_id=object_id).single()
             
@@ -4317,7 +4501,7 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
             print(f"DEBUG: Starting session for object {object_id}")
             # Get existing variants for this object to check for duplicates
             existing_variants_result = session.run("""
-                MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN v.name as name
             """, object_id=object_id)
             
@@ -4325,7 +4509,7 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
             
             # Get all global variants to check for existing ones
             global_variants_result = session.run("""
-                MATCH (v:Variant)
+                MATCH (v:ObjectVariation)
                 RETURN v.name as name, v.id as id
             """)
             
@@ -4365,7 +4549,7 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                     
                     # Check if this variant is already connected to this object
                     already_connected = session.run("""
-                        MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant {id: $variant_id})
+                        MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation {id: $variant_id})
                         RETURN v.id as id
                     """, object_id=object_id, variant_id=variant_id).single()
                     
@@ -4373,8 +4557,8 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                         # Connect existing variant to object (MERGE to avoid duplicate relationships)
                         session.run("""
                             MATCH (o:Object {id: $object_id})
-                            MATCH (v:Variant {id: $variant_id})
-                            MERGE (o)-[:HAS_VARIANT]->(v)
+                            MATCH (v:ObjectVariation {id: $variant_id})
+                            MERGE (o)-[:HAS_VARIATION]->(v)
                         """, object_id=object_id, variant_id=variant_id)
                         
                         # Add to existing variants set to avoid duplicates within the same upload
@@ -4395,7 +4579,7 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                     try:
                         # Create variant node
                         session.run("""
-                            CREATE (v:Variant {
+                            CREATE (v:ObjectVariation {
                                 id: $variant_id,
                                 name: $variant_name
                             })
@@ -4404,8 +4588,8 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
                         # Connect variant to object
                         session.run("""
                             MATCH (o:Object {id: $object_id})
-                            MATCH (v:Variant {id: $variant_id})
-                            CREATE (o)-[:HAS_VARIANT]->(v)
+                            MATCH (v:ObjectVariation {id: $variant_id})
+                            CREATE (o)-[:HAS_VARIATION]->(v)
                         """, object_id=object_id, variant_id=variant_id)
                         
                         # Add to existing variants set to avoid duplicates within the same upload
@@ -4422,7 +4606,7 @@ async def bulk_upload_variants(object_id: str, file: UploadFile = File(...)):
             # Update variant count for the object
             if created_variants:
                 count_result = session.run("""
-                    MATCH (o:Object {id: $object_id})-[:HAS_VARIANT]->(v:Variant)
+                    MATCH (o:Object {id: $object_id})-[:HAS_VARIATION]->(v:ObjectVariation)
                     RETURN count(v) as var_count
                 """, object_id=object_id).single()
                 

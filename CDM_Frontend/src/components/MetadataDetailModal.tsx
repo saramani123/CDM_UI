@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Trash2 } from 'lucide-react';
 import { MetadataData } from '../hooks/useMetadata';
 import { apiService } from '../services/api';
 
 // Required metadata concepts configuration
 const REQUIRED_METADATA_CONCEPTS: Record<string, { levels: 1 | 2 | 3 | 4; columns: string[] }> = {
+  "Source Format": { levels: 2, columns: ["Source Format", "Definition"] },
+  "Format VI": { levels: 2, columns: ["Format VI", "Definition"] },
+  "Format VII": { levels: 3, columns: ["Format V-I", "Format V-II", "Definition"] },
+  // Legacy alias: "Vulqan" was renamed to "Format VII"
   "Vulqan": { levels: 3, columns: ["Format V-I", "Format V-II", "Definition"] },
   "Being": { levels: 2, columns: ["Being", "Definition"] },
   "Avatar": { levels: 3, columns: ["Being", "Avatar", "Definition"] },
@@ -46,6 +50,14 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Being/Avatar node management (Neo4j-backed) state
+  const [showAddPopup, setShowAddPopup] = useState<null | 'top' | 'sub'>(null);
+  const [newNodeName, setNewNodeName] = useState('');
+  const [newParentName, setNewParentName] = useState('');
+  const [availableParents, setAvailableParents] = useState<string[]>([]);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
   // Load existing data when modal opens or metadataItem changes
   useEffect(() => {
     if (isOpen && metadataItem) {
@@ -61,7 +73,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     
     try {
       const isRequired = isRequiredConcept(metadataItem.concept);
-      const isVulqan = metadataItem.concept === 'Vulqan' || metadataItem.concept?.toLowerCase() === 'vulqan';
+      const isVulqan = metadataItem.concept === 'Format VII' || metadataItem.concept === 'Vulqan' || metadataItem.concept?.toLowerCase() === 'vulqan' || metadataItem.concept?.toLowerCase() === 'format vii';
       const isBeing = metadataItem.concept === 'Being' || metadataItem.concept?.toLowerCase() === 'being';
       const isAvatar = metadataItem.concept === 'Avatar' || metadataItem.concept?.toLowerCase() === 'avatar';
       const isPart = metadataItem.concept === 'Part' || metadataItem.concept?.toLowerCase() === 'part';
@@ -1353,6 +1365,124 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     }
   };
 
+  // ---- Neo4j-backed taxonomy node management ----
+  // Top-level concepts (single name column): Being / Part / Set.
+  // Sub-level concepts (parent + name columns): Avatar (Being) / Section (Part) / Grouping (Set).
+  const conceptName = metadataItem?.concept || '';
+  const conceptLc = conceptName.toLowerCase();
+
+  const TOP_TAX: Record<string, {
+    childLabel: string;
+    create: (name: string) => Promise<any>;
+    del: (name: string) => Promise<any>;
+  }> = {
+    being: { childLabel: 'Avatars', create: (n) => apiService.createBeing(n), del: (n) => apiService.deleteBeing(n) },
+    part: { childLabel: 'Sections', create: (n) => apiService.createVariablePart(n), del: (n) => apiService.deleteVariablePart(n) },
+    set: { childLabel: 'Groupings', create: (n) => apiService.addSetValue(n), del: (n) => apiService.deleteSet(n) },
+  };
+  const SUB_TAX: Record<string, {
+    parentLabel: string;
+    fetchParents: () => Promise<string[]>;
+    create: (parent: string, name: string) => Promise<any>;
+    del: (parent: string, name: string) => Promise<any>;
+  }> = {
+    avatar: { parentLabel: 'Being', fetchParents: async () => ((await apiService.getBeingValues()) as any).beings || [], create: (p, n) => apiService.createAvatar(p, n), del: (p, n) => apiService.deleteAvatar(p, n) },
+    section: { parentLabel: 'Part', fetchParents: async () => ((await apiService.getPartValues()) as any).parts || [], create: (p, n) => apiService.addVariableSection(p, n), del: (p, n) => apiService.deleteVariableSection(p, n) },
+    grouping: { parentLabel: 'Set', fetchParents: async () => ((await apiService.getSetValues()) as any).sets || [], create: (p, n) => apiService.addGroupingValue(p, n), del: (p, n) => apiService.deleteGrouping(p, n) },
+  };
+  const topTax = TOP_TAX[conceptLc];
+  const subTax = SUB_TAX[conceptLc];
+  const isManagedTax = !!topTax || !!subTax;
+
+  const openAddTop = () => {
+    setNewNodeName('');
+    setActionError(null);
+    setShowAddPopup('top');
+  };
+
+  const openAddSub = async () => {
+    setNewNodeName('');
+    setNewParentName('');
+    setActionError(null);
+    setShowAddPopup('sub');
+    try {
+      setAvailableParents(await subTax!.fetchParents());
+    } catch {
+      // Fall back to the parents already present in the loaded rows
+      const fromRows = [...new Set(rows.map(r => (r[0] || '').trim()).filter(Boolean))].sort();
+      setAvailableParents(fromRows);
+    }
+  };
+
+  const confirmAddTax = async () => {
+    if (showAddPopup === 'top') {
+      const name = newNodeName.trim();
+      if (!name) { setActionError(`${conceptName} name is required`); return; }
+      setActionLoading(true);
+      setActionError(null);
+      try {
+        await topTax!.create(name);
+        setShowAddPopup(null);
+        await loadMetadataDetail();
+        await onSave();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : `Failed to create ${conceptName}`);
+      } finally {
+        setActionLoading(false);
+      }
+    } else {
+      const parent = newParentName.trim();
+      const name = newNodeName.trim();
+      if (!parent) { setActionError(`Please select a ${subTax!.parentLabel}`); return; }
+      if (!name) { setActionError(`${conceptName} name is required`); return; }
+      setActionLoading(true);
+      setActionError(null);
+      try {
+        await subTax!.create(parent, name);
+        setShowAddPopup(null);
+        await loadMetadataDetail();
+        await onSave();
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : `Failed to create ${conceptName}`);
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  };
+
+  const handleDeleteTop = async (name: string) => {
+    if (!name || !name.trim()) return;
+    if (!window.confirm(`Delete ${conceptName} "${name}" and all of its ${topTax!.childLabel}? This cannot be undone.`)) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await topTax!.del(name.trim());
+      await loadMetadataDetail();
+      await onSave();
+    } catch (err) {
+      // Surface the backend's safety message (e.g. blocked because dependents exist)
+      window.alert(err instanceof Error ? err.message : `Failed to delete ${conceptName}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteSub = async (parent: string, name: string) => {
+    if (!parent || !name) return;
+    if (!window.confirm(`Delete ${conceptName} "${name}" (${subTax!.parentLabel} "${parent}")? This cannot be undone.`)) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await subTax!.del(parent.trim(), name.trim());
+      await loadMetadataDetail();
+      await onSave();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : `Failed to delete ${conceptName}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (!isOpen || !metadataItem) return null;
 
   return (
@@ -1444,6 +1574,15 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                       + Add Row
                     </button>
                   )}
+                  {isManagedTax && (
+                    <button
+                      onClick={topTax ? openAddTop : openAddSub}
+                      disabled={isSaving || actionLoading}
+                      className="px-3 py-1 text-sm bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50"
+                    >
+                      + {conceptName}
+                    </button>
+                  )}
                 </div>
                 <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${levels}, 1fr)` }}>
                   {columnNames.map((name, index) => {
@@ -1486,7 +1625,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                   {/* Header Row */}
                   <div 
                     className="grid gap-2 p-2 bg-ag-dark-bg border-b border-ag-dark-border font-medium text-sm text-ag-dark-text"
-                    style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)` }}
+                    style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? ' 56px' : ''}` }}
                   >
                     <div className="text-center">#</div>
                     {columnNames.map((name, index) => (
@@ -1494,6 +1633,9 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                         {name || `Column ${index + 1}`}
                       </div>
                     ))}
+                    {isManagedTax && (
+                      <div className="text-center"></div>
+                    )}
                   </div>
 
                   {/* Data Rows */}
@@ -1508,7 +1650,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                       <div
                         key={rowIndex}
                         className="grid gap-2 p-2 border-b border-ag-dark-border hover:bg-ag-dark-bg/50"
-                        style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)` }}
+                        style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? ' 56px' : ''}` }}
                       >
                         <div className="flex items-center justify-center text-sm text-ag-dark-text-secondary">
                           {rowIndex + 1}
@@ -1549,6 +1691,23 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                             />
                           );
                         })}
+                        {isManagedTax && (
+                          <div className="flex items-center justify-center">
+                            {((topTax && (row[0] || '').trim()) || (subTax && (row[0] || '').trim() && (row[1] || '').trim())) ? (
+                              <button
+                                type="button"
+                                onClick={() => topTax
+                                  ? handleDeleteTop(row[0])
+                                  : handleDeleteSub(row[0], row[1])}
+                                disabled={isSaving || actionLoading}
+                                title={topTax ? `Delete ${conceptName} "${row[0]}"` : `Delete ${conceptName} "${row[1]}"`}
+                                className="text-ag-dark-text-secondary hover:text-red-400 transition-colors disabled:opacity-50"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                       ))
                     )}
@@ -1586,6 +1745,87 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Add taxonomy node popup (creates Neo4j nodes: Being/Avatar, Part/Section, Set/Grouping) */}
+      {showAddPopup && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-ag-dark-text">
+                Add {conceptName}
+              </h3>
+              <button
+                onClick={() => setShowAddPopup(null)}
+                disabled={actionLoading}
+                className="text-ag-dark-text-secondary hover:text-ag-dark-text disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {showAddPopup === 'sub' && subTax && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-ag-dark-text mb-1">
+                  {subTax.parentLabel} <span className="text-ag-dark-error">*</span>
+                </label>
+                <select
+                  value={newParentName}
+                  onChange={(e) => setNewParentName(e.target.value)}
+                  disabled={actionLoading}
+                  className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+                >
+                  <option value="">Select a {subTax.parentLabel}…</option>
+                  {availableParents.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-ag-dark-text mb-1">
+                {conceptName} <span className="text-ag-dark-error">*</span>
+              </label>
+              <input
+                type="text"
+                autoFocus
+                value={newNodeName}
+                onChange={(e) => setNewNodeName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { confirmAddTax(); } }}
+                placeholder={`Enter ${conceptName} name`}
+                disabled={actionLoading}
+                className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent"
+              />
+            </div>
+
+            {actionError && (
+              <div className="mb-4 p-2 bg-red-900 bg-opacity-20 border border-red-500 rounded text-red-400 text-sm">
+                {actionError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowAddPopup(null)}
+                disabled={actionLoading}
+                className="px-4 py-2 border border-ag-dark-border rounded text-ag-dark-text hover:bg-ag-dark-bg transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmAddTax}
+                disabled={actionLoading}
+                className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                {actionLoading ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

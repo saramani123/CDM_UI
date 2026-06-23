@@ -69,7 +69,7 @@ async def get_ontology_view(
             """,
             'variants': """
                 MATCH (o:Object {id: $object_id})
-                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[r:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN o, r, v
                 ORDER BY v.name
             """
@@ -117,7 +117,7 @@ async def get_ontology_view(
             """,
             'variants': """
                 MATCH (o:Object {object: $object_name})
-                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[r:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN o, r, v
                 ORDER BY v.name
             """
@@ -300,7 +300,7 @@ async def get_bulk_ontology_view(
             'variants': """
                 MATCH (o:Object)
                 WHERE o.id IN $object_ids
-                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[r:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN o, r, v
                 ORDER BY o.object, v.name
             """
@@ -354,7 +354,7 @@ async def get_bulk_ontology_view(
             'variants': """
                 MATCH (o:Object)
                 WHERE o.object IN $object_names
-                OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+                OPTIONAL MATCH (o)-[r:HAS_VARIATION]->(v:ObjectVariation)
                 RETURN o, r, v
                 ORDER BY o.object, v.name
             """
@@ -502,7 +502,7 @@ async def get_variable_ontology_view(
             """,
             'variations': """
                 MATCH (v:Variable {id: $variable_id})
-                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
                 RETURN v, r, var
                 ORDER BY var.name
             """
@@ -543,7 +543,7 @@ async def get_variable_ontology_view(
             """,
             'variations': """
                 MATCH (v:Variable {name: $variable_name})
-                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
                 RETURN v, r, var
                 ORDER BY var.name
             """
@@ -702,7 +702,7 @@ async def get_bulk_variable_ontology_view(
             'variations': """
                 MATCH (v:Variable)
                 WHERE v.id IN $variable_ids
-                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
                 RETURN v, r, var
                 ORDER BY var.name
             """
@@ -748,7 +748,7 @@ async def get_bulk_variable_ontology_view(
             'variations': """
                 MATCH (v:Variable)
                 WHERE v.name IN $variable_names
-                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
                 RETURN v, r, var
                 ORDER BY var.name
             """
@@ -867,12 +867,12 @@ async def get_list_ontology_view(
             'listValues': """
                 MATCH (l:List {id: $list_id})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                 RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List {id: $list_id})
-                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:ListVariation)
                 RETURN l, r, var
                 ORDER BY var.name
             """
@@ -900,12 +900,12 @@ async def get_list_ontology_view(
             'listValues': """
                 MATCH (l:List {name: $list_name})
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                 RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List {name: $list_name})
-                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:ListVariation)
                 RETURN l, r, var
                 ORDER BY var.name
             """
@@ -959,9 +959,9 @@ async def get_list_ontology_view(
                         WITH l, tiered, tier_rel, lv1, r1
                         OPTIONAL MATCH (lv1)-[r2:HAS_TIER_1_VALUE|HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv2:ListValue)
                         OPTIONAL MATCH (lv2)-[r3:HAS_TIER_2_VALUE|HAS_TIER_3_VALUE|HAS_TIER_4_VALUE|HAS_TIER_5_VALUE|HAS_TIER_6_VALUE|HAS_TIER_7_VALUE|HAS_TIER_8_VALUE|HAS_TIER_9_VALUE|HAS_TIER_10_VALUE]->(lv3:ListValue)
-                        OPTIONAL MATCH (lv1)-[var_rel1:HAS_VALUE_VARIATION]->(var1:Variation)
-                        OPTIONAL MATCH (lv2)-[var_rel2:HAS_VALUE_VARIATION]->(var2:Variation)
-                        OPTIONAL MATCH (lv3)-[var_rel3:HAS_VALUE_VARIATION]->(var3:Variation)
+                        OPTIONAL MATCH (lv1)-[var_rel1:HAS_VALUE_VARIATION]->(var1:ListValueVariation)
+                        OPTIONAL MATCH (lv2)-[var_rel2:HAS_VALUE_VARIATION]->(var2:ListValueVariation)
+                        OPTIONAL MATCH (lv3)-[var_rel3:HAS_VALUE_VARIATION]->(var3:ListValueVariation)
                         RETURN l, tiered, tier_rel, lv1, r1, lv2, r2, lv3, r3, var1, var_rel1, var2, var_rel2, var3, var_rel3
                     """
                 elif is_child:
@@ -1145,13 +1145,13 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                 RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
-                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:ListVariation)
                 RETURN l, r, var
                 ORDER BY var.name
             """
@@ -1182,13 +1182,13 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.name IN $list_names
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
-                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
                 RETURN l, r, lv, var, var_rel
             """,
             'variations': """
                 MATCH (l:List)
                 WHERE l.name IN $list_names
-                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:Variation)
+                OPTIONAL MATCH (l)-[r:HAS_VARIATION]->(var:ListVariation)
                 RETURN l, r, var
                 ORDER BY var.name
             """

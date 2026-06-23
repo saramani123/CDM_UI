@@ -671,6 +671,26 @@ class ApiService {
     });
   }
 
+  async createBeing(being: string) {
+    return this.request('/objects/taxonomy/beings', {
+      method: 'POST',
+      body: JSON.stringify({ being }),
+    });
+  }
+
+  async deleteBeing(being: string) {
+    return this.request(`/objects/taxonomy/beings?name=${encodeURIComponent(being)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteAvatar(being: string, avatar: string) {
+    return this.request(
+      `/objects/taxonomy/avatars?being=${encodeURIComponent(being)}&avatar=${encodeURIComponent(avatar)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   async getObjectsByTaxonomy(being?: string, avatar?: string) {
     let url = '/objects/taxonomy/objects';
     const params = new URLSearchParams();
@@ -1117,6 +1137,19 @@ class ApiService {
     });
   }
 
+  async deleteVariablePart(name: string) {
+    return this.request(`/variables/parts?name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteVariableSection(part: string, section: string) {
+    return this.request(
+      `/variables/sections?part=${encodeURIComponent(part)}&section=${encodeURIComponent(section)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   async getVariablesForSelection(part: string, section: string, group: string) {
     const params = new URLSearchParams({ part, section, group });
     return this.request(`/variables/variables?${params.toString()}`, { method: 'GET' });
@@ -1140,6 +1173,19 @@ class ApiService {
         grouping: groupingValue
       }),
     });
+  }
+
+  async deleteSet(name: string) {
+    return this.request(`/lists/set?name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteGrouping(set: string, grouping: string) {
+    return this.request(
+      `/lists/grouping?set=${encodeURIComponent(set)}&grouping=${encodeURIComponent(grouping)}`,
+      { method: 'DELETE' },
+    );
   }
 
   // Order API - for default sort order persistence

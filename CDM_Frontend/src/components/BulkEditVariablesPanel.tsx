@@ -3,7 +3,6 @@ import { Settings, Save, X, Trash2, Plus, Link, Layers, Upload, ChevronRight, Ch
 import { concatenateDrivers } from '../data/mockData';
 import { useDrivers } from '../hooks/useDrivers';
 import { CsvUploadModal } from './CsvUploadModal';
-import { AddSectionValueModal } from './AddSectionValueModal';
 import { AddGroupValueModal } from './AddGroupValueModal';
 import { AddFieldValueModal } from './AddFieldValueModal';
 import { OntologyModal } from './OntologyModal';
@@ -73,9 +72,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
   // Live drivers source: reflects edits made in the Metadata Drivers editor immediately.
   const { drivers: driversData } = useDrivers();
 
-  
-  // Modal state for add section value
-  const [isAddSectionValueModalOpen, setIsAddSectionValueModalOpen] = useState(false);
   
   // Modal state for add group value
   const [isAddGroupValueModalOpen, setIsAddGroupValueModalOpen] = useState(false);
@@ -310,32 +306,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     // Only return sections from API (which are already filtered by Part)
     // Don't fallback to all sections - sections must be Part-specific
     return ['Keep Current Section', ...sectionsList.sort()];
-  };
-
-  const handleAddSectionValue = async (part: string, sectionValue: string) => {
-    try {
-      // Call API to add the section (creates placeholder variable in Neo4j)
-      await apiService.addVariableSection(part, sectionValue);
-      
-      // If the part matches the current form's part, reload sections and select the new one
-      if (formData.part === part || formData.part === 'Keep Current Part') {
-        // Reload sections from API to include the new one
-        try {
-          const response = await apiService.getVariableSections(part) as { sections: string[] };
-          setSectionsList(response.sections || []);
-          // Also update the form data to select the newly added section
-          handleChange('section', sectionValue);
-        } catch (error) {
-          console.error('Error reloading sections:', error);
-          // Still update the form data even if API call fails
-          handleChange('section', sectionValue);
-        }
-      }
-    } catch (error) {
-      console.error('Error adding section:', error);
-      alert(`Failed to add section: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      throw error; // Re-throw so modal can handle it
-    }
   };
 
   const handleAddGroupValue = async (part: string, section: string, groupValue: string) => {
@@ -1201,17 +1171,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Section
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddSectionValueModalOpen(true);
-                }}
-                disabled={!formData.part || formData.part === 'Keep Current Part'}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={formData.part && formData.part !== 'Keep Current Part' ? "Add new Section value" : "Please select a Part first"}
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.section}
@@ -1881,18 +1840,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
         viewType="variations"
         mode="variable"
         isBulkMode={true}
-      />
-
-      {/* Ontology Modal */}
-      {/* Add Section Value Modal */}
-      <AddSectionValueModal
-        isOpen={isAddSectionValueModalOpen}
-        onClose={() => {
-          setIsAddSectionValueModalOpen(false);
-        }}
-        onSave={handleAddSectionValue}
-        availableParts={getDistinctParts().filter(p => p !== 'Keep Current Part')}
-        defaultPart={formData.part && formData.part !== 'Keep Current Part' ? formData.part : ''}
       />
 
       {/* Add Group Value Modal */}

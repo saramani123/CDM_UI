@@ -62,10 +62,12 @@ def create_constraints_and_indexes():
                 "CREATE CONSTRAINT section_id_unique IF NOT EXISTS FOR (s:Section) REQUIRE s.id IS UNIQUE",
                 "CREATE CONSTRAINT group_scoped_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE (g.part_name, g.section_name, g.name) IS UNIQUE",
                 "CREATE CONSTRAINT group_id_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.id IS UNIQUE",
-                # Relationship and Variant constraints
+                # Relationship and Variation constraints (object/variable/list variations are distinct labels)
                 "CREATE CONSTRAINT relationship_id_unique IF NOT EXISTS FOR (r:Relationship) REQUIRE r.id IS UNIQUE",
-                "CREATE CONSTRAINT variant_id_unique IF NOT EXISTS FOR (v:Variant) REQUIRE v.id IS UNIQUE",
-                "CREATE CONSTRAINT variation_id_unique IF NOT EXISTS FOR (var:Variation) REQUIRE var.id IS UNIQUE"
+                "CREATE CONSTRAINT object_variation_id_unique IF NOT EXISTS FOR (v:ObjectVariation) REQUIRE v.id IS UNIQUE",
+                "CREATE CONSTRAINT variable_variation_id_unique IF NOT EXISTS FOR (var:VariableVariation) REQUIRE var.id IS UNIQUE",
+                "CREATE CONSTRAINT list_variation_id_unique IF NOT EXISTS FOR (var:ListVariation) REQUIRE var.id IS UNIQUE",
+                "CREATE CONSTRAINT list_value_variation_id_unique IF NOT EXISTS FOR (var:ListValueVariation) REQUIRE var.id IS UNIQUE"
             ]
             
             for constraint in constraints:
@@ -92,7 +94,7 @@ def create_constraints_and_indexes():
                 # Objects taxonomy indexes
                 "CREATE INDEX being_name_index IF NOT EXISTS FOR (b:Being) ON (b.name)",
                 "CREATE INDEX avatar_name_index IF NOT EXISTS FOR (a:Avatar) ON (a.name)",
-                "CREATE INDEX variant_name_index IF NOT EXISTS FOR (v:Variant) ON (v.name)",
+                "CREATE INDEX object_variation_name_index IF NOT EXISTS FOR (v:ObjectVariation) ON (v.name)",
                 "CREATE INDEX object_name_index IF NOT EXISTS FOR (o:Object) ON (o.name)",
                 # Variables taxonomy indexes
                 "CREATE INDEX part_name_index IF NOT EXISTS FOR (p:Part) ON (p.name)",
@@ -100,8 +102,9 @@ def create_constraints_and_indexes():
                 # Relationship and Variant indexes
                 "CREATE INDEX relationship_type_index IF NOT EXISTS FOR (r:Relationship) ON (r.type)",
                 "CREATE INDEX relationship_role_index IF NOT EXISTS FOR (r:Relationship) ON (r.role)",
-                "CREATE INDEX variant_name_index IF NOT EXISTS FOR (v:Variant) ON (v.name)",
-                "CREATE INDEX variation_name_index IF NOT EXISTS FOR (var:Variation) ON (var.name)"
+                "CREATE INDEX variable_variation_name_index IF NOT EXISTS FOR (var:VariableVariation) ON (var.name)",
+                "CREATE INDEX list_variation_name_index IF NOT EXISTS FOR (var:ListVariation) ON (var.name)",
+                "CREATE INDEX list_value_variation_name_index IF NOT EXISTS FOR (var:ListValueVariation) ON (var.name)"
             ]
             
             for index in indexes:
@@ -184,7 +187,7 @@ def seed_objects_taxonomy():
             session.run("MATCH (b:Being) DETACH DELETE b")
             session.run("MATCH (a:Avatar) DETACH DELETE a")
             session.run("MATCH (o:Object) DETACH DELETE o")
-            session.run("MATCH (v:Variant) DETACH DELETE v")
+            session.run("MATCH (v:ObjectVariation) DETACH DELETE v")
             print("🗑️  Cleared existing Objects taxonomy")
             
             # Create Beings

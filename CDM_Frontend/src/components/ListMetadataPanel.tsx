@@ -12,8 +12,6 @@ import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
 import { SingleListValuesModal } from './SingleListValuesModal';
 import { apiService, getTieredListValues } from '../services/api';
-import { AddSetValueModal } from './AddSetValueModal';
-import { AddGroupingValueModal } from './AddGroupingValueModal';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ONTOLOGY_TYPES, normalizeOntologyType } from '../constants/ontologyTypes';
 
@@ -356,10 +354,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
   const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
   
-  // Modal state for add set/grouping values
-  const [isAddSetValueModalOpen, setIsAddSetValueModalOpen] = useState(false);
-  const [isAddGroupingValueModalOpen, setIsAddGroupingValueModalOpen] = useState(false);
-  
+  // Set/Grouping creation is centralized in the Metadata tab
+
   // Local state to track Sets and Groupings (for immediate UI updates)
   const [localSets, setLocalSets] = useState<string[]>([]);
   const [localGroupings, setLocalGroupings] = useState<Record<string, string[]>>({});
@@ -671,44 +667,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     return allGroupings;
   };
 
-  const handleAddSetValue = async (setValue: string) => {
-    try {
-      await apiService.addSetValue(setValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalSets(prev => {
-        if (!prev.includes(setValue)) {
-          return [...prev, setValue].sort();
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Set
-      handleChange('set', setValue);
-    } catch (error) {
-      throw error;
-    }
-  };
-
-  const handleAddGroupingValue = async (set: string, groupingValue: string) => {
-    try {
-      await apiService.addGroupingValue(set, groupingValue);
-      // Update local state immediately so it appears in dropdown
-      setLocalGroupings(prev => {
-        const currentGroupings = prev[set] || [];
-        if (!currentGroupings.includes(groupingValue)) {
-          return {
-            ...prev,
-            [set]: [...currentGroupings, groupingValue].sort()
-          };
-        }
-        return prev;
-      });
-      // Also update formData to select the newly added Grouping
-      handleChange('grouping', groupingValue);
-    } catch (error) {
-      throw error;
-    }
-  };
-  
   // Get lists for a specific Set and Grouping, excluding current list and previously selected tiered lists
   const getListsForSetAndGrouping = (set: string, grouping: string, excludeListIds: string[]): any[] => {
     if (!set || !grouping) return [];
@@ -1554,17 +1512,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Set
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddSetValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Set value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.set}
@@ -1594,17 +1541,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               <label className="block text-sm font-medium text-ag-dark-text">
                 Grouping
               </label>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsAddGroupingValueModalOpen(true);
-                }}
-                disabled={!isPanelEnabled || !formData.set}
-                className="text-ag-dark-accent hover:text-ag-dark-accent-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Add new Grouping value"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
             </div>
             <select
               value={formData.grouping}
@@ -2240,26 +2176,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           // DO NOT close the modal - let user see the saved variations
           // Modal will stay open - user can continue editing or close manually
         }}
-      />
-
-      {/* Add Set Value Modal */}
-      <AddSetValueModal
-        isOpen={isAddSetValueModalOpen}
-        onClose={() => {
-          setIsAddSetValueModalOpen(false);
-        }}
-        onSave={handleAddSetValue}
-      />
-
-      {/* Add Grouping Value Modal */}
-      <AddGroupingValueModal
-        isOpen={isAddGroupingValueModalOpen}
-        onClose={() => {
-          setIsAddGroupingValueModalOpen(false);
-        }}
-        onSave={handleAddGroupingValue}
-        availableSets={getDistinctSets()}
-        defaultSet={formData.set || ''}
       />
 
       {/* Single List Values Modal */}

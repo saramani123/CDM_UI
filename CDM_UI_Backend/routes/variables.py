@@ -868,6 +868,134 @@ async def create_variable_group(body: VariableGroupCreateRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to create group: {str(e)}")
 
+@router.delete("/variables/parts")
+async def delete_variable_part(name: str):
+    """
+    Delete a Part and cascade-delete its Sections/Groups, as long as NO real Variable is attached.
+    1. Blocked (409) if any non-placeholder Variable exists under Part→Section→Group→Variable.
+    2. Otherwise, placeholder variables + Groups + Sections under this Part are removed, then the Part.
+       (Sections/Groups are scoped to a single Part via part_name, so nothing is shared across Parts.)
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    name = (name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Part name is required")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            cnt = session.run("""
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
+                RETURN count(DISTINCT v) AS c
+            """, name=name).single()
+            if cnt and cnt["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Part '{name}' was not able to be deleted because {cnt['c']} existing Variable(s) "
+                        f"use it. Please find the Variables with the '{name}' Part on the Variables grid and "
+                        f"move them to a new Part before deleting."
+                    ),
+                )
+
+            # No real variables: clear placeholder variables, then cascade Groups and Sections, then Part.
+            session.run("""
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                DETACH DELETE v
+            """, name=name)
+            session.run("""
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)
+                DETACH DELETE g
+            """, name=name)
+            session.run("""
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(s:Section)
+                DETACH DELETE s
+            """, name=name)
+            session.run("MATCH (p:Part {name: $name}) DETACH DELETE p", name=name)
+            return {"success": True, "message": f"Part '{name}' and its Sections/Groups deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting part: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete part: {str(e)}")
+
+
+@router.delete("/variables/sections")
+async def delete_variable_section(part: str, section: str):
+    """
+    Delete a Section (scoped to its Part) and cascade-delete its Groups, as long as NO real
+    Variable is attached.
+    1. Blocked (409) if any non-placeholder Variable exists under Section→Group→Variable.
+    2. Otherwise, placeholder variables + Groups under this Section are removed, then the Section.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    part = (part or "").strip()
+    section = (section or "").strip()
+    if not part:
+        raise HTTPException(status_code=400, detail="Part is required")
+    if not section:
+        raise HTTPException(status_code=400, detail="Section is required")
+
+    try:
+        with driver.session(default_access_mode=WRITE_ACCESS) as session:
+            exists = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
+                RETURN count(s) AS c
+            """, part=part, section=section).single()
+            if not exists or exists["c"] == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Section '{section}' not found for Part '{part}'.",
+                )
+
+            cnt = session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
+                      -[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
+                RETURN count(DISTINCT v) AS c
+            """, part=part, section=section).single()
+            if cnt and cnt["c"] > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"Section '{section}' was not able to be deleted because {cnt['c']} existing "
+                        f"Variable(s) use it. Please find the Variables with the '{section}' Section on the "
+                        f"Variables grid and move them to a new Section before deleting."
+                    ),
+                )
+
+            session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
+                      -[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                DETACH DELETE v
+            """, part=part, section=section)
+            session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
+                      -[:HAS_GROUP]->(g:Group)
+                DETACH DELETE g
+            """, part=part, section=section)
+            session.run("""
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
+                DETACH DELETE s
+            """, part=part, section=section)
+            return {"success": True, "message": f"Section '{section}' (Part '{part}') and its Groups deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting section: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to delete section: {str(e)}")
+
+
 @router.get("/variables/groups")
 async def get_variable_groups(part: str = None, section: str = None):
     """
@@ -963,7 +1091,7 @@ async def get_variables():
 
                 CALL {
                     WITH v
-                    OPTIONAL MATCH (v)-[:HAS_VARIATION]->(var:Variation)
+                    OPTIONAL MATCH (v)-[:HAS_VARIATION]->(var:VariableVariation)
                     RETURN count(DISTINCT var) as variations
                 }
 
@@ -1223,7 +1351,7 @@ async def create_variable(request: Request):
                         variation_nid = str(uuid.uuid4())
                         session.run(
                             """
-                            CREATE (var:Variation {
+                            CREATE (var:VariableVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -1234,7 +1362,7 @@ async def create_variable(request: Request):
                         session.run(
                             """
                             MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:VariableVariation {id: $variation_id})
                             CREATE (v)-[:HAS_VARIATION]->(var)
                             """,
                             variable_id=variable_id,
@@ -1243,7 +1371,7 @@ async def create_variable(request: Request):
                         continue
 
                     existing_variation = session.run("""
-                        MATCH (var:Variation)
+                        MATCH (var:VariableVariation)
                         WHERE toLower(var.name) = toLower($variation_name)
                         RETURN var.id as id, var.name as name
                     """, variation_name=variation_name).single()
@@ -1252,13 +1380,13 @@ async def create_variable(request: Request):
                         variation_id = existing_variation["id"]
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:VariableVariation {id: $variation_id})
                             CREATE (v)-[:HAS_VARIATION]->(var)
                         """, variable_id=variable_id, variation_id=variation_id)
                     else:
                         variation_id = str(uuid.uuid4())
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:VariableVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -1266,13 +1394,13 @@ async def create_variable(request: Request):
 
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:VariableVariation {id: $variation_id})
                             CREATE (v)-[:HAS_VARIATION]->(var)
                         """, variable_id=variable_id, variation_id=variation_id)
 
             # Get variations count and list for the newly created variable
             variations_result = session.run("""
-                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:VariableVariation)
                 RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
             """, {"id": record["id"]})
 
@@ -2007,14 +2135,14 @@ async def update_variable(variable_id: str, request: Request):
 
                 # Remove duplicate relationships first (safety against historical CREATE duplicates).
                 session.run("""
-                    MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:Variation)
+                    MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:VariableVariation)
                     WITH var, collect(r) AS rels
                     WHERE size(rels) > 1
                     FOREACH (rel IN rels[1..] | DELETE rel)
                 """, variable_id=variable_id)
 
                 existing_variations_result = session.run("""
-                    MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                    MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:VariableVariation)
                     RETURN var.id AS id, var.name AS name, toLower(var.name) AS lower_name
                 """, variable_id=variable_id)
                 existing_by_lower: Dict[str, List[Dict[str, str]]] = {}
@@ -2038,14 +2166,14 @@ async def update_variable(variable_id: str, request: Request):
                 if stale_variation_ids:
                     print(f"DEBUG: Removing {len(stale_variation_ids)} stale variation relationship(s)")
                     session.run("""
-                        MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:Variation)
+                        MATCH (v:Variable {id: $variable_id})-[r:HAS_VARIATION]->(var:VariableVariation)
                         WHERE var.id IN $variation_ids
                         DELETE r
                     """, variable_id=variable_id, variation_ids=stale_variation_ids)
 
                     # Delete orphan variation nodes that are no longer linked to anything.
                     session.run("""
-                        MATCH (var:Variation)
+                        MATCH (var:VariableVariation)
                         WHERE var.id IN $variation_ids
                           AND NOT ()-[:HAS_VARIATION]->(var)
                         DELETE var
@@ -2058,7 +2186,7 @@ async def update_variable(variable_id: str, request: Request):
                         continue
 
                     existing_global = session.run("""
-                        MATCH (var:Variation)
+                        MATCH (var:VariableVariation)
                         WHERE toLower(var.name) = $lower_name
                         RETURN var.id AS id
                         LIMIT 1
@@ -2071,7 +2199,7 @@ async def update_variable(variable_id: str, request: Request):
                         variation_id = str(uuid.uuid4())
                         print(f"DEBUG: Creating new variation '{variation_name}' for variable {variable_id}")
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:VariableVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -2079,7 +2207,7 @@ async def update_variable(variable_id: str, request: Request):
 
                     session.run("""
                         MATCH (v:Variable {id: $variable_id})
-                        MATCH (var:Variation {id: $variation_id})
+                        MATCH (var:VariableVariation {id: $variation_id})
                         MERGE (v)-[:HAS_VARIATION]->(var)
                     """, variable_id=variable_id, variation_id=variation_id)
 
@@ -2094,7 +2222,7 @@ async def update_variable(variable_id: str, request: Request):
 
             # Get variations count and list
             variations_result = session.run("""
-                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (v:Variable {id: $id})-[:HAS_VARIATION]->(var:VariableVariation)
                 RETURN count(var) as count, collect(DISTINCT {id: var.id, name: var.name}) as variations
             """, {"id": variable_id})
 
@@ -3858,7 +3986,7 @@ async def get_variable_variations(variable_id: str):
 
             # Get variations
             variations_result = session.run("""
-                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:VariableVariation)
                 RETURN var.id as id, var.name as name
                 ORDER BY var.name
             """, variable_id=variable_id)
@@ -3951,7 +4079,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
 
             # Get existing variations for this variable to check for duplicates
             existing_variations_result = session.run("""
-                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation)
+                MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:VariableVariation)
                 RETURN var.name as name
             """, variable_id=variable_id)
             
@@ -3959,7 +4087,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
             
             # Get all global variations to check for existing ones
             global_variations_result = session.run("""
-                MATCH (var:Variation)
+                MATCH (var:VariableVariation)
                 RETURN var.name as name, var.id as id
             """)
             
@@ -3999,7 +4127,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
                     
                     # Check if this variation is already connected to this variable
                     already_connected = session.run("""
-                        MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:Variation {id: $variation_id})
+                        MATCH (v:Variable {id: $variable_id})-[:HAS_VARIATION]->(var:VariableVariation {id: $variation_id})
                         RETURN var.id as id
                     """, variable_id=variable_id, variation_id=variation_id).single()
                     
@@ -4007,7 +4135,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
                         # Connect existing variation to variable (MERGE to avoid duplicate relationships)
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:VariableVariation {id: $variation_id})
                             MERGE (v)-[:HAS_VARIATION]->(var)
                         """, variable_id=variable_id, variation_id=variation_id)
                         
@@ -4028,7 +4156,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
                     try:
                         # Create variation node
                         session.run("""
-                            CREATE (var:Variation {
+                            CREATE (var:VariableVariation {
                                 id: $variation_id,
                                 name: $variation_name
                             })
@@ -4037,7 +4165,7 @@ async def bulk_upload_variations(variable_id: str, file: UploadFile = File(...))
                         # Connect variation to variable
                         session.run("""
                             MATCH (v:Variable {id: $variable_id})
-                            MATCH (var:Variation {id: $variation_id})
+                            MATCH (var:VariableVariation {id: $variation_id})
                             CREATE (v)-[:HAS_VARIATION]->(var)
                         """, variable_id=variable_id, variation_id=variation_id)
                         

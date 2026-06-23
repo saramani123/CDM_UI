@@ -65,7 +65,7 @@ def load_metadata_json() -> List[dict]:
         if environment == "development":
             default_data = [
                 {"id": "1", "layer": "Format", "concept": "Source", "sector": "", "domain": "", "country": "", "number": "", "examples": ""},
-                {"id": "2", "layer": "Format", "concept": "Vulqan", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
+                {"id": "2", "layer": "Format", "concept": "Format VII", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
                 {"id": "3", "layer": "Format", "concept": "Metric", "sector": "", "domain": "", "country": "", "number": "", "examples": ""},
                 {"id": "4", "layer": "Ontology", "concept": "Element", "sector": "", "domain": "", "country": "", "number": "", "examples": ""},
                 {"id": "5", "layer": "Ontology", "concept": "Being", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
@@ -75,10 +75,7 @@ def load_metadata_json() -> List[dict]:
                 {"id": "9", "layer": "Ontology", "concept": "Universal", "sector": "", "domain": "", "country": "", "number": "", "examples": ""},
                 {"id": "10", "layer": "Ontology", "concept": "Part", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
                 {"id": "11", "layer": "Ontology", "concept": "Section", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
-                {"id": "11a", "layer": "Ontology", "concept": "Group", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
-                {"id": "12", "layer": "Ontology", "concept": "Group-Type", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
-                {"id": "13", "layer": "Ontology", "concept": "List Set", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""},
-                {"id": "14", "layer": "Ontology", "concept": "List Grouping", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""}
+                {"id": "13", "layer": "Ontology", "concept": "List Set", "sector": "ALL", "domain": "ALL", "country": "ALL", "number": "", "examples": ""}
             ]
             save_metadata_json(default_data)
             return default_data
@@ -90,7 +87,7 @@ def load_metadata_json() -> List[dict]:
         with open(file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             required_concepts = {req["concept"] for req in REQUIRED_METADATA_CONCEPTS}
-            required_concepts_alt = {"Group-Type", "List Set", "List Grouping"}  # Alternative names
+            required_concepts_alt = {"List Set", "List Grouping"}  # Alternative names
             # Ensure all items have S/D/C fields and isRequired flag
             for item in data:
                 if "sector" not in item:
@@ -129,7 +126,7 @@ def load_metadata_postgres() -> List[dict]:
         items = db.query(MetadataModel).all()
         metadata = []
         required_concepts = {req["concept"] for req in REQUIRED_METADATA_CONCEPTS}
-        required_concepts_alt = {"Group-Type", "List Set", "List Grouping"}  # Alternative names
+        required_concepts_alt = {"List Set", "List Grouping"}  # Alternative names
         for item in items:
             concept = item.concept or ""
             normalized_concept = normalize_concept_name(concept)
@@ -160,7 +157,25 @@ def load_metadata_postgres() -> List[dict]:
 # Note: Handle both "G-Type" and "Group-Type", "Set" and "List Set", "Grouping" and "List Grouping"
 REQUIRED_METADATA_CONCEPTS = [
     {
-        "concept": "Vulqan",
+        "concept": "Source Format",
+        "layer": "Format",
+        "sector": "ALL",
+        "domain": "ALL",
+        "country": "ALL",
+        "levels": 2,
+        "columns": ["Source Format", "Definition"]
+    },
+    {
+        "concept": "Format VI",
+        "layer": "Format",
+        "sector": "ALL",
+        "domain": "ALL",
+        "country": "ALL",
+        "levels": 2,
+        "columns": ["Format VI", "Definition"]
+    },
+    {
+        "concept": "Format VII",
         "layer": "Format",
         "sector": "ALL",
         "domain": "ALL",
@@ -205,24 +220,6 @@ REQUIRED_METADATA_CONCEPTS = [
         "columns": ["Part", "Section", "Definition"]
     },
     {
-        "concept": "Group",
-        "layer": "Ontology",
-        "sector": "ALL",
-        "domain": "ALL",
-        "country": "ALL",
-        "levels": 4,
-        "columns": ["Part", "Section", "Group", "Definition"]
-    },
-    {
-        "concept": "G-Type",
-        "layer": "Ontology",
-        "sector": "ALL",
-        "domain": "ALL",
-        "country": "ALL",
-        "levels": 2,
-        "columns": ["G-Type", "Definition"]
-    },
-    {
         "concept": "Set",
         "layer": "Ontology",
         "sector": "ALL",
@@ -243,11 +240,16 @@ REQUIRED_METADATA_CONCEPTS = [
 ]
 
 # Map alternative concept names to canonical names
+# "Vulqan" is the legacy name for the "Format VII" concept (one-time rename on load).
 CONCEPT_NAME_MAP = {
-    "Group-Type": "G-Type",
     "List Set": "Set",
-    "List Grouping": "Grouping"
+    "List Grouping": "Grouping",
+    "Vulqan": "Format VII"
 }
+
+# Concepts that were removed from the metadata grid entirely. Any persisted rows
+# with these concept names are hidden on load and never re-created.
+REMOVED_METADATA_CONCEPTS = {"Group", "G-Type", "Group-Type"}
 
 def normalize_concept_name(concept: str) -> str:
     """Normalize concept name to handle variations"""
@@ -364,7 +366,6 @@ def ensure_required_metadata_rows():
         if not existing_item:
             # Try to find by alternative names
             alt_names = {
-                "G-Type": "Group-Type",
                 "Set": "List Set",
                 "Grouping": "List Grouping"
             }
@@ -531,6 +532,13 @@ def load_metadata() -> List[dict]:
     
     # Ensure required rows exist (persisted concepts only)
     metadata = ensure_required_metadata_rows()
+
+    # Hide concepts that were removed from the metadata grid entirely
+    # (Group / G-Type / Grouping). Stale persisted rows are filtered out here.
+    metadata = [
+        m for m in metadata
+        if m.get("concept", "") not in REMOVED_METADATA_CONCEPTS
+    ]
 
     # Surface the synthetic Sector/Domain/Country driver rows (Neo4j-backed,
     # never persisted to Postgres/JSON). Guard against any stale persisted

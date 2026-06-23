@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Save, Link, Check, Trash2, ArrowUpAZ, Upload, Plus } from 'lucide-react';
 import { DataGrid } from './DataGrid';
 import { objectColumns, parseDriverField } from '../data/mockData';
@@ -8,8 +8,6 @@ import { RelationshipCustomSortModal } from './RelationshipCustomSortModal';
 import { RelationshipCsvUploadModal, type ProcessedRelationship } from './RelationshipCsvUploadModal';
 import { BulkEditRelationshipsModal } from './BulkEditRelationshipsModal';
 import { getGridDriverDisplayValue } from '../utils/driverAbbreviations';
-import { useDrivers } from '../hooks/useDrivers';
-
 interface InitialRelationship {
   targetObject: ObjectData;
   relationshipType: 'Inter-Table' | 'Blood' | 'Subtype' | 'Intra-Table';
@@ -119,23 +117,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
   // NEW: Grid-based relationship rows (empty by default)
   const [relationshipRows, setRelationshipRows] = useState<RelationshipGridRow[]>([]);
   
-  // Get drivers data for dropdowns — S/D/C must match Drivers tab (sector / domain / country), not inferred from objects only
-  const { drivers: driversData } = useDrivers();
-
-  const distinctSectors = useMemo(() => {
-    const fromDrivers = (driversData.sectors || []).map(s => String(s).trim()).filter(Boolean);
-    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
-  }, [driversData.sectors]);
-
-  const distinctDomains = useMemo(() => {
-    const fromDrivers = (driversData.domains || []).map(d => String(d).trim()).filter(Boolean);
-    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
-  }, [driversData.domains]);
-
-  const distinctCountries = useMemo(() => {
-    const fromDrivers = (driversData.countries || []).map(c => String(c).trim()).filter(Boolean);
-    return ['ALL', ...Array.from(new Set(fromDrivers)).sort((a, b) => a.localeCompare(b))];
-  }, [driversData.countries]);
   const distinctBeings = Array.from(new Set(allObjects.map(obj => obj.being).filter(Boolean))).sort();
   
   // Helper function to get avatars for a specific being
@@ -1190,9 +1171,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                   <table className="w-full border-collapse">
                     <thead>
                       <tr className="border-b border-ag-dark-border">
-                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>S</th>
-                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>D</th>
-                        <th className="px-2 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '60px' }}>C</th>
                         <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Being</th>
                         <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Avatar</th>
                         <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '150px' }}>Object</th>
@@ -1205,7 +1183,7 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                     <tbody>
                       {relationshipRows.length === 0 ? (
                         <tr>
-                          <td colSpan={10} className="px-3 py-8 text-center text-ag-dark-text-secondary">
+                          <td colSpan={7} className="px-3 py-8 text-center text-ag-dark-text-secondary">
                             Add relationships and roles in addition to default possible relationships. Click "Add Row" to create one.
                           </td>
                         </tr>
@@ -1217,51 +1195,6 @@ export const RelationshipModal: React.FC<RelationshipModalProps> = ({
                           
                           return (
                             <tr key={row.id} className="border-b border-ag-dark-border hover:bg-ag-dark-surface">
-                              {/* Sector */}
-                              <td className="px-2 py-2">
-                                <select
-                                  value={row.sector}
-                                  onChange={(e) => handleRowFieldChange(row.id, 'sector', e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
-                                  style={{ width: '60px' }}
-                                >
-                                  <option value="ALL">ALL</option>
-                                  {distinctSectors.map(s => (
-                                    <option key={s} value={s}>{s}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              
-                              {/* Domain */}
-                              <td className="px-2 py-2">
-                                <select
-                                  value={row.domain}
-                                  onChange={(e) => handleRowFieldChange(row.id, 'domain', e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
-                                  style={{ width: '60px' }}
-                                >
-                                  <option value="ALL">ALL</option>
-                                  {distinctDomains.map(d => (
-                                    <option key={d} value={d}>{d}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              
-                              {/* Country */}
-                              <td className="px-2 py-2">
-                                <select
-                                  value={row.country}
-                                  onChange={(e) => handleRowFieldChange(row.id, 'country', e.target.value)}
-                                  className="w-full px-1.5 py-1 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
-                                  style={{ width: '60px' }}
-                                >
-                                  <option value="ALL">ALL</option>
-                                  {distinctCountries.map(c => (
-                                    <option key={c} value={c}>{c}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              
                               {/* Being */}
                               <td className="px-3 py-2" style={{ width: '150px' }}>
                                 <select

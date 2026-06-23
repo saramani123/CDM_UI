@@ -164,7 +164,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
     if (gridType !== 'metadata') return false;
     const concept = (row as any).concept;
     if (!concept) return false;
-    const requiredConcepts = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping'];
+    const requiredConcepts = ['Source Format', 'Format VI', 'Format VII', 'Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Set', 'List Set', 'Grouping', 'List Grouping'];
     return (row as any).isRequired || requiredConcepts.includes(concept);
   };
   // Load persisted state from localStorage - use grid-specific keys
@@ -1598,7 +1598,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
         {/* Grid Header - Fixed at top */}
         <div 
           ref={headerScrollRef}
-          className={`bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 ${gridType === 'metadata' ? 'overflow-x-hidden' : 'overflow-x-auto'}`}
+          className="bg-ag-dark-bg border-b border-ag-dark-border flex-shrink-0 overflow-x-hidden"
           style={{ overflowY: 'hidden' }}
         >
           <div className={`flex text-sm font-medium text-ag-dark-text ${gridType === 'metadata' ? 'w-full' : 'min-w-max'}`}>
@@ -1723,10 +1723,10 @@ export const DataGrid: React.FC<DataGridProps> = ({
             {filteredAndSortedData.map((row, index) => (
               <div
                 key={row.id || index}
-                draggable={onReorder && !isRequiredMetadataRow(row) ? true : false}
-                onDragStart={() => onReorder && !isRequiredMetadataRow(row) && handleRowDragStart(row)}
-                onDragOver={(e) => onReorder && !isRequiredMetadataRow(row) && handleRowDragOver(e, index)}
-                onDrop={(e) => onReorder && !isRequiredMetadataRow(row) && handleRowDrop(e, index)}
+                draggable={onReorder ? true : false}
+                onDragStart={() => onReorder && handleRowDragStart(row)}
+                onDragOver={(e) => onReorder && handleRowDragOver(e, index)}
+                onDrop={(e) => onReorder && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
                 onClick={(e) => {
                   // Prevent row click for tier lists (lists with hasIncomingTier)
@@ -1853,7 +1853,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   return (
                   <div
                     key={`${row.id || index}-${column.key}`}
-                    className={`flex items-center text-xs text-ag-dark-text px-4 py-1.5 box-border ${
+                    className={`flex items-center text-ag-dark-text box-border ${
+                      gridType === 'metadata' ? 'text-sm px-4 py-2.5' : 'text-xs px-4 py-1.5'
+                    } ${
                       colIndex < columns.length - 1 ? 'border-r border-ag-dark-border' : ''
                     } ${
                       ['relationships', 'variants', 'variables'].includes(column.key) 
@@ -2090,11 +2092,8 @@ export const DataGrid: React.FC<DataGridProps> = ({
                   </div>
                 )}
                 {onReorder && gridType !== 'heuristics' && (
-                  <div className="w-12 flex items-center justify-center px-4 py-2 flex-shrink-0">
-                    <GripVertical className={`w-4 h-4 text-ag-dark-text-secondary ${
-                      isRequiredMetadataRow(row)
-                        ? 'opacity-30 cursor-not-allowed' : 'cursor-move'
-                    }`} />
+                  <div className="w-12 flex items-center justify-center px-4 py-2 flex-shrink-0" title="Drag to reorder">
+                    <GripVertical className="w-4 h-4 text-ag-dark-text-secondary cursor-move" />
                   </div>
                 )}
               </div>

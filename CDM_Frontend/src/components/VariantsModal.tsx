@@ -136,7 +136,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
           
           if (newVariants.length < parsedVariants.length) {
             const skippedCount = parsedVariants.length - newVariants.length;
-            alert(`Uploaded ${newVariants.length} new variants. Skipped ${skippedCount} duplicates.`);
+            alert(`Uploaded ${newVariants.length} new variations. Skipped ${skippedCount} duplicates.`);
           }
           
           const newLines = newVariants.join('\n');
@@ -148,7 +148,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
         try {
           const result = await apiService.bulkUploadVariants(selectedObject.id, data);
           const response = result as any;
-          alert(response.message || `Successfully uploaded ${response.created_count} variants`);
+          alert(response.message || `Successfully uploaded ${response.created_count} variations`);
           
           // Refresh the variants list
           try {
@@ -161,7 +161,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
           }
         } catch (error) {
           console.error('Bulk variants upload failed:', error);
-          alert(`Variants upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          alert(`Variations upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       }
     } else {
@@ -173,7 +173,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
       
       if (newVariants.length < data.length) {
         const skippedCount = data.length - newVariants.length;
-        alert(`Uploaded ${newVariants.length} new variants. Skipped ${skippedCount} duplicates.`);
+        alert(`Uploaded ${newVariants.length} new variations. Skipped ${skippedCount} duplicates.`);
       }
       
       // Append new variants to textarea
@@ -199,7 +199,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
         variantsList.findIndex(v => v.toLowerCase() === variant.toLowerCase()) !== index
       ).map(v => v);
       
-      alert(`Cannot save: Duplicate variant names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+      alert(`Cannot save: Duplicate variation names found: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
       return;
     }
 
@@ -235,7 +235,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
           });
         }
         
-        alert(`Successfully added variants to ${selectedObjects.length} object(s).`);
+        alert(`Successfully added variations to ${selectedObjects.length} object(s).`);
       } else if (selectedObject) {
         // Single object mode
         if (selectedObject._isCloned && !selectedObject._isSaved) {
@@ -273,7 +273,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
       onClose();
     } catch (error) {
       console.error('Failed to save variants:', error);
-      alert(`Failed to save variants: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      alert(`Failed to save variations: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }
@@ -289,7 +289,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-ag-dark-text">
-            {isBulkMode ? `Variants (${selectedObjects.length} objects)` : 'Variants'}
+            {isBulkMode ? `Variations (${selectedObjects.length} objects)` : 'Variations'}
           </h3>
           <button
             onClick={onClose}
@@ -329,7 +329,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
               className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
                 isSaving ? 'opacity-50 cursor-not-allowed' : ''
               }`}
-              title="Upload Variants CSV"
+              title="Upload Variations CSV"
             >
               <Upload className="w-4 h-4" />
             </button>
@@ -340,7 +340,7 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
         <div className="flex-1 overflow-hidden flex flex-col mb-4 min-h-[500px]">
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <div className="text-ag-dark-text-secondary">Loading variants...</div>
+              <div className="text-ag-dark-text-secondary">Loading variations...</div>
             </div>
           ) : (
             <textarea
@@ -413,8 +413,8 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
               }}
               disabled={isSaving}
               placeholder={isBulkMode 
-                ? "Type one variant per line. Press Enter to add more. These variants will be appended to each selected object."
-                : "Type one variant per line. Press Enter to add more."}
+                ? "Type one variation per line. Press Enter to add more. These variations will be appended to each selected object."
+                : "Type one variation per line. Press Enter to add more."}
               className="flex-1 w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent resize-none min-h-[500px] ${
                 isSaving ? 'opacity-50 cursor-not-allowed' : ''
               }"
@@ -425,9 +425,9 @@ export const VariantsModal: React.FC<VariantsModalProps> = ({
         {/* Info text when empty */}
         {!hasVariants && !isLoading && (
           <div className="mb-4 text-sm text-ag-dark-text-secondary">
-            <p>Type one variant per line. Press Enter to add more.</p>
+            <p>Type one variation per line. Press Enter to add more.</p>
             {isBulkMode && (
-              <p className="mt-1">These variants will be appended to each selected object's existing variants.</p>
+              <p className="mt-1">These variations will be appended to each selected object's existing variations.</p>
             )}
           </div>
         )}

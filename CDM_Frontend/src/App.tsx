@@ -213,7 +213,7 @@ function App() {
   const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();
   
   // Use API hook for metadata data
-  const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem, deleteMetadataItem, reorderMetadata } = useMetadata();
+  const { metadata: apiMetadata, loading: metadataLoading, error: metadataError, fetchMetadata, createMetadataItem, updateMetadataItem, deleteMetadataItem } = useMetadata();
   
   // Use API hook for heuristics data
   const { heuristics: apiHeuristics, loading: heuristicsLoading, error: heuristicsError, fetchHeuristics, createHeuristicItem, deleteHeuristicItem } = useHeuristics();
@@ -322,6 +322,18 @@ function App() {
     }
   });
 
+  // Metadata row order (UI only, persisted in localStorage; not sent to backend)
+  const [metadataOrder, setMetadataOrder] = useState<string[] | null>(() => {
+    try {
+      const s = localStorage.getItem('cdm_metadata_row_order');
+      if (!s) return null;
+      const a = JSON.parse(s);
+      return Array.isArray(a) ? a : null;
+    } catch {
+      return null;
+    }
+  });
+
   // Sources tab state (card grid + LDM grid + metadata panel)
   const [sourcesView, setSourcesView] = useState<'cards' | 'ldm' | 'auto_map'>('cards');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -358,7 +370,7 @@ function App() {
   }, [sourceMapSlots.source, sourceMapSlots.target]);
 
   // Required metadata concepts - handle both "Group-Type" and "G-Type", "List Set" and "Set", "List Grouping" and "Grouping"
-  const REQUIRED_METADATA_CONCEPTS = ['Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Group', 'G-Type', 'Group-Type', 'Set', 'List Set', 'Grouping', 'List Grouping', 'Sector', 'Domain', 'Country'];
+  const REQUIRED_METADATA_CONCEPTS = ['Source Format', 'Format VI', 'Format VII', 'Vulqan', 'Being', 'Avatar', 'Part', 'Section', 'Set', 'List Set', 'Grouping', 'List Grouping', 'Sector', 'Domain', 'Country'];
   const isRequiredMetadataItem = (concept: string) => {
     // Handle variations in concept names
     if (concept === 'Group-Type') return true;  // Also accept Group-Type
@@ -382,7 +394,7 @@ function App() {
       filterable: true, 
       width: '350px',
       render: (row: MetadataData) => (
-        <span className="font-bold" style={{ color: '#FFD700' }}>
+        <span className="font-bold" style={{ color: '#FFD700', fontSize: '1.25em' }}>
           {(row as any).concept || '-'}
         </span>
       )
@@ -551,6 +563,18 @@ function App() {
       )
     }
   ];
+
+  // Metadata display order (from localStorage); order persists on refresh but not to backend
+  const orderedMetadata = useMemo(() => {
+    if (!apiMetadata || apiMetadata.length === 0) return apiMetadata || [];
+    if (!metadataOrder || metadataOrder.length === 0) return apiMetadata;
+    const orderMap = new Map(metadataOrder.map((id, i) => [id, i]));
+    return [...apiMetadata].sort((a, b) => {
+      const ai = orderMap.get(a.id) ?? 1e9;
+      const bi = orderMap.get(b.id) ?? 1e9;
+      return ai - bi;
+    });
+  }, [apiMetadata, metadataOrder]);
 
   // Heuristics display order (from localStorage); order persists on refresh but not to backend
   const orderedHeuristics = useMemo(() => {
@@ -3567,7 +3591,7 @@ function App() {
                   .filter((v: any) => duplicates.includes(v.name.toLowerCase()))
                   .map((v: any) => v.name);
                 
-                alert(`Cannot save: The following variant names conflict with existing variants in the selected objects: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
+                alert(`Cannot save: The following variation names conflict with existing variations in the selected objects: ${duplicateNames.join(', ')}. Please remove duplicates before saving.`);
                 return;
               }
             }
@@ -4459,7 +4483,7 @@ function App() {
             await fetchObjects();
           } catch (error) {
             console.error('Error saving relationships/variants:', error);
-            alert('Failed to save variants. Please try again.');
+            alert('Failed to save variations. Please try again.');
             throw error;
           } finally {
             // Only clear loading state after ALL operations complete
@@ -5305,9 +5329,11 @@ function App() {
   };
 
   const handleMetadataReorder = (newData: Record<string, any>[]) => {
-    // Update metadata order immediately
-    const metadataArray = newData as MetadataData[];
-    reorderMetadata(metadataArray);
+    // UI-only reorder: persist the row order in localStorage so it survives
+    // tab navigation and page refreshes (no backend changes).
+    const ids = (newData as MetadataData[]).map((r) => r.id);
+    setMetadataOrder(ids);
+    localStorage.setItem('cdm_metadata_row_order', JSON.stringify(ids));
   };
 
   const confirmLeaveHeuristicsPanel = () => {
@@ -6190,7 +6216,7 @@ function App() {
                     <DataGrid
                       key="metadata"
                       columns={metadataColumns}
-                      data={apiMetadata}
+                      data={orderedMetadata}
                       onRowSelect={(rows) => {
                         if (rows.length > 0) {
                           handleMetadataRowClick(rows[0] as MetadataData);

@@ -87,12 +87,14 @@ export const ListsOntologyModal: React.FC<ListsOntologyModalProps> = ({
         return {
           List: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
           ListValue: { background: '#8B5CF6', border: '#7C3AED', highlight: { background: '#A78BFA', border: '#8B5CF6' } }, // Purple for list values
-          Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
+          ListValueVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } }, // Green for value variations
+          ListVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for list-name variations
         };
       case 'variations':
         return {
           List: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
-          Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
+          ListVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } }, // Green for list-name variations
+          ListValueVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for value variations
         };
       default:
         return {};

@@ -116,7 +116,8 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
         case 'variations':
           return {
             Variable: { background: '#FFD700', border: '#D4AF37', highlight: { background: '#FFE55C', border: '#FFD700' } }, // Gold for focal node
-            Variation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } } // Green for variations
+            VariableVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } }, // Green for variations
+            ListVariation: { background: '#32CD32', border: '#28A745', highlight: { background: '#6EE7B7', border: '#32CD32' } }
           };
         default:
           return {};
@@ -154,7 +155,7 @@ export const OntologyModal: React.FC<OntologyModalProps> = ({
       case 'variants':
         return {
           Object: { background: '#3B82F6', border: '#2563EB', highlight: { background: '#60A5FA', border: '#3B82F6' } },
-          Variant: { background: '#A78BFA', border: '#8B5CF6', highlight: { background: '#C4B5FD', border: '#A78BFA' } } // Light purple
+          ObjectVariation: { background: '#A78BFA', border: '#8B5CF6', highlight: { background: '#C4B5FD', border: '#A78BFA' } } // Light purple
         };
       default:
         return {};
@@ -789,7 +790,7 @@ RETURN v, o, r1, g, r2, p, r3, s, r4`;
           case 'variations':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
-OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
 RETURN v, r, var
 ORDER BY var.name`;
           default:
@@ -828,7 +829,7 @@ OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
 RETURN v, o, r1, g, r2, p, r3, s, r4`;
           case 'variations':
             return `MATCH (v:Variable ${paramValue})
-OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:Variation)
+OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
 RETURN v, r, var
 ORDER BY var.name`;
           default:
@@ -885,7 +886,7 @@ RETURN o, r, o2, r2, o3`;
           case 'variants':
             return `MATCH (o:Object)
 WHERE ${fieldName} IN ${paramValue}
-OPTIONAL MATCH (o)-[r:HAS_VARIANT]->(v:Variant)
+OPTIONAL MATCH (o)-[r:HAS_VARIATION]->(v:ObjectVariation)
 RETURN o, r, v`;
           default:
             return '';
@@ -928,7 +929,7 @@ RETURN o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b, 
             return `MATCH (o:Object ${paramValue})-[r:RELATES_TO]->(o2:Object)
 RETURN o, r, o2`;
           case 'variants':
-            return `MATCH (o:Object ${paramValue})-[r:HAS_VARIANT]->(v:Variant)
+            return `MATCH (o:Object ${paramValue})-[r:HAS_VARIATION]->(v:ObjectVariation)
 RETURN o, r, v`;
           default:
             return '';
