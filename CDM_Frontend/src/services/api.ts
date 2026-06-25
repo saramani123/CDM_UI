@@ -1289,6 +1289,56 @@ class ApiService {
     return this.request('/metadata/vulqan-format-values', { method: 'GET' });
   }
 
+  // Format VI / Format VII master (single source of truth) ----------------
+  async getFormatMapping() {
+    return this.request('/metadata/format-mapping', { method: 'GET' });
+  }
+
+  async getFormatVIValues() {
+    return this.request('/metadata/format-vi-values', { method: 'GET' });
+  }
+
+  async addFormatVI(value: string, definition: string = '') {
+    return this.request('/metadata/format-vi', {
+      method: 'POST',
+      body: JSON.stringify({ value, definition }),
+    });
+  }
+
+  async renameFormatVI(oldValue: string, newValue: string) {
+    return this.request('/metadata/format-vi', {
+      method: 'PUT',
+      body: JSON.stringify({ oldValue, newValue }),
+    });
+  }
+
+  async deleteFormatVI(value: string) {
+    return this.request(`/metadata/format-vi?value=${encodeURIComponent(value)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async addFormatVII(parent: string, value: string, definition: string = '') {
+    return this.request('/metadata/format-vii', {
+      method: 'POST',
+      body: JSON.stringify({ parent, value, definition }),
+    });
+  }
+
+  async renameFormatVII(parent: string, oldValue: string, newValue: string) {
+    return this.request('/metadata/format-vii', {
+      method: 'PUT',
+      body: JSON.stringify({ parent, oldValue, newValue }),
+    });
+  }
+
+  async deleteFormatVII(parent: string, value: string) {
+    return this.request(
+      `/metadata/format-vii?parent=${encodeURIComponent(parent)}&value=${encodeURIComponent(value)}`,
+      { method: 'DELETE' },
+    );
+  }
+
   async getBeingValues() {
     return this.request('/metadata/being-values', { method: 'GET' });
   }

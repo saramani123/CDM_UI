@@ -60,8 +60,7 @@ def create_constraints_and_indexes():
                 # Group.name is NOT globally unique — scoped by Part/Section via composite properties
                 "CREATE CONSTRAINT section_part_name_unique IF NOT EXISTS FOR (s:Section) REQUIRE (s.part_name, s.name) IS UNIQUE",
                 "CREATE CONSTRAINT section_id_unique IF NOT EXISTS FOR (s:Section) REQUIRE s.id IS UNIQUE",
-                "CREATE CONSTRAINT group_scoped_name_unique IF NOT EXISTS FOR (g:Group) REQUIRE (g.part_name, g.section_name, g.name) IS UNIQUE",
-                "CREATE CONSTRAINT group_id_unique IF NOT EXISTS FOR (g:Group) REQUIRE g.id IS UNIQUE",
+                # Group is now a Variable property (no Group node); no Group constraints.
                 # Relationship and Variation constraints (object/variable/list variations are distinct labels)
                 "CREATE CONSTRAINT relationship_id_unique IF NOT EXISTS FOR (r:Relationship) REQUIRE r.id IS UNIQUE",
                 "CREATE CONSTRAINT object_variation_id_unique IF NOT EXISTS FOR (v:ObjectVariation) REQUIRE v.id IS UNIQUE",
@@ -98,7 +97,8 @@ def create_constraints_and_indexes():
                 "CREATE INDEX object_name_index IF NOT EXISTS FOR (o:Object) ON (o.name)",
                 # Variables taxonomy indexes
                 "CREATE INDEX part_name_index IF NOT EXISTS FOR (p:Part) ON (p.name)",
-                "CREATE INDEX group_name_index IF NOT EXISTS FOR (g:Group) ON (g.name)",
+                # Group is a Variable property now — index it for cascading dropdowns/filters.
+                "CREATE INDEX variable_group_index IF NOT EXISTS FOR (v:Variable) ON (v.group)",
                 # Relationship and Variant indexes
                 "CREATE INDEX relationship_type_index IF NOT EXISTS FOR (r:Relationship) ON (r.type)",
                 "CREATE INDEX relationship_role_index IF NOT EXISTS FOR (r:Relationship) ON (r.role)",

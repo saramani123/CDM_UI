@@ -61,15 +61,15 @@ RETURN s, r1, g, r2, l`,
 OPTIONAL MATCH (v:Variable)-[r3:HAS_LIST]->(l)
 RETURN s, r1, g, r2, l, r3, v`
   } : graphType === 'variables' ? {
-    taxonomy: `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable)
+    taxonomy: `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r2:HAS_VARIABLE]->(v:Variable)
 OPTIONAL MATCH (v)-[r3:HAS_VARIATION]->(var:VariableVariation)
-RETURN p, r0, s, r1, g, r2, v, r3, var
+RETURN p, r0, s, r2, v, r3, var
 LIMIT 1000`,
     model: `MATCH (b:Being)-[r1:HAS_AVATAR]->(a:Avatar)
 MATCH (a)-[r2:HAS_OBJECT]->(o:Object)
 OPTIONAL MATCH (o)-[r3:HAS_SPECIFIC_VARIABLE]->(v:Variable)
-OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(g:Group)<-[r5:HAS_GROUP]-(s:Section)<-[r6:HAS_SECTION]-(p:Part)
-RETURN b, r1, a, r2, o, r3, v, r4, g, r5, s, r6, p
+OPTIONAL MATCH (v)<-[r4:HAS_VARIABLE]-(s:Section)<-[r6:HAS_SECTION]-(p:Part)
+RETURN b, r1, a, r2, o, r3, v, r4, s, r6, p
 LIMIT 1000`
   } : {
     taxonomy: `MATCH (b:Being)-[ha:HAS_AVATAR]->(a:Avatar)-[ho:HAS_OBJECT]->(o:Object)

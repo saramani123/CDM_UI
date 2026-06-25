@@ -623,27 +623,10 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
     console.log('🔵 handleSaveBulkEdit called');
     console.log('🔵 validationComponentsList:', validationComponentsList);
     
-    // Cascading validation: Part -> Section -> Group
-    // If Part is being changed, Section and Group must be provided
-    // If Section is being changed, Group must be provided
-    const partProvided = formData.part && formData.part.trim() !== '' && formData.part !== 'Keep Current Part';
-    const sectionProvided = formData.section && formData.section.trim() !== '' && formData.section !== 'Keep Current Section';
-    const groupProvided = formData.group && formData.group.trim() !== '' && formData.group !== 'Keep Current Group';
-    
-    if (partProvided && !sectionProvided) {
-      alert('Error: When changing Part, you must also select a Section. Please select both Part and Section.');
-      return;
-    }
-    
-    if (partProvided && !groupProvided) {
-      alert('Error: When changing Part, you must also select a Group. Please select Part, Section, and Group.');
-      return;
-    }
-    
-    if (sectionProvided && !groupProvided) {
-      alert('Error: When changing Section, you must also select a Group. Please select both Section and Group.');
-      return;
-    }
+    // Ontology is now Part -> Section, with Group as an independent Variable property.
+    // Changing Part while keeping "Keep Current Section" re-homes each variable under a
+    // same-named Section of the new Part (created if missing), mirroring Being/Avatar bulk
+    // edit. Group can be changed on its own. No cascading requirement is enforced here.
     
     // Generate driver string from selections if any driver fields are selected
     const hasDriverSelections = driverSelections.sector.length > 0 || 

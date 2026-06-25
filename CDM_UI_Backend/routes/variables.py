@@ -25,11 +25,11 @@ from schema import (
 from ontology_type import normalize_ontology_type, DEFAULT_ONTOLOGY_TYPE, coerce_legacy_to_string
 from routes.variable_ontology import (
     get_variable_taxonomy,
-    merge_part_section_group,
-    merge_part_section_group_tx,
-    relink_variable_to_group,
-    resolve_group_id,
-    variable_name_exists_in_group,
+    merge_part_section,
+    merge_part_section_tx,
+    relink_variable_to_section,
+    resolve_section_id,
+    variable_name_exists_in_section,
 )
 
 # Pydantic models for JSON body parameters
@@ -181,7 +181,22 @@ def _normalize_allowed_value(value: str, allowed_values: List[str] | set[str]) -
     return ""
 
 
-def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: List[str]) -> Optional[Dict[str, Any]]:
+def _get_csv_format_mapping() -> Dict[str, List[str]]:
+    """Format VI -> [Format VII...] mapping from the metadata master (single source of truth)."""
+    try:
+        from routes.metadata import get_format_mapping
+        return get_format_mapping()
+    except Exception as e:
+        print(f"⚠️  Falling back to built-in CSV format mapping: {e}")
+        return CSV_FORMAT_II_BY_FORMAT_I
+
+
+def _extract_variable_csv_metadata(
+    row: Dict[str, Any],
+    row_num: int,
+    errors: List[str],
+    format_mapping: Optional[Dict[str, List[str]]] = None,
+) -> Optional[Dict[str, Any]]:
     def push_error(message: str) -> None:
         errors.append(message)
         print(f"❌ CSV validation error: {message}")
@@ -190,6 +205,7 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
     Validate and normalize optional variable CSV metadata columns.
     Returns normalized dict or None if row is invalid.
     """
+    fmt_map = format_mapping if format_mapping is not None else _get_csv_format_mapping()
     format_i_raw = (row.get("Format I") or "").strip()
     format_ii_raw = (row.get("Format II") or "").strip()
     g_type_raw = (row.get("G-Type") or "").strip()
@@ -204,11 +220,11 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
     var_type: Optional[str] = None
 
     if format_i_raw:
-        format_i = _normalize_allowed_value(format_i_raw, list(CSV_FORMAT_II_BY_FORMAT_I.keys()))
+        format_i = _normalize_allowed_value(format_i_raw, list(fmt_map.keys()))
         if not format_i:
             push_error(
                 f"Row {row_num}: Invalid Format I '{format_i_raw}'. "
-                f"Allowed values: {', '.join(CSV_FORMAT_II_BY_FORMAT_I.keys())}."
+                f"Allowed values: {', '.join(fmt_map.keys())}."
             )
             return None
 
@@ -218,11 +234,11 @@ def _extract_variable_csv_metadata(row: Dict[str, Any], row_num: int, errors: Li
                 f"Row {row_num}: Format II '{format_ii_raw}' requires Format I to be provided."
             )
             return None
-        format_ii = _normalize_allowed_value(format_ii_raw, CSV_FORMAT_II_BY_FORMAT_I[format_i])
+        format_ii = _normalize_allowed_value(format_ii_raw, fmt_map.get(format_i, []))
         if not format_ii:
             push_error(
                 f"Row {row_num}: Invalid Format II '{format_ii_raw}' for Format I '{format_i}'. "
-                f"Allowed values: {', '.join(CSV_FORMAT_II_BY_FORMAT_I[format_i])}."
+                f"Allowed values: {', '.join(fmt_map.get(format_i, []))}."
             )
             return None
     elif format_i:
@@ -288,8 +304,8 @@ def _apply_group_key_selection_by_group_name(session, variable_id: str, is_selec
     - selected=False: all Variables under that group-name bucket get Is Group Key=false and Group Key=''.
     """
     group_rec = session.run("""
-        MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable {id: $variable_id})
-        RETURN g.name AS group_name
+        MATCH (v:Variable {id: $variable_id})
+        RETURN coalesce(v.group, '') AS group_name
         LIMIT 1
     """, {"variable_id": variable_id}).single()
 
@@ -302,16 +318,16 @@ def _apply_group_key_selection_by_group_name(session, variable_id: str, is_selec
 
     if is_selected:
         session.run(f"""
-            MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable)
-            WHERE toLower(g.name) = toLower($group_name)
+            MATCH (v:Variable)
+            WHERE toLower(coalesce(v.group, '')) = toLower($group_name)
             SET v.{GROUP_KEY_PROP} = $group_key_id,
                 v.{IS_GROUP_KEY_PROP} = CASE WHEN v.id = $group_key_id THEN true ELSE false END,
                 v.is_group_key = CASE WHEN v.id = $group_key_id THEN true ELSE false END
         """, {"group_name": group_name, "group_key_id": variable_id})
     else:
         session.run(f"""
-            MATCH (g:Group)-[:HAS_VARIABLE]->(v:Variable)
-            WHERE toLower(g.name) = toLower($group_name)
+            MATCH (v:Variable)
+            WHERE toLower(coalesce(v.group, '')) = toLower($group_name)
             SET v.{GROUP_KEY_PROP} = '',
                 v.{IS_GROUP_KEY_PROP} = false,
                 v.is_group_key = false
@@ -373,25 +389,22 @@ def _scoped_taxonomy_conflict_messages(runner, part: str, section: str, group: s
 
     grp_rec = runner.run(
         """
-        MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)
+        MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v:Variable)
         WHERE toLower(p.name) = toLower($part)
           AND toLower(s.name) = toLower($section)
-          AND toLower(g.name) = toLower($group)
-        RETURN count(g) AS c, collect(DISTINCT g.name) AS names
+          AND toLower(coalesce(v.group, '')) = toLower($group)
+        RETURN collect(DISTINCT v.group) AS names
         """,
         part=part,
         section=section,
         group=group,
     ).single()
-    grp_count = int(grp_rec["c"] or 0) if grp_rec else 0
     grp_names = [n for n in (grp_rec["names"] or []) if n] if grp_rec else []
-    if grp_count > 1:
+    # Group is now a Variable property; only flag case-only collisions with the canonical value.
+    case_collisions = [n for n in grp_names if n != group]
+    if case_collisions:
         messages.append(
-            f"Group conflict: found multiple Group nodes named '{group}' within Section '{section}' (Part '{part}')."
-        )
-    elif grp_count == 1 and grp_names and grp_names[0] != group:
-        messages.append(
-            f"Group conflict: '{group}' differs only by case from existing Group '{grp_names[0]}' within Section '{section}' (Part '{part}')."
+            f"Group conflict: '{group}' differs only by case from existing Group '{case_collisions[0]}' within Section '{section}' (Part '{part}')."
         )
 
     return messages
@@ -594,8 +607,8 @@ def _sync_group_key_field_for_new_variable(session, variable_id: str, group_name
         return
     rec = session.run(
         f"""
-        MATCH (g:Group)-[:HAS_VARIABLE]->(gk:Variable)
-        WHERE toLower(g.name) = toLower($group_name)
+        MATCH (gk:Variable)
+        WHERE toLower(coalesce(gk.group, '')) = toLower($group_name)
         AND {_coalesced_is_group_key_expr("gk")} = true
         RETURN gk.id AS id
         LIMIT 1
@@ -660,7 +673,7 @@ def _sync_variable_relevance_to_objects(
 async def get_variable_parts():
     """
     Distinct Part values that appear on the Variables grid path only:
-    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+    Part -[:HAS_SECTION]-> Section -[:HAS_VARIABLE]-> Variable (Group is a Variable property).
 
     Orphan :Part nodes (no real variables under them) are excluded so wiping variables
     clears Add Variable / CSV taxonomy dropdowns when the graph has no live rows.
@@ -672,9 +685,8 @@ async def get_variable_parts():
     try:
         with driver.session() as session:
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT p.name AS part
                 ORDER BY part
             """)
@@ -742,12 +754,11 @@ async def get_variable_sections(part: str = None):
 
     try:
         with driver.session() as session:
-            # Sections under Part that have at least one real (non-placeholder) Group.
-            # Do not require a Variable on that path — empty groups must appear so users can
-            # move variables into CSV-created groups that do not yet have members.
+            # All Sections under the Part. Empty sections (created via Metadata, or left empty
+            # after variables move away) must still appear so users can assign variables to them.
             result = session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
+                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section)
+                WHERE NOT s.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT s.name AS section
                 ORDER BY section
             """, part=part)
@@ -812,8 +823,10 @@ async def add_variable_section(section_data: VariableSectionRequest):
 @router.post("/variables/groups", response_model=Dict[str, Any])
 async def create_variable_group(body: VariableGroupCreateRequest):
     """
-    Create a Group under Part → Section (HAS_GROUP from Section to Group).
-    Duplicate: same name in the same Section is not allowed.
+    Groups are now a *property* of Variable nodes (no Group node/relationship).
+    A group only materializes when a Variable is assigned that group value, so this
+    endpoint just validates the Part/Section exist and reports any case-only collision.
+    It is kept for backwards compatibility with the Add Variable flow.
     """
     driver = get_driver()
     if not driver:
@@ -831,16 +844,6 @@ async def create_variable_group(body: VariableGroupCreateRequest):
             conflicts = _scoped_taxonomy_conflict_messages(session, part, section, group)
             if conflicts:
                 raise HTTPException(status_code=400, detail=conflicts[0])
-            exists = session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group {part_name: $part, section_name: $section, name: $group})
-                RETURN g.id AS id
-            """, part=part, section=section, group=group).single()
-            if exists:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Group '{group}' already exists under Section '{section}' (Part '{part}').",
-                )
 
             sec = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
@@ -852,10 +855,10 @@ async def create_variable_group(body: VariableGroupCreateRequest):
                     detail=f"Section '{section}' does not exist for Part '{part}'. Add the Section first.",
                 )
 
-            merge_part_section_group(session, part, section, group)
             return {
                 "success": True,
-                "message": f"Group '{group}' created under Section '{section}' (Part '{part}')",
+                "message": f"Group '{group}' is available under Section '{section}' (Part '{part}'). "
+                           f"It will be saved on the first variable that uses it.",
                 "part": part,
                 "section": section,
                 "group": group,
@@ -887,7 +890,7 @@ async def delete_variable_part(name: str):
     try:
         with driver.session(default_access_mode=WRITE_ACCESS) as session:
             cnt = session.run("""
-                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN count(DISTINCT v) AS c
             """, name=name).single()
@@ -901,21 +904,17 @@ async def delete_variable_part(name: str):
                     ),
                 )
 
-            # No real variables: clear placeholder variables, then cascade Groups and Sections, then Part.
+            # No real variables: clear placeholder variables, then cascade Sections, then Part.
             session.run("""
-                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_VARIABLE]->(v:Variable)
                 DETACH DELETE v
-            """, name=name)
-            session.run("""
-                MATCH (p:Part {name: $name})-[:HAS_SECTION]->(:Section)-[:HAS_GROUP]->(g:Group)
-                DETACH DELETE g
             """, name=name)
             session.run("""
                 MATCH (p:Part {name: $name})-[:HAS_SECTION]->(s:Section)
                 DETACH DELETE s
             """, name=name)
             session.run("MATCH (p:Part {name: $name}) DETACH DELETE p", name=name)
-            return {"success": True, "message": f"Part '{name}' and its Sections/Groups deleted"}
+            return {"success": True, "message": f"Part '{name}' and its Sections deleted"}
     except HTTPException:
         raise
     except Exception as e:
@@ -958,7 +957,7 @@ async def delete_variable_section(part: str, section: str):
 
             cnt = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                      -[:HAS_VARIABLE]->(v:Variable)
                 WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN count(DISTINCT v) AS c
             """, part=part, section=section).single()
@@ -974,19 +973,14 @@ async def delete_variable_section(part: str, section: str):
 
             session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(:Group)-[:HAS_VARIABLE]->(v:Variable)
+                      -[:HAS_VARIABLE]->(v:Variable)
                 DETACH DELETE v
-            """, part=part, section=section)
-            session.run("""
-                MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group)
-                DETACH DELETE g
             """, part=part, section=section)
             session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
                 DETACH DELETE s
             """, part=part, section=section)
-            return {"success": True, "message": f"Section '{section}' (Part '{part}') and its Groups deleted"}
+            return {"success": True, "message": f"Section '{section}' (Part '{part}') deleted"}
     except HTTPException:
         raise
     except Exception as e:
@@ -1012,13 +1006,13 @@ async def get_variable_groups(part: str = None, section: str = None):
 
     try:
         with driver.session() as session:
-            # All non-placeholder groups under Part → Section (including empty groups),
-            # so edit-metadata can relink variables into groups created by CSV before any member exists.
+            # Group is a Variable property: distinct group values across variables under Part → Section.
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                RETURN DISTINCT g.name AS group
+                      -[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
+                  AND coalesce(v.group, '') <> ''
+                RETURN DISTINCT v.group AS group
                 ORDER BY group
             """, part=part.strip(), section=section.strip())
             
@@ -1055,10 +1049,9 @@ async def get_variables_for_selection(part: str = None, section: str = None, gro
         with driver.session() as session:
             result = session.run("""
                 MATCH (p:Part {name: $part})-[:HAS_SECTION]->(s:Section {part_name: $part, name: $section})
-                      -[:HAS_GROUP]->(g:Group {part_name: $part, section_name: $section, name: $group})
                       -[:HAS_VARIABLE]->(v:Variable)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
+                AND toLower(coalesce(v.group, '')) = toLower($group)
                 RETURN v.id as id, v.name as variable
                 ORDER BY v.name
             """, part=part, section=section, group=group)
@@ -1084,10 +1077,9 @@ async def get_variables():
             # Get all variables with their taxonomy and relationships
             # Filter out PLACEHOLDER variables and groups
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                AND NOT v.name STARTS WITH '__PLACEHOLDER_'
-                WITH DISTINCT v, p, s, g
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v:Variable)
+                WHERE NOT v.name STARTS WITH '__PLACEHOLDER_'
+                WITH DISTINCT v, p, s
 
                 CALL {
                     WITH v
@@ -1102,7 +1094,7 @@ async def get_variables():
                        coalesce(v.`Type`, CASE WHEN coalesce(v.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        coalesce(v.`Is Group Key`, v.is_group_key, false) as is_group_key,
                        coalesce(v.`Group Key`, '') as group_key,
-                       p.name as part, g.name as group,
+                       p.name as part, coalesce(v.group, '') as group,
                        COALESCE(v.objectRelationships, 0) as objectRelationships,
                        variations, coalesce(v.driver, '') as driverRaw,
                        properties(v) as allProps
@@ -1111,9 +1103,10 @@ async def get_variables():
 
             variables = []
             for record in result:
-                # Validate required fields - skip variables with missing critical data
-                if not record["id"] or not record["part"] or not record["group"] or not record["variable"]:
-                    print(f"⚠️  Skipping variable with missing required fields: id={record.get('id')}, part={record.get('part')}, group={record.get('group')}, variable={record.get('variable')}")
+                # Validate required fields - skip variables with missing critical data.
+                # Group is now an optional Variable property, so it is no longer required here.
+                if not record["id"] or not record["part"] or not record["section"] or not record["variable"]:
+                    print(f"⚠️  Skipping variable with missing required fields: id={record.get('id')}, part={record.get('part')}, section={record.get('section')}, variable={record.get('variable')}")
                     continue
                 
                 # Read and normalize driver from stored property to avoid costly per-request relationship expansion.
@@ -1211,13 +1204,12 @@ async def create_variable(request: Request):
 
             variable_id = str(uuid.uuid4())
 
-            group_id = merge_part_section_group(
+            section_id = merge_part_section(
                 session,
                 variable_data.part,
                 variable_data.section,
-                variable_data.group,
             )
-            if variable_name_exists_in_group(session, group_id, variable_data.variable, exclude_variable_id=None):
+            if variable_name_exists_in_section(session, section_id, variable_data.group, variable_data.variable, exclude_variable_id=None):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Variable '{variable_data.variable}' already exists in Group '{variable_data.group}' "
@@ -1226,10 +1218,11 @@ async def create_variable(request: Request):
 
             result = session.run(
                 """
-                MATCH (g:Group {id: $group_id})
+                MATCH (s:Section {id: $section_id})
                 CREATE (v:Variable {
                     id: $id,
                     name: $variable,
+                    group: $group,
                     formatI: $formatI,
                     formatII: $formatII,
                     gType: $gType,
@@ -1243,7 +1236,7 @@ async def create_variable(request: Request):
                     `Is Group Key`: $is_group_key,
                     `Group Key`: CASE WHEN $is_group_key THEN $id ELSE '' END
                 })
-                MERGE (g)-[:HAS_VARIABLE]->(v)
+                MERGE (s)-[:HAS_VARIABLE]->(v)
                 RETURN v.id AS id, v.name AS variable,
                        v.formatI AS formatI, v.formatII AS formatII, v.gType AS gType,
                        v.validation AS validation, v.default AS default, v.graph AS graph,
@@ -1255,7 +1248,7 @@ async def create_variable(request: Request):
                 """,
                 {
                     "id": variable_id,
-                    "group_id": group_id,
+                    "section_id": section_id,
                     "part": variable_data.part,
                     "group": variable_data.group,
                     "section": variable_data.section,
@@ -1626,7 +1619,9 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                             params["ontology_type_bulk"] = ot_bulk
                             remove_parts.append("v.is_meme")
 
-                    # Ontology (Part → Section → Group) — resolve existing group only (no auto-create in bulk edit)
+                    # Ontology (Part → Section, with Group as a Variable property).
+                    # "Keep current section" re-homes each variable under a same-named Section of the
+                    # new Part (creating it if missing), mirroring the Being/Avatar bulk behavior.
                     part_provided = should_update_field(bulk_data.part, "Keep Current Part")
                     section_provided = should_update_field(bulk_data.section, "Keep current section")
                     group_provided = should_update_field(bulk_data.group, "Keep Current Group")
@@ -1635,7 +1630,7 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         tax = get_variable_taxonomy(session, variable_id_str)
                         if not tax:
                             errors.append(
-                                f"Variable {variable_id_str}: Missing Part/Section/Group linkage in graph"
+                                f"Variable {variable_id_str}: Missing Part/Section linkage in graph"
                             )
                             continue
                         cp, cs, cg = tax["part"], tax["section"], tax["group"]
@@ -1643,35 +1638,18 @@ async def bulk_update_variables(bulk_data: BulkVariableUpdateRequest):
                         ns = bulk_data.section.strip() if section_provided else cs
                         ng = bulk_data.group.strip() if group_provided else cg
 
-                        if np != cp:
-                            if not (section_provided and group_provided):
-                                errors.append(
-                                    f"Variable {variable_id_str}: When changing Part, select new Section and Group."
-                                )
-                                continue
-                        elif ns != cs:
-                            if not group_provided:
-                                errors.append(
-                                    f"Variable {variable_id_str}: When changing Section, select a Group."
-                                )
-                                continue
-                        elif ng != cg:
-                            if not group_provided:
-                                errors.append(
-                                    f"Variable {variable_id_str}: When changing Group, pick the new Group value."
-                                )
-                                continue
+                        # Group is a property — update it directly.
+                        if group_provided and ng != cg:
+                            set_clauses.append("v.group = $new_group")
+                            params["new_group"] = ng
 
-                        if (np, ns, ng) != (cp, cs, cg):
-                            gid = resolve_group_id(session, np, ns, ng)
-                            if not gid:
-                                errors.append(
-                                    f"Variable {variable_id_str}: No Group '{ng}' under Part '{np}', Section '{ns}'. "
-                                    "Create the taxonomy first or choose an existing Group."
-                                )
-                                continue
+                        # Re-home the variable under (Part → Section) if either changed.
+                        # merge_part_section creates the section under the new Part if it does not
+                        # exist yet (this is what "keep current section" needs when moving Parts).
+                        if (np, ns) != (cp, cs):
                             try:
-                                relink_variable_to_group(session, variable_id_str, gid)
+                                section_id = merge_part_section(session, np, ns)
+                                relink_variable_to_section(session, variable_id_str, section_id)
                             except Exception as e:
                                 errors.append(
                                     f"Variable {variable_id_str}: Failed to relink ontology: {str(e)}"
@@ -1826,18 +1804,18 @@ async def update_variable(variable_id: str, request: Request):
                 session.run(
                     """
                 MATCH (v:Variable {id: $id})
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                WHERE NOT g.name STARTS WITH '__PLACEHOLDER_'
-                WITH v, p, s, g
-                ORDER BY p.name, s.name, g.name
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v)
+                WHERE NOT s.name STARTS WITH '__PLACEHOLDER_'
+                WITH v, p, s
+                ORDER BY p.name, s.name
                 LIMIT 1
-                RETURN v, p.name AS part, s.name AS section, g.name AS group, g.id AS group_id
+                RETURN v, p.name AS part, s.name AS section, coalesce(v.group, '') AS group, s.id AS section_id
                 """,
                     {"id": variable_id},
                 )
             )
             if not current_rows:
-                print(f"DEBUG: ERROR - Variable {variable_id} not found or has no Part/Section/Group linkage!", flush=True)
+                print(f"DEBUG: ERROR - Variable {variable_id} not found or has no Part/Section linkage!", flush=True)
                 raise HTTPException(status_code=404, detail="Variable not found")
 
             # Hard validation: if a driver string is provided, every non-ALL value
@@ -2006,43 +1984,25 @@ async def update_variable(variable_id: str, request: Request):
                 ns = variable_data.section.strip() if section_provided else current_section
                 ng = variable_data.group.strip() if group_provided else current_group
 
-                if np != current_part:
-                    if not (section_provided and group_provided):
-                        raise HTTPException(
-                            status_code=400,
-                            detail="When changing Part, you must provide Section and Group.",
-                        )
-                elif ns != current_section:
-                    if not group_provided:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="When changing Section, you must provide Group.",
-                        )
-                elif ng != current_group:
-                    if not group_provided:
-                        raise HTTPException(
-                            status_code=400,
-                            detail="When changing Group, select the new Group value.",
-                        )
+                # Group is now a Variable property; update it directly.
+                if group_provided and ng != current_group:
+                    set_clauses.append("v.group = $new_group")
+                    params["new_group"] = ng
 
-                if (np, ns, ng) != (current_part, current_section, current_group):
-                    gid = resolve_group_id(session, np, ns, ng)
-                    if not gid:
-                        raise HTTPException(
-                            status_code=400,
-                            detail=f"No Group '{ng}' under Part '{np}', Section '{ns}'. Create the taxonomy first.",
-                        )
-                    relink_variable_to_group(session, variable_id, gid)
+                # Re-home the variable under (Part → Section) when either changes
+                # (creates the section under the new Part if it does not exist yet).
+                if (np, ns) != (current_part, current_section):
+                    section_id = merge_part_section(session, np, ns)
+                    relink_variable_to_section(session, variable_id, section_id)
 
             if variable_data.variable is not None:
                 new_nm = variable_data.variable.strip()
                 old_nm = (current_variable.get("name") or "").strip()
                 if new_nm != old_nm:
                     tax = get_variable_taxonomy(session, variable_id)
-                    if tax:
-                        tg = resolve_group_id(session, tax["part"], tax["section"], tax["group"])
-                        if tg and variable_name_exists_in_group(
-                            session, tg, new_nm, exclude_variable_id=variable_id
+                    if tax and tax.get("section_id"):
+                        if variable_name_exists_in_section(
+                            session, tax["section_id"], tax["group"], new_nm, exclude_variable_id=variable_id
                         ):
                             raise HTTPException(
                                 status_code=400,
@@ -2232,8 +2192,8 @@ async def update_variable(variable_id: str, request: Request):
 
             updated_result = session.run("""
                 MATCH (v:Variable {id: $id})
-                OPTIONAL MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                RETURN p.name AS part, s.name AS section, g.name AS grp
+                OPTIONAL MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v)
+                RETURN p.name AS part, s.name AS section, coalesce(v.group, '') AS grp
             """, {"id": variable_id})
 
             updated_record = updated_result.single()
@@ -2858,18 +2818,18 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                 batch_errors = []
                 for var_data in batch:
                     try:
-                        group_id = merge_part_section_group_tx(
+                        section_id = merge_part_section_tx(
                             tx,
                             var_data["part"],
                             var_data["section"],
-                            var_data["group"],
                         )
                         existing_var = tx.run("""
-                            MATCH (g:Group {id: $group_id})-[:HAS_VARIABLE]->(v:Variable)
+                            MATCH (s:Section {id: $section_id})-[:HAS_VARIABLE]->(v:Variable)
                             WHERE toLower(v.name) = toLower($variable)
+                              AND toLower(coalesce(v.group, '')) = toLower($group)
                             RETURN v.id as id
                             LIMIT 1
-                        """, group_id=group_id, variable=var_data["variable"]).single()
+                        """, section_id=section_id, variable=var_data["variable"], group=var_data.get("group", "")).single()
                         if existing_var:
                             batch_errors.append(
                                 f"Variable '{var_data['variable']}' already exists in Group '{var_data['group']}' "
@@ -2877,9 +2837,9 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                             )
                             continue
                         result = tx.run("""
-                            MATCH (g:Group {id: $group_id})
+                            MATCH (s:Section {id: $section_id})
                             CREATE (v:Variable {
-                                id: $id, name: $variable,
+                                id: $id, name: $variable, group: $group,
                                 formatI: $formatI, formatII: $formatII, gType: $gType,
                                 validation: $validation, default: $default, graph: $graph,
                                 status: $status, driver: $driver,
@@ -2888,9 +2848,9 @@ async def _process_variables_to_db(driver, variables: list, errors: list) -> int
                                 `Is Group Key`: false,
                                 `Group Key`: ''
                             })
-                            MERGE (g)-[:HAS_VARIABLE]->(v)
+                            MERGE (s)-[:HAS_VARIABLE]->(v)
                             RETURN v.id as id
-                        """, {**var_data, "group_id": group_id})
+                        """, {**var_data, "section_id": section_id})
                         record = result.single()
                         if record and record["id"]:
                             batch_created.append(var_data)
@@ -3022,6 +2982,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
     errors = list(parse_errors)  # Carry over any CSV parse errors
     seen_taxonomy_keys: set = set()
     existing_driver_names = load_existing_driver_names()
+    format_mapping = _get_csv_format_mapping()
 
     print(f"CSV Headers found: {headers}")
     print(f"First few rows sample: {rows[:3] if len(rows) >= 3 else rows}")
@@ -3055,7 +3016,7 @@ async def bulk_upload_variables(file: UploadFile = File(...)):
                 continue
             seen_taxonomy_keys.add(dup_key)
 
-            metadata = _extract_variable_csv_metadata(row, row_num, errors)
+            metadata = _extract_variable_csv_metadata(row, row_num, errors, format_mapping)
             if metadata is None:
                 continue
 
@@ -3133,6 +3094,7 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
     required_fields = ['Sector', 'Domain', 'Country', 'Part', 'Section', 'Group', 'Variable', 'Type']
     seen_chunk: set = set()
     existing_driver_names = load_existing_driver_names()
+    format_mapping = _get_csv_format_mapping()
 
     for i, row in enumerate(body.rows):
         row_num = start + i
@@ -3156,7 +3118,7 @@ async def bulk_upload_variables_chunk(body: BulkUploadVariablesChunkRequest):
             )
             continue
         seen_chunk.add(dup_key)
-        metadata = _extract_variable_csv_metadata(row, row_num, errors)
+        metadata = _extract_variable_csv_metadata(row, row_num, errors, format_mapping)
         if metadata is None:
             continue
 

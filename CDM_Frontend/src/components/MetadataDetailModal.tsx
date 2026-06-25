@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Trash2 } from 'lucide-react';
+import { X, Save, Trash2, Pencil } from 'lucide-react';
 import { MetadataData } from '../hooks/useMetadata';
 import { apiService } from '../services/api';
+import { loadFormatMappingFromServer } from '../utils/formatMapping';
 
 // Required metadata concepts configuration
 const REQUIRED_METADATA_CONCEPTS: Record<string, { levels: 1 | 2 | 3 | 4; columns: string[] }> = {
@@ -74,6 +75,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     try {
       const isRequired = isRequiredConcept(metadataItem.concept);
       const isVulqan = metadataItem.concept === 'Format VII' || metadataItem.concept === 'Vulqan' || metadataItem.concept?.toLowerCase() === 'vulqan' || metadataItem.concept?.toLowerCase() === 'format vii';
+      const isFormatVI = metadataItem.concept === 'Format VI' || metadataItem.concept?.toLowerCase() === 'format vi';
       const isBeing = metadataItem.concept === 'Being' || metadataItem.concept?.toLowerCase() === 'being';
       const isAvatar = metadataItem.concept === 'Avatar' || metadataItem.concept?.toLowerCase() === 'avatar';
       const isPart = metadataItem.concept === 'Part' || metadataItem.concept?.toLowerCase() === 'part';
@@ -698,6 +700,43 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
             setRows([]);
           }
         }
+      } else if (isFormatVI) {
+        // For Format VI, fetch values from the metadata master (single source of truth)
+        try {
+          const viData = await apiService.getFormatVIValues() as { formatVIValues: string[] };
+          const viValues = viData.formatVIValues || [];
+
+          const requiredConfig = REQUIRED_METADATA_CONCEPTS['Format VI'];
+          setLevels(requiredConfig.levels);
+          setColumnNames([...requiredConfig.columns]);
+
+          // Load existing detailData to preserve Definition values (keyed by value)
+          let existingDetailData: any = null;
+          try {
+            const item = await apiService.getMetadataItem(metadataItem.id);
+            const detailDataStr = (item as any).detailData;
+            if (detailDataStr) {
+              existingDetailData = typeof detailDataStr === 'string' ? JSON.parse(detailDataStr) : detailDataStr;
+            }
+          } catch (e) {
+            console.log('No existing detailData found for Format VI, starting fresh');
+          }
+          const existingDefinitions = new Map<string, string>();
+          if (existingDetailData && existingDetailData.rows) {
+            existingDetailData.rows.forEach((row: string[]) => {
+              if (row.length >= 2 && row[0]) {
+                existingDefinitions.set(row[0], row[1] || '');
+              }
+            });
+          }
+
+          const newRows = viValues.map(vi => [vi || '', existingDefinitions.get(vi) || '']);
+          setRows(newRows);
+        } catch (err) {
+          console.error('Error fetching Format VI values:', err);
+          setError(`Failed to load Format VI values: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          setRows([]);
+        }
       } else if (isBeing) {
         // For Being, fetch Being values from Neo4j
         try {
@@ -1201,7 +1240,8 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     if (!metadataItem) return;
 
     const isRequired = isRequiredConcept(metadataItem.concept);
-    const isVulqan = metadataItem.concept === 'Vulqan' || metadataItem.concept?.toLowerCase() === 'vulqan';
+    const isVulqan = metadataItem.concept === 'Vulqan' || metadataItem.concept?.toLowerCase() === 'vulqan' || metadataItem.concept?.toLowerCase() === 'format vii';
+    const isFormatVI = metadataItem.concept === 'Format VI' || metadataItem.concept?.toLowerCase() === 'format vi';
     const isBeing = metadataItem.concept === 'Being' || metadataItem.concept?.toLowerCase() === 'being';
     const isAvatar = metadataItem.concept === 'Avatar' || metadataItem.concept?.toLowerCase() === 'avatar';
     const isPart = metadataItem.concept === 'Part' || metadataItem.concept?.toLowerCase() === 'part';
@@ -1235,7 +1275,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
       console.log('Before filtering - rows count:', rows.length, 'concept:', metadataItem.concept);
       console.log('Sample rows before filtering:', rows.slice(0, 3));
       
-      const filteredRows = (isVulqan || isBeing || isAvatar || isPart || isSection || isGroup || isGType || isSet || isGrouping)
+      const filteredRows = (isVulqan || isFormatVI || isBeing || isAvatar || isPart || isSection || isGroup || isGType || isSet || isGrouping)
         ? rows.filter(row => row && row.length > 0) // Keep all rows (they're dynamically populated)
         : rows.filter(row => row.some(cell => cell && cell.trim() !== '')); // Remove completely empty rows
       
@@ -1271,6 +1311,12 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
           .filter(val => val !== '');
         const distinctValues = [...new Set(formatIIValues)];
         examples = distinctValues.join(', ');
+      } else if (isFormatVI) {
+        // For Format VI, use the Format VI column (index 0)
+        const viValues = filteredRows
+          .map(row => row[0]?.trim())
+          .filter(val => val !== '');
+        examples = [...new Set(viValues)].join(', ');
       } else if (isBeing) {
         // For Being, use Being column (index 0)
         const beingValues = filteredRows
@@ -1371,6 +1417,13 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
   const conceptName = metadataItem?.concept || '';
   const conceptLc = conceptName.toLowerCase();
 
+  // Format VI/VII are stored in the metadata master (not Neo4j nodes); their
+  // mutations also blank/rename the denormalized Variable formatI/formatII props,
+  // so refresh the live mapping cache after each change.
+  const refreshFormatCache = async () => {
+    try { await loadFormatMappingFromServer(); } catch { /* non-fatal */ }
+  };
+
   const TOP_TAX: Record<string, {
     childLabel: string;
     create: (name: string) => Promise<any>;
@@ -1379,6 +1432,11 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     being: { childLabel: 'Avatars', create: (n) => apiService.createBeing(n), del: (n) => apiService.deleteBeing(n) },
     part: { childLabel: 'Sections', create: (n) => apiService.createVariablePart(n), del: (n) => apiService.deleteVariablePart(n) },
     set: { childLabel: 'Groupings', create: (n) => apiService.addSetValue(n), del: (n) => apiService.deleteSet(n) },
+    'format vi': {
+      childLabel: 'Format VII values',
+      create: async (n) => { const r = await apiService.addFormatVI(n); await refreshFormatCache(); return r; },
+      del: async (n) => { const r = await apiService.deleteFormatVI(n); await refreshFormatCache(); return r; },
+    },
   };
   const SUB_TAX: Record<string, {
     parentLabel: string;
@@ -1389,10 +1447,74 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
     avatar: { parentLabel: 'Being', fetchParents: async () => ((await apiService.getBeingValues()) as any).beings || [], create: (p, n) => apiService.createAvatar(p, n), del: (p, n) => apiService.deleteAvatar(p, n) },
     section: { parentLabel: 'Part', fetchParents: async () => ((await apiService.getPartValues()) as any).parts || [], create: (p, n) => apiService.addVariableSection(p, n), del: (p, n) => apiService.deleteVariableSection(p, n) },
     grouping: { parentLabel: 'Set', fetchParents: async () => ((await apiService.getSetValues()) as any).sets || [], create: (p, n) => apiService.addGroupingValue(p, n), del: (p, n) => apiService.deleteGrouping(p, n) },
+    'format vii': {
+      parentLabel: 'Format VI',
+      fetchParents: async () => ((await apiService.getFormatVIValues()) as any).formatVIValues || [],
+      create: async (p, n) => { const r = await apiService.addFormatVII(p, n); await refreshFormatCache(); return r; },
+      del: async (p, n) => { const r = await apiService.deleteFormatVII(p, n); await refreshFormatCache(); return r; },
+    },
+    vulqan: {
+      parentLabel: 'Format VI',
+      fetchParents: async () => ((await apiService.getFormatVIValues()) as any).formatVIValues || [],
+      create: async (p, n) => { const r = await apiService.addFormatVII(p, n); await refreshFormatCache(); return r; },
+      del: async (p, n) => { const r = await apiService.deleteFormatVII(p, n); await refreshFormatCache(); return r; },
+    },
   };
   const topTax = TOP_TAX[conceptLc];
   const subTax = SUB_TAX[conceptLc];
   const isManagedTax = !!topTax || !!subTax;
+  const isFormatVIConcept = conceptLc === 'format vi';
+  const isFormatVIIConcept = conceptLc === 'format vii' || conceptLc === 'vulqan';
+  const isFormatConcept = isFormatVIConcept || isFormatVIIConcept;
+
+  const handleRenameFormatVI = async (oldName: string) => {
+    const current = (oldName || '').trim();
+    if (!current) return;
+    const next = window.prompt(
+      `Rename Format VI "${current}" to:\n\nVariables using this value will be updated automatically.`,
+      current,
+    );
+    if (next == null) return;
+    const value = next.trim();
+    if (!value || value === current) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await apiService.renameFormatVI(current, value);
+      await refreshFormatCache();
+      await loadMetadataDetail();
+      await onSave();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to rename Format VI');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRenameFormatVII = async (parent: string, oldName: string) => {
+    const p = (parent || '').trim();
+    const current = (oldName || '').trim();
+    if (!p || !current) return;
+    const next = window.prompt(
+      `Rename Format VII "${current}" (under Format VI "${p}") to:\n\nVariables using this value will be updated automatically.`,
+      current,
+    );
+    if (next == null) return;
+    const value = next.trim();
+    if (!value || value === current) return;
+    setActionLoading(true);
+    setError(null);
+    try {
+      await apiService.renameFormatVII(p, current, value);
+      await refreshFormatCache();
+      await loadMetadataDetail();
+      await onSave();
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : 'Failed to rename Format VII');
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const openAddTop = () => {
     setNewNodeName('');
@@ -1452,7 +1574,10 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
 
   const handleDeleteTop = async (name: string) => {
     if (!name || !name.trim()) return;
-    if (!window.confirm(`Delete ${conceptName} "${name}" and all of its ${topTax!.childLabel}? This cannot be undone.`)) return;
+    const cascadeNote = isFormatConcept
+      ? ' Any Variables using this value will have their Format VI and Format VII cleared.'
+      : '';
+    if (!window.confirm(`Delete ${conceptName} "${name}" and all of its ${topTax!.childLabel}?${cascadeNote} This cannot be undone.`)) return;
     setActionLoading(true);
     setError(null);
     try {
@@ -1469,7 +1594,10 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
 
   const handleDeleteSub = async (parent: string, name: string) => {
     if (!parent || !name) return;
-    if (!window.confirm(`Delete ${conceptName} "${name}" (${subTax!.parentLabel} "${parent}")? This cannot be undone.`)) return;
+    const cascadeNote = isFormatConcept
+      ? ' Any Variables using this value will have their Format VI and Format VII cleared.'
+      : '';
+    if (!window.confirm(`Delete ${conceptName} "${name}" (${subTax!.parentLabel} "${parent}")?${cascadeNote} This cannot be undone.`)) return;
     setActionLoading(true);
     setError(null);
     try {
@@ -1557,7 +1685,8 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                       <span className="ml-2 text-xs text-ag-dark-text-secondary">(Required - cannot be changed)</span>
                     )}
                   </label>
-                  {metadataItem?.concept !== 'Vulqan' && metadataItem?.concept?.toLowerCase() !== 'vulqan' &&
+                  {!isManagedTax &&
+                   metadataItem?.concept !== 'Vulqan' && metadataItem?.concept?.toLowerCase() !== 'vulqan' &&
                    metadataItem?.concept !== 'Being' && metadataItem?.concept?.toLowerCase() !== 'being' &&
                    metadataItem?.concept !== 'Avatar' && metadataItem?.concept?.toLowerCase() !== 'avatar' &&
                    metadataItem?.concept !== 'Part' && metadataItem?.concept?.toLowerCase() !== 'part' &&
@@ -1625,7 +1754,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                   {/* Header Row */}
                   <div 
                     className="grid gap-2 p-2 bg-ag-dark-bg border-b border-ag-dark-border font-medium text-sm text-ag-dark-text"
-                    style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? ' 56px' : ''}` }}
+                    style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? (isFormatConcept ? ' 88px' : ' 56px') : ''}` }}
                   >
                     <div className="text-center">#</div>
                     {columnNames.map((name, index) => (
@@ -1650,7 +1779,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                       <div
                         key={rowIndex}
                         className="grid gap-2 p-2 border-b border-ag-dark-border hover:bg-ag-dark-bg/50"
-                        style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? ' 56px' : ''}` }}
+                        style={{ gridTemplateColumns: `40px repeat(${levels}, 1fr)${isManagedTax ? (isFormatConcept ? ' 88px' : ' 56px') : ''}` }}
                       >
                         <div className="flex items-center justify-center text-sm text-ag-dark-text-secondary">
                           {rowIndex + 1}
@@ -1665,6 +1794,10 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                           const isGType = metadataItem?.concept === 'G-Type' || metadataItem?.concept?.toLowerCase() === 'g-type';
                           const isSet = metadataItem?.concept === 'Set' || metadataItem?.concept?.toLowerCase() === 'set';
                           const isGrouping = metadataItem?.concept === 'Grouping' || metadataItem?.concept?.toLowerCase() === 'grouping';
+                          const isFormatVIRow = metadataItem?.concept?.toLowerCase() === 'format vi';
+                          const isFormatVIIRow = metadataItem?.concept?.toLowerCase() === 'format vii' || metadataItem?.concept?.toLowerCase() === 'vulqan';
+                          // For Format VI: value (0) is read-only (managed via +/edit/trash), Definition (1) editable
+                          // For Format VII: Format VI (0) and Format VII (1) read-only, Definition (2) editable
                           // For Vulqan: Format V-I (0) and Format V-II (1) are read-only, Definition (2) is editable
                           // For Being: Being (0) is read-only, Definition (1) is editable
                           // For Avatar: Being (0) and Avatar (1) are read-only, Definition (2) is editable
@@ -1674,7 +1807,7 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                           // For G-Type: G-Type (0) is read-only, Definition (1) is editable
                           // For Set: Set (0) is read-only, Definition (1) is editable
                           // For Grouping: Set (0) and Grouping (1) are read-only, Definition (2) is editable
-                          const isReadOnly = (isVulqan && colIndex < 2) || (isBeing && colIndex < 1) || (isAvatar && colIndex < 2) || (isPart && colIndex < 1) || (isSection && colIndex < 2) || (isGroup && colIndex < 3) || (isGType && colIndex < 1) || (isSet && colIndex < 1) || (isGrouping && colIndex < 2);
+                          const isReadOnly = (isVulqan && colIndex < 2) || (isFormatVIRow && colIndex < 1) || (isFormatVIIRow && colIndex < 2) || (isBeing && colIndex < 1) || (isAvatar && colIndex < 2) || (isPart && colIndex < 1) || (isSection && colIndex < 2) || (isGroup && colIndex < 3) || (isGType && colIndex < 1) || (isSet && colIndex < 1) || (isGrouping && colIndex < 2);
                           return (
                             <input
                               key={colIndex}
@@ -1692,19 +1825,34 @@ export const MetadataDetailModal: React.FC<MetadataDetailModalProps> = ({
                           );
                         })}
                         {isManagedTax && (
-                          <div className="flex items-center justify-center">
+                          <div className="flex items-center justify-center gap-2">
                             {((topTax && (row[0] || '').trim()) || (subTax && (row[0] || '').trim() && (row[1] || '').trim())) ? (
-                              <button
-                                type="button"
-                                onClick={() => topTax
-                                  ? handleDeleteTop(row[0])
-                                  : handleDeleteSub(row[0], row[1])}
-                                disabled={isSaving || actionLoading}
-                                title={topTax ? `Delete ${conceptName} "${row[0]}"` : `Delete ${conceptName} "${row[1]}"`}
-                                className="text-ag-dark-text-secondary hover:text-red-400 transition-colors disabled:opacity-50"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              <>
+                                {isFormatConcept && (
+                                  <button
+                                    type="button"
+                                    onClick={() => isFormatVIConcept
+                                      ? handleRenameFormatVI(row[0])
+                                      : handleRenameFormatVII(row[0], row[1])}
+                                    disabled={isSaving || actionLoading}
+                                    title={isFormatVIConcept ? `Rename Format VI "${row[0]}"` : `Rename Format VII "${row[1]}"`}
+                                    className="text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors disabled:opacity-50"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => topTax
+                                    ? handleDeleteTop(row[0])
+                                    : handleDeleteSub(row[0], row[1])}
+                                  disabled={isSaving || actionLoading}
+                                  title={topTax ? `Delete ${conceptName} "${row[0]}"` : `Delete ${conceptName} "${row[1]}"`}
+                                  className="text-ag-dark-text-secondary hover:text-red-400 transition-colors disabled:opacity-50"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </>
                             ) : null}
                           </div>
                         )}

@@ -771,8 +771,8 @@ RETURN s, r1, d, r2, c, r3, vc, r4, v`;
           case 'ontology':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
-OPTIONAL MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v)
-RETURN p, r0, s, r1, g, r2, v`;
+OPTIONAL MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r2:HAS_VARIABLE]->(v)
+RETURN p, r0, s, r2, v`;
           case 'metadata':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
@@ -783,10 +783,8 @@ WHERE ${fieldName} IN ${paramValue}
 WITH v
 OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
 WITH v, o, r1
-OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
-WITH v, o, r1, g, r2
-OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
-RETURN v, o, r1, g, r2, p, r3, s, r4`;
+OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
+RETURN v, o, r1, r2, p, s, r4`;
           case 'variations':
             return `MATCH (v:Variable)
 WHERE ${fieldName} IN ${paramValue}
@@ -813,8 +811,8 @@ WITH v, s, r1, d, r2, c, r3
 OPTIONAL MATCH (vc:VariableClarifier)-[r4:IS_RELEVANT_TO]->(v)
 RETURN s, r1, d, r2, c, r3, vc, r4, v`;
           case 'ontology':
-            return `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r1:HAS_GROUP]->(g:Group)-[r2:HAS_VARIABLE]->(v:Variable ${paramValue})
-RETURN p, r0, s, r1, g, r2, v`;
+            return `MATCH (p:Part)-[r0:HAS_SECTION]->(s:Section)-[r2:HAS_VARIABLE]->(v:Variable ${paramValue})
+RETURN p, r0, s, r2, v`;
           case 'metadata':
             return `MATCH (v:Variable ${paramValue})
 RETURN v`;
@@ -823,10 +821,8 @@ RETURN v`;
 WITH v
 OPTIONAL MATCH (o:Object)-[r1:HAS_SPECIFIC_VARIABLE]->(v)
 WITH v, o, r1
-OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(g:Group)
-WITH v, o, r1, g, r2
-OPTIONAL MATCH (g)<-[r3:HAS_GROUP]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
-RETURN v, o, r1, g, r2, p, r3, s, r4`;
+OPTIONAL MATCH (v)<-[r2:HAS_VARIABLE]-(s:Section)<-[r4:HAS_SECTION]-(p:Part)
+RETURN v, o, r1, r2, p, s, r4`;
           case 'variations':
             return `MATCH (v:Variable ${paramValue})
 OPTIONAL MATCH (v)-[r:HAS_VARIATION]->(var:VariableVariation)
@@ -866,17 +862,14 @@ RETURN b, r1, a, r2, o`;
 WHERE ${fieldName} IN ${paramValue}
 WITH o
 OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
-OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
-OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
-WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a
+OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
+WITH o, v1, r1, s1, p1, r4a, r6a
 OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
-OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
-OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
-WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b
+OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
+WITH o, v1, r1, s1, p1, r4a, r6a, v2, r2, s2, p2, r4b, r6b
 OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
-OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
-RETURN o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b, v3, r3, g3, s3, p3, r4c, r5c, r6c`;
+OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
+RETURN o, v1, r1, s1, p1, r4a, r6a, v2, r2, s2, p2, r4b, r6b, v3, r3, s3, p3, r4c, r6c`;
           case 'relationships':
             return `MATCH (o:Object)
 WHERE ${fieldName} IN ${paramValue}
@@ -914,17 +907,14 @@ RETURN b, r1, a, r2, o`;
             return `MATCH (o:Object ${paramValue})
 WITH o
 OPTIONAL MATCH (o)-[r1:HAS_DISCRETE_ID]->(v1:Variable)
-OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(g1:Group)
-OPTIONAL MATCH (g1)<-[r5a:HAS_GROUP]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
-WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a
+OPTIONAL MATCH (v1)<-[r4a:HAS_VARIABLE]-(s1:Section)<-[r6a:HAS_SECTION]-(p1:Part)
+WITH o, v1, r1, s1, p1, r4a, r6a
 OPTIONAL MATCH (o)-[r2:HAS_COMPOSITE_ID_1|HAS_COMPOSITE_ID_2|HAS_COMPOSITE_ID_3|HAS_COMPOSITE_ID_4|HAS_COMPOSITE_ID_5]->(v2:Variable)
-OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(g2:Group)
-OPTIONAL MATCH (g2)<-[r5b:HAS_GROUP]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
-WITH o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b
+OPTIONAL MATCH (v2)<-[r4b:HAS_VARIABLE]-(s2:Section)<-[r6b:HAS_SECTION]-(p2:Part)
+WITH o, v1, r1, s1, p1, r4a, r6a, v2, r2, s2, p2, r4b, r6b
 OPTIONAL MATCH (o)-[r3:HAS_UNIQUE_ID]->(v3:Variable)
-OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(g3:Group)
-OPTIONAL MATCH (g3)<-[r5c:HAS_GROUP]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
-RETURN o, v1, r1, g1, s1, p1, r4a, r5a, r6a, v2, r2, g2, s2, p2, r4b, r5b, r6b, v3, r3, g3, s3, p3, r4c, r5c, r6c`;
+OPTIONAL MATCH (v3)<-[r4c:HAS_VARIABLE]-(s3:Section)<-[r6c:HAS_SECTION]-(p3:Part)
+RETURN o, v1, r1, s1, p1, r4a, r6a, v2, r2, s2, p2, r4b, r6b, v3, r3, s3, p3, r4c, r6c`;
           case 'relationships':
             return `MATCH (o:Object ${paramValue})-[r:RELATES_TO]->(o2:Object)
 RETURN o, r, o2`;

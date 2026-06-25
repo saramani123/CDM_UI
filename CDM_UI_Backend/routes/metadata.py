@@ -576,6 +576,272 @@ FORMAT_I_TO_FORMAT_II_MAPPING = {
 # Valid Format V-I values in sorted order (matches frontend getAllFormatIValues())
 VALID_FORMAT_I_VALUES = sorted(FORMAT_I_TO_FORMAT_II_MAPPING.keys())
 
+# ---------------------------------------------------------------------------
+# Format VI / Format VII master (single source of truth)
+#
+# Format VI / VII values are user-managed via their metadata rows. The master
+# list lives in each row's detailData:
+#   Format VI  -> rows: [[formatVI, definition], ...]
+#   Format VII -> rows: [[parentFormatVI, formatVII, definition], ...]
+# Variables keep denormalized v.formatI / v.formatII string properties; editing
+# or deleting a value here cascades down to those properties.
+# ---------------------------------------------------------------------------
+
+FORMAT_VI_CONCEPTS = {"format vi"}
+FORMAT_VII_CONCEPTS = {"format vii", "vulqan"}
+
+
+def _load_all_metadata_items() -> List[dict]:
+    """Load all metadata items from the active store (Postgres or JSON)."""
+    if POSTGRES_AVAILABLE:
+        return load_metadata_postgres()
+    return load_metadata_json()
+
+
+def _parse_detail_data(item: Optional[dict]) -> Optional[dict]:
+    if not item:
+        return None
+    dd = item.get("detailData")
+    if not dd:
+        return None
+    if isinstance(dd, str):
+        try:
+            return json.loads(dd)
+        except Exception:
+            return None
+    if isinstance(dd, dict):
+        return dd
+    return None
+
+
+def _find_item_by_concept(items: List[dict], concept_names: set) -> Optional[dict]:
+    for it in items:
+        if (it.get("concept") or "").strip().lower() in concept_names:
+            return it
+    return None
+
+
+def _detail_rows(item: Optional[dict]) -> List[List[str]]:
+    dd = _parse_detail_data(item)
+    if dd and isinstance(dd.get("rows"), list):
+        return [list(r) for r in dd["rows"] if isinstance(r, list)]
+    return []
+
+
+def _persist_detaildata_by_id(item_id: str, detail_data: dict) -> bool:
+    """Persist a metadata item's detailData to the active store."""
+    dd_str = json.dumps(detail_data)
+    if POSTGRES_AVAILABLE:
+        db = get_db_session()
+        if db:
+            try:
+                m = db.query(MetadataModel).filter(MetadataModel.id == item_id).first()
+                if not m:
+                    return False
+                m.detailData = dd_str
+                db.commit()
+                return True
+            except Exception as e:
+                db.rollback()
+                print(f"Error persisting detailData for {item_id}: {e}")
+                return False
+            finally:
+                db.close()
+    metadata = load_metadata_json()
+    for m in metadata:
+        if m.get("id") == item_id:
+            m["detailData"] = dd_str
+            save_metadata_json(metadata)
+            return True
+    return False
+
+
+def _distinct_variable_format_pairs() -> List[tuple]:
+    """Distinct (formatI, formatII) pairs currently present on Variable nodes."""
+    driver = get_driver()
+    if not driver:
+        return []
+    pairs: List[tuple] = []
+    try:
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (v:Variable)
+                WHERE v.formatI IS NOT NULL AND trim(v.formatI) <> ''
+                RETURN DISTINCT trim(v.formatI) AS fi, coalesce(trim(v.formatII), '') AS fii
+                """
+            )
+            for record in result:
+                fi = (record.get("fi") or "").strip()
+                fii = (record.get("fii") or "").strip()
+                if fi:
+                    pairs.append((fi, fii))
+    except Exception as e:
+        print(f"Error reading variable format pairs: {e}")
+    return pairs
+
+
+def _build_seed_master() -> tuple:
+    """
+    Build the initial Format VI / VII master from the built-in mapping plus any
+    values already present on Variable nodes (so existing data is preserved).
+    Returns (vi_values: List[str], pairs: List[(vi, vii)]).
+    """
+    vi_values: List[str] = []
+    pairs: List[tuple] = []
+    seen_vi: set = set()
+    seen_pair: set = set()
+
+    def add_vi(vi: str):
+        key = vi.lower()
+        if vi and key not in seen_vi:
+            seen_vi.add(key)
+            vi_values.append(vi)
+
+    def add_pair(vi: str, vii: str):
+        if not vi or not vii:
+            return
+        key = (vi.lower(), vii.lower())
+        if key not in seen_pair:
+            seen_pair.add(key)
+            pairs.append((vi, vii))
+
+    # Built-in mapping first (canonical order)
+    for vi in VALID_FORMAT_I_VALUES:
+        add_vi(vi)
+        for vii in sorted(FORMAT_I_TO_FORMAT_II_MAPPING.get(vi, [])):
+            add_pair(vi, vii)
+
+    # Merge values already on Variable nodes so nothing breaks
+    for fi, fii in _distinct_variable_format_pairs():
+        add_vi(fi)
+        if fii:
+            add_pair(fi, fii)
+
+    return vi_values, pairs
+
+
+def ensure_format_master_seeded() -> None:
+    """
+    Make sure the Format VI/VII master exists and is internally consistent.
+    Idempotent: full-seeds when empty, otherwise just reconciles so that every
+    Format VII parent is also materialized as a Format VI row (needed for
+    rename/delete to work).
+    """
+    items = _load_all_metadata_items()
+    vi_item = _find_item_by_concept(items, FORMAT_VI_CONCEPTS)
+    vii_item = _find_item_by_concept(items, FORMAT_VII_CONCEPTS)
+
+    vi_rows = _detail_rows(vi_item)
+    vii_rows = _detail_rows(vii_item)
+
+    has_vi = any(r and str(r[0]).strip() for r in vi_rows)
+    has_vii = any(len(r) >= 2 and str(r[0]).strip() and str(r[1]).strip() for r in vii_rows)
+
+    if not has_vi and not has_vii:
+        vi_values, pairs = _build_seed_master()
+        if vi_item:
+            _persist_detaildata_by_id(vi_item["id"], {
+                "levels": 2,
+                "columns": ["Format VI", "Definition"],
+                "rows": [[vi, ""] for vi in vi_values],
+            })
+        if vii_item:
+            _persist_detaildata_by_id(vii_item["id"], {
+                "levels": 3,
+                "columns": ["Format V-I", "Format V-II", "Definition"],
+                "rows": [[vi, vii, ""] for (vi, vii) in pairs],
+            })
+        return
+
+    # Reconcile: ensure every Format VII parent is present as a Format VI row.
+    if vi_item:
+        existing_vi = {str(r[0]).strip().lower() for r in vi_rows if r and str(r[0]).strip()}
+        missing: List[str] = []
+        seen: set = set()
+        for r in vii_rows:
+            if len(r) >= 2 and str(r[0]).strip():
+                parent = str(r[0]).strip()
+                key = parent.lower()
+                if key not in existing_vi and key not in seen:
+                    seen.add(key)
+                    missing.append(parent)
+        if missing:
+            _persist_detaildata_by_id(vi_item["id"], {
+                "levels": 2,
+                "columns": ["Format VI", "Definition"],
+                "rows": vi_rows + [[p, ""] for p in missing],
+            })
+
+
+def get_format_mapping() -> Dict[str, List[str]]:
+    """
+    Canonical Format VI -> [Format VII...] mapping sourced from the metadata
+    master. Falls back to the built-in mapping merged with existing variable
+    values when the master has not been seeded yet.
+    """
+    items = _load_all_metadata_items()
+    vi_item = _find_item_by_concept(items, FORMAT_VI_CONCEPTS)
+    vii_item = _find_item_by_concept(items, FORMAT_VII_CONCEPTS)
+
+    mapping: Dict[str, List[str]] = {}
+
+    for row in _detail_rows(vi_item):
+        if row and str(row[0]).strip():
+            mapping.setdefault(str(row[0]).strip(), [])
+
+    for row in _detail_rows(vii_item):
+        if len(row) >= 2 and str(row[0]).strip() and str(row[1]).strip():
+            parent = str(row[0]).strip()
+            vii = str(row[1]).strip()
+            mapping.setdefault(parent, [])
+            if vii not in mapping[parent]:
+                mapping[parent].append(vii)
+
+    if not mapping:
+        vi_values, pairs = _build_seed_master()
+        for vi in vi_values:
+            mapping.setdefault(vi, [])
+        for vi, vii in pairs:
+            if vii not in mapping[vi]:
+                mapping[vi].append(vii)
+
+    return mapping
+
+
+def _get_format_items():
+    items = _load_all_metadata_items()
+    return (
+        _find_item_by_concept(items, FORMAT_VI_CONCEPTS),
+        _find_item_by_concept(items, FORMAT_VII_CONCEPTS),
+    )
+
+
+def _vi_detail(vi_item) -> dict:
+    return {"levels": 2, "columns": ["Format VI", "Definition"], "rows": _detail_rows(vi_item)}
+
+
+def _vii_detail(vii_item) -> dict:
+    return {
+        "levels": 3,
+        "columns": ["Format V-I", "Format V-II", "Definition"],
+        "rows": _detail_rows(vii_item),
+    }
+
+
+def _run_variable_format_update(cypher: str, params: dict) -> int:
+    """Run a cascade update on Variable nodes; returns number of properties set."""
+    driver = get_driver()
+    if not driver:
+        return 0
+    try:
+        with driver.session() as session:
+            result = session.run(cypher, **params)
+            return result.consume().counters.properties_set
+    except Exception as e:
+        print(f"Error cascading format update to variables: {e}")
+        return 0
+
 @router.get("/metadata/being-values")
 async def get_being_values():
     """
@@ -622,7 +888,7 @@ async def get_being_values():
 async def get_group_values():
     """
     Get all distinct Part–Section–Group triplets from the same graph path as the Variables grid:
-    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+    Part -[:HAS_SECTION]-> Section -[:HAS_VARIABLE]-> Variable (Group is the v.group property).
 
     Used for populating the Group metadata concept widget (ontology hierarchy).
     Results are sorted by Part, then Section, then Group.
@@ -635,14 +901,13 @@ async def get_group_values():
         with driver.session() as session:
             # Same lineage as variables: only groups that appear under a section with at least one variable.
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v:Variable)
                 WHERE p.name IS NOT NULL AND p.name <> ''
                   AND s.name IS NOT NULL AND s.name <> ''
-                  AND g.name IS NOT NULL AND g.name <> ''
-                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
+                  AND coalesce(v.group, '') <> ''
                   AND NOT v.name STARTS WITH '__PLACEHOLDER_'
-                RETURN DISTINCT p.name as part, s.name as section, g.name as group
-                ORDER BY p.name, s.name, g.name
+                RETURN DISTINCT p.name as part, s.name as section, v.group as group
+                ORDER BY p.name, s.name, v.group
             """)
             
             group_triplets = []
@@ -672,10 +937,10 @@ async def get_group_values():
 @router.get("/metadata/section-values")
 async def get_section_values():
     """
-    Get distinct Part–Section pairs from the same graph path as the Variables grid:
-    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+    Get distinct Part–Section pairs from the Variables ontology:
+    Part -[:HAS_SECTION]-> Section (Group is the v.group property).
 
-    Excludes sections that have no groups/variables yet so Section metadata stays aligned with the grid.
+    Includes sections with no variables yet so metadata-managed/empty sections still appear.
     """
     driver = get_driver()
     if not driver:
@@ -684,11 +949,10 @@ async def get_section_values():
     try:
         with driver.session() as session:
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)
                 WHERE p.name IS NOT NULL AND p.name <> ''
                   AND s.name IS NOT NULL AND s.name <> ''
-                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
-                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
+                  AND NOT s.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT p.name as part, s.name as section
                 ORDER BY p.name, s.name
             """)
@@ -718,8 +982,7 @@ async def get_section_values():
 @router.get("/metadata/part-values")
 async def get_part_values():
     """
-    Distinct Part values on the Variables grid path only:
-    Part -[:HAS_SECTION]-> Section -[:HAS_GROUP]-> Group -[:HAS_VARIABLE]-> Variable.
+    Distinct Part values (all Part nodes managed in metadata).
 
     Used for populating the Part metadata concept widget so it matches live grid taxonomy.
     """
@@ -730,10 +993,8 @@ async def get_part_values():
     try:
         with driver.session() as session:
             result = session.run("""
-                MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v:Variable)
+                MATCH (p:Part)
                 WHERE p.name IS NOT NULL AND p.name <> ''
-                  AND NOT g.name STARTS WITH '__PLACEHOLDER_'
-                  AND NOT v.name STARTS WITH '__PLACEHOLDER_'
                 RETURN DISTINCT p.name AS part
                 ORDER BY p.name
             """)
@@ -808,38 +1069,262 @@ async def get_avatar_values():
 @router.get("/metadata/vulqan-format-values")
 async def get_vulqan_format_values():
     """
-    Get all valid Format V-I and Format V-II pairs from the mapping.
-    Returns ALL possible combinations from the formatMapping, not from actual Variable nodes.
-    This ensures the Vulqan widget shows exactly the same options as the Variables grid dropdowns.
-    
-    Results are sorted: Format V-I first (alphabetical), then Format V-II within each Format V-I group.
-    This matches the exact order and values shown in the Variables grid dropdowns.
+    Get all valid Format VI / Format VII pairs from the metadata master.
+    Powers the Format VII (Vulqan) metadata widget; uses the same source of
+    truth that the Variables grid dropdowns read from.
     """
     try:
-        # Generate all valid Format V-I/V-II pairs from the mapping
+        ensure_format_master_seeded()
+        mapping = get_format_mapping()
         format_pairs = []
-        
-        # Sort Format V-I values alphabetically to match frontend
-        for format_i in VALID_FORMAT_I_VALUES:
-            format_ii_values = FORMAT_I_TO_FORMAT_II_MAPPING.get(format_i, [])
-            # Sort Format V-II values alphabetically within each Format V-I
-            for format_ii in sorted(format_ii_values):
-                format_pairs.append({
-                    "formatI": format_i,
-                    "formatII": format_ii
-                })
-        
-        print(f"Generated {len(format_pairs)} Format V-I/V-II pairs from mapping")
-        
-        return {
-            "formatPairs": format_pairs,
-            "count": len(format_pairs)
-        }
+        for format_i in mapping:
+            for format_ii in mapping[format_i]:
+                format_pairs.append({"formatI": format_i, "formatII": format_ii})
+        return {"formatPairs": format_pairs, "count": len(format_pairs)}
     except Exception as e:
-        print(f"Error generating Format V-I/V-II pairs: {e}")
+        print(f"Error generating Format VI/VII pairs: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to generate format values: {str(e)}")
+
+
+@router.get("/metadata/format-vi-values")
+async def get_format_vi_values():
+    """All Format VI (base) values from the metadata master, in order."""
+    try:
+        ensure_format_master_seeded()
+        mapping = get_format_mapping()
+        values = list(mapping.keys())
+        return {"formatVIValues": values, "count": len(values)}
+    except Exception as e:
+        print(f"Error getting Format VI values: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get Format VI values: {str(e)}")
+
+
+@router.get("/metadata/format-mapping")
+async def get_format_mapping_endpoint():
+    """
+    Canonical Format VI -> [Format VII...] mapping (single source of truth).
+    Consumed by the Variables panels, Source LDM and CSV validation.
+    """
+    try:
+        ensure_format_master_seeded()
+        mapping = get_format_mapping()
+        format_i_values = list(mapping.keys())
+        pairs = [
+            {"formatI": vi, "formatII": vii}
+            for vi in format_i_values
+            for vii in mapping[vi]
+        ]
+        return {"mapping": mapping, "formatIValues": format_i_values, "formatPairs": pairs}
+    except Exception as e:
+        print(f"Error getting format mapping: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get format mapping: {str(e)}")
+
+
+# ----- Format VI cascade endpoints -----
+
+class FormatVIAddRequest(BaseModel):
+    value: str
+    definition: Optional[str] = ""
+
+
+class FormatVIRenameRequest(BaseModel):
+    oldValue: str
+    newValue: str
+
+
+@router.post("/metadata/format-vi")
+async def add_format_vi(req: FormatVIAddRequest):
+    ensure_format_master_seeded()
+    value = (req.value or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Format VI value is required")
+    vi_item, _ = _get_format_items()
+    if not vi_item:
+        raise HTTPException(status_code=404, detail="Format VI metadata row not found")
+    dd = _vi_detail(vi_item)
+    if any(r and str(r[0]).strip().lower() == value.lower() for r in dd["rows"]):
+        raise HTTPException(status_code=400, detail=f"Format VI '{value}' already exists")
+    dd["rows"].append([value, req.definition or ""])
+    _persist_detaildata_by_id(vi_item["id"], dd)
+    return {"success": True, "value": value}
+
+
+@router.put("/metadata/format-vi")
+async def rename_format_vi(req: FormatVIRenameRequest):
+    ensure_format_master_seeded()
+    old = (req.oldValue or "").strip()
+    new = (req.newValue or "").strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="Both oldValue and newValue are required")
+    vi_item, vii_item = _get_format_items()
+    if not vi_item:
+        raise HTTPException(status_code=404, detail="Format VI metadata row not found")
+    vi_dd = _vi_detail(vi_item)
+    if not any(r and str(r[0]).strip().lower() == old.lower() for r in vi_dd["rows"]):
+        raise HTTPException(status_code=404, detail=f"Format VI '{old}' not found")
+    if new.lower() != old.lower() and any(
+        r and str(r[0]).strip().lower() == new.lower() for r in vi_dd["rows"]
+    ):
+        raise HTTPException(status_code=400, detail=f"Format VI '{new}' already exists")
+    for r in vi_dd["rows"]:
+        if r and str(r[0]).strip().lower() == old.lower():
+            r[0] = new
+    _persist_detaildata_by_id(vi_item["id"], vi_dd)
+    if vii_item:
+        vii_dd = _vii_detail(vii_item)
+        for r in vii_dd["rows"]:
+            if r and str(r[0]).strip().lower() == old.lower():
+                r[0] = new
+        _persist_detaildata_by_id(vii_item["id"], vii_dd)
+    count = _run_variable_format_update(
+        "MATCH (v:Variable) WHERE toLower(trim(v.formatI)) = toLower($old) SET v.formatI = $new",
+        {"old": old, "new": new},
+    )
+    return {"success": True, "variablesUpdated": count}
+
+
+@router.delete("/metadata/format-vi")
+async def delete_format_vi(value: str):
+    ensure_format_master_seeded()
+    value = (value or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Format VI value is required")
+    vi_item, vii_item = _get_format_items()
+    if vi_item:
+        vi_dd = _vi_detail(vi_item)
+        vi_dd["rows"] = [
+            r for r in vi_dd["rows"] if not (r and str(r[0]).strip().lower() == value.lower())
+        ]
+        _persist_detaildata_by_id(vi_item["id"], vi_dd)
+    if vii_item:
+        vii_dd = _vii_detail(vii_item)
+        vii_dd["rows"] = [
+            r for r in vii_dd["rows"] if not (r and str(r[0]).strip().lower() == value.lower())
+        ]
+        _persist_detaildata_by_id(vii_item["id"], vii_dd)
+    count = _run_variable_format_update(
+        "MATCH (v:Variable) WHERE toLower(trim(v.formatI)) = toLower($value) "
+        "SET v.formatI = '', v.formatII = ''",
+        {"value": value},
+    )
+    return {"success": True, "variablesBlanked": count}
+
+
+# ----- Format VII cascade endpoints -----
+
+class FormatVIIAddRequest(BaseModel):
+    parent: str
+    value: str
+    definition: Optional[str] = ""
+
+
+class FormatVIIRenameRequest(BaseModel):
+    parent: str
+    oldValue: str
+    newValue: str
+
+
+@router.post("/metadata/format-vii")
+async def add_format_vii(req: FormatVIIAddRequest):
+    ensure_format_master_seeded()
+    parent = (req.parent or "").strip()
+    value = (req.value or "").strip()
+    if not parent or not value:
+        raise HTTPException(
+            status_code=400, detail="Both parent (Format VI) and value (Format VII) are required"
+        )
+    vi_item, vii_item = _get_format_items()
+    vi_dd = _vi_detail(vi_item)
+    if not any(r and str(r[0]).strip().lower() == parent.lower() for r in vi_dd["rows"]):
+        raise HTTPException(status_code=400, detail=f"Format VI '{parent}' does not exist")
+    if not vii_item:
+        raise HTTPException(status_code=404, detail="Format VII metadata row not found")
+    vii_dd = _vii_detail(vii_item)
+    if any(
+        len(r) >= 2
+        and str(r[0]).strip().lower() == parent.lower()
+        and str(r[1]).strip().lower() == value.lower()
+        for r in vii_dd["rows"]
+    ):
+        raise HTTPException(
+            status_code=400, detail=f"Format VII '{value}' already exists under '{parent}'"
+        )
+    vii_dd["rows"].append([parent, value, req.definition or ""])
+    _persist_detaildata_by_id(vii_item["id"], vii_dd)
+    return {"success": True, "parent": parent, "value": value}
+
+
+@router.put("/metadata/format-vii")
+async def rename_format_vii(req: FormatVIIRenameRequest):
+    ensure_format_master_seeded()
+    parent = (req.parent or "").strip()
+    old = (req.oldValue or "").strip()
+    new = (req.newValue or "").strip()
+    if not parent or not old or not new:
+        raise HTTPException(status_code=400, detail="parent, oldValue and newValue are required")
+    _, vii_item = _get_format_items()
+    if not vii_item:
+        raise HTTPException(status_code=404, detail="Format VII metadata row not found")
+    vii_dd = _vii_detail(vii_item)
+
+    def is_target(r):
+        return (
+            len(r) >= 2
+            and str(r[0]).strip().lower() == parent.lower()
+            and str(r[1]).strip().lower() == old.lower()
+        )
+
+    if not any(is_target(r) for r in vii_dd["rows"]):
+        raise HTTPException(status_code=404, detail=f"Format VII '{old}' under '{parent}' not found")
+    if new.lower() != old.lower() and any(
+        len(r) >= 2
+        and str(r[0]).strip().lower() == parent.lower()
+        and str(r[1]).strip().lower() == new.lower()
+        for r in vii_dd["rows"]
+    ):
+        raise HTTPException(
+            status_code=400, detail=f"Format VII '{new}' already exists under '{parent}'"
+        )
+    for r in vii_dd["rows"]:
+        if is_target(r):
+            r[1] = new
+    _persist_detaildata_by_id(vii_item["id"], vii_dd)
+    count = _run_variable_format_update(
+        "MATCH (v:Variable) WHERE toLower(trim(v.formatI)) = toLower($parent) "
+        "AND toLower(trim(v.formatII)) = toLower($old) SET v.formatII = $new",
+        {"parent": parent, "old": old, "new": new},
+    )
+    return {"success": True, "variablesUpdated": count}
+
+
+@router.delete("/metadata/format-vii")
+async def delete_format_vii(parent: str, value: str):
+    ensure_format_master_seeded()
+    parent = (parent or "").strip()
+    value = (value or "").strip()
+    if not parent or not value:
+        raise HTTPException(status_code=400, detail="parent and value are required")
+    _, vii_item = _get_format_items()
+    if vii_item:
+        vii_dd = _vii_detail(vii_item)
+        vii_dd["rows"] = [
+            r
+            for r in vii_dd["rows"]
+            if not (
+                len(r) >= 2
+                and str(r[0]).strip().lower() == parent.lower()
+                and str(r[1]).strip().lower() == value.lower()
+            )
+        ]
+        _persist_detaildata_by_id(vii_item["id"], vii_dd)
+    count = _run_variable_format_update(
+        "MATCH (v:Variable) WHERE toLower(trim(v.formatI)) = toLower($parent) "
+        "AND toLower(trim(v.formatII)) = toLower($value) SET v.formatI = '', v.formatII = ''",
+        {"parent": parent, "value": value},
+    )
+    return {"success": True, "variablesBlanked": count}
 
 @router.get("/metadata/g-type-values")
 async def get_g_type_values():

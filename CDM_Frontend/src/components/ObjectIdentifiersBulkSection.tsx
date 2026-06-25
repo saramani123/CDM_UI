@@ -10,9 +10,17 @@ import React, {
 import { Plus, Trash2 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { useVariables } from '../hooks/useVariables';
+import {
+  getFormatVIIOptions,
+  partsForFormatVII,
+  sectionsForFormatVII,
+  groupsForFormatVII,
+  eligibleVariableIdsFor,
+} from '../utils/identifierFormat';
 
 export interface UniqueIdEntry {
   id: string;
+  formatVII?: string;
   part: string;
   section: string;
   group: string;
@@ -21,6 +29,7 @@ export interface UniqueIdEntry {
 
 export interface CompositeIdRow {
   id: string;
+  formatVII?: string;
   part: string;
   section: string;
   group: string;
@@ -83,7 +92,8 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
     useEffect(() => {
       const loadParts = async () => {
         try {
-          const response = (await apiService.getVariableParts()) as { parts: string[] };
+          // Part values come from the Metadata-managed source.
+          const response = (await apiService.getPartValues()) as { parts: string[] };
           setPartsList(response.parts || []);
         } catch {
           if (variablesData && Array.isArray(variablesData)) {
@@ -103,8 +113,13 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
       pendingLoadsRef.current.add(cacheKey);
       setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
       try {
-        const response = (await apiService.getVariableSections(part)) as { sections: string[] };
-        const sections = response.sections || [];
+        // Section values come from the Metadata-managed source (Part → Section pairs).
+        const response = (await apiService.getSectionValues()) as { sectionPairs: Array<{ section: string; part: string }> };
+        const sections = [...new Set(
+          (response.sectionPairs || [])
+            .filter(pair => pair.part === part)
+            .map(pair => pair.section),
+        )].filter(Boolean).sort();
         setSectionsCache(prev => ({ ...prev, [cacheKey]: sections }));
         return sections;
       } catch {
@@ -201,6 +216,13 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
 
     const getUniqueIdVariables = (part: string, section: string, group: string) =>
       getVariablesForPartSectionAndGroup(part, section, group);
+
+    const getVariableNameFromId = (id: string): string => {
+      const v = variablesData?.find(x => x.id === id);
+      if (v?.variable) return v.variable;
+      const cached = Object.values(variablesCache).flat().find(x => x.id === id);
+      return cached?.name || id;
+    };
 
     useEffect(() => {
       const partsToLoad = new Set(uniqueIdEntries.map(e => e.part).filter(Boolean));
@@ -327,6 +349,27 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
       setUniqueIdEntries(prev => prev.map(entry => (entry.id === entryId ? { ...entry, variableId } : entry)));
     };
 
+    // Format VII is an optional cross-filter: selecting it re-validates any
+    // already-chosen Part/Section/Group and always resets the specific variable.
+    const handleUniqueIdFormatVIIChange = (entryId: string, formatVII: string) => {
+      setUniqueIdEntries(prev =>
+        prev.map(entry => {
+          if (entry.id !== entryId) return entry;
+          let next: UniqueIdEntry = { ...entry, formatVII };
+          if (formatVII && next.part && next.part !== 'ANY' && !partsForFormatVII(variablesData, formatVII).has(next.part)) {
+            next = { ...next, part: '', section: '', group: '', variableId: '' };
+          } else if (formatVII && next.section && next.section !== 'ANY' && !sectionsForFormatVII(variablesData, next.part, formatVII).has(next.section)) {
+            next = { ...next, section: '', group: '', variableId: '' };
+          } else if (formatVII && next.group && next.group !== 'ANY' && !groupsForFormatVII(variablesData, next.part, next.section, formatVII).has(next.group)) {
+            next = { ...next, group: '', variableId: '' };
+          } else {
+            next = { ...next, variableId: entry.variableId === 'ANY' ? 'ANY' : '' };
+          }
+          return next;
+        })
+      );
+    };
+
     const handleAddCompositeIdBlock = () => {
       const newBlockNumber = compositeIdBlocks.length + 1;
       setCompositeIdBlocks(prev => [
@@ -361,7 +404,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
     const handleCompositeIdRowChange = async (
       blockNumber: number,
       rowId: string,
-      field: 'part' | 'section' | 'group' | 'variableId',
+      field: 'formatVII' | 'part' | 'section' | 'group' | 'variableId',
       value: string
     ) => {
       const block = compositeIdBlocks.find(b => b.blockNumber === blockNumber);
@@ -374,6 +417,19 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
             ...b,
             rows: b.rows.map(r => {
               if (r.id !== rowId) return r;
+              if (field === 'formatVII') {
+                let nr: CompositeIdRow = { ...r, formatVII: value };
+                if (value && nr.part && nr.part !== 'ANY' && !partsForFormatVII(variablesData, value).has(nr.part)) {
+                  nr = { ...nr, part: '', section: '', group: '', variableId: '' };
+                } else if (value && nr.section && nr.section !== 'ANY' && !sectionsForFormatVII(variablesData, nr.part, value).has(nr.section)) {
+                  nr = { ...nr, section: '', group: '', variableId: '' };
+                } else if (value && nr.group && nr.group !== 'ANY' && !groupsForFormatVII(variablesData, nr.part, nr.section, value).has(nr.group)) {
+                  nr = { ...nr, group: '', variableId: '' };
+                } else {
+                  nr = { ...nr, variableId: r.variableId === 'ANY' ? 'ANY' : '' };
+                }
+                return nr;
+              }
               if (field === 'part') return { ...r, part: value, section: '', group: '', variableId: '' };
               if (field === 'section') {
                 if (value === 'ANY') return { ...r, section: value, group: 'ANY', variableId: 'ANY' };
@@ -491,7 +547,8 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
             </button>
           </div>
           <div className="border border-ag-dark-border rounded">
-            <div className="grid grid-cols-4 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+            <div className="grid grid-cols-5 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="text-xs font-medium text-ag-dark-text-secondary">Format VII</div>
               <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
               <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
               <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
@@ -499,14 +556,44 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
             </div>
             <div className="divide-y divide-ag-dark-border">
               {uniqueIdEntries.map((entry, index) => {
-                const variableOptions = getUniqueIdVariables(entry.part, entry.section, entry.group);
+                const fmt = entry.formatVII || '';
+                const formatVIIOpts = getFormatVIIOptions(variablesData, entry.part, entry.section, entry.group);
+                const partOptions = fmt
+                  ? getAllParts().filter(p => partsForFormatVII(variablesData, fmt).has(p))
+                  : getAllParts();
+                const sectionBase = getSectionsForPart(entry.part);
+                const sectionOptions = fmt
+                  ? sectionBase.filter(s => sectionsForFormatVII(variablesData, entry.part, fmt).has(s))
+                  : sectionBase;
+                const groupBase = getGroupsForPartAndSection(entry.part, entry.section);
+                const groupOptions = fmt
+                  ? groupBase.filter(g => groupsForFormatVII(variablesData, entry.part, entry.section, fmt).has(g))
+                  : groupBase;
+                const eligibleIds = eligibleVariableIdsFor(variablesData, entry.part, entry.section, entry.group, fmt);
+                const variableOptions = getUniqueIdVariables(entry.part, entry.section, entry.group).filter(v => eligibleIds.has(v.id));
+                const selectedVarMissing = !!entry.variableId && entry.variableId !== 'ANY' && !variableOptions.some(v => v.id === entry.variableId);
                 return (
                   <div
                     key={entry.id}
                     className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${
-                      index > 0 ? 'grid-cols-[1fr_1fr_1fr_1fr_auto]' : 'grid-cols-4'
+                      index > 0 ? 'grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]' : 'grid-cols-5'
                     }`}
                   >
+                    <select
+                      value={entry.formatVII || ''}
+                      onChange={e => handleUniqueIdFormatVIIChange(entry.id, e.target.value)}
+                      disabled={disabled}
+                      className={selectCls}
+                      style={selectStyle}
+                    >
+                      <option value="">ANY</option>
+                      {formatVIIOpts.map(fv => (
+                        <option key={fv} value={fv}>
+                          {fv}
+                        </option>
+                      ))}
+                      {fmt && !formatVIIOpts.includes(fmt) && <option value={fmt}>{fmt}</option>}
+                    </select>
                     <select
                       value={entry.part}
                       onChange={e => handleUniqueIdPartChange(entry.id, e.target.value)}
@@ -515,7 +602,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                       style={selectStyle}
                     >
                       <option value="">Select Part</option>
-                      {getAllParts().map(part => (
+                      {partOptions.map(part => (
                         <option key={part} value={part}>
                           {part}
                         </option>
@@ -533,7 +620,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                       {loadingStates[`part:${entry.part}`] ? (
                         <option value="">Loading...</option>
                       ) : (
-                        getSectionsForPart(entry.part).map(section => (
+                        sectionOptions.map(section => (
                           <option key={section} value={section}>
                             {section}
                           </option>
@@ -558,7 +645,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                       {loadingStates[`part:${entry.part}|section:${entry.section}`] ? (
                         <option value="">Loading...</option>
                       ) : (
-                        getGroupsForPartAndSection(entry.part, entry.section).map(group => (
+                        groupOptions.map(group => (
                           <option key={group} value={group}>
                             {group}
                           </option>
@@ -586,11 +673,16 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                       loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`] ? (
                         <option value="">Loading...</option>
                       ) : (
-                        variableOptions.map(v => (
-                          <option key={v.id} value={v.id}>
-                            {v.name}
-                          </option>
-                        ))
+                        <>
+                          {selectedVarMissing && (
+                            <option value={entry.variableId}>{getVariableNameFromId(entry.variableId)}</option>
+                          )}
+                          {variableOptions.map(v => (
+                            <option key={v.id} value={v.id}>
+                              {v.name}
+                            </option>
+                          ))}
+                        </>
                       )}
                     </select>
                     {index > 0 && (
@@ -641,8 +733,9 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                   </button>
                 )}
               </div>
-              <div className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="grid grid-cols-[25px_1fr_1fr_1fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                 <div />
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Format VII</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
@@ -650,18 +743,48 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
               </div>
               <div className="divide-y divide-ag-dark-border">
                 {block.rows.map((row, rowIndex) => {
+                  const fmt = row.formatVII || '';
+                  const formatVIIOpts = getFormatVIIOptions(variablesData, row.part, row.section, row.group);
+                  const partOptions = fmt
+                    ? getAllParts().filter(p => partsForFormatVII(variablesData, fmt).has(p))
+                    : getAllParts();
+                  const sectionBase = getSectionsForPart(row.part);
+                  const sectionOptions = fmt
+                    ? sectionBase.filter(s => sectionsForFormatVII(variablesData, row.part, fmt).has(s))
+                    : sectionBase;
+                  const groupBase = getGroupsForPartAndSection(row.part, row.section);
+                  const groupOptions = fmt
+                    ? groupBase.filter(g => groupsForFormatVII(variablesData, row.part, row.section, fmt).has(g))
+                    : groupBase;
+                  const eligibleIds = eligibleVariableIdsFor(variablesData, row.part, row.section, row.group, fmt);
                   const variableOptions =
                     row.part && row.section && row.group && row.group !== 'ANY'
-                      ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group)
+                      ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group).filter(v => eligibleIds.has(v.id))
                       : [];
+                  const selectedVarMissing = !!row.variableId && row.variableId !== 'ANY' && !variableOptions.some(v => v.id === row.variableId);
                   return (
                     <div
                       key={row.id}
-                      className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50"
+                      className="grid grid-cols-[25px_1fr_1fr_1fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50"
                     >
                       <div className="flex items-center">
                         <span className="text-[10px] font-medium text-ag-dark-text">{rowIndex + 1}</span>
                       </div>
+                      <select
+                        value={row.formatVII || ''}
+                        onChange={e => handleCompositeIdRowChange(block.blockNumber, row.id, 'formatVII', e.target.value)}
+                        disabled={disabled}
+                        className={selectCls}
+                        style={selectStyle}
+                      >
+                        <option value="">ANY</option>
+                        {formatVIIOpts.map(fv => (
+                          <option key={fv} value={fv}>
+                            {fv}
+                          </option>
+                        ))}
+                        {fmt && !formatVIIOpts.includes(fmt) && <option value={fmt}>{fmt}</option>}
+                      </select>
                       <select
                         value={row.part}
                         onChange={e => handleCompositeIdRowChange(block.blockNumber, row.id, 'part', e.target.value)}
@@ -670,7 +793,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                         style={selectStyle}
                       >
                         <option value="">Select Part</option>
-                        {getAllParts().map(part => (
+                        {partOptions.map(part => (
                           <option key={part} value={part}>
                             {part}
                           </option>
@@ -690,7 +813,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                         {loadingStates[`part:${row.part}`] ? (
                           <option value="">Loading...</option>
                         ) : (
-                          getSectionsForPart(row.part).map(section => (
+                          sectionOptions.map(section => (
                             <option key={section} value={section}>
                               {section}
                             </option>
@@ -715,7 +838,7 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                         {loadingStates[`part:${row.part}|section:${row.section}`] ? (
                           <option value="">Loading...</option>
                         ) : (
-                          getGroupsForPartAndSection(row.part, row.section).map(group => (
+                          groupOptions.map(group => (
                             <option key={group} value={group}>
                               {group}
                             </option>
@@ -745,11 +868,16 @@ export const ObjectIdentifiersBulkSection = forwardRef<ObjectIdentifiersBulkRef,
                         loadingStates[`part:${row.part}|section:${row.section}|group:${row.group}`] ? (
                           <option value="">Loading...</option>
                         ) : row.group !== 'ANY' ? (
-                          variableOptions.map(v => (
-                            <option key={v.id} value={v.id}>
-                              {v.name}
-                            </option>
-                          ))
+                          <>
+                            {selectedVarMissing && (
+                              <option value={row.variableId}>{getVariableNameFromId(row.variableId)}</option>
+                            )}
+                            {variableOptions.map(v => (
+                              <option key={v.id} value={v.id}>
+                                {v.name}
+                              </option>
+                            ))}
+                          </>
                         ) : null}
                       </select>
                     </div>

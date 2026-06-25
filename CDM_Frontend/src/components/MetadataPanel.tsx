@@ -12,6 +12,13 @@ import { VariantsModal } from './VariantsModal';
 import { apiService } from '../services/api';
 import { VariableData } from '../data/variablesData';
 import { LoadingSpinner } from './LoadingSpinner';
+import {
+  getFormatVIIOptions,
+  partsForFormatVII,
+  sectionsForFormatVII,
+  groupsForFormatVII,
+  eligibleVariableIdsFor,
+} from '../utils/identifierFormat';
 
 interface MetadataField {
   key: string;
@@ -355,6 +362,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Initialize identifiers state - changed from array of IDs to array of objects with unique IDs
   interface UniqueIdEntry {
     id: string; // Unique identifier for this entry
+    formatVII?: string; // Optional Format VII filter (variable.formatII)
     part: string; // Selected part
     section: string; // Selected section
     group: string; // Selected group
@@ -365,6 +373,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Composite ID Blocks: Each block represents one composite ID with 5 component rows
   interface CompositeIdRow {
     id: string; // Unique ID for this row
+    formatVII?: string; // Optional Format VII filter (variable.formatII)
     part: string;
     section: string; // Selected section
     group: string;
@@ -890,11 +899,12 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   // Refs to track pending loads and prevent infinite loops
   const pendingLoadsRef = useRef<Set<string>>(new Set());
 
-  // Load parts from API on mount
+  // Load parts from the Metadata-managed source (Part values) on mount.
+  // Part/Section for identifiers are defined/maintained on the Metadata tab.
   useEffect(() => {
     const loadParts = async () => {
       try {
-        const response = await apiService.getVariableParts() as { parts: string[] };
+        const response = await apiService.getPartValues() as { parts: string[] };
         setPartsList(response.parts || []);
       } catch (error) {
         console.error('Error loading parts:', error);
@@ -925,8 +935,13 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
 
     setLoadingStates(prev => ({ ...prev, [cacheKey]: true }));
     try {
-      const response = await apiService.getVariableSections(part) as { sections: string[] };
-      const sections = response.sections || [];
+      // Section values come from the Metadata-managed source (Part → Section pairs).
+      const response = await apiService.getSectionValues() as { sectionPairs: Array<{ section: string; part: string }> };
+      const sections = [...new Set(
+        (response.sectionPairs || [])
+          .filter(pair => pair.part === part)
+          .map(pair => pair.section),
+      )].filter(Boolean).sort();
       setSectionsCache(prev => ({ ...prev, [cacheKey]: sections }));
       return sections;
     } catch (error) {
@@ -1273,6 +1288,26 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
     ));
   };
 
+  // Update the Format VII filter for a specific unique ID entry.
+  // Format VII is an optional cross-filter: selecting it re-validates any
+  // already-chosen Part/Section/Group and always resets the specific variable.
+  const handleUniqueIdFormatVIIChange = (entryId: string, formatVII: string) => {
+    setUniqueIdEntries(prev => prev.map(entry => {
+      if (entry.id !== entryId) return entry;
+      let next: UniqueIdEntry = { ...entry, formatVII };
+      if (formatVII && next.part && next.part !== 'ANY' && !partsForFormatVII(variablesData, formatVII).has(next.part)) {
+        next = { ...next, part: '', section: '', group: '', variableId: '' };
+      } else if (formatVII && next.section && next.section !== 'ANY' && !sectionsForFormatVII(variablesData, next.part, formatVII).has(next.section)) {
+        next = { ...next, section: '', group: '', variableId: '' };
+      } else if (formatVII && next.group && next.group !== 'ANY' && !groupsForFormatVII(variablesData, next.part, next.section, formatVII).has(next.group)) {
+        next = { ...next, group: '', variableId: '' };
+      } else {
+        next = { ...next, variableId: entry.variableId === 'ANY' ? 'ANY' : '' };
+      }
+      return next;
+    }));
+  };
+
   // Add a new composite ID block
   const handleAddCompositeIdBlock = () => {
     const newBlockNumber = compositeIdBlocks.length + 1;
@@ -1306,7 +1341,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
   };
 
   // Update a row in a composite ID block
-  const handleCompositeIdRowChange = async (blockNumber: number, rowId: string, field: 'part' | 'section' | 'group' | 'variableId', value: string) => {
+  const handleCompositeIdRowChange = async (blockNumber: number, rowId: string, field: 'formatVII' | 'part' | 'section' | 'group' | 'variableId', value: string) => {
     const block = compositeIdBlocks.find(b => b.blockNumber === blockNumber);
     const row = block?.rows.find(r => r.id === rowId);
     
@@ -1316,6 +1351,20 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
           ...b,
           rows: b.rows.map(r => {
             if (r.id === rowId) {
+              // When the Format VII filter changes, re-validate Part/Section/Group and reset the specific variable
+              if (field === 'formatVII') {
+                let nr: CompositeIdRow = { ...r, formatVII: value };
+                if (value && nr.part && nr.part !== 'ANY' && !partsForFormatVII(variablesData, value).has(nr.part)) {
+                  nr = { ...nr, part: '', section: '', group: '', variableId: '' };
+                } else if (value && nr.section && nr.section !== 'ANY' && !sectionsForFormatVII(variablesData, nr.part, value).has(nr.section)) {
+                  nr = { ...nr, section: '', group: '', variableId: '' };
+                } else if (value && nr.group && nr.group !== 'ANY' && !groupsForFormatVII(variablesData, nr.part, nr.section, value).has(nr.group)) {
+                  nr = { ...nr, group: '', variableId: '' };
+                } else {
+                  nr = { ...nr, variableId: r.variableId === 'ANY' ? 'ANY' : '' };
+                }
+                return nr;
+              }
               // When part changes, clear section, group, and variableId
               if (field === 'part') {
                 return { ...r, part: value, section: '', group: '', variableId: '' };
@@ -2255,7 +2304,8 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
             </div>
             <div className="border border-ag-dark-border rounded">
               {/* Table Header */}
-              <div className="grid grid-cols-4 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+              <div className="grid grid-cols-5 gap-2 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                <div className="text-xs font-medium text-ag-dark-text-secondary">Format VII</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
                 <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
@@ -2264,16 +2314,53 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
               {/* Table Rows - Multiple entries */}
               <div className="divide-y divide-ag-dark-border">
                 {uniqueIdEntries.length === 0 ? (
-                  <div className="grid grid-cols-4 gap-2 items-center p-2">
-                    <div className="text-xs text-ag-dark-text-secondary px-2 py-1.5 col-span-4">
+                  <div className="grid grid-cols-5 gap-2 items-center p-2">
+                    <div className="text-xs text-ag-dark-text-secondary px-2 py-1.5 col-span-5">
                       Click + to add a Unique ID
                     </div>
                   </div>
                 ) : (
                   uniqueIdEntries.map((entry, index) => {
-                    const variableOptions = getUniqueIdVariables(entry.part, entry.section, entry.group);
+                    const fmt = entry.formatVII || '';
+                    const formatVIIOpts = getFormatVIIOptions(variablesData, entry.part, entry.section, entry.group);
+                    const partOptions = fmt
+                      ? getAllParts().filter(p => partsForFormatVII(variablesData, fmt).has(p))
+                      : getAllParts();
+                    const sectionBase = getSectionsForPart(entry.part);
+                    const sectionOptions = fmt
+                      ? sectionBase.filter(s => sectionsForFormatVII(variablesData, entry.part, fmt).has(s))
+                      : sectionBase;
+                    const groupBase = getGroupsForPartAndSection(entry.part, entry.section);
+                    const groupOptions = fmt
+                      ? groupBase.filter(g => groupsForFormatVII(variablesData, entry.part, entry.section, fmt).has(g))
+                      : groupBase;
+                    const eligibleIds = eligibleVariableIdsFor(variablesData, entry.part, entry.section, entry.group, fmt);
+                    const variableOptions = getUniqueIdVariables(entry.part, entry.section, entry.group).filter(v => eligibleIds.has(v.id));
+                    const selectedVarMissing = !!entry.variableId && entry.variableId !== 'ANY' && !variableOptions.some(v => v.id === entry.variableId);
                     return (
-                      <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[1fr_1fr_1fr_1fr_auto]' : 'grid-cols-4'}`}>
+                      <div key={entry.id} className={`grid gap-2 items-center p-2 hover:bg-ag-dark-bg/50 ${index > 0 ? 'grid-cols-[1fr_1fr_1fr_1fr_1fr_auto]' : 'grid-cols-5'}`}>
+                        {/* Format VII Dropdown (optional cross-filter) */}
+                        <select
+                          value={entry.formatVII || ''}
+                          onChange={(e) => handleUniqueIdFormatVIIChange(entry.id, e.target.value)}
+                          disabled={!isPanelEnabled}
+                          className="w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50 disabled:cursor-not-allowed appearance-none"
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '16px'
+                          }}
+                        >
+                          <option value="">ANY</option>
+                          {formatVIIOpts.map(fv => (
+                            <option key={fv} value={fv}>{fv}</option>
+                          ))}
+                          {fmt && !formatVIIOpts.includes(fmt) && (
+                            <option value={fmt}>{fmt}</option>
+                          )}
+                        </select>
+
                         {/* Part Dropdown */}
                         <select
                           value={entry.part}
@@ -2288,7 +2375,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Part</option>
-                          {getAllParts().map(part => (
+                          {partOptions.map(part => (
                             <option key={part} value={part}>{part}</option>
                           ))}
                         </select>
@@ -2311,7 +2398,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           {loadingStates[`part:${entry.part}`] ? (
                             <option value="">Loading...</option>
                           ) : (
-                            getSectionsForPart(entry.part).map(section => (
+                            sectionOptions.map(section => (
                               <option key={section} value={section}>{section}</option>
                             ))
                           )}
@@ -2335,7 +2422,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           {loadingStates[`part:${entry.part}|section:${entry.section}`] ? (
                             <option value="">Loading...</option>
                           ) : (
-                            getGroupsForPartAndSection(entry.part, entry.section).map(group => (
+                            groupOptions.map(group => (
                               <option key={group} value={group}>{group}</option>
                             ))
                           )}
@@ -2359,9 +2446,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           {entry.group !== 'ANY' && loadingStates[`part:${entry.part}|section:${entry.section}|group:${entry.group}`] ? (
                             <option value="">Loading...</option>
                           ) : (
-                            variableOptions.map(v => (
-                              <option key={v.id} value={v.id}>{v.name}</option>
-                            ))
+                            <>
+                              {selectedVarMissing && (
+                                <option value={entry.variableId}>{getVariableNameFromId(entry.variableId)}</option>
+                              )}
+                              {variableOptions.map(v => (
+                                <option key={v.id} value={v.id}>{v.name}</option>
+                              ))}
+                            </>
                           )}
                         </select>
                         {index > 0 && (
@@ -2465,8 +2557,9 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 </div>
                 
                 {/* Table Header */}
-                <div className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
+                <div className="grid grid-cols-[25px_1fr_1fr_1fr_1fr_1fr] gap-1 bg-ag-dark-bg border-b border-ag-dark-border p-2">
                   <div className="text-xs font-medium text-ag-dark-text-secondary"></div>
+                  <div className="text-xs font-medium text-ag-dark-text-secondary">Format VII</div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Part</div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Section</div>
                   <div className="text-xs font-medium text-ag-dark-text-secondary">Group</div>
@@ -2476,19 +2569,58 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                 {/* Table Rows - 5 rows per block */}
                 <div className="divide-y divide-ag-dark-border">
                   {block.rows.map((row, rowIndex) => {
+                    const fmt = row.formatVII || '';
+                    const formatVIIOpts = getFormatVIIOptions(variablesData, row.part, row.section, row.group);
+                    const partOptions = fmt
+                      ? getAllParts().filter(p => partsForFormatVII(variablesData, fmt).has(p))
+                      : getAllParts();
+                    const sectionBase = getSectionsForPart(row.part);
+                    const sectionOptions = fmt
+                      ? sectionBase.filter(s => sectionsForFormatVII(variablesData, row.part, fmt).has(s))
+                      : sectionBase;
+                    const groupBase = getGroupsForPartAndSection(row.part, row.section);
+                    const groupOptions = fmt
+                      ? groupBase.filter(g => groupsForFormatVII(variablesData, row.part, row.section, fmt).has(g))
+                      : groupBase;
                     // Get variables for the selected part, section, and group (even if group is 'ANY')
                     // Similar to unique IDs - show all variables for the combination
+                    const eligibleIds = eligibleVariableIdsFor(variablesData, row.part, row.section, row.group, fmt);
                     const variableOptions = row.part && row.section && row.group && row.group !== 'ANY'
-                      ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group)
+                      ? getVariablesForPartSectionAndGroup(row.part, row.section, row.group).filter(v => eligibleIds.has(v.id))
                       : [];
+                    const selectedVarMissing = !!row.variableId && row.variableId !== 'ANY' && !variableOptions.some(v => v.id === row.variableId);
                     
                     return (
-                      <div key={row.id} className="grid grid-cols-[25px_1fr_1fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
+                      <div key={row.id} className="grid grid-cols-[25px_1fr_1fr_1fr_1fr_1fr] gap-1 items-center p-2 hover:bg-ag-dark-bg/50">
                         {/* Row Label */}
                         <div className="flex items-center">
                           <span className="text-[10px] font-medium text-ag-dark-text">{rowIndex + 1}</span>
                         </div>
-                        
+
+                        {/* Format VII Dropdown (optional cross-filter) */}
+                        <select
+                          value={row.formatVII || ''}
+                          onChange={(e) => handleCompositeIdRowChange(block.blockNumber, row.id, 'formatVII', e.target.value)}
+                          disabled={!isPanelEnabled}
+                          className={`w-full px-2 py-1.5 pr-8 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
+                            !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                          }`}
+                          style={{
+                            backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
+                            backgroundPosition: 'right 8px center',
+                            backgroundRepeat: 'no-repeat',
+                            backgroundSize: '12px'
+                          }}
+                        >
+                          <option value="">ANY</option>
+                          {formatVIIOpts.map(fv => (
+                            <option key={fv} value={fv}>{fv}</option>
+                          ))}
+                          {fmt && !formatVIIOpts.includes(fmt) && (
+                            <option value={fmt}>{fmt}</option>
+                          )}
+                        </select>
+
                         {/* Part Dropdown */}
                         <select
                           value={row.part}
@@ -2505,7 +2637,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           }}
                         >
                           <option value="">Select Part</option>
-                          {getAllParts().map((part) => (
+                          {partOptions.map((part) => (
                             <option key={part} value={part}>
                               {part}
                             </option>
@@ -2532,7 +2664,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           {loadingStates[`part:${row.part}`] ? (
                             <option value="">Loading...</option>
                           ) : (
-                            getSectionsForPart(row.part).map((section) => (
+                            sectionOptions.map((section) => (
                               <option key={section} value={section}>
                                 {section}
                               </option>
@@ -2560,7 +2692,7 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                           {loadingStates[`part:${row.part}|section:${row.section}`] ? (
                             <option value="">Loading...</option>
                           ) : (
-                            getGroupsForPartAndSection(row.part, row.section).map((group) => (
+                            groupOptions.map((group) => (
                               <option key={group} value={group}>
                                 {group}
                               </option>
@@ -2589,9 +2721,14 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
                             <option value="">Loading...</option>
                           ) : row.group !== 'ANY' ? (
                             // Show all variables for the selected part, section, and group + ANY option
-                            variableOptions.map(v => (
-                              <option key={v.id} value={v.id}>{v.name}</option>
-                            ))
+                            <>
+                              {selectedVarMissing && (
+                                <option value={row.variableId}>{getVariableNameFromId(row.variableId)}</option>
+                              )}
+                              {variableOptions.map(v => (
+                                <option key={v.id} value={v.id}>{v.name}</option>
+                              ))}
+                            </>
                           ) : null}
                         </select>
                       </div>

@@ -30,6 +30,7 @@ import { mockVariableData, variableColumns, variableMetadataFields, type Variabl
 import { mockListData, listColumns, listMetadataFields, type ListData } from './data/listsData';
 import { driversData, type ColumnType, columnLabels } from './data/driversData';
 import { removeDriverAbbreviation, loadDriverAbbreviationsFromBackend } from './utils/driverAbbreviations';
+import { loadFormatMappingFromServer } from './utils/formatMapping';
 import { useObjects } from './hooks/useObjects';
 import { useDrivers } from './hooks/useDrivers';
 import { useVariables } from './hooks/useVariables';
@@ -208,6 +209,12 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driversLoading]);
   void driverAbbrevVersion;
+
+  // Load the Format VI/VII master (single source of truth) once at startup so
+  // every consumer (Variables panels, Source LDM, validation) reads live values.
+  useEffect(() => {
+    loadFormatMappingFromServer();
+  }, []);
   
   // Use API hook for variables data
   const { variables: apiVariables, loading: variablesLoading, error: variablesError, createVariable, updateVariable, deleteVariable, createObjectRelationship, bulkUploadVariables, bulkUpdateVariables, fetchVariables } = useVariables();

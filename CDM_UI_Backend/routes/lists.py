@@ -3304,9 +3304,9 @@ async def get_list_variable_relationships(list_id: str):
         with driver.session() as session:
             result = session.run("""
                 MATCH (v:Variable)-[r:HAS_LIST]->(l:List {id: $list_id})
-                OPTIONAL MATCH (p:Part)-[:HAS_GROUP]->(g:Group)-[:HAS_VARIABLE]->(v)
-                RETURN v.id as id, v.name as variable, v.section as section,
-                       p.name as part, g.name as group,
+                OPTIONAL MATCH (p:Part)-[:HAS_SECTION]->(s:Section)-[:HAS_VARIABLE]->(v)
+                RETURN v.id as id, v.name as variable, s.name as section,
+                       p.name as part, coalesce(v.group, '') as group,
                        v.formatI as formatI, v.formatII as formatII,
                        v.gType as gType, v.validation as validation,
                        v.default as default, v.graph as graph

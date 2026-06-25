@@ -675,11 +675,10 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
   };
 
   const handleSaveBulkEdit = () => {
-    // Validate that avatar is selected when being is selected (for objects tab)
-    if (activeTab === 'objects' && formData.being && formData.being !== 'ALL' && (!formData.avatar || formData.avatar === '')) {
-      alert('Please select an Avatar. Avatar is required when Being is selected.');
-      return;
-    }
+    // Note: when a new Being is selected but Avatar is left as "Keep Current Avatar",
+    // we intentionally omit avatar from the payload. The backend then preserves each
+    // object's own avatar NAME and re-homes it under the new Being (reusing a same-named
+    // avatar there, or creating one), swapping the HAS_OBJECT relationship per object.
     if (activeTab === 'lists') {
       // Handle Lists bulk edit
       const saveData: Record<string, any> = {};
