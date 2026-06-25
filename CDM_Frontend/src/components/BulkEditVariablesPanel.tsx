@@ -1753,16 +1753,6 @@ export const BulkEditVariablesPanel: React.FC<BulkEditVariablesPanelProps> = ({
             >
               <Grid3x3 className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => setIsVariationsGraphModalOpen(true)}
-              disabled={selectedCount === 0}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                selectedCount === 0 ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title={selectedCount === 0 ? "Select variables to view variations graph" : "View Variations Graph"}
-            >
-              <Network className="w-4 h-4" />
-            </button>
           </div>
         }
       >

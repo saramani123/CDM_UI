@@ -62,7 +62,7 @@ import { RelationshipModal } from './components/RelationshipModal';
 import { Neo4jGraphModal } from './components/Neo4jGraphModal';
 import LoadingModal from './components/LoadingModal';
 
-/** Map relevance entries to Object IDs for createVariable(selectedObjectIds). Undefined = link all objects (default). */
+/** Map relevance entries to Object IDs for createVariable(selectedObjectIds). Relevance defaults to NONE: undefined/empty means link no objects. */
 function resolveSelectedObjectIdsForVariableCreate(
   relationships: any[] | undefined,
   objects: ObjectData[]
@@ -2127,38 +2127,31 @@ function App() {
     
     const updatedOrder = { ...variablesOrderSortOrder };
     
-    // Remove from variableOrders
+    // Targeted edit: remove only this variable, then prune containers that become
+    // empty. Sibling Parts/Sections/Groups/Variables keep their exact ordering.
     const variableKey = `${part}|${section}|${group}`;
     if (updatedOrder.variableOrders[variableKey]) {
       updatedOrder.variableOrders[variableKey] = updatedOrder.variableOrders[variableKey].filter(v => v !== variable);
       if (updatedOrder.variableOrders[variableKey].length === 0) {
         delete updatedOrder.variableOrders[variableKey];
+        // Group now has no variables -> drop it from its section's group order.
+        const groupKey = `${part}|${section}`;
+        if (updatedOrder.groupOrders[groupKey]) {
+          updatedOrder.groupOrders[groupKey] = updatedOrder.groupOrders[groupKey].filter(g => g !== group);
+          if (updatedOrder.groupOrders[groupKey].length === 0) {
+            delete updatedOrder.groupOrders[groupKey];
+            // Section now has no groups -> drop it from its part's section order.
+            if (updatedOrder.sectionOrders[part]) {
+              updatedOrder.sectionOrders[part] = updatedOrder.sectionOrders[part].filter(s => s !== section);
+              if (updatedOrder.sectionOrders[part].length === 0) {
+                delete updatedOrder.sectionOrders[part];
+                // Part now has no sections -> drop it from the part order.
+                updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== part);
+              }
+            }
+          }
+        }
       }
-    }
-    
-    // Check if group has no more variables, remove from groupOrders
-    const groupKey = `${part}|${section}`;
-    const hasRemainingVariables = Object.keys(updatedOrder.variableOrders).some(key => key.startsWith(`${part}|${section}|`));
-    if (!hasRemainingVariables && updatedOrder.groupOrders[groupKey]) {
-      updatedOrder.groupOrders[groupKey] = updatedOrder.groupOrders[groupKey].filter(g => g !== group);
-      if (updatedOrder.groupOrders[groupKey].length === 0) {
-        delete updatedOrder.groupOrders[groupKey];
-      }
-    }
-    
-    // Check if section has no more groups, remove from sectionOrders
-    const hasRemainingGroups = Object.keys(updatedOrder.groupOrders).some(key => key.startsWith(`${part}|`) && updatedOrder.groupOrders[key].length > 0);
-    if (!hasRemainingGroups && updatedOrder.sectionOrders[part]) {
-      updatedOrder.sectionOrders[part] = updatedOrder.sectionOrders[part].filter(s => s !== section);
-      if (updatedOrder.sectionOrders[part].length === 0) {
-        delete updatedOrder.sectionOrders[part];
-      }
-    }
-    
-    // Check if part has no more sections, remove from partOrder
-    const hasRemainingSections = Object.keys(updatedOrder.sectionOrders).some(key => key === part && updatedOrder.sectionOrders[key].length > 0);
-    if (!hasRemainingSections) {
-      updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== part);
     }
     
     setVariablesOrderSortOrder(updatedOrder);
@@ -2440,195 +2433,104 @@ function App() {
   // Utility function to update order when variable values are edited (in place)
   const updateVariablesOrderOnEdit = (oldPart: string, oldSection: string, oldGroup: string, oldVariable: string, newPart: string, newSection: string, newGroup: string, newVariable: string) => {
     if (!variablesOrderSortOrder) return;
-    
-    const updatedOrder = { ...variablesOrderSortOrder };
-    let orderChanged = false;
-    
-    // Update part if changed - rename in place
-    if (oldPart !== newPart) {
-      const oldIndex = updatedOrder.partOrder.indexOf(oldPart);
-      if (oldIndex !== -1) {
-        // Remove old part
-        updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== oldPart);
-        // If new part doesn't exist, insert at old position, otherwise keep existing position
-        if (!updatedOrder.partOrder.includes(newPart)) {
-          updatedOrder.partOrder.splice(oldIndex, 0, newPart);
-        } else {
-          // New part already exists, just remove old one (order preserved)
-        }
-        orderChanged = true;
-      }
+
+    // Nothing that affects the ordering changed.
+    if (oldPart === newPart && oldSection === newSection && oldGroup === newGroup && oldVariable === newVariable) {
+      return;
     }
-    
-    // Update section if changed - rename in place
-    if (oldSection !== newSection) {
-      const oldPartKey = oldPart !== newPart ? newPart : oldPart; // Use new part if part changed
-      if (updatedOrder.sectionOrders[oldPartKey]) {
-        const oldIndex = updatedOrder.sectionOrders[oldPartKey].indexOf(oldSection);
-        if (oldIndex !== -1) {
-          // Remove old section
-          updatedOrder.sectionOrders[oldPartKey] = updatedOrder.sectionOrders[oldPartKey].filter(s => s !== oldSection);
-          // If new section doesn't exist, insert at old position, otherwise append to end
-          if (!updatedOrder.sectionOrders[oldPartKey].includes(newSection)) {
-            updatedOrder.sectionOrders[oldPartKey].splice(oldIndex, 0, newSection);
+
+    // Deep clone so we never mutate state in place (preserve S/D/C orders via spread).
+    const updatedOrder = {
+      ...variablesOrderSortOrder,
+      partOrder: [...variablesOrderSortOrder.partOrder],
+      sectionOrders: { ...variablesOrderSortOrder.sectionOrders },
+      groupOrders: { ...variablesOrderSortOrder.groupOrders },
+      variableOrders: { ...variablesOrderSortOrder.variableOrders },
+    };
+    Object.keys(updatedOrder.sectionOrders).forEach(k => { updatedOrder.sectionOrders[k] = [...updatedOrder.sectionOrders[k]]; });
+    Object.keys(updatedOrder.groupOrders).forEach(k => { updatedOrder.groupOrders[k] = [...updatedOrder.groupOrders[k]]; });
+    Object.keys(updatedOrder.variableOrders).forEach(k => { updatedOrder.variableOrders[k] = [...updatedOrder.variableOrders[k]]; });
+
+    const sameLocation = oldPart === newPart && oldSection === newSection && oldGroup === newGroup;
+
+    if (sameLocation) {
+      // Pure rename of a single variable: keep its exact position within its leaf list.
+      // Do NOT touch any Part/Section/Group ordering.
+      const key = `${newPart}|${newSection}|${newGroup}`;
+      const list = updatedOrder.variableOrders[key];
+      if (list) {
+        const idx = list.indexOf(oldVariable);
+        if (idx !== -1) {
+          if (list.includes(newVariable)) {
+            list.splice(idx, 1);
           } else {
-            // New section already exists, just remove old one (order preserved)
+            list.splice(idx, 1, newVariable);
           }
-          orderChanged = true;
         }
       }
-    }
-    
-    // Update group if changed - rename in place
-    if (oldGroup !== newGroup) {
-      const oldPartKey = oldPart !== newPart ? newPart : oldPart;
-      const oldSectionKey = oldSection !== newSection ? newSection : oldSection;
-      const groupKey = `${oldPartKey}|${oldSectionKey}`;
-      if (updatedOrder.groupOrders[groupKey]) {
-        const oldIndex = updatedOrder.groupOrders[groupKey].indexOf(oldGroup);
-        if (oldIndex !== -1) {
-          // Remove old group
-          updatedOrder.groupOrders[groupKey] = updatedOrder.groupOrders[groupKey].filter(g => g !== oldGroup);
-          // If new group doesn't exist, insert at old position, otherwise append to end
-          if (!updatedOrder.groupOrders[groupKey].includes(newGroup)) {
-            updatedOrder.groupOrders[groupKey].splice(oldIndex, 0, newGroup);
-          } else {
-            // New group already exists, just remove old one (order preserved)
+    } else {
+      // The variable moved to a different Part/Section/Group. Apply a targeted edit only:
+      // remove it from its old leaf (pruning containers that become empty), and append it
+      // to the BOTTOM of its new leaf. The ordering of every other Part/Section/Group/
+      // Variable is left exactly as it was.
+
+      // 1) Remove from the old leaf and prune now-empty old containers.
+      const oldLeafKey = `${oldPart}|${oldSection}|${oldGroup}`;
+      const oldLeaf = updatedOrder.variableOrders[oldLeafKey];
+      if (oldLeaf) {
+        updatedOrder.variableOrders[oldLeafKey] = oldLeaf.filter(v => v !== oldVariable);
+        if (updatedOrder.variableOrders[oldLeafKey].length === 0) {
+          delete updatedOrder.variableOrders[oldLeafKey];
+          // Old group now has no variables -> drop it from its section's group order.
+          const oldGroupKey = `${oldPart}|${oldSection}`;
+          if (updatedOrder.groupOrders[oldGroupKey]) {
+            updatedOrder.groupOrders[oldGroupKey] = updatedOrder.groupOrders[oldGroupKey].filter(g => g !== oldGroup);
+            if (updatedOrder.groupOrders[oldGroupKey].length === 0) {
+              delete updatedOrder.groupOrders[oldGroupKey];
+              // Old section now has no groups -> drop it from its part's section order.
+              if (updatedOrder.sectionOrders[oldPart]) {
+                updatedOrder.sectionOrders[oldPart] = updatedOrder.sectionOrders[oldPart].filter(s => s !== oldSection);
+                if (updatedOrder.sectionOrders[oldPart].length === 0) {
+                  delete updatedOrder.sectionOrders[oldPart];
+                  // Old part now has no sections -> drop it from the part order.
+                  updatedOrder.partOrder = updatedOrder.partOrder.filter(p => p !== oldPart);
+                }
+              }
+            }
           }
-          orderChanged = true;
         }
       }
-    }
-    
-    // Update variable if changed - rename in place
-    if (oldVariable !== newVariable) {
-      const oldPartKey = oldPart !== newPart ? newPart : oldPart;
-      const oldSectionKey = oldSection !== newSection ? newSection : oldSection;
-      const oldGroupKey = oldGroup !== newGroup ? newGroup : oldGroup;
-      const variableKey = `${oldPartKey}|${oldSectionKey}|${oldGroupKey}`;
-      if (updatedOrder.variableOrders[variableKey]) {
-        const oldIndex = updatedOrder.variableOrders[variableKey].indexOf(oldVariable);
-        if (oldIndex !== -1) {
-          // Remove old variable
-          updatedOrder.variableOrders[variableKey] = updatedOrder.variableOrders[variableKey].filter(v => v !== oldVariable);
-          // If new variable doesn't exist, insert at old position, otherwise append to end
-          if (!updatedOrder.variableOrders[variableKey].includes(newVariable)) {
-            updatedOrder.variableOrders[variableKey].splice(oldIndex, 0, newVariable);
-          } else {
-            // New variable already exists, just remove old one (order preserved)
-          }
-          orderChanged = true;
-        }
+
+      // 2) Append to the BOTTOM of the new leaf, creating any missing Part/Section/Group
+      //    entries at the END (existing entries keep their position).
+      if (!updatedOrder.partOrder.includes(newPart)) {
+        updatedOrder.partOrder = [...updatedOrder.partOrder, newPart];
+      }
+      if (!updatedOrder.sectionOrders[newPart]) {
+        updatedOrder.sectionOrders[newPart] = [];
+      }
+      if (!updatedOrder.sectionOrders[newPart].includes(newSection)) {
+        updatedOrder.sectionOrders[newPart] = [...updatedOrder.sectionOrders[newPart], newSection];
+      }
+      const newGroupKey = `${newPart}|${newSection}`;
+      if (!updatedOrder.groupOrders[newGroupKey]) {
+        updatedOrder.groupOrders[newGroupKey] = [];
+      }
+      if (!updatedOrder.groupOrders[newGroupKey].includes(newGroup)) {
+        updatedOrder.groupOrders[newGroupKey] = [...updatedOrder.groupOrders[newGroupKey], newGroup];
+      }
+      const newLeafKey = `${newPart}|${newSection}|${newGroup}`;
+      if (!updatedOrder.variableOrders[newLeafKey]) {
+        updatedOrder.variableOrders[newLeafKey] = [];
+      }
+      if (!updatedOrder.variableOrders[newLeafKey].includes(newVariable)) {
+        updatedOrder.variableOrders[newLeafKey] = [...updatedOrder.variableOrders[newLeafKey], newVariable];
       }
     }
-    
-    // Handle cascading changes when part/section/group changes
-    // If part changed, migrate section/group/variable orders to new part
-    if (oldPart !== newPart) {
-      // Migrate section orders
-      if (updatedOrder.sectionOrders[oldPart]) {
-        updatedOrder.sectionOrders[newPart] = updatedOrder.sectionOrders[newPart] || [];
-        // Merge sections, preserving order
-        const sectionsToMigrate = updatedOrder.sectionOrders[oldPart].filter(s => 
-          !updatedOrder.sectionOrders[newPart].includes(s)
-        );
-        updatedOrder.sectionOrders[newPart] = [...updatedOrder.sectionOrders[newPart], ...sectionsToMigrate];
-        // Clean up old part if no longer needed
-        if (updatedOrder.sectionOrders[oldPart].length === 0) {
-          delete updatedOrder.sectionOrders[oldPart];
-        }
-      }
-      
-      // Migrate group orders
-      Object.keys(updatedOrder.groupOrders).forEach(key => {
-        if (key.startsWith(`${oldPart}|`)) {
-          const [part, section] = key.split('|');
-          const newKey = `${newPart}|${section}`;
-          if (!updatedOrder.groupOrders[newKey]) {
-            updatedOrder.groupOrders[newKey] = [];
-          }
-          const groupsToMigrate = updatedOrder.groupOrders[key].filter(g => 
-            !updatedOrder.groupOrders[newKey].includes(g)
-          );
-          updatedOrder.groupOrders[newKey] = [...updatedOrder.groupOrders[newKey], ...groupsToMigrate];
-          delete updatedOrder.groupOrders[key];
-        }
-      });
-      
-      // Migrate variable orders
-      Object.keys(updatedOrder.variableOrders).forEach(key => {
-        if (key.startsWith(`${oldPart}|`)) {
-          const [part, section, group] = key.split('|');
-          const newKey = `${newPart}|${section}|${group}`;
-          if (!updatedOrder.variableOrders[newKey]) {
-            updatedOrder.variableOrders[newKey] = [];
-          }
-          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
-            !updatedOrder.variableOrders[newKey].includes(v)
-          );
-          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
-          delete updatedOrder.variableOrders[key];
-        }
-      });
-    }
-    
-    // If section changed, migrate group/variable orders to new section
-    if (oldSection !== newSection && oldPart === newPart) {
-      const partKey = newPart;
-      Object.keys(updatedOrder.groupOrders).forEach(key => {
-        if (key === `${partKey}|${oldSection}`) {
-          const newKey = `${partKey}|${newSection}`;
-          if (!updatedOrder.groupOrders[newKey]) {
-            updatedOrder.groupOrders[newKey] = [];
-          }
-          const groupsToMigrate = updatedOrder.groupOrders[key].filter(g => 
-            !updatedOrder.groupOrders[newKey].includes(g)
-          );
-          updatedOrder.groupOrders[newKey] = [...updatedOrder.groupOrders[newKey], ...groupsToMigrate];
-          delete updatedOrder.groupOrders[key];
-        }
-      });
-      
-      Object.keys(updatedOrder.variableOrders).forEach(key => {
-        if (key.startsWith(`${partKey}|${oldSection}|`)) {
-          const [part, section, group] = key.split('|');
-          const newKey = `${part}|${newSection}|${group}`;
-          if (!updatedOrder.variableOrders[newKey]) {
-            updatedOrder.variableOrders[newKey] = [];
-          }
-          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
-            !updatedOrder.variableOrders[newKey].includes(v)
-          );
-          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
-          delete updatedOrder.variableOrders[key];
-        }
-      });
-    }
-    
-    // If group changed, migrate variable orders to new group
-    if (oldGroup !== newGroup && oldPart === newPart && oldSection === newSection) {
-      const partKey = newPart;
-      const sectionKey = newSection;
-      Object.keys(updatedOrder.variableOrders).forEach(key => {
-        if (key === `${partKey}|${sectionKey}|${oldGroup}`) {
-          const newKey = `${partKey}|${sectionKey}|${newGroup}`;
-          if (!updatedOrder.variableOrders[newKey]) {
-            updatedOrder.variableOrders[newKey] = [];
-          }
-          const variablesToMigrate = updatedOrder.variableOrders[key].filter(v => 
-            !updatedOrder.variableOrders[newKey].includes(v)
-          );
-          updatedOrder.variableOrders[newKey] = [...updatedOrder.variableOrders[newKey], ...variablesToMigrate];
-          delete updatedOrder.variableOrders[key];
-        }
-      });
-    }
-    
-    if (orderChanged) {
-      setVariablesOrderSortOrder(updatedOrder);
-      localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
-      apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order to backend:', err));
-    }
+
+    setVariablesOrderSortOrder(updatedOrder);
+    localStorage.setItem('cdm_variables_order_sort_order', JSON.stringify(updatedOrder));
+    apiService.saveVariablesOrder(updatedOrder).catch(err => console.error('Failed to save variables order to backend:', err));
   };
 
   // Utility function to append new item to lists order

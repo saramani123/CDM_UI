@@ -634,20 +634,14 @@ def _sync_variable_relevance_to_objects(
     selected_object_ids: Optional[List[str]] = None
 ) -> int:
     """
-    Create default HAS_SPECIFIC_VARIABLE relationships for a variable.
+    Create object relevance (HAS_SPECIFIC_VARIABLE) for a variable.
 
-    - selected_object_ids is None: link to ALL objects (default behavior).
-    - selected_object_ids is provided: link only those selected object IDs.
+    Relevance defaults to NONE: a new variable is relevant to zero objects. Only the
+    explicitly selected object IDs (from the add/relevance flow) get linked.
     """
     object_ids = _normalize_object_id_list(selected_object_ids)
 
-    if selected_object_ids is None:
-        session.run("""
-            MATCH (v:Variable {id: $variable_id})
-            MATCH (o:Object)
-            MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
-        """, variable_id=variable_id)
-    elif object_ids:
+    if object_ids:
         session.run("""
             MATCH (v:Variable {id: $variable_id})
             UNWIND $object_ids AS object_id
@@ -1319,9 +1313,8 @@ async def create_variable(request: Request):
             await create_driver_relationships(session, variable_id, variable_data.driver)
             print(f"Driver relationships creation completed for variable {variable_id}")
 
-            # Default relevance behavior:
-            # - If selectedObjectIds is provided from add-flow, honor that subset.
-            # - Otherwise, link to all objects by default.
+            # Relevance defaults to NONE. Only link the explicit object IDs chosen in the
+            # add/relevance flow (if any); otherwise the variable starts with 0 relevance.
             selected_object_ids = getattr(variable_data, "selectedObjectIds", None)
             object_relationships_count = _sync_variable_relevance_to_objects(
                 session,

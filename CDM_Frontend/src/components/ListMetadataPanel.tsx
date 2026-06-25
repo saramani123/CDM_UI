@@ -1807,16 +1807,6 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             >
               <Upload className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => setIsVariationsGraphModalOpen(true)}
-              disabled={!isPanelEnabled || !selectedList?.id}
-              className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                !isPanelEnabled || !selectedList?.id ? 'opacity-50 cursor-not-allowed' : ''
-              }`}
-              title="View Variations Graph"
-            >
-              <Network className="w-4 h-4" />
-            </button>
           </div>
         }
       >

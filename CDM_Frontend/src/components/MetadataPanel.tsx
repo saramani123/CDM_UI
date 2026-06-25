@@ -2806,7 +2806,6 @@ export const MetadataPanel: React.FC<MetadataPanelProps> = ({
         title="Variations" 
         sectionKey="variants"
         icon={<Layers className="w-4 h-4 text-ag-dark-text-secondary" />}
-        ontologyViewType="variants"
         actions={
           <div className="flex items-center gap-2">
             <button

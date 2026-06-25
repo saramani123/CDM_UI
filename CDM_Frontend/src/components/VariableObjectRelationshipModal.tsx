@@ -1,7 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save, Link, Upload, ArrowUpAZ } from 'lucide-react';
-import { DataGrid } from './DataGrid';
-import { objectColumns, parseDriverField } from '../data/mockData';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Save, Link, Upload, ArrowUpAZ, Plus, Trash2 } from 'lucide-react';
 import { apiService } from '../services/api';
 import type { ObjectData } from '../data/mockData';
 import { CsvUploadModal } from './CsvUploadModal';
@@ -28,10 +26,12 @@ interface VariableObjectRelationshipModalProps {
   isObjectsOrderEnabled?: boolean;
 }
 
-interface SelectedObjectData {
-  objectId: string;
-  isSelected: boolean;
-  isAllSelected?: boolean; // Flag for "ALL" selection
+// Grid-based relevance rows (Being / Avatar / Object only).
+interface RelevanceGridRow {
+  id: string;
+  being: string;
+  avatar: string;
+  object: string;
 }
 
 export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshipModalProps> = ({
@@ -47,21 +47,17 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
   previewMode = false,
   onSelectionChange,
   initialSelectedObjectIds,
-  objectsOrderSortOrder,
-  isObjectsOrderEnabled = false
 }) => {
-  // Determine source variables: use selectedVariables if provided (bulk mode), otherwise use selectedVariable (single mode)
-  const sourceVariables = isBulkMode && selectedVariables.length > 0 
-    ? selectedVariables 
-    : selectedVariable 
-      ? [selectedVariable] 
+  const sourceVariables = isBulkMode && selectedVariables.length > 0
+    ? selectedVariables
+    : selectedVariable
+      ? [selectedVariable]
       : [];
-  const [selectedObjects, setSelectedObjects] = useState<Record<string, SelectedObjectData>>({});
+
+  const [relevanceRows, setRelevanceRows] = useState<RelevanceGridRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [isAllSelected, setIsAllSelected] = useState(false);
   const [isCsvUploadOpen, setIsCsvUploadOpen] = useState(false);
-  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [isCustomSortOpen, setIsCustomSortOpen] = useState(false);
   const [customSortRules, setCustomSortRules] = useState<Array<{
     id: string;
@@ -69,338 +65,249 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     sortOn: string;
     order: 'asc' | 'desc';
   }>>([]);
-  const [isRelevanceOrderEnabled, setIsRelevanceOrderEnabled] = useState(isObjectsOrderEnabled);
 
-  // Initialize selected objects when modal opens
+  const isInitializingRef = useRef(false);
+
+  const distinctBeings = Array.from(new Set(allObjects.map(obj => obj.being).filter(Boolean))).sort();
+
+  const getAvatarsForBeing = (being: string): string[] => {
+    if (!being) return [];
+    return Array.from(new Set(
+      allObjects.filter(obj => obj.being === being).map(obj => obj.avatar).filter(Boolean)
+    )).sort();
+  };
+
+  const getObjectsForBeingAndAvatar = (being: string, avatar: string): string[] => {
+    if (!being || !avatar) return [];
+    return Array.from(new Set(
+      allObjects.filter(obj => obj.being === being && obj.avatar === avatar).map(obj => obj.object).filter(Boolean)
+    )).sort();
+  };
+
+  // Expand a Being/Avatar/Object selection to every matching object. A partial selection
+  // (e.g. only Being, or Being+Avatar) matches ALL objects under it.
+  const findRelevanceMatchingObjects = (being: string, avatar: string, object: string): ObjectData[] => {
+    if (!being) return [];
+    return allObjects.filter(obj =>
+      obj.being === being &&
+      (!avatar || obj.avatar === avatar) &&
+      (!object || obj.object === object)
+    );
+  };
+
+  // Union of object IDs across all (non-empty) rows.
+  const expandRowsToObjectIds = (rows: RelevanceGridRow[]): string[] => {
+    const ids = new Set<string>();
+    for (const row of rows) {
+      if (!row.being) continue;
+      for (const obj of findRelevanceMatchingObjects(row.being, row.avatar, row.object)) {
+        if (obj.id) ids.add(obj.id);
+      }
+    }
+    return Array.from(ids);
+  };
+
+  // Build one row per object id (deduped by Being/Avatar/Object combination).
+  const buildRowsFromObjectIds = (ids: string[]): RelevanceGridRow[] => {
+    const seen = new Set<string>();
+    const rows: RelevanceGridRow[] = [];
+    for (const id of ids) {
+      const obj = allObjects.find(o => o.id === id);
+      if (!obj) continue;
+      const key = `${obj.being}|${obj.avatar}|${obj.object}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({
+        id: `row-${Date.now()}-${Math.random()}`,
+        being: obj.being || '',
+        avatar: obj.avatar || '',
+        object: obj.object || '',
+      });
+    }
+    return rows;
+  };
+
+  // Build rows from existing HAS_SPECIFIC_VARIABLE relationships.
+  const buildRowsFromRelationships = (relationships: any[]): RelevanceGridRow[] => {
+    const seen = new Set<string>();
+    const rows: RelevanceGridRow[] = [];
+    for (const rel of relationships) {
+      if (rel.relationshipType && rel.relationshipType !== 'HAS_SPECIFIC_VARIABLE') continue;
+      const being = rel.toBeing || '';
+      const avatar = rel.toAvatar || '';
+      const object = rel.toObject || '';
+      if (!being) continue;
+      const key = `${being}|${avatar}|${object}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({ id: `row-${Date.now()}-${Math.random()}`, being, avatar, object });
+    }
+    return rows;
+  };
+
   useEffect(() => {
     if (isOpen && sourceVariables.length > 0 && allObjects.length > 0) {
-      initializeSelectedObjects().then(() => {
-        // Process initial CSV data if provided (after initialization)
+      void initializeRows().then(() => {
         if (initialCsvData && initialCsvData.length > 0) {
-          // Use setTimeout to ensure state is initialized first
-          setTimeout(() => {
-            handleCsvUpload(initialCsvData);
-          }, 100);
+          setTimeout(() => handleCsvUpload(initialCsvData), 100);
         }
       });
     }
-    // Reset when modal closes
     if (!isOpen) {
-      setSelectedObjects({});
-      setIsAllSelected(false);
-      setUploadErrors([]);
+      setRelevanceRows([]);
       setCustomSortRules([]);
+      isInitializingRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, sourceVariables.length, allObjects.length, initialSelectedObjectIds]);
 
-  // Force refresh when modal opens (to catch bulk relationship updates)
-  // This ensures that when you open an individual variable's modal after bulk operations,
-  // it always shows the latest relationships from Neo4j
-  useEffect(() => {
-    if (isOpen && sourceVariables.length > 0 && allObjects.length > 0) {
-      // Force refresh when modal opens to ensure latest relationships are shown
-      // Use a small delay to allow any pending state updates to complete
-      const refreshTimer = setTimeout(() => {
-        initializeSelectedObjects();
-      }, 150);
-      return () => clearTimeout(refreshTimer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
-  const initializeSelectedObjects = async () => {
+  const initializeRows = async () => {
     if (sourceVariables.length === 0) return;
-
+    if (isInitializingRef.current) return;
+    isInitializingRef.current = true;
     setLoading(true);
     try {
-      // In preview mode, don't load relationships from API (variable doesn't exist yet)
+      // Preview mode (new variable not yet in Neo4j): default to NONE unless explicit selections.
       if (previewMode) {
-        // Add-variable preview defaults to ALL objects selected unless explicit selections are provided.
-        const hasExplicitSelection = initialSelectedObjectIds !== undefined;
-        const selectedSet = hasExplicitSelection
-          ? new Set(initialSelectedObjectIds || [])
-          : new Set(allObjects.map(obj => obj.id));
-        const initialData: Record<string, SelectedObjectData> = {};
-        for (const obj of allObjects) {
-          initialData[obj.id] = {
-            objectId: obj.id,
-            isSelected: selectedSet.has(obj.id)
-          };
-        }
-        setSelectedObjects(initialData);
-        setIsAllSelected(allObjects.length > 0 && allObjects.every(obj => selectedSet.has(obj.id)));
-        setLoading(false);
+        const ids = initialSelectedObjectIds && initialSelectedObjectIds.length > 0
+          ? initialSelectedObjectIds
+          : [];
+        setRelevanceRows(buildRowsFromObjectIds(ids));
         return;
       }
 
-      // In bulk mode, we don't load existing relationships (they're just for reference)
-      // In bulk mode, we're creating new relationships, not editing existing ones
-      // For single mode, load existing relationships
-      let allExistingRelationships: any[] = [];
-      
-      // Check if this is a cloned unsaved variable - use relationships from cloned data
-      const isClonedVariable = sourceVariables.length === 1 && 
-        sourceVariables[0]._isCloned && 
-        !sourceVariables[0]._isSaved;
-      
-      if (!isBulkMode && sourceVariables.length === 1) {
-        if (isClonedVariable) {
-          // For cloned variables, use relationships from the cloned data
-          const clonedRelationships = sourceVariables[0].objectRelationshipsList || [];
-          allExistingRelationships = clonedRelationships;
-        } else {
-          // For saved variables, load from API
-          const existingRelationships = await apiService.getVariableObjectRelationships(sourceVariables[0].id) as any;
-          allExistingRelationships = existingRelationships.relationships || [];
-        }
-      } else if (isBulkMode) {
-        // Bulk mode: load existing relationships for all source variables to show what's already selected
-        // This helps prevent duplicates
-        for (const variable of sourceVariables) {
-          try {
-            const existingRelationships = await apiService.getVariableObjectRelationships(variable.id) as any;
-            const relationshipsList = existingRelationships.relationships || [];
-            allExistingRelationships.push(...relationshipsList.map((rel: any) => ({ ...rel, variableId: variable.id })));
-          } catch (error) {
-            console.error(`Failed to load relationships for variable ${variable.id}:`, error);
-          }
-        }
+      // Bulk mode: rows define what to ADD to every selected variable; start empty.
+      if (isBulkMode) {
+        setRelevanceRows([]);
+        return;
       }
 
-      // Initialize selection data for all objects
-      const initialData: Record<string, SelectedObjectData> = {};
-      
-      // Check if "ALL" is selected (HAS_VARIABLE relationship exists) - only for single mode
-      let hasAllRelationship = false;
-      
-      if (!isBulkMode && sourceVariables.length === 1) {
-        // Check for HAS_VARIABLE relationship first (single mode only)
-        hasAllRelationship = allExistingRelationships.some((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
+      // Single mode.
+      const variable = sourceVariables[0];
+      const isClonedVariable = variable._isCloned && !variable._isSaved;
+      let existing: any[] = [];
+      if (isClonedVariable) {
+        existing = variable.objectRelationshipsList || [];
+      } else {
+        const resp = await apiService.getVariableObjectRelationships(variable.id) as any;
+        existing = resp.relationships || [];
       }
-
-      console.log('🔄 Initializing relationships. Found', allExistingRelationships.length, 'relationships');
-      console.log('🔄 AllObjects count:', allObjects.length);
-      console.log('🔄 Bulk mode:', isBulkMode, 'Source variables:', sourceVariables.length);
-      
-      for (const obj of allObjects) {
-        // In bulk mode, check if ANY of the source variables has a relationship with this object
-        // In single mode, check if the selected variable has a relationship with this object
-        let hasSpecificRel = false;
-        
-        if (isBulkMode) {
-          // Check if any source variable has a relationship with this object
-          hasSpecificRel = allExistingRelationships.some((rel: any) => 
-            rel.relationshipType === 'HAS_SPECIFIC_VARIABLE' &&
-            rel.toBeing === obj.being &&
-            rel.toAvatar === obj.avatar &&
-            rel.toObject === obj.object
-          );
-        } else {
-          // Single mode: check if the selected variable has a relationship with this object
-          hasSpecificRel = allExistingRelationships.some((rel: any) => 
-            rel.relationshipType === 'HAS_SPECIFIC_VARIABLE' &&
-            rel.toBeing === obj.being &&
-            rel.toAvatar === obj.avatar &&
-            rel.toObject === obj.object
-          );
-        }
-
-        if (hasSpecificRel) {
-          console.log(`✓ Found relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-        }
-
-        initialData[obj.id] = {
-          objectId: obj.id,
-          isSelected: hasSpecificRel,
-          isAllSelected: false
-        };
-      }
-      
-      console.log('🔄 Initialized', Object.values(initialData).filter(d => d.isSelected).length, 'selected objects');
-
-      setSelectedObjects(initialData);
-      const allSpecificSelected = allObjects.length > 0 && allObjects.every(obj => initialData[obj.id]?.isSelected);
-      setIsAllSelected(hasAllRelationship || allSpecificSelected);
+      setRelevanceRows(buildRowsFromRelationships(existing));
     } catch (error) {
-      console.error('Failed to load existing relationships:', error);
-      // Initialize with empty data
-      const initialData: Record<string, SelectedObjectData> = {};
-      for (const obj of allObjects) {
-        initialData[obj.id] = {
-          objectId: obj.id,
-          isSelected: false,
-          isAllSelected: false
-        };
-      }
-      setSelectedObjects(initialData);
-      setIsAllSelected(false);
+      console.error('Failed to load existing relevance:', error);
+      setRelevanceRows([]);
     } finally {
       setLoading(false);
+      isInitializingRef.current = false;
     }
   };
 
-  const handleRowClick = (objectId: string) => {
-    // If "ALL" is selected, deselect it first
-    if (isAllSelected) {
-      setIsAllSelected(false);
-    }
-
-    setSelectedObjects(prev => {
-      const currentData = prev[objectId];
-      const currentlySelected = currentData?.isSelected || false;
-      
-      return {
-        ...prev,
-        [objectId]: {
-          ...prev[objectId],
-          isSelected: !currentlySelected,
-          isAllSelected: false
-        }
-      };
+  const isRowDuplicate = (being: string, avatar: string, object: string, excludeRowId?: string): boolean => {
+    return relevanceRows.some(row => {
+      if (excludeRowId && row.id === excludeRowId) return false;
+      return row.being === being && row.avatar === avatar && row.object === object;
     });
   };
 
-  const handleSelectAll = () => {
-    if (isAllSelected) {
-      // Deselect "ALL"
-      setIsAllSelected(false);
-      // Also deselect all individual selections
-      const updated: Record<string, SelectedObjectData> = {};
-      for (const obj of allObjects) {
-        updated[obj.id] = {
-          objectId: obj.id,
-          isSelected: false,
-          isAllSelected: false
-        };
+  const handleAddRow = () => {
+    setRelevanceRows(prev => [...prev, { id: `row-${Date.now()}-${Math.random()}`, being: '', avatar: '', object: '' }]);
+  };
+
+  const handleRemoveRow = (rowId: string) => {
+    setRelevanceRows(prev => prev.filter(r => r.id !== rowId));
+  };
+
+  const handleRowFieldChange = (rowId: string, field: keyof RelevanceGridRow, value: string) => {
+    setRelevanceRows(prev => prev.map(row => {
+      if (row.id !== rowId) return row;
+      const updated = { ...row, [field]: value };
+      if (field === 'being') {
+        updated.avatar = '';
+        updated.object = '';
       }
-      setSelectedObjects(updated);
-    } else {
-      // Select "ALL"
-      setIsAllSelected(true);
-      // Select all rows so they appear highlighted
-      const updated: Record<string, SelectedObjectData> = {};
-      for (const obj of allObjects) {
-        updated[obj.id] = {
-          objectId: obj.id,
-          isSelected: true, // Set to true so rows are highlighted
-          isAllSelected: true
-        };
+      if (field === 'avatar') {
+        updated.object = '';
       }
-      setSelectedObjects(updated);
-    }
+      if (['being', 'avatar', 'object'].includes(field) && updated.being) {
+        if (isRowDuplicate(updated.being, updated.avatar, updated.object, rowId)) {
+          setTimeout(() => {
+            alert('A row with this Being / Avatar / Object combination already exists. Please use a different combination or edit the existing row.');
+          }, 100);
+          return row;
+        }
+      }
+      return updated;
+    }));
   };
 
   const handleCsvUpload = (csvData: any[]) => {
     const errors: string[] = [];
-    const matchedObjects: Set<string> = new Set();
-    const updatedSelections: Record<string, SelectedObjectData> = { ...selectedObjects };
-
-    // If "ALL" is selected, deselect it
-    if (isAllSelected) {
-      setIsAllSelected(false);
-    }
+    const newRows: RelevanceGridRow[] = [];
+    const seen = new Set(relevanceRows.map(r => `${r.being}|${r.avatar}|${r.object}`));
 
     csvData.forEach((row, index) => {
-      // Match object by Being, Avatar, Object only (removed S, D, C, Object Clarifier)
-      const matchingObject = allObjects.find(obj => {
-        const beingMatch = (row.Being || row.being || '') === obj.being;
-        const avatarMatch = (row.Avatar || row.avatar || '') === obj.avatar;
-        const objectMatch = (row.Object || row.object || '') === obj.object;
+      const being = row.Being || row.being || '';
+      const avatar = row.Avatar || row.avatar || '';
+      const object = row.Object || row.object || '';
 
-        return beingMatch && avatarMatch && objectMatch;
-      });
+      const matchingObject = allObjects.find(obj =>
+        obj.being === being && obj.avatar === avatar && obj.object === object
+      );
 
       if (!matchingObject) {
-        const rowValues = [
-          row.Being || row.being || '',
-          row.Avatar || row.avatar || '',
-          row.Object || row.object || ''
-        ].filter(Boolean).join(' - ');
-        errors.push(`Row ${index + 1}: No matching object found for [${rowValues}].`);
-      } else if (matchedObjects.has(matchingObject.id)) {
-        errors.push(`Row ${index + 1}: Duplicate object entry found in upload; duplicates ignored.`);
-      } else if (updatedSelections[matchingObject.id]?.isSelected) {
-        // In bulk mode, we still allow this but warn - it will be checked on save
-        // In single mode, this is a duplicate
-        if (!isBulkMode) {
-          errors.push(`Row ${index + 1}: Object ${matchingObject.object} already selected; skipping duplicate.`);
-        } else {
-          // In bulk mode, auto-highlight it anyway (will be checked for duplicates on save)
-          matchedObjects.add(matchingObject.id);
-          updatedSelections[matchingObject.id] = {
-            objectId: matchingObject.id,
-            isSelected: true,
-            isAllSelected: false
-          };
-        }
-      } else {
-        matchedObjects.add(matchingObject.id);
-        updatedSelections[matchingObject.id] = {
-          objectId: matchingObject.id,
-          isSelected: true,
-          isAllSelected: false
-        };
+        const vals = [being, avatar, object].filter(Boolean).join(' - ');
+        errors.push(`Row ${index + 1}: No matching object found for [${vals}].`);
+        return;
       }
+      const key = `${being}|${avatar}|${object}`;
+      if (seen.has(key)) {
+        errors.push(`Row ${index + 1}: Duplicate entry [${being} - ${avatar} - ${object}]; skipped.`);
+        return;
+      }
+      seen.add(key);
+      newRows.push({ id: `row-${Date.now()}-${Math.random()}`, being, avatar, object });
     });
 
-    setSelectedObjects(updatedSelections);
-    setUploadErrors(errors);
+    if (newRows.length > 0) {
+      setRelevanceRows(prev => [...prev, ...newRows]);
+    }
 
     if (errors.length > 0) {
-      // Show error popup
       alert(`Upload completed with ${errors.length} error(s):\n\n${errors.slice(0, 10).join('\n')}${errors.length > 10 ? `\n... and ${errors.length - 10} more errors` : ''}`);
     } else {
-      // Show success message
-      alert(`Successfully uploaded ${matchedObjects.size} object(s) from CSV. Objects are now highlighted in the modal.`);
+      alert(`Added ${newRows.length} relevance row(s) from CSV.`);
     }
   };
 
   const handleSave = async () => {
     if (sourceVariables.length === 0) return;
 
-    // PREVIEW MODE: Just store selections, don't create relationships yet
-    // This is used when adding a new variable that doesn't exist in Neo4j yet
+    const desiredIds = expandRowsToObjectIds(relevanceRows);
+
+    // PREVIEW MODE: just store the selected object IDs.
     if (previewMode && onSelectionChange) {
-      const selectedObjectIds = Object.entries(selectedObjects)
-        .filter(([_, data]) => data.isSelected)
-        .map(([id, _]) => id);
-      
-      onSelectionChange(selectedObjectIds);
-      alert('Object selections saved. Relationships will be created when you save the variable.');
+      onSelectionChange(desiredIds);
+      alert('Object selections saved. Relevance will be created when you save the variable.');
       onClose();
       return;
     }
 
-    // Check if this is a cloned unsaved variable - need to store relationships locally
-    const isClonedVariable = sourceVariables.length === 1 && 
-      sourceVariables[0]._isCloned && 
-      !sourceVariables[0]._isSaved;
-    
-    // If cloned variable, store relationships locally instead of saving to API
+    // CLONED UNSAVED VARIABLE: store relationships locally.
+    const isClonedVariable = sourceVariables.length === 1 &&
+      sourceVariables[0]._isCloned && !sourceVariables[0]._isSaved;
     if (isClonedVariable && onRelationshipsChange) {
-      const relationshipsToStore: any[] = [];
-      
-      // Process each object's relationship data
-      for (const [objectId, objData] of Object.entries(selectedObjects)) {
-        const targetObject = allObjects.find(obj => obj.id === objectId);
-        if (!targetObject) continue;
-
-        if (objData.isSelected) {
-          // Create relationship entry
-          relationshipsToStore.push({
-            id: Date.now().toString() + Math.random(),
-            toBeing: targetObject.being || 'ALL',
-            toAvatar: targetObject.avatar || 'ALL',
-            toObject: targetObject.object || 'ALL',
-            relationshipType: objData.isAllSelected ? 'HAS_VARIABLE' : 'HAS_SPECIFIC_VARIABLE'
-          });
-        }
-      }
-      
-      // Store relationships via callback
+      const relationshipsToStore = desiredIds.map(id => {
+        const obj = allObjects.find(o => o.id === id);
+        return {
+          id: Date.now().toString() + Math.random(),
+          toBeing: obj?.being || 'ALL',
+          toAvatar: obj?.avatar || 'ALL',
+          toObject: obj?.object || 'ALL',
+          relationshipType: 'HAS_SPECIFIC_VARIABLE',
+        };
+      });
       onRelationshipsChange(relationshipsToStore);
-      alert('Relationships configured successfully! They will be created when you save the variable.');
+      alert('Relevance configured successfully! It will be created when you save the variable.');
       onClose();
       return;
     }
@@ -408,388 +315,192 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
     setSaving(true);
     try {
       if (isBulkMode) {
-        // BULK MODE: Create relationships from each source variable to each selected object
-        const selectedObjectIds = Object.entries(selectedObjects)
-          .filter(([_, data]) => data.isSelected)
-          .map(([id, _]) => id);
-        
-        if (selectedObjectIds.length === 0) {
-          alert('Please select at least one object to create relationships.');
+        if (desiredIds.length === 0) {
+          alert('Please add at least one Being / Avatar / Object row to create relevance.');
           setSaving(false);
           return;
         }
-
-        // Collect all relationships to create
-        const relationshipsToCreate: Array<{
-          variableId: string;
-          objectId: string;
-          object: ObjectData;
-        }> = [];
-
-        // Check for duplicates before creating
-        const duplicates: Array<{ variableId: string; variableName: string; objectName: string }> = [];
-
+        const relationshipsToCreate: Array<{ variableId: string; objectId: string; object: ObjectData }> = [];
         for (const variable of sourceVariables) {
-          // Get existing relationships for this variable
-          const existingRelationships = await apiService.getVariableObjectRelationships(variable.id) as any;
-          const relationshipsList = existingRelationships.relationships || [];
-          
-          // Create a set of existing object keys for this variable
-          const existingObjectKeys = new Set(
-            relationshipsList
+          const resp = await apiService.getVariableObjectRelationships(variable.id) as any;
+          const existingList = resp.relationships || [];
+          const existingKeys = new Set(
+            existingList
               .filter((rel: any) => rel.relationshipType === 'HAS_SPECIFIC_VARIABLE')
               .map((rel: any) => `${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`)
           );
-
-          for (const objectId of selectedObjectIds) {
+          for (const objectId of desiredIds) {
             const obj = allObjects.find(o => o.id === objectId);
             if (!obj) continue;
-
-            const objectKey = `${obj.being}::${obj.avatar}::${obj.object}`;
-            
-            // Check if relationship already exists
-            if (existingObjectKeys.has(objectKey)) {
-              duplicates.push({
-                variableId: variable.id,
-                variableName: variable.variable || variable.name || variable.id,
-                objectName: `${obj.being} - ${obj.avatar} - ${obj.object}`
-              });
-            } else {
-              relationshipsToCreate.push({
-                variableId: variable.id,
-                objectId: objectId,
-                object: obj
-              });
-            }
+            const key = `${obj.being}::${obj.avatar}::${obj.object}`;
+            if (existingKeys.has(key)) continue;
+            existingKeys.add(key);
+            relationshipsToCreate.push({ variableId: variable.id, objectId, object: obj });
           }
         }
-
-        // If duplicates found, show error and abort
-        if (duplicates.length > 0) {
-          const duplicateMessages = duplicates.map(dup => 
-            `${dup.variableName} → ${dup.objectName}`
-          );
-          alert(`Duplicate relationships detected. The following relationships already exist:\n\n${duplicateMessages.slice(0, 10).join('\n')}${duplicateMessages.length > 10 ? `\n... and ${duplicateMessages.length - 10} more` : ''}\n\nPlease remove duplicates before saving.`);
-          setSaving(false);
-          return;
-        }
-
-        // Use bulk API endpoint if available, otherwise create individually
-        try {
-          await apiService.bulkCreateVariableObjectRelationships(relationshipsToCreate);
-        } catch (error: any) {
-          // If bulk endpoint doesn't exist or fails, fall back to individual creation
-          if (error.message?.includes('404') || error.message?.includes('not found')) {
-            // Fall back to individual creation
-            for (const rel of relationshipsToCreate) {
-              try {
-                await apiService.createVariableObjectRelationship(rel.variableId, {
-                  relationshipType: 'HAS_SPECIFIC_VARIABLE',
-                  toSector: rel.object.sector || '',
-                  toDomain: rel.object.domain || '',
-                  toCountry: rel.object.country || '',
-                  toObjectClarifier: rel.object.classifier || '',
-                  toBeing: rel.object.being,
-                  toAvatar: rel.object.avatar,
-                  toObject: rel.object.object
-                });
-              } catch (err: any) {
-                // Check if it's a duplicate error
-                if (err.message?.includes('Duplicate') || err.message?.includes('already exists')) {
-                  console.warn(`Duplicate relationship skipped: ${rel.variableId} -> ${rel.object.object}`);
-                } else {
-                  throw err;
+        if (relationshipsToCreate.length > 0) {
+          try {
+            await apiService.bulkCreateVariableObjectRelationships(relationshipsToCreate);
+          } catch (error: any) {
+            if (error.message?.includes('404') || error.message?.includes('not found')) {
+              for (const rel of relationshipsToCreate) {
+                try {
+                  await apiService.createVariableObjectRelationship(rel.variableId, {
+                    relationshipType: 'HAS_SPECIFIC_VARIABLE',
+                    toSector: rel.object.sector || '',
+                    toDomain: rel.object.domain || '',
+                    toCountry: rel.object.country || '',
+                    toObjectClarifier: (rel.object as any).classifier || '',
+                    toBeing: rel.object.being,
+                    toAvatar: rel.object.avatar,
+                    toObject: rel.object.object,
+                  });
+                } catch (err: any) {
+                  if (!(err.message?.includes('Duplicate') || err.message?.includes('already exists'))) throw err;
                 }
               }
+            } else {
+              throw error;
             }
-          } else {
-            throw error;
           }
         }
-
-        // Call the callback to refresh main grid data
-        if (onSave) {
-          await onSave();
-        }
-        
-        alert(`Bulk relationships created successfully! Created ${relationshipsToCreate.length} relationship(s) for ${sourceVariables.length} variable(s).`);
+        if (onSave) await onSave();
+        alert(`Relevance created for ${sourceVariables.length} variable(s).`);
         onClose();
         return;
       }
 
-      // SINGLE MODE: Original logic for single variable
-      const selectedVariable = sourceVariables[0];
-      console.log('💾 Saving relationships for variable:', selectedVariable.id);
-      console.log('💾 Selected objects:', Object.entries(selectedObjects).filter(([_, data]) => data.isSelected).map(([id, _]) => id));
-      console.log('💾 isAllSelected:', isAllSelected);
-      
-      // Get current relationships
-      const existingRelationships = await apiService.getVariableObjectRelationships(selectedVariable.id) as any;
-      const relationshipsList = existingRelationships.relationships || [];
-      console.log('💾 Existing relationships:', relationshipsList.length);
+      // SINGLE MODE: diff desired vs existing; create added, delete removed.
+      const variable = sourceVariables[0];
+      const resp = await apiService.getVariableObjectRelationships(variable.id) as any;
+      const existingList = resp.relationships || [];
 
-      // Remove legacy HAS_VARIABLE relationship if present; relevance is explicitly managed per object.
-      const hasVariableRel = relationshipsList.find((rel: any) => rel.relationshipType === 'HAS_VARIABLE');
-      if (hasVariableRel) {
+      // Remove legacy HAS_VARIABLE "relevant to all" edge if present.
+      if (existingList.some((rel: any) => rel.relationshipType === 'HAS_VARIABLE')) {
         try {
-          await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
+          await apiService.deleteVariableObjectRelationship(variable.id, {
             relationshipType: 'HAS_VARIABLE',
-            toSector: 'ALL',
-            toDomain: 'ALL',
-            toCountry: 'ALL',
-            toObjectClarifier: '',
-            toBeing: 'ALL',
-            toAvatar: 'ALL',
-            toObject: 'ALL'
+            toSector: 'ALL', toDomain: 'ALL', toCountry: 'ALL', toObjectClarifier: '',
+            toBeing: 'ALL', toAvatar: 'ALL', toObject: 'ALL',
           });
         } catch (error) {
           console.error('Failed to delete legacy HAS_VARIABLE relationship:', error);
         }
       }
 
-      // Track which objects should have relationships (by being/avatar/object combo)
-      const selectedObjectKeys = new Set(
-        Object.entries(selectedObjects)
-          .filter(([_, objData]) => objData.isSelected)
-          .map(([objectId, _]) => {
-            const obj = allObjects.find(o => o.id === objectId);
-            return obj ? `${obj.being}::${obj.avatar}::${obj.object}` : null;
-          })
-          .filter(Boolean) as string[]
+      const desiredKeys = new Set(
+        desiredIds.map(id => {
+          const obj = allObjects.find(o => o.id === id);
+          return obj ? `${obj.being}::${obj.avatar}::${obj.object}` : null;
+        }).filter(Boolean) as string[]
       );
-      
-      console.log('💾 Selected object keys:', Array.from(selectedObjectKeys));
 
-      // Get all objects that currently have relationships (by being/avatar/object combo)
-      const objectsWithRelationships = new Map<string, any>(); // key -> relationship data
-      for (const rel of relationshipsList) {
-        if (rel.relationshipType === 'HAS_SPECIFIC_VARIABLE') {
-          const key = `${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`;
-          // Find matching object by being, avatar, object
-          const matchingObj = allObjects.find(o => 
-            o.being === rel.toBeing &&
-            o.avatar === rel.toAvatar &&
-            o.object === rel.toObject
-          );
-          if (matchingObj) {
-            objectsWithRelationships.set(key, { rel, obj: matchingObj });
-          }
+      // Existing specific relevance by object key.
+      const existingByKey = new Map<string, ObjectData>();
+      for (const rel of existingList) {
+        if (rel.relationshipType !== 'HAS_SPECIFIC_VARIABLE') continue;
+        const obj = allObjects.find(o => o.being === rel.toBeing && o.avatar === rel.toAvatar && o.object === rel.toObject);
+        if (obj) existingByKey.set(`${rel.toBeing}::${rel.toAvatar}::${rel.toObject}`, obj);
+      }
+
+      // Delete those no longer desired.
+      for (const [key, obj] of existingByKey.entries()) {
+        if (desiredKeys.has(key)) continue;
+        try {
+          await apiService.deleteVariableObjectRelationship(variable.id, {
+            relationshipType: 'HAS_SPECIFIC_VARIABLE',
+            toSector: obj.sector || '', toDomain: obj.domain || '', toCountry: obj.country || '',
+            toObjectClarifier: (obj as any).classifier || '',
+            toBeing: obj.being, toAvatar: obj.avatar, toObject: obj.object,
+          });
+        } catch (error) {
+          console.error(`Failed to delete relevance for ${obj.object}:`, error);
         }
       }
 
-      console.log('💾 Objects with existing relationships:', objectsWithRelationships.size);
-
-      // Delete relationships for objects that should no longer be selected
-      for (const [key, { obj }] of objectsWithRelationships.entries()) {
-        if (!selectedObjectKeys.has(key)) {
-          console.log(`🗑️ Deleting relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-          try {
-            await apiService.deleteVariableObjectRelationship(selectedVariable.id, {
-              relationshipType: 'HAS_SPECIFIC_VARIABLE',
-              toSector: obj.sector || '',
-              toDomain: obj.domain || '',
-              toCountry: obj.country || '',
-              toObjectClarifier: obj.classifier || '',
-              toBeing: obj.being,
-              toAvatar: obj.avatar,
-              toObject: obj.object
-            });
-          } catch (error) {
-            console.error(`❌ Failed to delete relationship for ${obj.object}:`, error);
-          }
-        }
-      }
-
-      // Create relationships for newly selected objects
-      for (const [objectId, objData] of Object.entries(selectedObjects)) {
-        if (!objData.isSelected) continue;
-        
-        const obj = allObjects.find(o => o.id === objectId);
-        if (!obj) {
-          console.warn(`⚠️ Object not found for ID: ${objectId}`);
-          continue;
-        }
-
+      // Create newly desired.
+      for (const id of desiredIds) {
+        const obj = allObjects.find(o => o.id === id);
+        if (!obj) continue;
         const key = `${obj.being}::${obj.avatar}::${obj.object}`;
-        
-        // Check if relationship already exists
-        if (!objectsWithRelationships.has(key)) {
-          console.log(`➕ Creating relationship for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
-          try {
-            await apiService.createVariableObjectRelationship(selectedVariable.id, {
-              relationshipType: 'HAS_SPECIFIC_VARIABLE',
-              toSector: obj.sector || '',
-              toDomain: obj.domain || '',
-              toCountry: obj.country || '',
-              toObjectClarifier: obj.classifier || '',
-              toBeing: obj.being,
-              toAvatar: obj.avatar,
-              toObject: obj.object
-            });
-          } catch (error: any) {
-            console.error(`❌ Failed to create relationship for ${obj.object}:`, error);
-            const errorMessage = error?.message || error?.toString() || 'Unknown error';
-            alert(`Failed to create relationship for ${obj.object}: ${errorMessage}`);
-          }
-        } else {
-          console.log(`✓ Relationship already exists for: ${obj.being} - ${obj.avatar} - ${obj.object}`);
+        if (existingByKey.has(key)) continue;
+        try {
+          await apiService.createVariableObjectRelationship(variable.id, {
+            relationshipType: 'HAS_SPECIFIC_VARIABLE',
+            toSector: obj.sector || '', toDomain: obj.domain || '', toCountry: obj.country || '',
+            toObjectClarifier: (obj as any).classifier || '',
+            toBeing: obj.being, toAvatar: obj.avatar, toObject: obj.object,
+          });
+        } catch (error: any) {
+          console.error(`Failed to create relevance for ${obj.object}:`, error);
+          alert(`Failed to create relevance for ${obj.object}: ${error?.message || 'Unknown error'}`);
         }
       }
 
-      // Call the callback to refresh main grid data FIRST (before closing)
-      // This ensures the main grid is updated with new relationship counts
-      if (onSave) {
-        await onSave();
-      }
-      
-      // Refresh the data after saving (for single mode, to show updated relationships)
-      // In bulk mode, we close immediately since we're not editing existing relationships
-      if (!isBulkMode) {
-        // Refresh the data to verify relationships were saved
-        await initializeSelectedObjects();
-        
-        // Verify relationships were actually created
-        const verifyRelationships = await apiService.getVariableObjectRelationships(selectedVariable.id) as any;
-        const verifyList = verifyRelationships.relationships || [];
-        const expectedCount = Object.values(selectedObjects).filter(d => d.isSelected).length;
-        console.log('✅ Verification: Found', verifyList.length, 'relationships after save (expected:', expectedCount, ')');
-        
-        if (verifyList.length === 0 && expectedCount > 0) {
-          alert('Warning: Relationships may not have been saved. Please check the console for errors.');
-          setSaving(false);
-          return; // Don't close modal or refresh if save failed
-        }
-      }
-      
-      alert(isBulkMode ? 'Bulk relationships created successfully!' : 'Relationships updated successfully!');
+      if (onSave) await onSave();
+      alert('Relevance updated successfully.');
       onClose();
     } catch (error) {
-      console.error('Failed to save relationships:', error);
-      alert('Failed to save relationships. Please try again.');
+      console.error('Failed to save relevance:', error);
+      alert('Failed to save relevance. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
   const handleClose = () => {
-    setSelectedObjects({});
-    setIsAllSelected(false);
-    setUploadErrors([]);
+    setRelevanceRows([]);
     onClose();
   };
 
   if (!isOpen || sourceVariables.length === 0) return null;
 
-  // Prepare data for the grid - include all object columns
-  // Ensure sector, domain, country are preserved from parsed driver field
-  let gridData = allObjects.map(obj => {
-    const objData = selectedObjects[obj.id];
-    // Preserve parsed sector, domain, country values (they come from parseDriverField)
-    // If they're missing, parse from driver string
-    let sector = obj.sector;
-    let domain = obj.domain;
-    let country = obj.country;
-    
-    if (!sector && obj.driver) {
-      const parsed = parseDriverField(obj.driver);
-      sector = parsed.sector || '-';
-      domain = parsed.domain || '-';
-      country = parsed.country || '-';
-    }
-    
-    return {
-      ...obj,
-      sector: sector || '-',
-      domain: domain || '-',
-      country: country || '-',
-      isSelected: objData?.isSelected || (isAllSelected && objData?.isAllSelected) || false
-    };
-  });
-
-  // Apply custom sort rules (Object column only)
-  if (customSortRules.length > 0) {
-    gridData = [...gridData].sort((a, b) => {
+  // Display order: apply custom sort rules (Being/Avatar/Object) to a copy of the rows.
+  let displayRows = relevanceRows;
+  if (customSortRules.some(r => r.column)) {
+    displayRows = [...relevanceRows].sort((a, b) => {
       for (const rule of customSortRules) {
-        if (!rule.column) continue;
-        
-        // Only allow sorting by Object in relevance modal
-        if (!['object'].includes(rule.column)) continue;
-        
-        const aValue = String(a[rule.column] || '').toLowerCase();
-        const bValue = String(b[rule.column] || '').toLowerCase();
-        
-        let comparison = aValue.localeCompare(bValue);
-        
-        // Apply order (asc/desc)
-        if (rule.order === 'desc') {
-          comparison = -comparison;
-        }
-        
-        // If this rule doesn't determine the order, continue to next rule
-        if (comparison !== 0) {
-          return comparison;
-        }
+        if (!rule.column || !['being', 'avatar', 'object'].includes(rule.column)) continue;
+        const aVal = String((a as any)[rule.column] || '').toLowerCase();
+        const bVal = String((b as any)[rule.column] || '').toLowerCase();
+        let cmp = aVal.localeCompare(bVal);
+        if (rule.order === 'desc') cmp = -cmp;
+        if (cmp !== 0) return cmp;
       }
-      
-      return 0; // All rules are equal
+      return 0;
     });
   }
-
-  // Custom columns for the variable-object relationship modal
-  // Only show Object column
-  const relationshipColumns = [
-    ...objectColumns.filter(col => ['object'].includes(col.key))
-  ];
 
   return (
     <>
       <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-[100]">
-        <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[95vw] h-[90vh] max-w-7xl flex flex-col">
+        <div className="bg-ag-dark-surface rounded-lg border border-ag-dark-border w-[99vw] h-[90vh] max-w-[120rem] flex flex-col">
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-ag-dark-border">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Link className="w-5 h-5 text-ag-dark-text-secondary" />
               <h2 className="text-xl font-semibold text-ag-dark-text">
-                {isBulkMode 
-                  ? `Configuring Relevance (${sourceVariables.length} variables)` 
-                  : `Configuring Relevance for ${sourceVariables[0]?.variable || 'Variable'}`}
+                {isBulkMode
+                  ? `Configuring Relevance (${sourceVariables.length} variables)`
+                  : 'Configuring Relevance'}
               </h2>
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsCsvUploadOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-3 py-2 border border-ag-dark-border rounded bg-ag-dark-bg text-sm font-medium text-ag-dark-text hover:bg-ag-dark-surface transition-colors min-w-[140px]"
-                title="Upload Relationships CSV"
-              >
-                <Upload className="w-4 h-4" />
-                Upload
-              </button>
               <button
                 onClick={() => setIsCustomSortOpen(true)}
-                className={`inline-flex items-center justify-center gap-2 px-3 py-2 border rounded text-sm font-medium transition-colors min-w-[140px] ${
-                  customSortRules.length > 0
-                    ? 'border-ag-dark-accent bg-ag-dark-accent bg-opacity-10 text-ag-dark-accent' 
-                    : 'border-ag-dark-border bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface'
-                }`}
+                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
                 title="Custom Sort"
               >
                 <ArrowUpAZ className="w-4 h-4" />
                 Custom Sort
-                {customSortRules.length > 0 && (
-                  <span className="ml-1 text-xs bg-ag-dark-accent text-white px-1.5 py-0.5 rounded">
-                    Grid Sort Active
-                  </span>
-                )}
               </button>
+            </div>
+            <div className="flex items-center gap-3">
               <button
-                onClick={handleSelectAll}
-                className={`px-4 py-2 border rounded text-sm transition-colors ${
-                  isAllSelected
-                    ? 'bg-ag-dark-accent text-white border-ag-dark-accent'
-                    : 'bg-ag-dark-bg text-ag-dark-text border-ag-dark-border hover:bg-ag-dark-bg'
-                }`}
+                onClick={() => setIsCsvUploadOpen(true)}
+                className="px-3 py-1.5 text-sm border border-ag-dark-border rounded bg-ag-dark-bg text-ag-dark-text hover:bg-ag-dark-surface transition-colors flex items-center gap-2"
+                title="Upload Relevance CSV"
               >
-                {isAllSelected ? 'Deselect ALL' : 'Select ALL'}
+                <Upload className="w-4 h-4" />
+                Upload CSV
               </button>
               <button
                 onClick={handleClose}
@@ -804,31 +515,103 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
           <div className="flex-1 p-6 overflow-y-auto">
             {loading ? (
               <div className="flex items-center justify-center h-full">
-                <div className="text-ag-dark-text-secondary">Loading relationships...</div>
+                <div className="text-ag-dark-text-secondary">Loading relevance...</div>
               </div>
             ) : (
               <div className="h-full bg-ag-dark-bg rounded-lg border border-ag-dark-border overflow-y-auto">
-                <DataGrid
-                  columns={relationshipColumns}
-                  data={gridData}
-                  onRowSelect={() => {}} // No row selection needed in modal
-                  selectedRows={[]}
-                  affectedIds={new Set()}
-                  deletedDriverType={null}
-                  customSortRules={customSortRules}
-                  onClearCustomSort={() => setCustomSortRules([])}
-                  onColumnSort={() => {}}
-                  isCustomSortActive={customSortRules.length > 0}
-                  isColumnSortActive={false}
-                  highlightCurrentObject={false}
-                  showActionsColumn={false}
-                  relationshipData={selectedObjects}
-                  onRelationshipRowClick={handleRowClick}
-                  selectionMode="row"
-                  isPredefinedSortEnabled={isRelevanceOrderEnabled}
-                  predefinedSortOrder={objectsOrderSortOrder}
-                  persistState={false}
-                />
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-ag-dark-text">Relevant Objects</h3>
+                    <button
+                      onClick={handleAddRow}
+                      className="px-3 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Row
+                    </button>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b border-ag-dark-border">
+                          <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '300px' }}>Being</th>
+                          <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '300px' }}>Avatar</th>
+                          <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface" style={{ width: '300px' }}>Object</th>
+                          <th className="px-3 py-2 text-left text-sm font-medium text-ag-dark-text bg-ag-dark-surface">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayRows.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-8 text-center text-ag-dark-text-secondary">
+                              Add the objects this variable is relevant to. Selecting only a Being (or Being + Avatar) makes it relevant to every matching object. Click "Add Row" to start.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayRows.map((row) => (
+                            <tr key={row.id} className="border-b border-ag-dark-border hover:bg-ag-dark-surface">
+                              {/* Being */}
+                              <td className="px-3 py-2" style={{ width: '300px' }}>
+                                <select
+                                  value={row.being}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'being', e.target.value)}
+                                  className="w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent"
+                                >
+                                  <option value="">Select Being</option>
+                                  {distinctBeings.map(b => (
+                                    <option key={b} value={b}>{b}</option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Avatar */}
+                              <td className="px-3 py-2" style={{ width: '300px' }}>
+                                <select
+                                  value={row.avatar}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'avatar', e.target.value)}
+                                  disabled={!row.being}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${!row.being ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                  <option value="">{row.being ? 'All Avatars' : 'Select Being first'}</option>
+                                  {row.being && getAvatarsForBeing(row.being).map(a => (
+                                    <option key={a} value={a}>{a}</option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Object */}
+                              <td className="px-3 py-2" style={{ width: '300px' }}>
+                                <select
+                                  value={row.object}
+                                  onChange={(e) => handleRowFieldChange(row.id, 'object', e.target.value)}
+                                  disabled={!row.being || !row.avatar}
+                                  className={`w-full px-2 py-1 text-sm bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent ${!row.being || !row.avatar ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                  <option value="">{row.being && row.avatar ? 'All Objects' : 'Select Avatar first'}</option>
+                                  {row.being && row.avatar && getObjectsForBeingAndAvatar(row.being, row.avatar).map(o => (
+                                    <option key={o} value={o}>{o}</option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-3 py-2">
+                                <button
+                                  onClick={() => handleRemoveRow(row.id)}
+                                  className="p-1 text-red-400 hover:text-red-300 transition-colors"
+                                  title="Remove row"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -865,17 +648,13 @@ export const VariableObjectRelationshipModal: React.FC<VariableObjectRelationshi
       <RelationshipCustomSortModal
         isOpen={isCustomSortOpen}
         onClose={() => setIsCustomSortOpen(false)}
-        onApplySort={(sortRules, isDefaultOrderEnabled = false) => {
+        onApplySort={(sortRules) => {
           setCustomSortRules(sortRules);
-          setIsRelevanceOrderEnabled(isDefaultOrderEnabled);
         }}
         currentSortRules={customSortRules}
-        isDefaultOrderEnabled={isRelevanceOrderEnabled}
-        onDefaultOrderToggle={(enabled) => {
-          setIsRelevanceOrderEnabled(enabled);
-        }}
+        isDefaultOrderEnabled={false}
+        onDefaultOrderToggle={() => {}}
       />
     </>
   );
 };
-

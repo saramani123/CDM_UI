@@ -81,7 +81,8 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
   const { objects: objectsFromHook } = useObjects();
   const allObjects = objectsData && objectsData.length > 0 ? objectsData : objectsFromHook;
 
-  // Default relevance for add flow: all objects are selected unless user deselects.
+  // Default relevance for add flow: NONE. A new variable is relevant to zero objects
+  // unless the user explicitly adds objects in the Relevance modal.
   useEffect(() => {
     if (!isOpen) {
       hasInitializedDefaultRelevanceRef.current = false;
@@ -91,11 +92,7 @@ export const AddVariablePanel: React.FC<AddVariablePanelProps> = ({
     if (hasInitializedDefaultRelevanceRef.current) {
       return;
     }
-    if (allObjects.length === 0) {
-      return;
-    }
-
-    setSelectedObjectRelationships(allObjects.map(obj => obj.id));
+    setSelectedObjectRelationships([]);
     hasInitializedDefaultRelevanceRef.current = true;
   }, [isOpen, allObjects]);
 

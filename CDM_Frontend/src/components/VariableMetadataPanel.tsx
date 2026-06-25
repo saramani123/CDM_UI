@@ -2017,22 +2017,6 @@ export const VariableMetadataPanel: React.FC<VariableMetadataPanelProps> = ({
             >
               <Grid3x3 className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => setIsVariationsGraphModalOpen(true)}
-              disabled={!isPanelEnabled || !selectedVariable?.id || (selectedVariable?._isCloned && !selectedVariable?._isSaved) || selectedCount > 1}
-              className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded ${
-                !isPanelEnabled || !selectedVariable?.id || (selectedVariable?._isCloned && !selectedVariable?._isSaved) || selectedCount > 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-ag-dark-bg'
-              }`}
-              title={
-                selectedVariable?._isCloned && !selectedVariable?._isSaved 
-                  ? "Please save the cloned variable before viewing variations graph" 
-                  : selectedCount > 1 
-                    ? "View variations graph (bulk edit not yet supported)" 
-                    : "View variations graph"
-              }
-            >
-              <Network className="w-5 h-5" />
-            </button>
           </div>
         }
       >

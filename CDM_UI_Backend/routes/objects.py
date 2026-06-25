@@ -140,43 +140,6 @@ def _parse_driver_string_by_scope(session, driver_string: str) -> Dict[str, List
         "country": [tokens[2]] if len(tokens) > 2 else ["ALL"],
     }
 
-def create_default_relationships_for_object(session, source_object_id: str, source_object_name: str):
-    """
-    Create default relationships for a new object.
-    Creates relationships to ALL existing objects (including itself) with:
-    - Inter-Table for other objects, Intra-Table for self
-    - Frequency = Possible
-    - Role = source object name (default role word)
-    """
-    # Create all default edges (source -> every object, including itself) in a SINGLE
-    # Cypher statement. The previous implementation issued an existence check + a create
-    # per target object, which is O(N) round trips per new object and O(N^2) for a CSV
-    # import -- the cause of CSV upload timeouts. Doing it server-side is one round trip.
-    result = session.run(
-        """
-        MATCH (source:Object {id: $source_id})
-        MATCH (target:Object)
-        OPTIONAL MATCH (source)-[existing:RELATES_TO {role: $role}]->(target)
-        WITH source, target, existing
-        WHERE existing IS NULL
-        CREATE (source)-[:RELATES_TO {
-            id: randomUUID(),
-            type: CASE WHEN target.id = $source_id THEN 'Intra-Table' ELSE 'Inter-Table' END,
-            role: $role,
-            frequency: 'Possible',
-            toBeing: coalesce(target.being, 'ALL'),
-            toAvatar: coalesce(target.avatar, 'ALL'),
-            toObject: coalesce(target.object, 'ALL')
-        }]->(target)
-        RETURN count(*) as created
-        """,
-        source_id=source_object_id,
-        role=source_object_name,
-    ).single()
-
-    return int(result["created"]) if result and result["created"] is not None else 0
-
-
 def get_additional_relationship_count(session, object_id: str) -> int:
     """
     Count only additional (non-default) relationships for an object.
@@ -363,31 +326,6 @@ def sync_additional_object_relationships(session, object_id: str, edges: List[Sy
         rel_count=total_count,
     )
     return {"deleted": deleted, "updated": updated, "created": created, "relationships": total_count}
-
-
-def link_object_to_all_variables(session, object_id: str) -> int:
-    """
-    Default relevance behavior:
-    every object should have HAS_SPECIFIC_VARIABLE to every variable.
-    """
-    session.run("""
-        MATCH (o:Object {id: $object_id})
-        MATCH (v:Variable)
-        MERGE (o)-[:HAS_SPECIFIC_VARIABLE]->(v)
-    """, object_id=object_id)
-
-    count_result = session.run("""
-        MATCH (o:Object {id: $object_id})-[:HAS_SPECIFIC_VARIABLE]->(v:Variable)
-        RETURN count(DISTINCT v) as variables_count
-    """, object_id=object_id).single()
-    variables_count = int(count_result["variables_count"]) if count_result and count_result["variables_count"] is not None else 0
-
-    session.run("""
-        MATCH (o:Object {id: $object_id})
-        SET o.variables = $variables_count
-    """, object_id=object_id, variables_count=variables_count)
-
-    return variables_count
 
 
 @router.get("/objects", response_model=List[Dict[str, Any]])
@@ -963,26 +901,14 @@ async def create_object(object_data: ObjectCreateRequest):
                             to_avatar=rel.get("toAvatar", "ALL"),
                             to_object=rel.get("toObject", "ALL"))
             
-            # Create default relationships to ALL existing objects (including itself)
-            # This ensures every object has default relationships with role = object name
-            print(f"Creating default relationships for new object: {object_data.object}")
-            default_rels_created = create_default_relationships_for_object(
-                session, 
-                new_id, 
-                object_data.object
-            )
-            print(f"Created {default_rels_created} default relationships")
-            
-            # Store ADDITIONAL (non-default) relationship count only; new object has 0 additional
-            additional_count = get_total_relationship_count(session, new_id)
+            # New objects start with NO object↔object relationships and NO object↔variable
+            # relevance. Both default to 0; users add these explicitly via the panels.
+            # (Any explicit relationships supplied above are preserved in the count.)
+            relationship_count = get_total_relationship_count(session, new_id)
             session.run("""
                 MATCH (o:Object {id: $object_id})
-                SET o.relationships = $rel_count
-            """, object_id=new_id, rel_count=additional_count)
-            
-            # Default relevance behavior: new objects are linked to all existing variables.
-            variables_count = link_object_to_all_variables(session, new_id)
-            print(f"✅ Linked object {new_id} to {variables_count} variable(s) by default relevance rule")
+                SET o.relationships = $rel_count, o.variables = 0
+            """, object_id=new_id, rel_count=relationship_count)
             
             # Handle identifier relationships (discrete and composite IDs)
             # Note: object_data is a Pydantic model, so we access attributes directly
@@ -2545,23 +2471,13 @@ async def upload_objects_csv(file: UploadFile = File(...)):
                         """, object_id=new_id, var_count=var_count)
                         print(f"DEBUG: Updated variant count to {var_count} for object {new_id}")
 
-                    # Create default relationships to ALL existing objects (including itself)
-                    print(f"Creating default relationships for new object from CSV: {csv_row.Object}")
-                    default_rels_created = create_default_relationships_for_object(
-                        session, 
-                        new_id, 
-                        csv_row.Object
-                    )
-                    print(f"Created {default_rels_created} default relationships")
-                    # New object has 0 additional relationships; set stored count
-                    additional_count = get_total_relationship_count(session, new_id)
+                    # New objects start with NO object↔object relationships and NO
+                    # object↔variable relevance (both default to 0); users add these explicitly.
+                    relationship_count = get_total_relationship_count(session, new_id)
                     session.run("""
                         MATCH (o:Object {id: $object_id})
-                        SET o.relationships = $rel_count
-                    """, object_id=new_id, rel_count=additional_count)
-
-                    # Default relevance behavior: new object links to all existing variables.
-                    variables_count = link_object_to_all_variables(session, new_id)
+                        SET o.relationships = $rel_count, o.variables = 0
+                    """, object_id=new_id, rel_count=relationship_count)
 
                     print(f"DEBUG: Successfully created object {new_id}")
                     # Get relationships for the newly created object

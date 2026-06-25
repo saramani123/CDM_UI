@@ -1497,16 +1497,6 @@ export const BulkEditPanel: React.FC<BulkEditPanelProps> = ({
                 >
                   <Upload className="w-4 h-4" />
                 </button>
-                <button
-                  onClick={() => setIsVariationsGraphModalOpen(true)}
-                  disabled={selectedObjects.length === 0}
-                  className={`text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors ${
-                    selectedObjects.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  title={selectedObjects.length === 0 ? "Select lists to view variations graph" : "View Variations Graph"}
-                >
-                  <Network className="w-4 h-4" />
-                </button>
               </div>
             }
           >
