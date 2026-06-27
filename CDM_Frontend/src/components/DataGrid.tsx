@@ -45,10 +45,12 @@ function hoistListTierChildrenInDisplayOrder(rows: Record<string, any>[]): Recor
   const byId = new Map<string, Record<string, any>>(rows.map(r => [String(r.id), r]));
   const childTierIds = new Set<string>();
   rows.forEach(r => {
-    const tiers = r.tieredListsList;
-    if (!Array.isArray(tiers)) return;
-    tiers.forEach((t: any) => {
-      if (t?.listId) childTierIds.add(String(t.listId));
+    [r.tieredListsList, r.equivalentListsList].forEach((children: any) => {
+      if (!Array.isArray(children)) return;
+      children.forEach((t: any) => {
+        if (t?.listId) childTierIds.add(String(t.listId));
+        else if (t?.id) childTierIds.add(String(t.id));
+      });
     });
   });
 
@@ -56,17 +58,19 @@ function hoistListTierChildrenInDisplayOrder(rows: Record<string, any>[]): Recor
   const placed = new Set<string>();
 
   for (const row of rows) {
-    if (row.hasIncomingTier && childTierIds.has(String(row.id))) continue;
+    if ((row.hasIncomingTier || row.hasIncomingEquivalent) && childTierIds.has(String(row.id))) continue;
     out.push(row);
     placed.add(String(row.id));
 
-    const tiers = row.tieredListsList;
-    if (!Array.isArray(tiers) || tiers.length === 0) continue;
+    const children = Array.isArray(row.tieredListsList) && row.tieredListsList.length > 0
+      ? row.tieredListsList
+      : (Array.isArray(row.equivalentListsList) ? row.equivalentListsList : []);
+    if (!Array.isArray(children) || children.length === 0) continue;
 
-    const ordered = tiers
+    const ordered = children
       .map((t: any, idx: number) => ({
-        id: String(t.listId || ''),
-        tier: typeof t.tier === 'number' ? t.tier : idx + 1
+        id: String(t.listId || t.id || ''),
+        tier: typeof t.tier === 'number' ? t.tier : (typeof t.order === 'number' ? t.order : idx + 1)
       }))
       .filter(x => x.id)
       .sort((a, b) => a.tier - b.tier);
@@ -1729,9 +1733,9 @@ export const DataGrid: React.FC<DataGridProps> = ({
                 onDrop={(e) => onReorder && handleRowDrop(e, index)}
                 onDragEnd={handleRowDragEnd}
                 onClick={(e) => {
-                  // Prevent row click for tier lists (lists with hasIncomingTier)
-                  if (gridType === 'lists' && (row as any).hasIncomingTier) {
-                    return; // Don't allow clicking on tier lists
+                  // Prevent row click for tier / equivalent child lists
+                  if (gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent)) {
+                    return; // Don't allow clicking on tier/equivalent child lists
                   }
                   
                   // Prevent row click when clicking on inputs, selects, or buttons
@@ -1791,14 +1795,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     : // Non-required metadata rows - lighter background
                   gridType === 'metadata'
                     ? 'bg-ag-dark-surface hover:bg-ag-dark-bg cursor-pointer'
-                    : // Tier lists (lists with hasIncomingTier) - grey background, not clickable
-                  gridType === 'lists' && (row as any).hasIncomingTier
+                    : // Tier / equivalent child lists - grey background, not clickable
+                  gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent)
                     ? 'bg-gray-800 bg-opacity-40 cursor-not-allowed opacity-75'
                     : 'hover:bg-ag-dark-bg cursor-pointer'
                 } ${
                   // Priority: Cloned (unsaved) > Selected current object (intra-table) > Selected > Current object > Affected
-                  // But skip if it's a tier list
-                  gridType === 'lists' && (row as any).hasIncomingTier
+                  // But skip if it's a tier / equivalent child list
+                  gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent)
                     ? ''
                     : row._isCloned && !row._isSaved
                       ? 'bg-orange-900 bg-opacity-20 border-orange-500 border-opacity-50' 
@@ -1810,7 +1814,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                             ? 'bg-ag-dark-accent bg-opacity-20 border-ag-dark-accent border-opacity-50' 
                             : ''
                 } ${
-                  gridType === 'lists' && (row as any).hasIncomingTier
+                  gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent)
                     ? ''
                     : isCurrentObject(row) && !relationshipData?.[row.id]?.isSelected ? 'bg-blue-900 bg-opacity-30 border-blue-500 border-opacity-50' : ''
                 } ${
@@ -1872,7 +1876,7 @@ export const DataGrid: React.FC<DataGridProps> = ({
                     {column.render ? (
                       column.render(row)
                     ) : column.key === 'ontologyType' ? (
-                      gridType === 'lists' && (row as any).hasIncomingTier ? (
+                      gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent) ? (
                         <div className="flex items-center justify-center min-w-[72px] text-ag-dark-text-secondary text-xs">—</div>
                       ) : (
                         <div className="flex items-center justify-center w-full min-w-[88px] max-w-[120px]">
@@ -1883,14 +1887,14 @@ export const DataGrid: React.FC<DataGridProps> = ({
                               value={normalizeOntologyType((row as any).ontologyType) ?? 'Variant'}
                               onChange={(e) => {
                                 e.stopPropagation();
-                                if (gridType === 'lists' && (row as any).hasIncomingTier) return;
+                                if (gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent)) return;
                                 onOntologyTypeChange?.(row.id, e.target.value);
                               }}
                               onClick={(e) => e.stopPropagation()}
                               onMouseDown={(e) => e.stopPropagation()}
                               disabled={
                                 row._ontologyTypeLoading ||
-                                (gridType === 'lists' && (row as any).hasIncomingTier)
+                                (gridType === 'lists' && ((row as any).hasIncomingTier || (row as any).hasIncomingEquivalent))
                               }
                               className="w-full max-w-[112px] px-1.5 py-0.5 text-xs bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-1 focus:ring-ag-dark-accent cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >

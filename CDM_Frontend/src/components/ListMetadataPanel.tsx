@@ -10,6 +10,7 @@ import { ListsOntologyModal } from './ListsOntologyModal';
 import { VariableListRelationshipsGraphModal } from './VariableListRelationshipsGraphModal';
 import { CloneListApplicabilityModal } from './CloneListApplicabilityModal';
 import { TieredListValuesModal } from './TieredListValuesModal';
+import { EquivalentListValuesModal, EquivalentValuesPayload } from './EquivalentListValuesModal';
 import { SingleListValuesModal } from './SingleListValuesModal';
 import { apiService, getTieredListValues } from '../services/api';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -353,6 +354,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [listValuesGraphModalOpen, setListValuesGraphModalOpen] = useState(false);
   const [isTieredListValuesModalOpen, setIsTieredListValuesModalOpen] = useState(false);
   const [isSingleListValuesModalOpen, setIsSingleListValuesModalOpen] = useState(false);
+  const [isEquivalentListValuesModalOpen, setIsEquivalentListValuesModalOpen] = useState(false);
   
   // Set/Grouping creation is centralized in the Metadata tab
 
@@ -385,6 +387,14 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const [singleListValuesVariations, setSingleListValuesVariations] = useState<Record<string, string[]>>({});
   // Store tiered list values locally - only save to Neo4j when clicking Save Changes on metadata panel
   const [tieredListValues, setTieredListValues] = useState<Record<string, string[][]>>({});
+  // Equivalent list local state - saved to Neo4j only on Save Changes
+  const [equivalentNames, setEquivalentNames] = useState<string[]>(() => {
+    if (selectedList?.equivalentNames && selectedList.equivalentNames.length >= 2) return selectedList.equivalentNames.slice(0, 2);
+    if (selectedList?.equivalentListsList && selectedList.equivalentListsList.length >= 2) return selectedList.equivalentListsList.slice(0, 2).map((e: any) => e.list || '');
+    return ['', ''];
+  });
+  const [equivalentListValues, setEquivalentListValues] = useState<EquivalentValuesPayload | null>(null);
+  const equivalentValuesEditedRef = React.useRef<boolean>(false);
   
   // Variations state - using string for multiline input
   const [variationsText, setVariationsText] = useState('');
@@ -398,6 +408,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   const tierNameInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
   const tierNameInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
   const tierNameLastChangeTimeRefs = useRef<Map<number, number>>(new Map());
+  const equivNameInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const equivNameInputFocusedRefs = useRef<Map<number, boolean>>(new Map());
+  const equivNameLastChangeTimeRefs = useRef<Map<number, number>>(new Map());
   
   // Relationship modal state
   const [isVariableRelationshipModalOpen, setIsVariableRelationshipModalOpen] = useState(false);
@@ -428,8 +441,11 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     relationships: false
   });
   
-  // List Type state - Single or Multi-Level
-  const [listType, setListType] = useState<'Single' | 'Multi-Level'>(() => {
+  // List Type state - Single, Multi-Level, or Equivalent
+  const [listType, setListType] = useState<'Single' | 'Multi-Level' | 'Equivalent'>(() => {
+    if (selectedList?.listType === 'Equivalent' || (selectedList?.equivalentListsList && selectedList.equivalentListsList.length > 0)) {
+      return 'Equivalent';
+    }
     // Check if list has tiered lists to determine if it's Multi-Level
     if (selectedList?.tieredListsList && selectedList.tieredListsList.length > 0) {
       return 'Multi-Level';
@@ -437,7 +453,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     return 'Single';
   });
 
-  const [listTypeSwitchDialog, setListTypeSwitchDialog] = useState<null | { newType: 'Single' | 'Multi-Level' }>(null);
+  const [listTypeSwitchDialog, setListTypeSwitchDialog] = useState<null | { newType: 'Single' | 'Multi-Level' | 'Equivalent' }>(null);
   const [listTypeSwitchBusy, setListTypeSwitchBusy] = useState(false);
   
   // Number of tiers for Multi-Level lists (1-10)
@@ -566,11 +582,23 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     } else {
       setListValuesText('');
     }
+    // Reset local equivalent edit state whenever we switch lists
+    setEquivalentListValues(null);
+    equivalentValuesEditedRef.current = false;
     // Update list type and tier names
     if (selectedList) {
       // Check if list has listType property (new structure) or tieredListsList (old structure)
-      if (selectedList.listType === 'Multi-Level' || (selectedList.tieredListsList && selectedList.tieredListsList.length > 0)) {
+      if (selectedList.listType === 'Equivalent' || (selectedList.equivalentListsList && selectedList.equivalentListsList.length > 0)) {
+        setListType('Equivalent');
+        const names = (selectedList.equivalentNames && selectedList.equivalentNames.length >= 2)
+          ? selectedList.equivalentNames.slice(0, 2)
+          : (selectedList.equivalentListsList || []).slice(0, 2).map((e: any) => e.list || '');
+        setEquivalentNames(names.length >= 2 ? names.slice(0, 2) : ['', '']);
+        setNumberOfLevels(2);
+        setTierNames([]);
+      } else if (selectedList.listType === 'Multi-Level' || (selectedList.tieredListsList && selectedList.tieredListsList.length > 0)) {
         setListType('Multi-Level');
+        setEquivalentNames(['', '']);
         // If we have tierNames from the new structure, use those; otherwise use old tieredListsList
         if (selectedList.tierNames && selectedList.tierNames.length > 0) {
           // numberOfLevels now equals the number of tier names (Tier 1, Tier 2, etc.)
@@ -588,11 +616,13 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         setListType('Single');
         setNumberOfLevels(2);
         setTierNames([]);
+        setEquivalentNames(['', '']);
       }
     } else {
       setListType('Single');
       setNumberOfLevels(2);
       setTierNames([]);
+      setEquivalentNames(['', '']);
     }
     // Load relationships from API
     if (selectedList?.id) {
@@ -682,11 +712,19 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   // Check if panel should be enabled (exactly 1 list selected)
   const isPanelEnabled = selectedCount === 1;
 
-  const resolveOriginalListType = (): 'Single' | 'Multi-Level' => {
+  const resolveOriginalListType = (): 'Single' | 'Multi-Level' | 'Equivalent' => {
     if (!selectedList) return 'Single';
+    if (selectedList.listType === 'Equivalent') return 'Equivalent';
+    if (selectedList.equivalentListsList && selectedList.equivalentListsList.length > 0) return 'Equivalent';
     if (selectedList.listType === 'Multi-Level') return 'Multi-Level';
     if (selectedList.tieredListsList && selectedList.tieredListsList.length > 0) return 'Multi-Level';
     return 'Single';
+  };
+
+  const hasEquivalentStructureOrValues = (): boolean => {
+    if ((selectedList?.equivalentListsList?.length ?? 0) > 0) return true;
+    if (equivalentListValues && Array.isArray(equivalentListValues.rows) && equivalentListValues.rows.length > 0) return true;
+    return false;
   };
 
   const hasSingleTierValuesOnRecord = (): boolean =>
@@ -709,28 +747,41 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
   };
 
   const mustConfirmListTypeSwitch = (
-    original: 'Single' | 'Multi-Level',
-    newType: 'Single' | 'Multi-Level'
+    original: 'Single' | 'Multi-Level' | 'Equivalent',
+    newType: 'Single' | 'Multi-Level' | 'Equivalent'
   ): boolean => {
     if (original === newType) return false;
-    if (original === 'Single' && newType === 'Multi-Level') {
-      return hasSingleTierValuesOnRecord();
-    }
-    return hasMultiTierStructureOrValues();
+    if (original === 'Single') return hasSingleTierValuesOnRecord();
+    if (original === 'Multi-Level') return hasMultiTierStructureOrValues();
+    if (original === 'Equivalent') return hasEquivalentStructureOrValues();
+    return false;
   };
 
-  const applyListTypeUiSideEffects = (newType: 'Single' | 'Multi-Level') => {
+  const applyListTypeUiSideEffects = (newType: 'Single' | 'Multi-Level' | 'Equivalent') => {
     setListType(newType);
+    // Always clear cross-type local state when switching
+    setEquivalentListValues(null);
+    equivalentValuesEditedRef.current = false;
     if (newType === 'Single') {
       setNumberOfLevels(2);
       setTierNames([]);
       setTieredListValues({});
       tieredValuesEditedRef.current = false;
       tieredValuesLoadedRef.current = null;
+      setEquivalentNames(['', '']);
       setListValuesText('');
-    } else {
+    } else if (newType === 'Multi-Level') {
       setNumberOfLevels(2);
       setTierNames(['', '']);
+      setEquivalentNames(['', '']);
+      setListValuesText('');
+    } else {
+      // Equivalent
+      setNumberOfLevels(2);
+      setTierNames([]);
+      setEquivalentNames(['', '']);
+      setTieredListValues({});
+      tieredValuesEditedRef.current = false;
       setListValuesText('');
     }
   };
@@ -907,7 +958,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     const orig = resolveOriginalListType();
     setListTypeSwitchBusy(true);
     try {
-      if (orig === 'Multi-Level' && newType === 'Single') {
+      if (newType === 'Single') {
         await apiService.updateList(selectedList.id, {
           listType: 'Single',
           listValuesList: [],
@@ -915,8 +966,10 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           tieredListsList: []
         });
         applyListTypeUiSideEffects('Single');
-      } else if (orig === 'Single' && newType === 'Multi-Level') {
-        await apiService.syncSingleListValues(selectedList.id, { rows: [] });
+      } else if (newType === 'Multi-Level') {
+        if (orig === 'Single') {
+          await apiService.syncSingleListValues(selectedList.id, { rows: [] });
+        }
         const idShort = selectedList.id.replace(/-/g, '').slice(0, 10);
         const autoTierNames = [`Tier_1_${idShort}`, `Tier_2_${idShort}`];
         await apiService.updateList(selectedList.id, {
@@ -930,8 +983,22 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         setTieredListValues({});
         tieredValuesEditedRef.current = false;
         tieredValuesLoadedRef.current = selectedList.id;
+        setEquivalentNames(['', '']);
+        setEquivalentListValues(null);
+        equivalentValuesEditedRef.current = false;
         setListType('Multi-Level');
         setListValuesText('');
+      } else if (newType === 'Equivalent') {
+        if (orig === 'Single') {
+          await apiService.syncSingleListValues(selectedList.id, { rows: [] });
+        }
+        await apiService.updateList(selectedList.id, {
+          listType: 'Equivalent',
+          listValuesList: [],
+          tieredListValues: {},
+          tieredListsList: []
+        });
+        applyListTypeUiSideEffects('Equivalent');
       }
       await onFullListsRefresh?.();
       await onListDetailRefresh?.(selectedList.id);
@@ -977,7 +1044,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
     // Include listType and tiered list fields if:
     // 1. List type changed, OR
     // 2. List type is Multi-Level (to allow updating tier names even if type didn't change)
-    if (listTypeChanged || listType === 'Multi-Level') {
+    if (listTypeChanged || listType === 'Multi-Level' || listType === 'Equivalent') {
       if (listType === 'Single') {
         // Single list - use values from modal if available, otherwise from textarea (for backward compatibility)
         let listValuesArray: Array<{ id: string; value: string }>;
@@ -1084,6 +1151,22 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
         });
         // Backend will create the tier list nodes and relationships
         // Note: tieredListValues can be saved separately via grid modal or together here
+      } else if (listType === 'Equivalent') {
+        // Equivalent list - validate the 2 equivalent names and prepare for backend
+        const validNames = equivalentNames.filter(name => name.trim() !== '');
+        if (validNames.length < 2) {
+          alert('Please provide both Equivalent Name 1 and Equivalent Name 2.');
+          return;
+        }
+        const wasSingle = selectedList?.listType === 'Single' ||
+          (!selectedList?.listType && !selectedList?.tieredListsList && !selectedList?.equivalentListsList);
+        if (wasSingle) {
+          // Switching from Single to Equivalent - clear single-level values
+          saveData.listValuesList = [];
+        }
+        saveData.listType = 'Equivalent';
+        saveData.equivalentNames = validNames.slice(0, 2);
+        saveData.tieredListsList = [];
       }
     } else if (listType === 'Multi-Level' && !listTypeChanged) {
       // List type is Multi-Level but didn't change - still include tierNames if they were edited
@@ -1207,6 +1290,17 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
       tieredValuesEditedRef.current = false;
     }
     
+    // Include equivalent values if user edited them in the grid modal
+    if (listType === 'Equivalent' && equivalentValuesEditedRef.current && equivalentListValues) {
+      saveData.equivalentListValues = equivalentListValues;
+      const validNames = equivalentNames.filter(n => n.trim() !== '');
+      if (validNames.length >= 2) {
+        saveData.equivalentNames = validNames.slice(0, 2);
+        saveData.listType = 'Equivalent';
+      }
+      equivalentValuesEditedRef.current = false;
+    }
+
     console.log('📤 ListMetadataPanel: Calling onSave with data:', {
       ...saveData,
       tieredListValues: saveData.tieredListValues ? `${Object.keys(saveData.tieredListValues).length} tier 1 values` : 'none'
@@ -1616,8 +1710,8 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             <select
               value={listType}
               onChange={(e) => {
-                const newType = e.target.value as 'Single' | 'Multi-Level';
-                if (!isPanelEnabled || selectedList?.hasIncomingTier) return;
+                const newType = e.target.value as 'Single' | 'Multi-Level' | 'Equivalent';
+                if (!isPanelEnabled || selectedList?.hasIncomingTier || selectedList?.hasIncomingEquivalent) return;
                 if (newType === listType) return;
                 const orig = resolveOriginalListType();
                 if (mustConfirmListTypeSwitch(orig, newType)) {
@@ -1626,9 +1720,9 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                 }
                 applyListTypeUiSideEffects(newType);
               }}
-              disabled={!isPanelEnabled || selectedList?.hasIncomingTier}
+              disabled={!isPanelEnabled || selectedList?.hasIncomingTier || selectedList?.hasIncomingEquivalent}
               className={`w-full px-3 py-2 pr-10 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent appearance-none ${
-                !isPanelEnabled || selectedList?.hasIncomingTier ? 'opacity-50 cursor-not-allowed' : ''
+                !isPanelEnabled || selectedList?.hasIncomingTier || selectedList?.hasIncomingEquivalent ? 'opacity-50 cursor-not-allowed' : ''
               }`}
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
@@ -1639,6 +1733,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
             >
               <option value="Single">Single</option>
               <option value="Multi-Level">Multi-Level</option>
+              <option value="Equivalent">Equivalent</option>
             </select>
           </div>
 
@@ -1766,6 +1861,87 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                 </div>
               )}
             </>
+          )}
+
+          {/* Equivalent Options */}
+          {listType === 'Equivalent' && (
+            <div className="space-y-3">
+              {[0, 1].map((index) => (
+                <div key={`equiv-input-${index}`}>
+                  <label className="block text-sm font-medium text-ag-dark-text mb-2">
+                    Equivalent Name {index + 1}
+                  </label>
+                  <input
+                    ref={(el) => {
+                      if (el) {
+                        equivNameInputRefs.current.set(index, el);
+                      } else {
+                        equivNameInputRefs.current.delete(index);
+                      }
+                    }}
+                    type="text"
+                    value={equivalentNames[index] || ''}
+                    onInput={(e) => {
+                      e.stopPropagation();
+                      const input = e.target as HTMLInputElement;
+                      const cursorPosition = input.selectionStart;
+                      const newValue = input.value;
+                      equivNameLastChangeTimeRefs.current.set(index, Date.now());
+                      const newNames = [...equivalentNames];
+                      while (newNames.length < 2) newNames.push('');
+                      newNames[index] = newValue;
+                      setEquivalentNames(newNames);
+                      const restoreFocus = () => {
+                        const inputRef = equivNameInputRefs.current.get(index);
+                        if (inputRef) {
+                          inputRef.focus();
+                          const maxPos = inputRef.value.length;
+                          const safePos = Math.min(cursorPosition ?? maxPos, maxPos);
+                          inputRef.setSelectionRange(safePos, safePos);
+                        }
+                      };
+                      restoreFocus();
+                      Promise.resolve().then(restoreFocus);
+                      requestAnimationFrame(restoreFocus);
+                    }}
+                    onChange={(e) => { e.stopPropagation(); }}
+                    onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onKeyPress={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onClick={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onMouseDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }}
+                    onFocus={(e) => {
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation();
+                      equivNameInputFocusedRefs.current.set(index, true);
+                    }}
+                    onBlur={(e) => {
+                      const lastChangeTime = equivNameLastChangeTimeRefs.current.get(index) || 0;
+                      const timeSinceLastChange = Date.now() - lastChangeTime;
+                      const wasRecentTyping = timeSinceLastChange < 300;
+                      const relatedTarget = e.relatedTarget as HTMLElement;
+                      const clickedOnInput = relatedTarget && (relatedTarget.tagName === 'INPUT' || relatedTarget.tagName === 'TEXTAREA' || relatedTarget.isContentEditable);
+                      const inputRef = equivNameInputRefs.current.get(index);
+                      const isFocused = equivNameInputFocusedRefs.current.get(index) || false;
+                      if (wasRecentTyping && !clickedOnInput && inputRef && isFocused) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setTimeout(() => {
+                          const ref = equivNameInputRefs.current.get(index);
+                          if (ref) ref.focus();
+                        }, 0);
+                      } else if (!wasRecentTyping) {
+                        equivNameInputFocusedRefs.current.set(index, false);
+                      }
+                    }}
+                    disabled={!isPanelEnabled || selectedList?.hasIncomingEquivalent}
+                    placeholder={`Enter Equivalent ${index + 1} name...`}
+                    className={`w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text placeholder-ag-dark-text-secondary focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent ${
+                      !isPanelEnabled || selectedList?.hasIncomingEquivalent ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </CollapsibleSection>
@@ -1964,7 +2140,7 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               </button>
             )}
             {/* For Single lists, show only grid icon */}
-            {listType === 'Single' && !selectedList?.hasIncomingTier && (
+            {listType === 'Single' && !selectedList?.hasIncomingTier && !selectedList?.hasIncomingEquivalent && (
               <button
                 onClick={() => setIsSingleListValuesModalOpen(true)}
                 disabled={!isPanelEnabled}
@@ -1972,6 +2148,26 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
                   !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
                 title="Edit List Values"
+              >
+                <Grid3x3 className="w-5 h-5" />
+              </button>
+            )}
+            {/* For Equivalent lists, show only grid icon and graph icon */}
+            {listType === 'Equivalent' && !selectedList?.hasIncomingEquivalent && (
+              <button
+                onClick={() => {
+                  const validNames = (equivalentNames || []).filter(n => n && n.trim());
+                  if (validNames.length < 2) {
+                    alert('Please enter both Equivalent Name 1 and Equivalent Name 2 above before editing equivalent values.');
+                    return;
+                  }
+                  setIsEquivalentListValuesModalOpen(true);
+                }}
+                disabled={!isPanelEnabled}
+                className={`p-1.5 text-ag-dark-text-secondary hover:text-ag-dark-accent transition-colors rounded hover:bg-ag-dark-bg ${
+                  !isPanelEnabled ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                title="Edit Equivalent List Values"
               >
                 <Grid3x3 className="w-5 h-5" />
               </button>
@@ -1999,10 +2195,22 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
               This list is a tiered child list. List values are managed through the parent list's tiered values editor.
             </div>
           </div>
+        ) : selectedList?.hasIncomingEquivalent ? (
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This list is an equivalent child list. List values are managed through the parent list's equivalent values editor.
+            </div>
+          </div>
         ) : listType === 'Multi-Level' ? (
           <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
             <div className="text-sm text-ag-dark-text-secondary">
               This is a multi-level list. Use the grid icon above to edit tiered list values.
+            </div>
+          </div>
+        ) : listType === 'Equivalent' ? (
+          <div className="bg-ag-dark-bg rounded-lg p-4 border border-ag-dark-border">
+            <div className="text-sm text-ag-dark-text-secondary">
+              This is an equivalent list. Use the grid icon above to edit equivalent list values.
             </div>
           </div>
         ) : (
@@ -2165,6 +2373,19 @@ export const ListMetadataPanel: React.FC<ListMetadataPanelProps> = ({
           console.log('✅ ListMetadataPanel: Updated tieredListValues state and set tieredValuesEditedRef to true');
           // DO NOT close the modal - let user see the saved variations
           // Modal will stay open - user can continue editing or close manually
+        }}
+      />
+
+      {/* Equivalent List Values Modal */}
+      <EquivalentListValuesModal
+        isOpen={isEquivalentListValuesModalOpen}
+        onClose={() => setIsEquivalentListValuesModalOpen(false)}
+        selectedList={selectedList || null}
+        equivalentNames={(equivalentNames || []).filter(n => n && n.trim()).slice(0, 2)}
+        initialValues={equivalentListValues}
+        onSave={(values) => {
+          setEquivalentListValues(values);
+          equivalentValuesEditedRef.current = true;
         }}
       />
 

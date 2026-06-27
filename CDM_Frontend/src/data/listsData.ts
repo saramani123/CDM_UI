@@ -26,9 +26,13 @@ export interface ListData {
   variationsList?: Array<{ id?: string; name: string }>; // List of variations
   hasIncomingTier?: boolean; // True if this list is already a child of another list
   tierNumber?: number; // Tier number (1, 2, 3, etc.) if this is a tier list
-  listType?: 'Single' | 'Multi-Level'; // Type of list
+  listType?: 'Single' | 'Multi-Level' | 'Equivalent'; // Type of list
   numberOfLevels?: number; // Number of levels for Multi-Level lists
   tierNames?: string[]; // Names of tier lists (Tier 2, Tier 3, etc.)
+  equivalentListsList?: TieredList[]; // The 2 equivalent lists under this list (parent only)
+  equivalentNames?: string[]; // Names of the 2 equivalent lists
+  hasIncomingEquivalent?: boolean; // True if this list is an equivalent child of another list
+  equivalentNumber?: number; // 1 or 2 if this is an equivalent child list
   totalValuesCount?: number; // Total count of values (for single lists) or across all tiers (for multi-level)
   sampleValues?: string[]; // First 3 values for display (single lists) or first 3 tier 1 values (multi-level)
   ontologyType?: string;

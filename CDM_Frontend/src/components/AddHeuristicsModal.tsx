@@ -1,14 +1,10 @@
 import React, { useState } from 'react';
 import { X } from 'lucide-react';
-import { useDrivers } from '../hooks/useDrivers';
 
 interface AddHeuristicsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (heuristics: {
-    sector: string;
-    domain: string;
-    country: string;
     agent: string;
     procedure: string;
     is_heuro: boolean;
@@ -20,11 +16,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   onClose,
   onAdd
 }) => {
-  const { drivers: driversData, loading: driversLoading } = useDrivers();
   const [formData, setFormData] = useState({
-    sector: '',
-    domain: '',
-    country: '',
     agent: '',
     procedure: '',
     is_heuro: false  // Default FALSE = non-HEURO (documentation-only)
@@ -32,19 +24,9 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Get distinct values from drivers
-  const sectors = driversData?.sectors || [];
-  const domains = driversData?.domains || [];
-  const countries = driversData?.countries || [];
-
-  // Include "ALL" as first option, then distinct values from drivers (excluding "ALL" if it exists)
-  const sectorOptions = ['ALL', ...sectors.filter(s => s !== 'ALL' && s !== 'All')];
-  const domainOptions = ['ALL', ...domains.filter(d => d !== 'ALL' && d !== 'All')];
-  const countryOptions = ['ALL', ...countries.filter(c => c !== 'ALL' && c !== 'All')];
-
   if (!isOpen) return null;
 
-  const handleChange = (field: 'sector' | 'domain' | 'country' | 'agent' | 'procedure', value: string) => {
+  const handleChange = (field: 'agent' | 'procedure', value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     setError(null);
   };
@@ -57,7 +39,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.sector || !formData.domain || !formData.country || !formData.agent || !formData.procedure.trim()) {
+    if (!formData.agent.trim() || !formData.procedure.trim()) {
       setError('All fields are required');
       return;
     }
@@ -67,16 +49,13 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
     try {
       await onAdd({
-        sector: formData.sector,
-        domain: formData.domain,
-        country: formData.country,
-        agent: formData.agent,
+        agent: formData.agent.trim(),
         procedure: formData.procedure.trim(),
         is_heuro: formData.is_heuro
       });
       
       // Reset form and close
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_heuro: false });
+      setFormData({ agent: '', procedure: '', is_heuro: false });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add heuristic item');
@@ -87,7 +66,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
   const handleClose = () => {
     if (!isSubmitting) {
-      setFormData({ sector: '', domain: '', country: '', agent: '', procedure: '', is_heuro: false });
+      setFormData({ agent: '', procedure: '', is_heuro: false });
       setError(null);
       onClose();
     }
@@ -110,69 +89,6 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
 
         {/* Form */}
         <form onSubmit={handleSubmit}>
-          {/* Sector Field */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Sector <span className="text-ag-dark-error">*</span>
-            </label>
-            <select
-              value={formData.sector}
-              onChange={(e) => handleChange('sector', e.target.value)}
-              disabled={isSubmitting || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-              required
-            >
-              <option value="">Select Sector</option>
-              {sectorOptions.map((sector) => (
-                <option key={sector} value={sector}>
-                  {sector}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Domain Field */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Domain <span className="text-ag-dark-error">*</span>
-            </label>
-            <select
-              value={formData.domain}
-              onChange={(e) => handleChange('domain', e.target.value)}
-              disabled={isSubmitting || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-              required
-            >
-              <option value="">Select Domain</option>
-              {domainOptions.map((domain) => (
-                <option key={domain} value={domain}>
-                  {domain}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Country Field */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-ag-dark-text mb-2">
-              Country <span className="text-ag-dark-error">*</span>
-            </label>
-            <select
-              value={formData.country}
-              onChange={(e) => handleChange('country', e.target.value)}
-              disabled={isSubmitting || driversLoading}
-              className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-ag-dark-text focus:ring-2 focus:ring-ag-dark-accent focus:border-ag-dark-accent disabled:opacity-50"
-              required
-            >
-              <option value="">Select Country</option>
-              {countryOptions.map((country) => (
-                <option key={country} value={country}>
-                  {country}
-                </option>
-              ))}
-            </select>
-          </div>
-
           {/* Agent Field - plain text; agent names are unique, type directly */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-ag-dark-text mb-2">
@@ -249,7 +165,7 @@ export const AddHeuristicsModal: React.FC<AddHeuristicsModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !formData.sector || !formData.domain || !formData.country || !formData.agent || !formData.procedure.trim()}
+              disabled={isSubmitting || !formData.agent.trim() || !formData.procedure.trim()}
               className="px-4 py-2 bg-ag-dark-accent text-white rounded hover:bg-ag-dark-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {isSubmitting ? 'Adding...' : 'Add'}

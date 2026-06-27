@@ -838,7 +838,8 @@ async def get_list_ontology_view(
             'ontology': """
                 MATCH (l:List {id: $list_id})
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN l, s, r1, g, r2
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                RETURN l, s, r1, g, r2, eq_rel, eq
             """,
             'metadata': """
                 MATCH (l:List {id: $list_id})
@@ -871,7 +872,8 @@ async def get_list_ontology_view(
             'ontology': """
                 MATCH (l:List {name: $list_name})
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN l, s, r1, g, r2
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                RETURN l, s, r1, g, r2, eq_rel, eq
             """,
             'metadata': """
                 MATCH (l:List {name: $list_name})
@@ -924,7 +926,27 @@ async def get_list_ontology_view(
                     except:
                         max_tier = 1
                 
-                if is_parent:
+                # Detect equivalent parent (a list that has HAS_EQUIVALENT children)
+                eq_check = session.run("""
+                    MATCH (l:List {id: $list_id})
+                    OPTIONAL MATCH (l)-[:HAS_EQUIVALENT]->(eq:List)
+                    RETURN count(DISTINCT eq) as eq_count
+                """, {param_name: param_value})
+                eq_record = eq_check.single()
+                is_equivalent_parent = (eq_record.get("eq_count", 0) > 0) if eq_record else False
+                
+                if is_equivalent_parent:
+                    # Equivalent parent: show parent -> equivalent lists -> their values,
+                    # IS_EQUIVALENT_TO links between paired values, and value variations
+                    query = """
+                        MATCH (l:List {id: $list_id})
+                        OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                        OPTIONAL MATCH (eq)-[r1:HAS_LIST_VALUE]->(lv:ListValue)
+                        OPTIONAL MATCH (lv)-[eqv_rel:IS_EQUIVALENT_TO]->(lv2:ListValue)
+                        OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
+                        RETURN l, eq_rel, eq, r1, lv, eqv_rel, lv2, var_rel, var
+                    """
+                elif is_parent:
                     # Parent list: Show tier hierarchy AND tiered values
                     # For tiered lists, values are connected to tier lists, not parent list
                     # Show: parent -> tier lists, tier lists -> tier values, tier values -> tier values
@@ -1114,7 +1136,8 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.id IN $list_ids
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN l, s, r1, g, r2
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                RETURN l, s, r1, g, r2, eq_rel, eq
             """,
             'metadata': """
                 MATCH (l:List)
@@ -1126,7 +1149,11 @@ async def get_bulk_list_ontology_view(
                 WHERE l.id IN $list_ids
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
-                RETURN l, r, lv, var, var_rel
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                OPTIONAL MATCH (eq)-[eq_r:HAS_LIST_VALUE]->(eqlv:ListValue)
+                OPTIONAL MATCH (eqlv)-[eqv_rel:IS_EQUIVALENT_TO]->(eqlv2:ListValue)
+                OPTIONAL MATCH (eqlv)-[eq_var_rel:HAS_VALUE_VARIATION]->(eqvar:ListValueVariation)
+                RETURN l, r, lv, var, var_rel, eq_rel, eq, eq_r, eqlv, eqv_rel, eqlv2, eq_var_rel, eqvar
             """,
             'variations': """
                 MATCH (l:List)
@@ -1151,7 +1178,8 @@ async def get_bulk_list_ontology_view(
                 MATCH (l:List)
                 WHERE l.name IN $list_names
                 OPTIONAL MATCH (s:Set)-[r1:HAS_GROUPING]->(g:Grouping)-[r2:HAS_LIST]->(l)
-                RETURN l, s, r1, g, r2
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                RETURN l, s, r1, g, r2, eq_rel, eq
             """,
             'metadata': """
                 MATCH (l:List)
@@ -1163,7 +1191,11 @@ async def get_bulk_list_ontology_view(
                 WHERE l.name IN $list_names
                 OPTIONAL MATCH (l)-[r:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (lv)-[var_rel:HAS_VALUE_VARIATION]->(var:ListValueVariation)
-                RETURN l, r, lv, var, var_rel
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(eq:List)
+                OPTIONAL MATCH (eq)-[eq_r:HAS_LIST_VALUE]->(eqlv:ListValue)
+                OPTIONAL MATCH (eqlv)-[eqv_rel:IS_EQUIVALENT_TO]->(eqlv2:ListValue)
+                OPTIONAL MATCH (eqlv)-[eq_var_rel:HAS_VALUE_VARIATION]->(eqvar:ListValueVariation)
+                RETURN l, r, lv, var, var_rel, eq_rel, eq, eq_r, eqlv, eqv_rel, eqlv2, eq_var_rel, eqvar
             """,
             'variations': """
                 MATCH (l:List)

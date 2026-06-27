@@ -96,9 +96,11 @@ class ListCreateRequest(BaseModel):
     tieredListsList: Optional[List[TieredListRequest]] = []
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
     variationsList: Optional[List[dict]] = None  # List of variations to create for the list
-    listType: Optional[str] = None  # 'Single' or 'Multi-Level'
+    listType: Optional[str] = None  # 'Single', 'Multi-Level', or 'Equivalent'
     numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
     tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
+    equivalentNames: Optional[List[str]] = None  # Names of the 2 equivalent lists (e.g., ['Currency Code', 'Currency Name'])
+    equivalentListValues: Optional[Any] = None  # { "rows": [{value1, variations1, value2, variations2}] }
     variablesAttachedList: Optional[List[Dict[str, Any]]] = None  # Variables to link via HAS_LIST on create
     
     @model_validator(mode='before')
@@ -150,9 +152,11 @@ class ListUpdateRequest(BaseModel):
     tieredListsList: Optional[List[TieredListRequest]] = None
     tieredListValues: Optional[Any] = None  # Dict mapping tier 1 value to list of tiered value arrays, can also contain _variations key (using Any to avoid Pydantic validation issues with nested dicts)
     variationsList: Optional[List[dict]] = None  # List of variations to append to the list
-    listType: Optional[str] = None  # 'Single' or 'Multi-Level'
+    listType: Optional[str] = None  # 'Single', 'Multi-Level', or 'Equivalent'
     numberOfLevels: Optional[int] = None  # Number of tiers (2-10)
     tierNames: Optional[List[str]] = None  # Names of tier lists (e.g., ['State', 'City'])
+    equivalentNames: Optional[List[str]] = None  # Names of the 2 equivalent lists
+    equivalentListValues: Optional[Any] = None  # { "rows": [{value1, variations1, value2, variations2}] }
     
     # Removed model_validator - it was causing validation issues with _variations
     # We handle tieredListValues manually in the route handler using model_construct
@@ -1153,6 +1157,202 @@ async def create_tiered_list_values(session, list_id: str, tiered_lists: List[Di
         traceback.print_exc()
         raise
 
+# ============================================================================
+# EQUIVALENT LIST helpers
+# ----------------------------------------------------------------------------
+# An "Equivalent" list (e.g. Currency) has exactly 2 equivalent List nodes
+# (e.g. Currency Code / Currency Name) connected via (parent)-[:HAS_EQUIVALENT
+# {order}]->(equivalent). Each equivalent list owns its own values via the
+# normal HAS_LIST_VALUE relationship, value->variation via HAS_VALUE_VARIATION,
+# and paired values on the same grid row are linked value->value with
+# IS_EQUIVALENT_TO.
+# ============================================================================
+
+async def create_equivalent_list_nodes(session, parent_list_id: str, equivalent_names: List[str], set_name: str, grouping_name: str, ontology_type: Optional[str]):
+    """
+    Create (or rename in place) up to 2 equivalent List nodes for a parent list and
+    the (parent)-[:HAS_EQUIVALENT {order}]->(equivalent) relationships.
+
+    Renaming in place (when an equivalent already exists at a given order) preserves
+    that node's existing values/relationships. Returns [{listId, list, order, set, grouping}].
+    """
+    parent = session.run(
+        "MATCH (l:List {id: $id}) RETURN l.set as set, l.grouping as grouping, coalesce(l.`Type`, 'Variant') as type",
+        id=parent_list_id,
+    ).single()
+    if not parent:
+        raise ValueError(f"Parent list {parent_list_id} not found")
+
+    p_set = set_name or parent["set"]
+    p_grouping = grouping_name or parent["grouping"]
+    p_type = ontology_type or parent["type"]
+
+    infos: List[Dict[str, Any]] = []
+    for index, raw_name in enumerate(equivalent_names, start=1):
+        if not raw_name or not raw_name.strip():
+            continue
+        name = raw_name.strip()
+
+        existing = session.run(
+            "MATCH (p:List {id: $pid})-[r:HAS_EQUIVALENT]->(eq:List) WHERE r.order = $order RETURN eq.id as id",
+            pid=parent_list_id,
+            order=index,
+        ).single()
+
+        if existing and existing.get("id"):
+            eq_id = existing["id"]
+            session.run(
+                "MATCH (eq:List {id: $id}) SET eq.name = $n, eq.set = $s, eq.grouping = $g, eq.equivalentNumber = $num, eq.`Type` = $type",
+                id=eq_id, n=name, s=p_set, g=p_grouping, num=index, type=p_type,
+            )
+            print(f"✅ Reused equivalent list (order {index}) id={eq_id}, renamed to '{name}'")
+        else:
+            eq_id = str(uuid.uuid4())
+            session.run(
+                """
+                MERGE (s:Set {name: $s})
+                MERGE (g:Grouping {name: $g})
+                MERGE (s)-[:HAS_GROUPING]->(g)
+                WITH g
+                MATCH (p:List {id: $pid})
+                CREATE (eq:List {
+                    id: $id, name: $n, set: $s, grouping: $g,
+                    format: '', source: '', upkeep: '', graph: '', origin: '',
+                    status: 'Active', equivalentNumber: $num, `Type`: $type
+                })
+                MERGE (g)-[:HAS_LIST]->(eq)
+                MERGE (p)-[r:HAS_EQUIVALENT]->(eq)
+                SET r.order = $num
+                """,
+                id=eq_id, n=name, s=p_set, g=p_grouping, num=index, pid=parent_list_id, type=p_type,
+            )
+            print(f"✅ Created equivalent list node '{name}' (order {index}) id={eq_id}")
+
+        infos.append({"listId": eq_id, "list": name, "order": index, "set": p_set, "grouping": p_grouping})
+
+    return infos
+
+
+async def dismantle_equivalent_list_structure(session, parent_list_id: str) -> None:
+    """
+    Remove equivalent structure for a parent list: IS_EQUIVALENT_TO links, the equivalent
+    lists' values/variation edges, then DETACH DELETE the equivalent List nodes. Scoped to
+    this parent only.
+    """
+    session.run(
+        """
+        MATCH (p:List {id: $id})-[:HAS_EQUIVALENT]->(eq:List)-[:HAS_LIST_VALUE]->(v:ListValue)
+        MATCH (v)-[r:IS_EQUIVALENT_TO]-(:ListValue)
+        DELETE r
+        """,
+        id=parent_list_id,
+    )
+    session.run(
+        """
+        MATCH (p:List {id: $id})-[:HAS_EQUIVALENT]->(eq:List)-[hr:HAS_LIST_VALUE]->(v:ListValue)
+        OPTIONAL MATCH (v)-[vr:HAS_VALUE_VARIATION]->(:ListValueVariation)
+        DELETE vr, hr
+        """,
+        id=parent_list_id,
+    )
+    session.run(
+        """
+        MATCH (p:List {id: $id})-[:HAS_EQUIVALENT]->(eq:List)
+        DETACH DELETE eq
+        """,
+        id=parent_list_id,
+    )
+
+
+async def create_equivalent_list_values(session, parent_list_id: str, equivalent_infos: List[Dict[str, Any]], equivalent_values: Any) -> int:
+    """
+    Replace the values for a parent list's 2 equivalent lists.
+
+    equivalent_infos: ordered [{listId, list, order}, ...] (order 1 then 2).
+    equivalent_values: { "rows": [ {value1, variations1: [...], value2, variations2: [...]} ] }
+      - value1/value2 are the equivalent-1 / equivalent-2 cell values for that row.
+    Creates HAS_LIST_VALUE (list->value) for each non-empty cell, HAS_VALUE_VARIATION for
+    variations, and IS_EQUIVALENT_TO (value1->value2) when both cells on the row are filled.
+    """
+    if not equivalent_infos or len(equivalent_infos) < 2:
+        print("⚠️ create_equivalent_list_values: need exactly 2 equivalent lists, skipping")
+        return 0
+
+    eq1 = equivalent_infos[0]
+    eq2 = equivalent_infos[1]
+    eq1_id, eq1_name = eq1["listId"], eq1["list"]
+    eq2_id, eq2_name = eq2["listId"], eq2["list"]
+
+    rows = []
+    if isinstance(equivalent_values, dict):
+        rows = equivalent_values.get("rows") or []
+
+    # Clear existing values, variations and equivalence links for both equivalent lists
+    session.run(
+        """
+        MATCH (e1:List {id: $eq1})-[:HAS_LIST_VALUE]->(v1:ListValue)-[r:IS_EQUIVALENT_TO]-(:ListValue)
+        DELETE r
+        """,
+        eq1=eq1_id,
+    )
+    for eq_id in (eq1_id, eq2_id):
+        session.run(
+            """
+            MATCH (e:List {id: $eq})-[hr:HAS_LIST_VALUE]->(v:ListValue)
+            OPTIONAL MATCH (v)-[vr:HAS_VALUE_VARIATION]->(:ListValueVariation)
+            DELETE vr, hr
+            """,
+            eq=eq_id,
+        )
+
+    def _as_var_list(raw) -> List[str]:
+        if raw is None:
+            return []
+        if isinstance(raw, list):
+            return [str(v).strip() for v in raw if v and str(v).strip()]
+        if isinstance(raw, str):
+            return [v.strip() for v in raw.split(",") if v.strip()]
+        return []
+
+    created = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        v1 = str(row.get("value1") or "").strip()
+        v2 = str(row.get("value2") or "").strip()
+        vars1 = _as_var_list(row.get("variations1"))
+        vars2 = _as_var_list(row.get("variations2"))
+
+        if v1:
+            session.run(
+                "MATCH (e:List {id: $eq}) MERGE (v:ListValue {value: $val}) MERGE (e)-[:HAS_LIST_VALUE]->(v)",
+                eq=eq1_id, val=v1,
+            )
+            for var in vars1:
+                await create_value_variation(session, v1, var, eq1_name)
+            created += 1
+        if v2:
+            session.run(
+                "MATCH (e:List {id: $eq}) MERGE (v:ListValue {value: $val}) MERGE (e)-[:HAS_LIST_VALUE]->(v)",
+                eq=eq2_id, val=v2,
+            )
+            for var in vars2:
+                await create_value_variation(session, v2, var, eq2_name)
+            created += 1
+        if v1 and v2:
+            session.run(
+                """
+                MATCH (e1:List {id: $eq1})-[:HAS_LIST_VALUE]->(v1:ListValue {value: $v1})
+                MATCH (e2:List {id: $eq2})-[:HAS_LIST_VALUE]->(v2:ListValue {value: $v2})
+                MERGE (v1)-[:IS_EQUIVALENT_TO]->(v2)
+                """,
+                eq1=eq1_id, v1=v1, eq2=eq2_id, v2=v2,
+            )
+
+    print(f"🔵 create_equivalent_list_values: created/linked values for {len(rows)} rows")
+    return created
+
+
 @router.get("/lists", response_model=List[Dict[str, Any]])
 async def get_lists():
     """
@@ -1173,6 +1373,8 @@ async def get_lists():
                 OPTIONAL MATCH (l)-[:HAS_LIST_VALUE]->(lv:ListValue)
                 OPTIONAL MATCH (l)-[tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(tiered:List)
                 OPTIONAL MATCH (parent:List)-[parent_tier_rel:HAS_TIER_1|HAS_TIER_2|HAS_TIER_3|HAS_TIER_4|HAS_TIER_5|HAS_TIER_6|HAS_TIER_7|HAS_TIER_8|HAS_TIER_9|HAS_TIER_10]->(l)
+                OPTIONAL MATCH (l)-[eq_rel:HAS_EQUIVALENT]->(equiv:List)
+                OPTIONAL MATCH (eqp:List)-[eqp_rel:HAS_EQUIVALENT]->(l)
                 OPTIONAL MATCH (l)-[:HAS_VARIATION]->(var:ListVariation)
                 WITH l, s, g, 
                      collect(DISTINCT sector.name) as sectors,
@@ -1183,11 +1385,16 @@ async def get_lists():
                      collect(DISTINCT {listId: tiered.id, set: tiered.set, grouping: tiered.grouping, list: tiered.name, tier: tiered.tier, relType: type(tier_rel)}) as tiered_lists,
                      count(DISTINCT parent) > 0 as has_incoming_tier,
                      head(collect(DISTINCT type(parent_tier_rel))) as parent_tier_rel_type,
+                     collect(DISTINCT {listId: equiv.id, set: equiv.set, grouping: equiv.grouping, list: equiv.name, order: eq_rel.order}) as equivalent_lists,
+                     count(DISTINCT eqp) > 0 as has_incoming_equivalent,
+                     head(collect(DISTINCT eqp_rel.order)) as equivalent_number,
+                     size(collect(DISTINCT equiv.id)) as equivalent_count,
                      count(DISTINCT var) as variations_count,
                      collect(DISTINCT {id: var.id, name: var.name}) as variations,
                      size(collect(DISTINCT tiered.id)) as tiered_count
                 WITH l, s, g, sectors, domains, countries, variables_count, list_values, tiered_lists, 
                      has_incoming_tier, parent_tier_rel_type, variations_count, variations, tiered_count,
+                     equivalent_lists, has_incoming_equivalent, equivalent_number, equivalent_count,
                      l.tier as list_tier_property,
                      CASE 
                        WHEN l.tier IS NOT NULL THEN 
@@ -1202,6 +1409,7 @@ async def get_lists():
                        coalesce(l.`Type`, CASE WHEN coalesce(l.is_meme, false) THEN 'Meme' ELSE 'Variant' END) as ontology_type,
                        s.name as set_name, g.name as grouping_name,
                        sectors, domains, countries, variables_count, list_values, tiered_lists, has_incoming_tier,
+                       equivalent_lists, has_incoming_equivalent, equivalent_number, equivalent_count,
                        variations_count, variations, tiered_count, tier_number
                 ORDER BY l.id
             """)
@@ -1264,9 +1472,33 @@ async def get_lists():
                 variations_list = record.get("variations") or []
                 variations_count = record.get("variations_count") or 0
                 tiered_count = record.get("tiered_count") or 0
+
+                # Parse equivalent lists (parent -[:HAS_EQUIVALENT {order}]-> equivalent List)
+                equivalent_lists_raw = record.get("equivalent_lists") or []
+                equivalentListsList = []
+                for eq in equivalent_lists_raw:
+                    if eq and eq.get("listId"):
+                        equivalentListsList.append({
+                            "id": eq.get("listId"),
+                            "listId": eq.get("listId"),
+                            "set": eq.get("set", ""),
+                            "grouping": eq.get("grouping", ""),
+                            "list": eq.get("list", ""),
+                            "order": eq.get("order") or 999,
+                        })
+                equivalentListsList.sort(key=lambda x: x.get("order", 999))
+                equivalent_count = record.get("equivalent_count") or 0
+                has_incoming_equivalent = record.get("has_incoming_equivalent", False)
+                equivalent_number = record.get("equivalent_number")
+                equivalent_names = [e["list"] for e in equivalentListsList if e.get("list")]
                 
                 # Determine listType, numberOfLevels, and tierNames from tiered lists
-                list_type = 'Multi-Level' if tiered_count > 0 else 'Single'
+                if tiered_count > 0:
+                    list_type = 'Multi-Level'
+                elif equivalent_count > 0:
+                    list_type = 'Equivalent'
+                else:
+                    list_type = 'Single'
                 number_of_levels = tiered_count if tiered_count > 0 else 2
                 tier_names = [t["name"] for t in tier_list_info_with_tier if t.get("name")]
                 
@@ -1275,13 +1507,23 @@ async def get_lists():
                 # Calculate total values count and sample values
                 # For single lists: use list_values count
                 # For multi-level lists: count all values across all tiers
-                if tiered_count == 0:
-                    # Single list: count distinct values
+                if tiered_count == 0 and equivalent_count == 0:
+                    # Single list (and tier/equivalent CHILD rows): count own distinct values
                     # Filter out None/empty values
                     filtered_list_values = [val for val in list_values if val and str(val).strip()]
                     total_values_count = len(filtered_list_values)
                     sample_values = filtered_list_values[:3] if filtered_list_values else []
                     print(f"DEBUG: Single list {record['list']} (id: {record['id']}) - totalValuesCount: {total_values_count}, sampleValues: {sample_values}")
+                elif equivalent_count > 0:
+                    # Equivalent PARENT: aggregate distinct values across the equivalent lists
+                    eq_vals_result = session.run("""
+                        MATCH (p:List {id: $list_id})-[:HAS_EQUIVALENT]->(eq:List)-[:HAS_LIST_VALUE]->(lv:ListValue)
+                        RETURN count(DISTINCT lv) as total, collect(DISTINCT lv.value) as vals
+                    """, {"list_id": record["id"]})
+                    eq_vals_record = eq_vals_result.single()
+                    total_values_count = (eq_vals_record.get("total") or 0) if eq_vals_record else 0
+                    eq_vals = [v for v in ((eq_vals_record.get("vals") or []) if eq_vals_record else []) if v and str(v).strip()]
+                    sample_values = eq_vals[:100]
                 else:
                     # Multi-level list: query tiered values
                     # For multi-level lists, values are stored on tier lists, not the parent list
@@ -1393,6 +1635,10 @@ async def get_lists():
                     "tieredListsList": tieredListsList,
                     "hasIncomingTier": record.get("has_incoming_tier", False),
                     "tierNumber": tier_number,  # Add tier number (1, 2, 3, etc.) for tier lists
+                    "equivalentListsList": equivalentListsList,
+                    "hasIncomingEquivalent": has_incoming_equivalent,
+                    "equivalentNumber": equivalent_number,
+                    "equivalentNames": equivalent_names,
                     "totalValuesCount": total_values_count,  # Total count of values
                     "sampleValues": sample_values if isinstance(sample_values, list) else [],  # First 3 values for display - ensure it's a list
                     "variations": variations_count,
@@ -1578,9 +1824,25 @@ async def create_list(list_data: ListCreateRequest):
                     relationships_already_created = True
                     print(f"✅ STEP 2 COMPLETE: Created {len(created_tiered_lists)} tier list relationships (HAS_TIER_1, HAS_TIER_2, etc.)")
             
+            # Equivalent list setup: create the 2 equivalent list nodes + relationships, copy
+            # parent drivers, and (if provided) create the equivalent values.
+            if list_data.listType == 'Equivalent':
+                eq_names_in = [n for n in (getattr(list_data, 'equivalentNames', None) or []) if n and str(n).strip()]
+                if len(eq_names_in) >= 2:
+                    print(f"🔵 EQUIVALENT: Setting up equivalent list {list_id} with names: {eq_names_in}")
+                    eq_infos = await create_equivalent_list_nodes(
+                        session, list_id, eq_names_in, list_data.set, list_data.grouping,
+                        normalize_ontology_type(getattr(list_data, 'ontologyType', None)) or DEFAULT_ONTOLOGY_TYPE,
+                    )
+                    for info in eq_infos:
+                        await create_list_driver_relationships(session, info["listId"], list_data.sector, list_data.domain, list_data.country)
+                    eq_values = getattr(list_data, 'equivalentListValues', None)
+                    if eq_values:
+                        await create_equivalent_list_values(session, list_id, eq_infos, eq_values)
+
             # Create list values as nodes with HAS_LIST_VALUE relationships (replace all)
-            # Only for Single lists - Multi-Level lists don't have direct values
-            if list_data.listType != 'Multi-Level' and list_data.listValuesList is not None:
+            # Only for Single lists - Multi-Level and Equivalent parents don't have direct values
+            if list_data.listType not in ('Multi-Level', 'Equivalent') and list_data.listValuesList is not None:
                 await create_list_values(session, list_id, list_data.listValuesList, replace=True, variations=getattr(list_data, 'listValuesVariations', None))
             
             # Create tiered list relationships (for backward compatibility with old API)
@@ -1957,11 +2219,56 @@ async def update_list(list_id: str, request: Request):
                     MERGE (g)-[:HAS_LIST]->(l)
                 """, {"id": list_id, "set": set_name, "grouping": grouping_name})
             
-            # Handle listType changes (Single vs Multi-Level)
+            # Handle listType changes (Single / Multi-Level / Equivalent). Tear down the
+            # structures that don't belong to the target type so switching is clean.
             if list_data.listType is not None:
                 if list_data.listType == 'Single':
-                    print(f"Switching list {list_id} to Single type - dismantling multi-level structure (scoped)")
+                    print(f"Switching list {list_id} to Single type - dismantling multi-level + equivalent structure (scoped)")
                     await dismantle_multi_level_list_structure(session, list_id)
+                    await dismantle_equivalent_list_structure(session, list_id)
+                elif list_data.listType == 'Multi-Level':
+                    print(f"Switching list {list_id} to Multi-Level - dismantling equivalent structure (scoped)")
+                    await dismantle_equivalent_list_structure(session, list_id)
+                elif list_data.listType == 'Equivalent':
+                    print(f"Switching list {list_id} to Equivalent - dismantling multi-level structure (scoped)")
+                    await dismantle_multi_level_list_structure(session, list_id)
+
+            # Equivalent list setup: create/rename the 2 equivalent list nodes + relationships,
+            # copy parent drivers, and (if provided) create the equivalent values.
+            if list_data.listType == 'Equivalent':
+                eq_names_in = [n for n in (raw_data.get('equivalentNames') or []) if n and str(n).strip()]
+                if len(eq_names_in) >= 2:
+                    print(f"🔵 EQUIVALENT: Setting up equivalent list {list_id} with names: {eq_names_in}")
+                    current_sg = session.run(
+                        "MATCH (l:List {id: $id}) RETURN l.set as set, l.grouping as grouping", id=list_id
+                    ).single()
+                    set_name = list_data.set if list_data.set is not None else (current_sg["set"] if current_sg else None)
+                    grouping_name = list_data.grouping if list_data.grouping is not None else (current_sg["grouping"] if current_sg else None)
+                    eq_infos = await create_equivalent_list_nodes(
+                        session, list_id, eq_names_in, set_name, grouping_name, ontology_updated_value
+                    )
+                    # Mirror parent drivers onto equivalent lists (use parent's current driver values)
+                    parent_drivers = session.run(
+                        """
+                        MATCH (l:List {id: $id})
+                        OPTIONAL MATCH (sec:Sector)-[:IS_RELEVANT_TO]->(l)
+                        OPTIONAL MATCH (dom:Domain)-[:IS_RELEVANT_TO]->(l)
+                        OPTIONAL MATCH (cou:Country)-[:IS_RELEVANT_TO]->(l)
+                        RETURN collect(DISTINCT sec.name) as sectors,
+                               collect(DISTINCT dom.name) as domains,
+                               collect(DISTINCT cou.name) as countries
+                        """,
+                        id=list_id,
+                    ).single()
+                    if parent_drivers:
+                        sec_str = list_data.sector if list_data.sector is not None else (", ".join([s for s in parent_drivers["sectors"] if s]) or "ALL")
+                        dom_str = list_data.domain if list_data.domain is not None else (", ".join([d for d in parent_drivers["domains"] if d]) or "ALL")
+                        cou_str = list_data.country if list_data.country is not None else (", ".join([c for c in parent_drivers["countries"] if c]) or "ALL")
+                        for info in eq_infos:
+                            await create_list_driver_relationships(session, info["listId"], sec_str, dom_str, cou_str)
+                    eq_values = raw_data.get('equivalentListValues')
+                    if eq_values:
+                        await create_equivalent_list_values(session, list_id, eq_infos, eq_values)
             
             # Handle Multi-Level list setup: create tier list nodes and relationships
             print(f"DEBUG: Checking listType setup - listType={list_data.listType}, tierNames={list_data.tierNames}, numberOfLevels={list_data.numberOfLevels}")
@@ -2915,6 +3222,100 @@ async def get_tiered_list_values(list_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch tiered list values: {str(e)}")
+
+
+@router.get("/lists/{list_id}/equivalent-values")
+async def get_equivalent_list_values(list_id: str):
+    """
+    Get equivalent list values for a parent list. Returns:
+      { "equivalentNames": [name1, name2],
+        "rows": [ {value1, variations1: [...], value2, variations2: [...]} ] }
+    Rows where both sides are filled correspond to an IS_EQUIVALENT_TO pair; unpaired
+    values from either equivalent list are returned as single-sided rows.
+    """
+    driver = get_driver()
+    if not driver:
+        raise HTTPException(status_code=500, detail="Failed to connect to Neo4j database")
+
+    try:
+        with driver.session() as session:
+            eq_rows = session.run(
+                """
+                MATCH (p:List {id: $id})-[r:HAS_EQUIVALENT]->(eq:List)
+                RETURN eq.id as id, eq.name as name, r.order as order
+                ORDER BY r.order
+                """,
+                id=list_id,
+            )
+            eqs = [{"id": rec["id"], "name": rec["name"], "order": rec["order"]} for rec in eq_rows if rec["id"]]
+            if len(eqs) < 2:
+                return {"equivalentNames": [e["name"] for e in eqs], "rows": []}
+
+            eq1, eq2 = eqs[0], eqs[1]
+
+            def _get_vals(eq_id):
+                res = session.run(
+                    """
+                    MATCH (e:List {id: $eq})-[:HAS_LIST_VALUE]->(v:ListValue)
+                    OPTIONAL MATCH (v)-[:HAS_VALUE_VARIATION]->(var:ListValueVariation)
+                    WITH v, collect(DISTINCT var.name) as variations
+                    RETURN v.value as value, variations
+                    ORDER BY v.value
+                    """,
+                    eq=eq_id,
+                )
+                value_map: Dict[str, List[str]] = {}
+                order: List[str] = []
+                for rec in res:
+                    val = rec["value"]
+                    if val is None:
+                        continue
+                    value_map[val] = [x for x in (rec["variations"] or []) if x]
+                    order.append(val)
+                return value_map, order
+
+            v1_map, v1_order = _get_vals(eq1["id"])
+            v2_map, v2_order = _get_vals(eq2["id"])
+
+            pairs_res = session.run(
+                """
+                MATCH (e1:List {id: $eq1})-[:HAS_LIST_VALUE]->(v1:ListValue)-[:IS_EQUIVALENT_TO]->(v2:ListValue)<-[:HAS_LIST_VALUE]-(e2:List {id: $eq2})
+                RETURN v1.value as v1, v2.value as v2
+                """,
+                eq1=eq1["id"], eq2=eq2["id"],
+            )
+
+            rows: List[Dict[str, Any]] = []
+            used1, used2 = set(), set()
+            for rec in pairs_res:
+                a, b = rec["v1"], rec["v2"]
+                if not a and not b:
+                    continue
+                rows.append({
+                    "value1": a or "",
+                    "variations1": v1_map.get(a, []),
+                    "value2": b or "",
+                    "variations2": v2_map.get(b, []),
+                })
+                if a:
+                    used1.add(a)
+                if b:
+                    used2.add(b)
+
+            for val in v1_order:
+                if val not in used1:
+                    rows.append({"value1": val, "variations1": v1_map.get(val, []), "value2": "", "variations2": []})
+            for val in v2_order:
+                if val not in used2:
+                    rows.append({"value1": "", "variations1": [], "value2": val, "variations2": v2_map.get(val, [])})
+
+            return {"equivalentNames": [eq1["name"], eq2["name"]], "rows": rows}
+
+    except Exception as e:
+        print(f"Error fetching equivalent list values: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to fetch equivalent list values: {str(e)}")
 
 # Set and Grouping endpoints - MUST come before /lists/{list_id} to avoid route conflicts
 class SetCreateRequest(BaseModel):

@@ -175,6 +175,28 @@ export const getTieredListValues = async (listId: string): Promise<Record<string
   return await response.json();
 };
 
+// Equivalent list values: { equivalentNames: [n1, n2], rows: [{value1, variations1, value2, variations2}] }
+export interface EquivalentValuesResponse {
+  equivalentNames: string[];
+  rows: Array<{ value1: string; variations1: string[]; value2: string; variations2: string[] }>;
+}
+
+export const getEquivalentListValues = async (listId: string): Promise<EquivalentValuesResponse> => {
+  const response = await fetch(`${API_BASE_URL}/lists/${listId}/equivalent-values`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: `Failed to get equivalent list values: ${response.statusText}` }));
+    throw new Error(error.detail || 'Failed to get equivalent list values');
+  }
+
+  return await response.json();
+};
+
 // List ontology view function
 export const getListOntologyView = async (
   listId: string | null,
@@ -1382,9 +1404,6 @@ class ApiService {
 
   async createHeuristicItem(item: {
     id: string;
-    sector: string;
-    domain: string;
-    country: string;
     agent: string;
     procedure: string;
     rules: string;
@@ -1399,9 +1418,6 @@ class ApiService {
   }
 
   async updateHeuristicItem(id: string, update: {
-    sector?: string;
-    domain?: string;
-    country?: string;
     agent?: string;
     procedure?: string;
     rules?: string;

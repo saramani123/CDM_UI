@@ -3,9 +3,6 @@ import { apiService } from '../services/api';
 
 export interface HeuristicsData {
   id: string;
-  sector: string;
-  domain: string;
-  country: string;
   agent: string;
   procedure: string;
   rules: any;

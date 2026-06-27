@@ -30,9 +30,6 @@ UUID_V4_RE = re.compile(
 
 class HeuristicItem(BaseModel):
     id: str
-    sector: str
-    domain: str
-    country: str
     agent: str
     procedure: str
     rules: str
@@ -43,9 +40,6 @@ class HeuristicItem(BaseModel):
 
 
 class HeuristicUpdateRequest(BaseModel):
-    sector: Optional[str] = None
-    domain: Optional[str] = None
-    country: Optional[str] = None
     agent: Optional[str] = None
     procedure: Optional[str] = None
     rules: Optional[str] = None
@@ -259,9 +253,6 @@ def _serialize_item_for_response(item: dict) -> dict:
 
     return {
         "id": item.get("id", ""),
-        "sector": item.get("sector", ""),
-        "domain": item.get("domain", ""),
-        "country": item.get("country", ""),
         "agent": item.get("agent", ""),
         "procedure": item.get("procedure", ""),
         "best": item.get("best", ""),
@@ -292,9 +283,6 @@ def _load_heuristics_rows() -> List[dict]:
                 return [
                     {
                         "id": i.id,
-                        "sector": i.sector or "",
-                        "domain": i.domain or "",
-                        "country": i.country or "",
                         "agent": i.agent or "",
                         "procedure": i.procedure or "",
                         "rules": i.rules or "",
@@ -352,9 +340,6 @@ async def create_heuristic_item(item: HeuristicItem):
                         raise HTTPException(status_code=400, detail=f"Heuristic item with id {item.id} already exists")
 
                     duplicate = db.query(HeuristicModel).filter(
-                        HeuristicModel.sector.ilike(item.sector),
-                        HeuristicModel.domain.ilike(item.domain),
-                        HeuristicModel.country.ilike(item.country),
                         HeuristicModel.agent.ilike(item.agent),
                         HeuristicModel.procedure.ilike(item.procedure),
                     ).first()
@@ -363,9 +348,6 @@ async def create_heuristic_item(item: HeuristicItem):
 
                     new_item = HeuristicModel(
                         id=item.id,
-                        sector=item.sector,
-                        domain=item.domain,
-                        country=item.country,
                         agent=item.agent,
                         procedure=item.procedure,
                         rules=item.rules,
@@ -379,9 +361,6 @@ async def create_heuristic_item(item: HeuristicItem):
                     return _serialize_item_for_response(
                         {
                             "id": new_item.id,
-                            "sector": new_item.sector,
-                            "domain": new_item.domain,
-                            "country": new_item.country,
                             "agent": new_item.agent,
                             "procedure": new_item.procedure,
                             "rules": new_item.rules,
@@ -403,9 +382,6 @@ async def create_heuristic_item(item: HeuristicItem):
 
         entry = {
             "id": item.id,
-            "sector": item.sector,
-            "domain": item.domain,
-            "country": item.country,
             "agent": item.agent,
             "procedure": item.procedure,
             "rules": item.rules,
@@ -437,12 +413,6 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
                     if not item:
                         raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
 
-                    if update.sector is not None:
-                        item.sector = update.sector
-                    if update.domain is not None:
-                        item.domain = update.domain
-                    if update.country is not None:
-                        item.country = update.country
                     if update.agent is not None:
                         item.agent = update.agent
                     if update.procedure is not None:
@@ -475,9 +445,6 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
                     return _serialize_item_for_response(
                         {
                             "id": item.id,
-                            "sector": item.sector,
-                            "domain": item.domain,
-                            "country": item.country,
                             "agent": item.agent,
                             "procedure": item.procedure,
                             "rules": item.rules,
@@ -499,7 +466,7 @@ async def update_heuristic_item(item_id: str, update: HeuristicUpdateRequest):
             raise HTTPException(status_code=404, detail=f"Heuristic item with id {item_id} not found")
 
         item = heuristics[idx]
-        for field in ["sector", "domain", "country", "agent", "procedure", "best"]:
+        for field in ["agent", "procedure", "best"]:
             val = getattr(update, field)
             if val is not None:
                 item[field] = val

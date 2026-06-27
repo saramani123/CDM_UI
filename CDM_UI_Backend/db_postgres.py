@@ -36,9 +36,6 @@ class HeuristicModel(Base):
     __tablename__ = "heuristics"
     
     id = Column(String, primary_key=True)
-    sector = Column(String, nullable=False)
-    domain = Column(String, nullable=False)
-    country = Column(String, nullable=False)
     agent = Column(String, nullable=False)
     procedure = Column(String, nullable=False)
     rules = Column(Text, default="")
@@ -137,6 +134,10 @@ def init_db():
                 # Heuristics: hero vs documentation-only agents
                 "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS is_hero BOOLEAN NOT NULL DEFAULT TRUE",
                 "ALTER TABLE heuristics ADD COLUMN IF NOT EXISTS documentation TEXT",
+                # Heuristics: S/D/C removed from the feature entirely
+                "ALTER TABLE heuristics DROP COLUMN IF EXISTS sector",
+                "ALTER TABLE heuristics DROP COLUMN IF EXISTS domain",
+                "ALTER TABLE heuristics DROP COLUMN IF EXISTS country",
                 # Metadata: S/D/C columns were added after some prod DBs were created
                 "ALTER TABLE metadata ADD COLUMN IF NOT EXISTS sector VARCHAR DEFAULT ''",
                 "ALTER TABLE metadata ADD COLUMN IF NOT EXISTS domain VARCHAR DEFAULT ''",

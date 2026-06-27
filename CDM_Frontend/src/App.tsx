@@ -445,53 +445,17 @@ function App() {
   
   // Heuristics tab columns
   const heuristicsColumns = [
-    { 
-      key: 'sector', 
-      title: 'S', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: HeuristicsData) => (
-        <span style={{
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: '100%'
-        }}>{row.sector === 'All' || row.sector === 'all' ? 'ALL' : row.sector}</span>
-      )
-    },
-    { 
-      key: 'domain', 
-      title: 'D', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: HeuristicsData) => (
-        <span style={{
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: '100%'
-        }}>{row.domain === 'All' || row.domain === 'all' ? 'ALL' : row.domain}</span>
-      )
-    },
-    { 
-      key: 'country', 
-      title: 'C', 
-      sortable: true, 
-      filterable: true, 
-      width: '100px',
-      render: (row: HeuristicsData) => (
-        <span style={{
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          display: 'block',
-          maxWidth: '100%'
-        }}>{row.country === 'All' || row.country === 'all' ? 'ALL' : row.country}</span>
-      )
+    {
+      key: '_row_index',
+      title: '#',
+      sortable: false,
+      filterable: false,
+      width: '60px',
+      // Dynamic position in the current (drag-reorderable) heuristics order.
+      render: (row: HeuristicsData) => {
+        const idx = orderedHeuristics.findIndex((h) => h.id === row.id);
+        return <span className="text-ag-dark-text-secondary">{idx >= 0 ? idx + 1 : ''}</span>;
+      }
     },
     {
       key: 'agent',
@@ -4466,6 +4430,8 @@ function App() {
           if (gridData.listType !== undefined) apiListData.listType = gridData.listType;
           if (gridData.numberOfLevels !== undefined) apiListData.numberOfLevels = gridData.numberOfLevels;
           if (gridData.tierNames !== undefined) apiListData.tierNames = gridData.tierNames;
+          if (gridData.equivalentNames !== undefined) apiListData.equivalentNames = gridData.equivalentNames;
+          if (gridData.equivalentListValues !== undefined) apiListData.equivalentListValues = gridData.equivalentListValues;
           
           // Only update if there are fields to update
           if (Object.keys(apiListData).length > 0) {
@@ -4670,8 +4636,20 @@ function App() {
               }
             }
             
+            // Show success message for Equivalent list saves (names and/or equivalent values)
+            if (apiListData.listType === 'Equivalent') {
+              const eqNames = Array.isArray(apiListData.equivalentNames)
+                ? apiListData.equivalentNames.filter((n: string) => n && n.trim())
+                : [];
+              if (apiListData.equivalentListValues !== undefined) {
+                alert(`Equivalent list values saved successfully for "${listDataFormat.list}"!`);
+              } else if (eqNames.length >= 2) {
+                alert(`Equivalents "${eqNames[0]}" and "${eqNames[1]}" saved for the list "${listDataFormat.list}" successfully!`);
+              }
+            }
+
             // Show success message if drivers, metadata, variations, or applicability changed (but not listType/tiered lists)
-            if (!listTypeChanged && !tieredListsChanged && !tieredListValuesChanged && !listValuesChanged) {
+            if (!listTypeChanged && !tieredListsChanged && !tieredListValuesChanged && !listValuesChanged && apiListData.listType !== 'Equivalent') {
               const messages = [];
               if (driversChanged) messages.push('drivers');
               if (metadataChanged) messages.push('metadata');
@@ -4821,7 +4799,11 @@ function App() {
           tiers: tiersString, // Add tiers column value
           hasIncomingTier: list.hasIncomingTier || false,
           tierNumber: list.tierNumber || undefined, // Add tier number from backend
-          listType: list.listType || (list.tieredListsList && list.tieredListsList.length > 0 ? 'Multi-Level' : 'Single'),
+          equivalentListsList: list.equivalentListsList || [],
+          hasIncomingEquivalent: list.hasIncomingEquivalent || false,
+          equivalentNumber: list.equivalentNumber || undefined,
+          equivalentNames: list.equivalentNames || [],
+          listType: list.listType || (list.equivalentListsList && list.equivalentListsList.length > 0 ? 'Equivalent' : (list.tieredListsList && list.tieredListsList.length > 0 ? 'Multi-Level' : 'Single')),
           numberOfLevels: list.numberOfLevels || (list.tieredListsList ? list.tieredListsList.length + 1 : 2),
           tierNames: list.tierNames || (list.tieredListsList ? list.tieredListsList.map((tier: any) => tier.list) : []),
           totalValuesCount: list.totalValuesCount ?? 0, // Total count of values
@@ -4856,6 +4838,26 @@ function App() {
           // Sort by tier number to ensure correct order (Tier 1, Tier 2, etc.)
           childIds.sort((a, b) => a.tierNumber - b.tierNumber);
           
+          if (childIds.length > 0) {
+            parentToChildren.set(list.id, childIds);
+          }
+        }
+
+        // Equivalent lists: hoist the 2 equivalent children beneath their parent
+        if (list.equivalentListsList && list.equivalentListsList.length > 0) {
+          const childIds = list.equivalentListsList
+            .map((eq: any, index: number) => {
+              const childList = listsDataFormat.find(l => l.id === (eq.listId || eq.id));
+              if (childList) {
+                const num = childList.equivalentNumber || (index + 1);
+                return { id: childList.id, tierNumber: num };
+              }
+              return null;
+            })
+            .filter((item): item is { id: string; tierNumber: number } => item !== null && allListIds.has(item.id));
+
+          childIds.sort((a, b) => a.tierNumber - b.tierNumber);
+
           if (childIds.length > 0) {
             parentToChildren.set(list.id, childIds);
           }
@@ -5117,25 +5119,19 @@ function App() {
   };
 
   const handleAddHeuristic = async (heuristicsData: {
-    sector: string;
-    domain: string;
-    country: string;
     agent: string;
     procedure: string;
     is_heuro: boolean;
   }) => {
     try {
-      // Check for uniqueness: S + D + C + Agent + Procedure combination must be unique
+      // Check for uniqueness: Agent + Procedure combination must be unique
       const existing = apiHeuristics.find(
-        h => h.sector.toLowerCase() === heuristicsData.sector.toLowerCase() && 
-             h.domain.toLowerCase() === heuristicsData.domain.toLowerCase() &&
-             h.country.toLowerCase() === heuristicsData.country.toLowerCase() &&
-             h.agent.toLowerCase() === heuristicsData.agent.toLowerCase() &&
+        h => h.agent.toLowerCase() === heuristicsData.agent.toLowerCase() &&
              h.procedure.toLowerCase() === heuristicsData.procedure.toLowerCase()
       );
       
       if (existing) {
-        throw new Error(`A heuristic with this combination of Sector, Domain, Country, Agent, and Procedure already exists. Each combination must be unique.`);
+        throw new Error(`A heuristic with this combination of Agent and Procedure already exists. Each combination must be unique.`);
       }
       
       // Generate a unique ID
@@ -5144,9 +5140,6 @@ function App() {
       // Create heuristic item via API; is_heuro defaults to false in Add modal
       await createHeuristicItem({
         id: newId,
-        sector: heuristicsData.sector,
-        domain: heuristicsData.domain,
-        country: heuristicsData.country,
         agent: heuristicsData.agent,
         procedure: heuristicsData.procedure,
         rules: '',

@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Grid2X2, Save } from 'lucide-react';
 import { HeuristicsData } from '../hooks/useHeuristics';
 import { apiService } from '../services/api';
-import { useDrivers } from '../hooks/useDrivers';
 import { HeuristicsDetailModal, HeuroColumnDef, HeuroRuleRow } from './HeuristicsDetailModal';
 
 interface HeuristicsDetailPanelProps {
@@ -66,11 +65,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
   onSave,
   onUnsavedChange,
 }) => {
-  const { drivers: driversData, loading: driversLoading } = useDrivers();
-
-  const [sector, setSector] = useState('ALL');
-  const [domain, setDomain] = useState('ALL');
-  const [country, setCountry] = useState('ALL');
   const [agent, setAgent] = useState('');
   const [procedure, setProcedure] = useState('');
   const [isHeuro, setIsHeuro] = useState(true);
@@ -100,10 +94,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     deletedIfIds: string[];
     deletedThenIds: string[];
   } | null>(null);
-
-  const sectorOptions = ['ALL', ...(driversData?.sectors || []).filter((s) => s !== 'ALL' && s !== 'All')];
-  const domainOptions = ['ALL', ...(driversData?.domains || []).filter((d) => d !== 'ALL' && d !== 'All')];
-  const countryOptions = ['ALL', ...(driversData?.countries || []).filter((c) => c !== 'ALL' && c !== 'All')];
 
   const ifColumns = localDefinition.ifColumns;
   const thenColumns = localDefinition.thenColumns;
@@ -153,9 +143,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
 
   useEffect(() => {
     if (!heuristicsItem) return;
-    setSector(heuristicsItem.sector || 'ALL');
-    setDomain(heuristicsItem.domain || 'ALL');
-    setCountry(heuristicsItem.country || 'ALL');
     setAgent(heuristicsItem.agent || '');
     setProcedure(heuristicsItem.procedure || '');
     setIsHeuro(resolveIsHeuroFlag(heuristicsItem));
@@ -329,9 +316,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
           return;
         }
         await apiService.updateHeuristicItem(heuristicsItem.id, {
-          sector,
-          domain,
-          country,
           agent,
           procedure,
           is_hero: false as any,
@@ -374,9 +358,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
         };
 
         await apiService.updateHeuristicItem(heuristicsItem.id, {
-          sector,
-          domain,
-          country,
           agent,
           procedure,
           is_hero: true as any,
@@ -444,27 +425,6 @@ export const HeuristicsDetailPanel: React.FC<HeuristicsDetailPanelProps> = ({
     <div className="bg-ag-dark-surface border-l border-ag-dark-border rounded-lg h-full flex flex-col overflow-hidden">
       <div className="px-6 py-4 border-b border-ag-dark-border flex-shrink-0">
         <h3 className="text-lg font-semibold text-ag-dark-text mb-4">Heuristics Detail</h3>
-
-        <div className="grid grid-cols-3 gap-4 mb-4">
-          <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">Sector</label>
-            <select value={sector} onChange={(e) => setSector(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
-              {sectorOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">Domain</label>
-            <select value={domain} onChange={(e) => setDomain(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
-              {domainOptions.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-ag-dark-text-secondary mb-1">Country</label>
-            <select value={country} onChange={(e) => setCountry(e.target.value)} disabled={isSaving || driversLoading} className="w-full px-3 py-2 bg-ag-dark-bg border border-ag-dark-border rounded text-sm text-ag-dark-text">
-              {countryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </div>
-        </div>
 
         <div className="space-y-4">
           <div>
